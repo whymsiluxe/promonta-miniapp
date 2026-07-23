@@ -8,77 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="css/tokens.css">
 <style>
-:root {
-  /* 23.07: Old Money — сдержанная роскошь, глубокий зелёный + золото sparingly.
-     Заменяет прежнюю бежево-фиолетовую light-тему полностью (владелец: "олд мани вместо лайт режима"). */
-  --bg-app: #0A0A0A;
-  --bg-card: #1C1C1C;
-  --bg-card-raised: #232323;
-  --bg-menu: #1C1C1C;
-  --taupe: #2A2A2A;
-  --primary-dark: #F2F0E8;
-  --accent: #0F3D2B;
-  --accent-hover: #144a35;
-  --accent-gold: #D4AF37;
-  --warning: #B38B4D;
-  --text-main: #F2F0E8;
-  --text-light: #B8B5A8;
-  --text-light-oncard: #B8B5A8;
-  --warning-text: #B38B4D;
-  --border-color: #2A2A2A;
-  --steel-blue: #56768C;
-  --font-heading: 'Outfit', sans-serif;
-  --font-body: 'Montserrat', sans-serif;
-  --spacing-xs: 0.5rem;
-  --spacing-sm: 1rem;
-  --spacing-md: 2rem;
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 22px;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.25);
-  --shadow-md: 0 2px 6px rgba(0,0,0,0.4), 0 12px 28px -8px rgba(0,0,0,0.5);
-  --green: #1F7A5F;
-  --yellow: #B38B4D;
-  --red: #8C4A42;
-  /* icon-плашки — монохром/приглушённые тона вместо ярких, золото зарезервировано для акцентов, не заливок */
-  --icon-bg-1: #1C1C1C;
-  --icon-bg-2: #2A2A2A;
-  --icon-bg-3: #0F3D2B;
-  --icon-bg-4: #232323;
-  --icon-bg-5: #2A2A2A;
-
-  /* Compat-алиасы: старые названия переменных (легаси Tools/Documents/Angebot/Rechnung/AI CSS)
-     теперь указывают на новую систему — единый визуальный язык без переписывания каждого правила. */
-  --primary: var(--accent);
-  --bg-white: var(--bg-card);
-  --bg-light: var(--bg-app);
-  --secondary: var(--text-light);
-}
-
-[data-theme="dark"] {
-  --bg-app: #0F0F0F;
-  --bg-card: #202020;
-  --bg-card-raised: #262626;
-  --primary-dark: #F8F8F8;
-  --accent: #5DD62C;
-  --accent-hover: #337418;
-  --accent-gold: #D4AF37;
-  --warning: #f59e0b;
-  --text-main: #F8F8F8;
-  --text-light: #94a3b8;
-  --border-color: #2c2c2e;
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.4);
-  --green: #5DD62C;
-  --yellow: #f59e0b;
-  --red: #f87171;
-
-  --primary: var(--accent);
-  --bg-white: var(--bg-card);
-  --bg-light: var(--bg-app);
-  --secondary: var(--text-light);
-}
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1868,7 +1799,7 @@ body.view-locked {
 .bubble-avatar { font-size: 0.7rem; font-weight: 700; color: var(--text-main); pointer-events: none; z-index: 1; }
 
 /* ── Bubble-assign confirm popup (10.32) — вид работ + период после drop ── */
-#bubble-confirm-popup { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; padding: 1rem; }
+#bubble-confirm-popup { position: fixed; inset: 0; z-index: 8100; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; padding: 1rem; }
 .bubble-confirm-inner { width: 100%; max-width: 360px; background: var(--bg-card); border-radius: var(--radius-lg); padding: 1.25rem; }
 .bubble-confirm-title { font-weight: 700; font-size: 1.05rem; color: var(--text-main); margin-bottom: 0.9rem; }
 .bubble-confirm-label { display: block; font-size: 0.78rem; color: var(--text-light); margin-bottom: 0.3rem; margin-top: 0.7rem; }
