@@ -368,6 +368,20 @@ function openNewsLink(idx) {
   openExternalLink(url);
 }
 
+function shareNewsLink(idx) {
+  const n = _newsItems[idx];
+  if (!n?.url) return;
+  const wa = window.Telegram?.WebApp;
+  if (wa && typeof wa.shareURL === 'function') {
+    wa.shareURL(n.url, n.title || '');
+    return;
+  }
+  try {
+    if (navigator.share) { navigator.share({ title: n.title, url: n.url }); return; }
+  } catch (e) {}
+  try { navigator.clipboard.writeText(n.url); showToast('Ссылка скопирована', 'success'); } catch (e) {}
+}
+
 function _newsCardHtml(n, i) {
   const catColor = NEWS_CAT_COLORS[n.category] || 'var(--accent)';
   const likeActive = n.my_reaction === 'like' ? 'active' : '';
@@ -386,6 +400,7 @@ function _newsCardHtml(n, i) {
     <div class="news-actions">
       <button class="news-react-btn ${likeActive}" onclick="event.stopPropagation();reactNews('${n.id}','like',this)">👍 <span>${n.likes || 0}</span></button>
       <button class="news-react-btn ${dislikeActive}" onclick="event.stopPropagation();reactNews('${n.id}','dislike',this)">👎 <span>${n.dislikes || 0}</span></button>
+      ${n.url ? `<button class="news-react-btn" onclick="event.stopPropagation();shareNewsLink(${i})">📤</button>` : ''}
     </div>
   </div>`;
 }
