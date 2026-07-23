@@ -1,8 +1,8 @@
 # Project state
 
-**Last updated**: 2026-07-23, ~17:20 Berlin time.
-**Branch**: `main` (GitHub default, renamed from initial `master` during the recovery session).
-**Repo**: https://github.com/whymsiluxe/promonta-miniapp — **private**.
+**Last updated**: 2026-07-24.
+**Branch**: `main` (GitHub default). **Active feature branch**: `fix/security-reliability-p1` (pushed, not merged — see below).
+**Repo**: https://github.com/whymsiluxe/promonta-miniapp — private (was made public 2026-07-23 for one-time ChatGPT read-only audit, reverted to private after this branch was pushed — see CHANGELOG).
 **Working tree**: clean, `main` up to date with `origin/main`.
 
 ## What this document is
@@ -33,7 +33,9 @@ Most individual `FEATURES.md` rows are still marked **UNVERIFIED** — not suspe
 
 ## What's partially done / mid-flight
 
-Nothing currently mid-flight — last three work sessions (recovery, UI batch 1+2, Old Money theme) all reached clean merge-to-main + production deploy.
+**`fix/security-reliability-p1` branch (2026-07-24)**: security/reliability audit fixes, pushed to origin but **not merged to main, not deployed**. Fixes the 15-site JSON-lock deadlock (roles/profile/assignments/chat-thread-meta/critical-alerts/abwesenheit), 4 authorization gaps (checkin_finish, checkin AI-analysis, mangel status, chat attachment thread access), missing upload validation on critical-alert resolve, a live 500 bug in checkin_manual, an unhandled malformed-input crash in validate_init_data, PII in the audit log, and splits the Потребности/Дефекты UI tab-mixing bug the user flagged live. Full detail in CHANGELOG.md's 2026-07-24 entry. Awaiting explicit go-ahead to merge + deploy.
+
+Second track (UI/UX redesign, per a separate ChatGPT brief) planned but not started — see the local plan file, not yet in this repo's docs.
 
 ## What's broken / known bugs
 
