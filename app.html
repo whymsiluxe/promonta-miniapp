@@ -1761,6 +1761,25 @@ body.view-locked {
 .home-rings-grid { display: flex; flex-wrap: wrap; gap: 0.75rem; }
 .home-ring-item { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; cursor: pointer; min-width: 70px; }
 .home-ring-label { font-size: 0.7rem; color: var(--text-light); text-align: center; max-width: 72px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* ── "Объекты рабочие" (23.07) ── */
+.wo-section { padding: 0.75rem; }
+.wo-section-title { font-family: var(--font-heading); font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.wo-worker-row { display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.65rem 0.85rem; margin-bottom: 0.5rem; }
+.wo-worker-row-nested { margin-left: 0.5rem; background: var(--bg-card-raised); }
+.wo-worker-name { font-weight: 600; font-size: 0.95rem; color: var(--text-main); }
+.wo-absence-reason { font-size: 0.82rem; color: var(--warning); }
+.wo-assign-btn { width: auto; padding: 0.4rem 0.9rem; font-size: 0.85rem; }
+.wo-empty { color: var(--text-light); font-size: 0.85rem; padding: 0.5rem 0; }
+.wo-object-block { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.75rem; margin-bottom: 0.6rem; }
+.wo-object-name { font-family: var(--font-heading); font-weight: 700; margin-bottom: 0.4rem; color: var(--text-main); }
+
+.wo-assign-sheet { position: fixed; inset: 0; z-index: 2000; background: rgba(27,23,18,0.55); display: flex; align-items: flex-end; }
+.wo-assign-sheet-inner { background: var(--bg-app); width: 100%; max-width: 480px; margin: 0 auto; border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: 1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom)); max-height: 70vh; overflow-y: auto; }
+.wo-assign-sheet-title { font-family: var(--font-heading); font-weight: 700; font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--bg-card); }
+.wo-assign-sheet-opt { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.75rem 1rem; margin-bottom: 0.5rem; cursor: pointer; font-weight: 600; }
+.wo-assign-sheet-opt:active { background: var(--bg-card-raised); }
+.wo-assign-sheet-cancel { margin-top: 0.5rem; background: transparent; color: var(--bg-card); border: 1px solid var(--taupe); }
 .home-ring-sub { position: relative; display: flex; align-items: center; justify-content: center; }
 .home-ring-sub .home-ring-pct { position: absolute; font-size: 0.75rem; font-weight: 700; }
 .home-ring-budget-chip { font-size: 0.62rem; font-weight: 600; opacity: 0.85; }
@@ -2742,9 +2761,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
     <h1>Объекты рабочие</h1>
   </header>
-  <div style="padding:2rem 1rem;text-align:center;color:var(--text-light)">
-    Раздел в разработке — прорабатываем в следующей сессии.
-  </div>
+  <div id="working-objects-slot"><!-- 23.07: без объекта / по объектам / отсутствуют --></div>
 </div>
 
 <div class="view active" id="view-home">
@@ -3208,6 +3225,7 @@ function switchView(viewName) {
     if (viewName === 'ai') initAiView();
     if (viewName === 'profile') initProfileView();
     if (viewName === 'abwesenheit') initAbwesenheitView();
+    if (viewName === 'working-objects') initWorkingObjectsView();
   } else if (viewName === 'chat') {
     _loadChatMessages(true);
   }

@@ -349,6 +349,14 @@ async function _loadHomeObjectsRings() {
     const kpiNum = kpiEl.querySelector('.kpi-num');
     if (kpiNum) kpiNum.textContent = active.length;
 
+    // 23.07: "Рабочие" на дашборде — число уникальных воркеров, назначенных хоть на один объект
+    const workingCountEl = document.getElementById('kpi-working-count');
+    if (workingCountEl) {
+      const uniqueWorkers = new Set();
+      (data.objects || []).forEach(o => (o.assigned_users || []).forEach(u => uniqueWorkers.add(u.user_id)));
+      workingCountEl.textContent = uniqueWorkers.size;
+    }
+
     if (!active.length) {
       grid.innerHTML = '<div style="color:var(--text-light);font-size:0.85rem;padding:0.5rem 0">Нет активных объектов</div>';
       return;
@@ -576,4 +584,112 @@ function _setWorkerBadge(elId, count) {
   if (!el) return;
   el.textContent = count;
   el.style.display = count > 0 ? 'flex' : 'none';
+}
+
+
+// ═══════════ "Объекты рабочие" (23.07) — owner-экран: без объекта / по объектам / отсутствуют.
+// Данные полностью из существующих /api/workers, /api/objects, /api/abwesenheit/all — без нового backend.
+
+async function initWorkingObjectsView() {
+  const slot = document.getElementById('working-objects-slot');
+  if (!slot) return;
+  slot.innerHTML = '<div style="padding:1rem;color:var(--text-light)">Загрузка…</div>';
+
+  try {
+    const [workersData, objectsData, absenceData] = await Promise.all([
+      api('/api/workers'),
+      api('/api/objects'),
+      api('/api/abwesenheit/all').catch(() => ({ entries: [] })),
+    ]);
+
+    const workers = (workersData.workers || []).filter(w => w.role === 'worker');
+    const objects = objectsData.objects || [];
+    const today = new Date().toISOString().slice(0, 10);
+    const absentToday = (absenceData.entries || []).filter(e =>
+      e.status !== 'rejected' && e.status !== 'cancelled' && e.date_from <= today && e.date_to >= today
+    );
+    const absentIds = new Set(absentToday.map(e => String(e.user_id)));
+
+    const assignedIds = new Set();
+    objects.forEach(o => (o.assigned_users || []).forEach(u => assignedIds.add(String(u.user_id))));
+
+    const withoutObject = workers.filter(w => !assignedIds.has(String(w.user_id)) && !absentIds.has(String(w.user_id)));
+    const activeObjects = objects.filter(o => (o.assigned_users || []).length > 0);
+
+    slot.innerHTML = `
+      <div class="wo-section">
+        <div class="wo-section-title">Без объекта${withoutObject.length ? ` (${withoutObject.length})` : ''}</div>
+        ${withoutObject.length ? withoutObject.map(w => `
+          <div class="wo-worker-row" data-uid="${esc(w.user_id)}">
+            <span class="wo-worker-name">${esc(w.name)}</span>
+            <button class="submit-btn wo-assign-btn" data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}">Назначить</button>
+          </div>`).join('') : '<div class="wo-empty">Все назначены на объекты</div>'}
+      </div>
+
+      <div class="wo-section">
+        <div class="wo-section-title">Отсутствуют сегодня${absentToday.length ? ` (${absentToday.length})` : ''}</div>
+        ${absentToday.length ? absentToday.map(e => `
+          <div class="wo-worker-row">
+            <span class="wo-worker-name">${esc(e.name)}</span>
+            <span class="wo-absence-reason">${esc(e.reason || '')}</span>
+          </div>`).join('') : '<div class="wo-empty">Все на месте</div>'}
+      </div>
+
+      <div class="wo-section">
+        <div class="wo-section-title">По объектам</div>
+        ${activeObjects.length ? activeObjects.map(o => `
+          <div class="wo-object-block">
+            <div class="wo-object-name">${esc(o['Объект'] || '')}</div>
+            ${(o.assigned_users || []).map(u => `<div class="wo-worker-row wo-worker-row-nested"><span class="wo-worker-name">${esc(u.name)}</span></div>`).join('')}
+          </div>`).join('') : '<div class="wo-empty">Нет назначений</div>'}
+      </div>
+    `;
+
+    slot.querySelectorAll('.wo-assign-btn').forEach(btn => {
+      btn.addEventListener('click', () => _openWorkingObjectsAssignSheet(btn.dataset.uid, btn.dataset.name, objects));
+    });
+  } catch (e) {
+    slot.innerHTML = '<div style="padding:1rem;color:var(--text-light)">Ошибка загрузки</div>';
+  }
+}
+
+// Простой bottom-sheet выбора объекта для воркера без назначения —
+// bubble-assign.js требует объект+этап заранее известными, тут наоборот (воркер известен, объект — нет).
+function _openWorkingObjectsAssignSheet(userId, userName, objects) {
+  const activeObjects = objects.filter(o => o['Статус'] === 'В работе');
+  const existing = document.getElementById('wo-assign-sheet');
+  if (existing) existing.remove();
+
+  const sheet = document.createElement('div');
+  sheet.id = 'wo-assign-sheet';
+  sheet.className = 'wo-assign-sheet';
+  sheet.innerHTML = `
+    <div class="wo-assign-sheet-inner">
+      <div class="wo-assign-sheet-title">Назначить ${esc(userName)}</div>
+      ${activeObjects.length ? activeObjects.map(o => `
+        <div class="wo-assign-sheet-opt" data-oid="${esc(o['ID объекта'])}">${esc(o['Объект'] || '')}</div>
+      `).join('') : '<div class="wo-empty">Нет активных объектов</div>'}
+      <button class="submit-btn wo-assign-sheet-cancel" type="button">Отмена</button>
+    </div>
+  `;
+  document.body.appendChild(sheet);
+
+  sheet.querySelector('.wo-assign-sheet-cancel').addEventListener('click', () => sheet.remove());
+  sheet.querySelectorAll('.wo-assign-sheet-opt').forEach(opt => {
+    opt.addEventListener('click', async () => {
+      try {
+        await api(`/api/objects/${opt.dataset.oid}/assign`, {
+          method: 'POST',
+          body: JSON.stringify({ user_id: userId }),
+        });
+        hapticImpact('medium');
+        showToast('Назначено', 'success');
+        sheet.remove();
+        loadedViews.delete('working-objects');
+        initWorkingObjectsView();
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  });
 }
