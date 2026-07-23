@@ -1761,8 +1761,8 @@ body.view-locked {
 .quick-primary-item { display: flex; align-items: center; gap: 0.75rem; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.75rem 0.875rem; cursor: pointer; transition: background 0.15s; }
 .quick-primary-item:active { background: var(--bg-card-raised); }
 .quick-primary-icon-wrap { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.quick-primary-text { flex: 1; }
-.quick-primary-title { font-weight: 600; font-size: 1.14rem; color: var(--text-main); }
+.quick-primary-text { flex: 1; min-width: 0; }
+.quick-primary-title { font-weight: 600; font-size: 1.14rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quick-primary-sub { font-size: 0.94rem; color: var(--text-light-oncard); margin-top: 0.1rem; }
 .quick-primary-badge { background: var(--red); color: #fff; font-weight: 700; font-size: 0.94rem; min-width: 24px; height: 24px; border-radius: 12px; display: flex; align-items: center; justify-content: center; padding: 0 5px; flex-shrink: 0; }
 .home-quick-secondary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; padding: 0 0.75rem 0.75rem; }
@@ -1791,7 +1791,7 @@ body.view-locked {
 .wo-section-title { font-family: var(--font-heading); font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .wo-worker-row { display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.65rem 0.85rem; margin-bottom: 0.5rem; }
 .wo-worker-row-nested { margin-left: 0.5rem; background: var(--bg-card-raised); }
-.wo-worker-name { font-weight: 600; font-size: 0.95rem; color: var(--text-main); }
+.wo-worker-name { font-weight: 600; font-size: 0.95rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .wo-absence-reason { font-size: 0.82rem; color: var(--warning-text); }
 .wo-assign-btn { width: auto; padding: 0.4rem 0.9rem; font-size: 0.85rem; }
 .wo-empty { color: var(--text-light); font-size: 0.85rem; padding: 0.5rem 0; }
@@ -1830,7 +1830,7 @@ body.view-locked {
 .obj-people-more { background: var(--border-color); color: var(--text-light); margin-left: -8px; }
 .obj-people-add { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-app); display: flex; align-items: center; justify-content: center; font-size: 1rem; color: #000; cursor: pointer; margin-left: 4px; flex-shrink: 0; font-weight: 700; }
 .obj-card-body { padding: 0.65rem 0.75rem 0.5rem; }
-.obj-card-title { font-family: var(--font-heading); font-weight: 800; font-size: 1.1rem; color: var(--text-main); }
+.obj-card-title { font-family: var(--font-heading); font-weight: 800; font-size: 1.1rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .obj-card-address { font-size: 0.9rem; color: var(--text-light); margin-top: 0.15rem; display: flex; align-items: center; gap: 0.3rem; }
 .obj-address-link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
 .obj-address-pin { color: var(--red); flex-shrink: 0; }
