@@ -1,10 +1,9 @@
 // Потребности (10.33) — worker → owner список запросов (инструмент/материалы/защита).
-// Переключатель внутри экрана Дефекты (doc-type-opt[data-mangel-tab]). Второе направление
+// Собственный экран view-tasks (24.07: выделен из общего с Дефектами). Второе направление
 // (owner → worker "задачи") отложено — см. TODO в плане.
 
 const TASK_STATUS_LABEL = { 'открыто': 'Открыто', 'в работе': 'В работе', 'закрыто': 'Закрыто' };
 let _tasksList = [];
-let _mangelActiveTab = 'tasks';
 
 function renderTaskCard(task) {
   const isOwner = currentRole === 'owner';
@@ -103,25 +102,15 @@ async function submitTask() {
   }
 }
 
-function _selectMangelTab(tab) {
-  _mangelActiveTab = tab;
-  document.querySelectorAll('#view-mangel .doc-type-opt[data-mangel-tab]').forEach(o => o.classList.toggle('active', o.dataset.mangelTab === tab));
-  document.getElementById('mangel-tab-content').style.display = tab === 'defects' ? 'block' : 'none';
-  document.getElementById('tasks-tab-content').style.display = tab === 'tasks' ? 'block' : 'none';
-  document.getElementById('mangel-new-btn').style.display = currentRole === 'owner' && tab === 'tasks' ? 'none' : 'flex';
-  if (tab === 'tasks') loadTasks();
-}
-
 function initTasksView() {
-  document.querySelectorAll('#view-mangel .doc-type-opt[data-mangel-tab]').forEach(tab => {
-    tab.addEventListener('click', () => {
-      _selectMangelTab(tab.dataset.mangelTab);
-      hapticImpact('light');
-    });
-  });
+  document.getElementById('tasks-new-btn').style.display = currentRole === 'owner' ? 'none' : 'flex';
 
   if (currentRole !== 'owner') {
     _populateTasksObjectSelect();
+    document.getElementById('tasks-new-btn').addEventListener('click', () => {
+      document.getElementById('tasks-form').style.display = 'block';
+      hapticImpact('light');
+    });
     document.getElementById('tasks-cancel-btn').addEventListener('click', _closeTasksForm);
     document.getElementById('tasks-submit-btn').addEventListener('click', submitTask);
     attachVoiceInputButton(document.getElementById('tasks-voice-btn'), transcript => {
@@ -130,6 +119,5 @@ function initTasksView() {
     });
   }
 
-  _selectMangelTab(window._pendingMangelTab || 'tasks');
-  window._pendingMangelTab = null;
+  loadTasks();
 }

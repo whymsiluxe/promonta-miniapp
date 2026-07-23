@@ -315,14 +315,9 @@ function initMangelView() {
   loadMangelTickets();
   _populateMangelObjectSelect();
   _populateMangelWorkerSelect();
-  if (typeof initTasksView === 'function') initTasksView();
 
   document.getElementById('mangel-new-btn').addEventListener('click', () => {
-    if (typeof _mangelActiveTab !== 'undefined' && _mangelActiveTab === 'tasks') {
-      document.getElementById('tasks-form').style.display = 'block';
-    } else {
-      document.getElementById('mangel-form').style.display = 'block';
-    }
+    document.getElementById('mangel-form').style.display = 'block';
     hapticImpact('light');
   });
   document.getElementById('mangel-cancel-btn').addEventListener('click', _closeMangelForm);

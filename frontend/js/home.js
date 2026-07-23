@@ -23,7 +23,7 @@ async function initHomeView() {
     </div>
 
     <div id="home-kpi-bar-2" class="home-kpi-bar">
-      <div class="kpi-tile" id="kpi-tasks" onclick="window._pendingMangelTab='tasks'; switchView('mangel')">
+      <div class="kpi-tile" id="kpi-tasks" onclick="switchView('tasks')">
         <span class="kpi-num" id="kpi-tasks-count">—</span><span class="kpi-label">Потребности</span>
       </div>
       <div class="kpi-tile kpi-alert" id="kpi-alerts" onclick="openAlertsView()">
@@ -552,7 +552,7 @@ async function initWorkerHomeView(slot) {
       </div>
     </div>
 
-    <div class="worker-tile-wide" id="worker-tile-needs" onclick="window._pendingMangelTab='tasks'; switchView('mangel')">
+    <div class="worker-tile-wide" id="worker-tile-needs" onclick="switchView('tasks')">
       <div class="wt-icon wt-icon-tasks"><div class="wt-icon-sphere"></div><div class="wt-icon-check"></div></div>
       <div class="worker-tile-label">Потребности</div>
       <span class="worker-tile-wide-arrow">›</span>
