@@ -497,7 +497,9 @@ header h1 {
 .voice-input-btn.voice-input-recording { background: var(--red); animation: voice-pulse 1.2s ease-in-out infinite; }
 @keyframes voice-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 
-.mangel-modal { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; }
+/* 23.07: было z-index 300 — ниже #radio-fab (1200), значит открытая модалка тикета/подписи/
+   карточки юзера пряталась ПОД плавающим Techno-bubble. Отчёт (P0): modal всегда выше bubble. */
+.mangel-modal { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; }
 .mangel-modal-content { background: var(--bg-card); border-radius: var(--radius-lg) var(--radius-lg) 0 0; width: 100%; max-height: 80vh; overflow-y: auto; padding: 1rem; }
 .mangel-modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; font-weight: 700; }
 .mangel-modal-close { background: none; border: none; color: var(--text-light); font-size: 1.1rem; cursor: pointer; }
@@ -1156,7 +1158,8 @@ header h1 {
 .feed-photo-comment-count { display: flex; align-items: center; gap: 0.3rem; }
 
 .photo-comments-modal {
-  position: fixed; inset: 0; z-index: 500; display: flex; flex-direction: column;
+  /* 23.07: было z-index 500 — ниже #radio-fab (1200), та же bubble-over-modal проблема */
+  position: fixed; inset: 0; z-index: 5000; display: flex; flex-direction: column;
   background: var(--bg-app);
 }
 .photo-comments-modal .pc-header {
