@@ -1,8 +1,9 @@
 # Project state
 
-**Last updated**: 2026-07-23, ~13:15 Berlin time (this recovery session).
-**Branch**: `master` (repo just created — see note below on branch naming).
-**Working tree**: clean as of the last recovery commit; documentation commit pending.
+**Last updated**: 2026-07-23, ~17:20 Berlin time.
+**Branch**: `main` (GitHub default, renamed from initial `master` during the recovery session).
+**Repo**: https://github.com/whymsiluxe/promonta-miniapp — **private**.
+**Working tree**: clean, `main` up to date with `origin/main`.
 
 ## What this document is
 
@@ -10,7 +11,7 @@ The single place to check first after any session loss. If this contradicts some
 
 ## Stack
 
-Vanilla HTML/JS frontend (no build step) + FastAPI/Python backend + flat JSON file storage (no database). Full detail: [ARCHITECTURE.md](ARCHITECTURE.md).
+Vanilla HTML/JS frontend (no build step) + FastAPI/Python backend + flat JSON file storage (no database) + Google Sheets for object/project data (via `objekte_lib.py`, shared with other Promonta agent scripts, not miniapp-specific). Full detail: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Environments
 
@@ -18,22 +19,31 @@ Production only, single VPS (Hetzner, `162.55.53.147`, `app.promonta.fun`). No s
 
 ## What's working
 
-Per [FEATURES.md](FEATURES.md): the app is live and in active daily use by the owner and at least one worker (confirmed by session history — check-ins, chat, absence requests, defect tickets all have real usage data on the VPS as of today). Most individual feature rows are marked **UNVERIFIED** in FEATURES.md — not because they're suspected broken, but because this recovery's priority was securing the codebase and documenting it accurately, not re-testing every flow. The app was mid-active-development (visual redesign) when the session that prompted this recovery was lost.
+App is live, in active daily use. As of this update:
+- Full doc-recovery completed (2026-07-23 morning): repo unified, secrets audited clean, documentation rebuilt from actual code.
+- UI batch 1+2 shipped and deployed to production (2026-07-23 afternoon): radio widget repositioned under safe-area, Home tile previews (last chat message, nearest calendar event), news share button, Objects search/filter/sort, Chat thread list previews + day-grouping, Profile split into 3 tabs (Мой профиль/Команда/Настройки).
+- **Old Money visual theme** shipped and deployed (2026-07-23 evening): replaces the previous beige/purple light theme with a deep-forest-green + gold restrained-luxury palette (`--bg-app: #0A0A0A`, `--accent: #0F3D2B`, `--accent-gold: #D4AF37`). Dark theme (`[data-theme=dark]`, green-neon) untouched. See [UI_UX.md](UI_UX.md) and [DECISIONS.md](DECISIONS.md).
+- Google Sheets OAuth token incident (see below) resolved same day.
+
+Most individual `FEATURES.md` rows are still marked **UNVERIFIED** — not suspected broken, just not re-traced end-to-end since the original recovery pass. See [TODO.md](TODO.md) REC-8.
+
+## Incident log
+
+**2026-07-23, ~17:00**: Objects screen stopped loading in production ("объекты не подгружаются"). Root cause: the Google OAuth refresh token used by `objekte_lib.py` to read the Objekte spreadsheet was revoked/expired (`invalid_grant` from Google, unrelated to the day's frontend deploys — confirmed by testing the token refresh directly and checking the OAuth consent screen's publish status, which was already "In production"). Fixed via manual browser re-authorization (owner) + token exchange over SSH; backend restarted. Full diagnostic/fix steps recorded in [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for next time. Old token backed up as `.gdrive_token.json.bak-<timestamp>` on the VPS (not in this repo — it's runtime credentials, gitignored).
 
 ## What's partially done / mid-flight
 
-- A visual redesign (luxury splash screen, new icon system, warm color palette) was in progress as of 2026-07-22 evening, directly on the production frontend files. Not confirmed complete or broken — see [UI_UX.md](UI_UX.md).
-- A chat-navigation feature was attempted and rolled back the same day (2026-07-22) after apparently causing an issue — details not fully preserved from the lost session, treat this area as recently unstable.
+Nothing currently mid-flight — last three work sessions (recovery, UI batch 1+2, Old Money theme) all reached clean merge-to-main + production deploy.
 
 ## What's broken / known bugs
 
-- Chat/AI tab scroll behavior — unresolved as of last note, 3 architecture attempts, landed on one not confirmed working by the user. See [UI_UX.md](UI_UX.md).
+- Chat/AI tab scroll behavior — unresolved as of last note (predates this recovery), 3 architecture attempts, landed on one not confirmed working by the user. See [UI_UX.md](UI_UX.md).
 
 ## What requires verification before trusting it
 
 - Whether `angebot-tab.html` / `projects-tab.html` / `tools-tab.html` are live or dead frontend code.
 - Whether FastAPI's `/docs` Swagger UI is publicly reachable (a real exposure if so — not yet checked).
-- Most of the 93 backend routes' permission scoping beyond the ones spot-checked in this recovery (GPS check-in filtering, chat message deletion, tool checkout, critical alert ack/resolve — all confirmed correct).
+- Most of the 93 backend routes' permission scoping beyond the ones spot-checked in the recovery pass (GPS check-in filtering, chat message deletion, tool checkout, critical alert ack/resolve — all confirmed correct).
 
 ## Security risks (flagged, not silently patched)
 
@@ -43,24 +53,16 @@ Per [FEATURES.md](FEATURES.md): the app is live and in active daily use by the o
 
 ## Technical debt
 
-- No local dev environment, no automated tests, no CI/CD — the direct-edit-on-production workflow (with `.bak-pre-*` manual backups) is the root cause of the original lost-session/doc-drift problem this recovery addresses. See [TODO.md](TODO.md) P0.
-- Frontend and backend lived in two different directories with two different (or no) git histories until today.
+- No local dev environment, no automated tests, no CI/CD. See [TODO.md](TODO.md) P0/P1.
+- Frontend deploy is still manual (`scp` + backup + restart), no automated pipeline from `git push` to production — see [DEPLOYMENT.md](DEPLOYMENT.md) and [TODO.md](TODO.md) REC-1.
 
-## This session's work (2026-07-23 recovery)
+## Decisions made this session (owner, 2026-07-23)
 
-1. Located the actual production code on the VPS (the Mac-local copy was stale, dated 8-12 July vs. VPS code through 22-23 July — using the stale copy would have lost three weeks of work).
-2. Built a combined repo `/home/promonta/agent/miniapp-repo/` (`backend/` + `frontend/`, the latter with its prior 14-commit git history preserved via `git subtree`).
-3. Verified no secrets are hardcoded in any file being committed (grepped for token/key/secret patterns — zero matches; all secrets confirmed to load from `os.environ`).
-4. Wrote `.gitignore` excluding all runtime data (personal/employee data, photos, generated PDFs, `.venv`).
-5. Wrote full documentation set (this file plus README, ARCHITECTURE, FEATURES, API, ROLES_AND_PERMISSIONS, DATABASE, DEPLOYMENT, ENVIRONMENT, SECURITY, TROUBLESHOOTING, TESTING, UI_UX, DECISIONS, CHANGELOG, TODO, RELEASE_PROCESS) based on actually reading the code, not assumption.
-6. Corrected one piece of stale institutional memory in the process: unknown Telegram user IDs get a hard 403 now, not a silent `worker` default (a whitelist hardening happened since the note that said otherwise was written).
-7. Flagged (not fixed) one permission gap and several UNVERIFIED areas for follow-up — see TODO.md.
-8. (Separately, unrelated to the app itself) found and killed ~400+ orphaned `chroma-mcp` processes on the Mac that had filled the local disk to the point where no shell command could run — a claude-mem plugin leak, not a miniapp issue, but it blocked work mid-session and is worth someone checking why `uvx` isn't reaping prior instances.
+- Old Money theme replaces light mode entirely (dark-neon theme untouched).
+- Skipped: `tg.CloudStorage` for theme/reactions (async flash-of-wrong-state risk not worth it for device-local prefs), tools overdue-notification + photo-at-checkout (needs backend migration, owner doesn't want it now), chat location-attachment (redundant — check-in GPS already establishes on-site presence), QR scanner (deferred to a possible future native iOS app, not needed for the Telegram Mini App).
+- Confirmed keeping "Размеры одежды" (clothing sizes) in Profile → Настройки — an earlier AI-generated prompt suggested removing it, owner said no.
+- Considering a native iOS app eventually — backend/API would carry over close to as-is (it's already a plain REST API, only `initData` auth is Telegram-specific), but all frontend code would be rewritten from scratch (no shared code between vanilla-JS-Telegram-WebView and native iOS). QR scanner logged as the first candidate feature for that future app.
 
 ## Next recommended step
 
-Push this repo to a private GitHub repository (pending `gh auth` check) — see [SESSION_HANDOFF.md](SESSION_HANDOFF.md) for exact next commands.
-
-## A note on branch naming
-
-This repo was built directly with `master` as the default branch name (git's current default), not `main`. Other docs in this set refer to `main` as the stable branch per the original task brief's convention — rename the branch to `main` before or during the GitHub push if consistency matters, or update the docs to say `master` throughout. Not yet reconciled in this pass.
+Continue Batch 3 UI items if desired (all need a specific library/architecture decision first — charting for budget donut/sparklines, Kanban board pattern for tasks, drag-and-drop calendar) — see [TODO.md](TODO.md). Otherwise, no urgent open item; the app is in a stable, documented, version-controlled state for the first time.

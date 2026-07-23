@@ -1,5 +1,25 @@
 # Troubleshooting
 
+## Objects screen won't load ("объекты не подгружаются")
+
+**Root cause seen 2026-07-23**: `/api/objects` reads from a Google Sheet via `objekte_lib.py`'s OAuth flow (`.gdrive_creds.json` + `.gdrive_token.json` on the VPS, outside this repo). The refresh token can be revoked/expire independently of anything in this codebase — this is an **infrastructure/credentials issue, not a frontend or backend code bug**, even though the symptom looks like a UI problem.
+
+Diagnose:
+```bash
+ssh -i ~/.ssh/promonta_hetzner root@162.55.53.147 "journalctl -u promonta-miniapp -n 50 --no-pager | grep -A5 'objekte_lib\|invalid_grant'"
+```
+If you see `urllib.error.HTTPError: HTTP Error 400` around `_token()` / `get_used_range` in `objekte_lib.py`, and the response body says `"error": "invalid_grant", "error_description": "Token has been expired or revoked."` — the Google OAuth refresh token is dead and needs re-authorization (not related to the app being in "Testing" vs "Production" publish status on Google Cloud Console — a token already issued stays dead regardless of publish status; publish status only affects the lifetime of *future* tokens).
+
+Fix (manual, one-time browser step — cannot be done headlessly):
+1. Get `client_id` from `/home/promonta/agent/.gdrive_creds.json` (`web.client_id`) and confirm `redirect_uris` (was `http://localhost` as of 2026-07-23 — an installed-app-style flow, not a real web redirect).
+2. Build the authorization URL: `https://accounts.google.com/o/oauth2/v2/auth?client_id=<ID>&redirect_uri=http://localhost&response_type=code&scope=https://www.googleapis.com/auth/drive.file&access_type=offline&prompt=consent` (scope must match what's in the existing `.gdrive_token.json`'s `scope` field — was `drive.file` as of 2026-07-23).
+3. Owner opens that URL in a browser, signs in with the Google account that owns the Objekte spreadsheet, approves — browser will try to load `http://localhost/?code=...&scope=...` and fail to connect (expected, nothing listens there) — the `code=` value is in the address bar.
+4. Exchange the code for a new token server-side (do NOT put client_secret in any client-visible place): POST to `https://oauth2.googleapis.com/token` with `client_id`, `client_secret` (from the same creds file), `code`, `redirect_uri=http://localhost`, `grant_type=authorization_code`.
+5. Backup the old `.gdrive_token.json`, write the new token response in its place, `systemctl restart promonta-miniapp`.
+6. Verify: refresh-token-flow test (POST to the token endpoint with `grant_type=refresh_token` using the new refresh_token) should return 200, and `journalctl` after a fresh `/api/objects` call should show no `invalid_grant`.
+
+This same credentials file/token is likely shared by other Promonta agent scripts beyond the miniapp (per `server-structure.md`, Google Sheets is used project-wide) — a dead token here may also be breaking other automations, worth checking if this recurs.
+
 ## App won't open / white screen in Telegram
 
 1. Check the backend is up: `ssh` to VPS, `systemctl status promonta-miniapp`. If dead, `journalctl -u promonta-miniapp -n 100` for the crash reason — most common cause is `BOT_TOKEN` (or another required env var) missing from `/etc/claude-agent.env` after an edit.
