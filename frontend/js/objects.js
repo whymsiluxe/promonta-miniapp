@@ -366,21 +366,99 @@ async function submitNewObject() {
   }
 }
 
+let _allObjects = [];
+
 async function loadObjects() {
   const container = document.getElementById('objects-cards');
 
   try {
     const data = await api('/api/objects');
-    if (!data.objects || data.objects.length === 0) {
+    _allObjects = data.objects || [];
+    if (_allObjects.length === 0) {
       container.innerHTML = '<div style="padding:2rem 1rem;color:var(--text-light)">Объектов пока нет.</div>';
       return;
     }
-    const ordered = applyObjectsOrder(data.objects);
-    container.innerHTML = ordered.map(renderObjectCard).join('');
-    attachObjectsHandlers();
+    _populateObjCityFilter(_allObjects);
+    _renderFilteredObjects();
   } catch (e) {
     container.innerHTML = `<div style="padding:2rem 1rem;color:var(--red)">Ошибка загрузки: ${esc(e.message)}</div>`;
   }
+}
+
+function _objCity(obj) {
+  const addr = obj['Адрес'] || '';
+  const lastPart = addr.split(',').pop().trim();
+  return lastPart.split(/\s+/).filter(w => !/^\d+$/.test(w)).join(' ') || '';
+}
+
+function _populateObjCityFilter(objects) {
+  const sel = document.getElementById('obj-filter-city');
+  if (!sel || sel.dataset.populated) return;
+  const cities = [...new Set(objects.map(_objCity).filter(Boolean))].sort();
+  cities.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c; opt.textContent = c;
+    sel.appendChild(opt);
+  });
+  sel.dataset.populated = '1';
+  // budget sort options are financial data, hide for worker
+  if (currentRole !== 'owner') {
+    document.querySelectorAll('#obj-sort option[value^="budget-"]').forEach(o => o.remove());
+  }
+}
+
+function _renderFilteredObjects() {
+  const container = document.getElementById('objects-cards');
+  const q = (document.getElementById('obj-search')?.value || '').trim().toLowerCase();
+  const cityFilter = document.getElementById('obj-filter-city')?.value || '';
+  const statusFilter = document.getElementById('obj-filter-status')?.value || '';
+  const sortMode = document.getElementById('obj-sort')?.value || 'order';
+
+  let list = _allObjects.filter(obj => {
+    if (q) {
+      const hay = ((obj['Объект'] || '') + ' ' + (obj['Адрес'] || '')).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (cityFilter && _objCity(obj) !== cityFilter) return false;
+    if (statusFilter && (obj['Статус'] || '') !== statusFilter) return false;
+    return true;
+  });
+
+  if (sortMode === 'order') {
+    list = applyObjectsOrder(list);
+  } else {
+    const pct = o => parseFloat(o['потрачено в % от бюджета']) || 0;
+    const cmp = {
+      'progress-desc': (a, b) => pct(b) - pct(a),
+      'progress-asc': (a, b) => pct(a) - pct(b),
+      'budget-desc': (a, b) => pct(b) - pct(a),
+      'budget-asc': (a, b) => pct(a) - pct(b),
+      'name-asc': (a, b) => (a['Объект'] || '').localeCompare(b['Объект'] || '', 'ru'),
+    }[sortMode];
+    if (cmp) list = [...list].sort(cmp);
+  }
+
+  if (list.length === 0) {
+    container.innerHTML = '<div style="padding:2rem 1rem;color:var(--text-light)">Ничего не найдено.</div>';
+    return;
+  }
+  container.innerHTML = list.map(renderObjectCard).join('');
+  attachObjectsHandlers();
+}
+
+function _debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+function initObjectsToolbar() {
+  const search = document.getElementById('obj-search');
+  const debouncedRender = _debounce(_renderFilteredObjects, 300);
+  if (search) search.addEventListener('input', debouncedRender);
+  ['obj-filter-city', 'obj-filter-status', 'obj-sort'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', _renderFilteredObjects);
+  });
 }
 
 const STAGE_STATUS_LABEL = { 'предстоит': 'Предстоит', 'в процессе': 'В процессе', 'готово': 'Готово' };
@@ -505,5 +583,6 @@ function initObjectsView() {
   document.getElementById('new-obj-submit').addEventListener('click', submitNewObject);
   document.getElementById('stages-back').addEventListener('click', closeStagesView);
   document.getElementById('add-stage-btn').addEventListener('click', addNewStage);
+  initObjectsToolbar();
   loadObjects();
 }

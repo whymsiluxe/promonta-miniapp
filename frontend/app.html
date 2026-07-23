@@ -1824,6 +1824,12 @@ body.view-locked {
 .home-ring-sub .home-ring-pct { position: absolute; font-size: 0.75rem; font-weight: 700; }
 .home-ring-budget-chip { font-size: 0.62rem; font-weight: 600; opacity: 0.85; }
 
+/* ═══════════ Objects toolbar: search + filters + sort (23.07) ═══════════ */
+.obj-toolbar { padding: 0 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.obj-search-input { width: 100%; box-sizing: border-box; padding: 0.6rem 0.9rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9rem; font-family: var(--font-body); }
+.obj-filter-row { display: flex; gap: 0.5rem; overflow-x: auto; }
+.obj-filter-select { flex: 0 0 auto; padding: 0.45rem 0.6rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.8rem; font-family: var(--font-body); }
+
 /* ═══════════ OBJECT CARD V2 — Obertauern (Фаза 2e) ═══════════ */
 .obj-card-v2 { padding: 0; overflow: hidden; }
 .obj-card-hero { position: relative; height: 120px; display: flex; align-items: flex-end; }
@@ -2618,6 +2624,26 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
       <h1>Объекты</h1>
       <button class="fab" id="add-object" style="display:none">+</button>
     </header>
+    <div class="obj-toolbar">
+      <input type="search" id="obj-search" class="obj-search-input" placeholder="Поиск по названию или адресу…">
+      <div class="obj-filter-row">
+        <select id="obj-filter-city" class="obj-filter-select"><option value="">Все города</option></select>
+        <select id="obj-filter-status" class="obj-filter-select">
+          <option value="">Все статусы</option>
+          <option value="В работе">В работе</option>
+          <option value="Пауза">Пауза</option>
+          <option value="Завершён">Завершён</option>
+        </select>
+        <select id="obj-sort" class="obj-filter-select">
+          <option value="order">Мой порядок</option>
+          <option value="progress-desc">Прогресс ↓</option>
+          <option value="progress-asc">Прогресс ↑</option>
+          <option value="budget-desc">Бюджет ↓</option>
+          <option value="budget-asc">Бюджет ↑</option>
+          <option value="name-asc">Название A→Я</option>
+        </select>
+      </div>
+    </div>
     <div class="cards" id="objects-cards">
       <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка...</div>
     </div>
