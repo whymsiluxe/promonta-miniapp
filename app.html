@@ -1800,6 +1800,13 @@ body.view-locked {
    в home.js/objects.js/tools.js/profile.js). Новый класс, старые места не трогаем (риск
    визуальной регрессии без live-проверки), новые ошибки используют этот. */
 .js-error-state { padding: 1rem; color: var(--warning-text); text-align: center; font-size: 0.85rem; }
+
+/* 23.07: skeleton-заготовка (отчёт: 11 мест голого текста "Загрузка..." вместо skeleton).
+   Компонент готов, но НЕ применён везде разом — 11 разных по форме мест, замена без
+   визуальной проверки на устройстве рискованна. Использовать точечно там где проверено. */
+.js-skeleton-line { height: 14px; border-radius: 4px; background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card-raised) 50%, var(--bg-card) 75%); background-size: 200% 100%; animation: js-skeleton-shimmer 1.4s ease-in-out infinite; margin-bottom: 0.5rem; }
+.js-skeleton-line:last-child { width: 60%; }
+@keyframes js-skeleton-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 .wo-object-block { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.75rem; margin-bottom: 0.6rem; }
 .wo-object-name { font-family: var(--font-heading); font-weight: 700; margin-bottom: 0.4rem; color: var(--text-main); }
 
