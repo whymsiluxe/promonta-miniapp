@@ -1,0 +1,150 @@
+/* ═══════════ Design tokens — "Old Money" (24.07, Phase 0) ═══════════
+   Плавный переход: :root теперь настоящий light (ivory/cream), не near-black.
+   [data-theme="dark"] — реальный тёмный вариант той же палитры (не отдельная
+   неоново-зелёная тема). Оба живут здесь; старый inline <style> в app.html
+   постепенно мигрирует на var(--c-*), но пока не трогаем построчно —
+   compat-алиасы ниже (--bg-app и т.д.) держат старые правила рабочими. */
+
+:root {
+  /* Поверхности — тёплый ivory/cream, не белый и не бежево-фиолетовый */
+  --c-bg: #FBF8F2;
+  --c-surface: #F3EEE5;
+  --c-surface-raised: #FFFFFF;
+  --c-menu: #F3EEE5;
+
+  /* Текст — никогда чистый чёрный */
+  --c-text: #211E17;
+  --c-text-muted: #6B6558;
+  --c-text-on-card: #6B6558;
+
+  /* Акценты — forest primary, brass secondary (используется точечно, не заливками) */
+  --c-accent: #1F513E;
+  --c-accent-hover: #163C2E;
+  --c-brass: #A9844F;
+  --c-warning: #A9844F;
+
+  --c-border: #E4DDCE;
+
+  /* Семантика */
+  --c-green: #2C6E52;
+  --c-yellow: #A9844F;
+  --c-red: #9A4B42;
+
+  /* Тени — мягкие, не neumorphism */
+  --c-shadow-raised: 0 1px 2px rgba(33,30,23,0.06), 0 8px 20px -6px rgba(33,30,23,0.12);
+  --c-shadow-control: 0 1px 3px rgba(33,30,23,0.08), 0 2px 6px rgba(33,30,23,0.10);
+  --c-shadow-pressed: inset 0 1px 3px rgba(33,30,23,0.15);
+
+  /* icon-плашки */
+  --c-icon-bg-1: #F3EEE5;
+  --c-icon-bg-2: #E4DDCE;
+  --c-icon-bg-3: #1F513E;
+  --c-icon-bg-4: #FFFFFF;
+  --c-icon-bg-5: #E4DDCE;
+
+  /* Compat: старые имена переменных, которые весь остальной CSS в app.html
+     уже использует, — указывают на новые токены. Один блок, не переписываем
+     3500 строк построчно. */
+  --bg-app: var(--c-bg);
+  --bg-card: var(--c-surface);
+  --bg-card-raised: var(--c-surface-raised);
+  --bg-menu: var(--c-menu);
+  --taupe: var(--c-surface);
+  --primary-dark: var(--c-text);
+  --accent: var(--c-accent);
+  --accent-hover: var(--c-accent-hover);
+  --accent-gold: var(--c-brass);
+  --warning: var(--c-warning);
+  --text-main: var(--c-text);
+  --text-light: var(--c-text-muted);
+  --text-light-oncard: var(--c-text-on-card);
+  --warning-text: var(--c-warning);
+  --border-color: var(--c-border);
+  --steel-blue: #56768C;
+  --shadow-sm: var(--c-shadow-control);
+  --shadow-md: var(--c-shadow-raised);
+  --green: var(--c-green);
+  --yellow: var(--c-yellow);
+  --red: var(--c-red);
+  --icon-bg-1: var(--c-icon-bg-1);
+  --icon-bg-2: var(--c-icon-bg-2);
+  --icon-bg-3: var(--c-icon-bg-3);
+  --icon-bg-4: var(--c-icon-bg-4);
+  --icon-bg-5: var(--c-icon-bg-5);
+  --primary: var(--accent);
+  --bg-white: var(--bg-card);
+  --bg-light: var(--bg-app);
+  --secondary: var(--text-light);
+
+  --font-heading: 'Outfit', sans-serif;
+  --font-body: 'Montserrat', sans-serif;
+  --spacing-xs: 0.5rem;
+  --spacing-sm: 1rem;
+  --spacing-md: 2rem;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+}
+
+[data-theme="dark"] {
+  /* Тот же Old Money язык, тёмный вариант — не отдельная неоново-зелёная тема */
+  --c-bg: #14140F;
+  --c-surface: #1E1D17;
+  --c-surface-raised: #26251D;
+  --c-menu: #1E1D17;
+
+  --c-text: #F2F0E8;
+  --c-text-muted: #B0AA98;
+  --c-text-on-card: #B0AA98;
+
+  --c-accent: #3E8064;
+  --c-accent-hover: #4C9575;
+  --c-brass: #C6A567;
+  --c-warning: #C6A567;
+
+  --c-border: #33321F;
+
+  --c-green: #3E8064;
+  --c-yellow: #C6A567;
+  --c-red: #B0645A;
+
+  --c-shadow-raised: 0 1px 2px rgba(0,0,0,0.35), 0 8px 20px -6px rgba(0,0,0,0.5);
+  --c-shadow-control: 0 1px 3px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.4);
+  --c-shadow-pressed: inset 0 1px 3px rgba(0,0,0,0.4);
+
+  --c-icon-bg-1: #1E1D17;
+  --c-icon-bg-2: #33321F;
+  --c-icon-bg-3: #3E8064;
+  --c-icon-bg-4: #26251D;
+  --c-icon-bg-5: #33321F;
+
+  --bg-app: var(--c-bg);
+  --bg-card: var(--c-surface);
+  --bg-card-raised: var(--c-surface-raised);
+  --bg-menu: var(--c-menu);
+  --taupe: var(--c-surface);
+  --primary-dark: var(--c-text);
+  --accent: var(--c-accent);
+  --accent-hover: var(--c-accent-hover);
+  --accent-gold: var(--c-brass);
+  --warning: var(--c-warning);
+  --text-main: var(--c-text);
+  --text-light: var(--c-text-muted);
+  --text-light-oncard: var(--c-text-on-card);
+  --warning-text: var(--c-warning);
+  --border-color: var(--c-border);
+  --shadow-sm: var(--c-shadow-control);
+  --shadow-md: var(--c-shadow-raised);
+  --green: var(--c-green);
+  --yellow: var(--c-yellow);
+  --red: var(--c-red);
+  --icon-bg-1: var(--c-icon-bg-1);
+  --icon-bg-2: var(--c-icon-bg-2);
+  --icon-bg-3: var(--c-icon-bg-3);
+  --icon-bg-4: var(--c-icon-bg-4);
+  --icon-bg-5: var(--c-icon-bg-5);
+  --primary: var(--accent);
+  --bg-white: var(--bg-card);
+  --bg-light: var(--bg-app);
+  --secondary: var(--text-light);
+}
