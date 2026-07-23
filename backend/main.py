@@ -639,6 +639,38 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
     return {"objects": objects}
 
 
+@app.get("/api/my-assignments")
+def my_assignments(user: dict = Depends(get_current_user)):
+    """Список назначений текущего воркера — объект/этап/период, для экрана
+    "Мои задачи" (24.07: раньше верхняя dashboard-плитка "Задачи" ошибочно
+    вела на общий список Объекты, юзер запросил отдельный экран)."""
+    assignments = _load_assignments()
+    uid = str(user['id'])
+    rows = _cached_get_used_range('Объекты')
+    names = {}
+    if rows:
+        header, data = rows[0], rows[1:]
+        for r in data:
+            obj = dict(zip(header, r))
+            names[str(obj.get('ID объекта', ''))] = obj.get('Название', '') or obj.get('Адрес', '')
+
+    result = []
+    for oid, lst in assignments.items():
+        for a in lst:
+            if a.get('user_id') != uid:
+                continue
+            result.append({
+                "object_id": oid,
+                "object_name": names.get(oid, oid),
+                "stage_id": a.get('stage_id', ''),
+                "date_from": a.get('date_from', ''),
+                "date_to": a.get('date_to', ''),
+                "assigned_at": a.get('assigned_at', ''),
+            })
+    result.sort(key=lambda r: r['date_from'] or '', reverse=True)
+    return {"assignments": result}
+
+
 class AssignBody(BaseModel):
     user_id: str
     stage_id: str = ''

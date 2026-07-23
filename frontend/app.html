@@ -2817,6 +2817,15 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
   </div>
 </div>
 
+<!-- ═══════════ МОИ ЗАДАЧИ (24.07) — назначения воркера, отдельно от общего списка Объекты ═══════════ -->
+<div class="view" id="view-my-tasks">
+  <header>
+    <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
+    <h1>Мои задачи</h1>
+  </header>
+  <div id="my-tasks-list" style="padding:0.75rem;"></div>
+</div>
+
 <!-- ═══════════ MÄNGEL + ПОТРЕБНОСТИ (Фаза 3 + 10.33) ═══════════ -->
 <div class="view" id="view-tasks">
   <header>
@@ -3144,6 +3153,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <script src="js/bubble-assign.js"></script>
 <script src="js/mangel.js"></script>
 <script src="js/tasks.js"></script>
+<script src="js/my-tasks.js"></script>
 <script src="js/checkin.js"></script>
 <script src="js/worker-checkin-fab.js"></script>
 <script src="js/critical-alerts.js"></script>
@@ -3240,6 +3250,7 @@ function switchView(viewName) {
     if (viewName === 'objects') initObjectsView();
     if (viewName === 'mangel') initMangelView();
     if (viewName === 'tasks') initTasksView();
+    if (viewName === 'my-tasks') initMyTasksView();
     if (viewName === 'tools') initToolsView();
     if (viewName === 'documents') initDocumentsView();
     if (viewName === 'feed') initFeedView();

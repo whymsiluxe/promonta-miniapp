@@ -535,7 +535,7 @@ async function initWorkerHomeView(slot) {
         <div class="wt-icon wt-icon-messages"><div class="wt-icon-sphere"></div><div class="wt-icon-tail"></div></div>
         <div class="worker-tile-label">Сообщения</div>
       </div>
-      <div class="worker-tile" id="worker-tile-tasks" onclick="switchView('objects')">
+      <div class="worker-tile" id="worker-tile-tasks" onclick="switchView('my-tasks')">
         <span class="worker-tile-badge" id="worker-tile-tasks-badge" style="display:none">0</span>
         <div class="wt-icon wt-icon-tasks"><div class="wt-icon-sphere"></div><div class="wt-icon-check"></div></div>
         <div class="worker-tile-label">Задачи</div>
