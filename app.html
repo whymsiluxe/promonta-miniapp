@@ -481,7 +481,9 @@ header h1 {
 .mangel-drop-zone-active { background: color-mix(in srgb, var(--accent) 15%, var(--bg-card)); outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: var(--radius-sm); }
 
 .mangel-form { padding: 0.75rem; background: var(--bg-card); margin: 0 0.75rem 0.75rem; border-radius: var(--radius-lg); }
-.mangel-select, .mangel-textarea { width: 100%; padding: 0.6rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-app); color: var(--text-main); margin-bottom: 0.6rem; font-family: var(--font-body); }
+/* 23.07: было background var(--bg-app) — тот стал тёмным (body-фон), color var(--text-main) почти-чёрный
+   поверх него был бы нечитаем. bg-card (светлая карточка) сохраняет исходный контраст. */
+.mangel-select, .mangel-textarea { width: 100%; padding: 0.6rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); margin-bottom: 0.6rem; font-family: var(--font-body); }
 
 #tasks-form .mangel-select, #tasks-form .mangel-textarea { font-size: 1.2rem; }
 #tasks-form .mangel-select::placeholder, #tasks-form .mangel-textarea::placeholder { font-size: 1.2rem; }
@@ -521,7 +523,7 @@ header h1 {
 .checkin-btn { padding: 0.75rem; font-weight: 600; }
 /* 22.07: отдельный экран Check-in через FAB (не 6-й таб nav — 5 табов принятое IA-решение) */
 .checkin-status-modal { position: fixed; inset: 0; z-index: 1700; background: rgba(0,0,0,0.75); display: flex; align-items: flex-end; }
-.checkin-status-inner { width: 100%; background: var(--bg-app); border-radius: 20px 20px 0 0; padding: 1.5rem 1rem 2rem; position: relative; }
+.checkin-status-inner { width: 100%; background: var(--bg-card); border-radius: 20px 20px 0 0; padding: 1.5rem 1rem 2rem; position: relative; }
 .checkin-status-active { text-align: center; margin-bottom: 1.5rem; }
 .checkin-status-label { font-size: 0.9rem; color: var(--text-light); }
 .checkin-status-object { font-size: 1.3rem; font-weight: 700; margin-top: 0.3rem; }
@@ -1158,9 +1160,10 @@ header h1 {
 .feed-photo-comment-count { display: flex; align-items: center; gap: 0.3rem; }
 
 .photo-comments-modal {
-  /* 23.07: было z-index 500 — ниже #radio-fab (1200), та же bubble-over-modal проблема */
+  /* 23.07: было z-index 500 — ниже #radio-fab (1200), та же bubble-over-modal проблема.
+     Фон был bg-app(теперь тёмный) — pc-comment-text внутри цвета text-main(тёмный), сменил на bg-card. */
   position: fixed; inset: 0; z-index: 5000; display: flex; flex-direction: column;
-  background: var(--bg-app);
+  background: var(--bg-card);
 }
 .photo-comments-modal .pc-header {
   flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem;
@@ -1706,7 +1709,7 @@ body.view-locked {
 /* ═══════════ ONBOARDING OVERLAY — многостраничный slide-флоу (10.2 редизайн) ═══════════ */
 #onboarding-overlay {
   position: fixed; inset: 0; z-index: 9000;
-  background: var(--bg-app);
+  background: var(--bg-card); /* 23.07: onboarding-card не имеет своего фона, наследует этот — bg-app теперь тёмный, текст квиза был бы тёмный-на-тёмном */
   display: flex; align-items: stretch; justify-content: center;
   transition: opacity 0.35s ease;
 }
@@ -1856,7 +1859,7 @@ body.view-locked {
 
 /* ── Bubble-assign confirm popup (10.32) — вид работ + период после drop ── */
 #bubble-confirm-popup { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; padding: 1rem; }
-.bubble-confirm-inner { width: 100%; max-width: 360px; background: var(--bg-app); border-radius: var(--radius-lg); padding: 1.25rem; }
+.bubble-confirm-inner { width: 100%; max-width: 360px; background: var(--bg-card); border-radius: var(--radius-lg); padding: 1.25rem; }
 .bubble-confirm-title { font-weight: 700; font-size: 1.05rem; color: var(--text-main); margin-bottom: 0.9rem; }
 .bubble-confirm-label { display: block; font-size: 0.78rem; color: var(--text-light); margin-bottom: 0.3rem; margin-top: 0.7rem; }
 .bubble-confirm-select { width: 100%; box-sizing: border-box; padding: 0.6rem 0.7rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9rem; }
@@ -2522,7 +2525,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 
 /* ── Checkin photo preview modal — multi-photo + retake + удаление (Фаза 10.31) ── */
 #checkin-preview-modal { position: fixed; inset: 0; z-index: 1600; background: rgba(0,0,0,0.75); display: flex; align-items: flex-end; }
-.checkin-preview-inner { width: 100%; background: var(--bg-app); border-radius: 20px 20px 0 0; padding: 1rem; max-height: 80vh; display: flex; flex-direction: column; }
+.checkin-preview-inner { width: 100%; background: var(--bg-card); border-radius: 20px 20px 0 0; padding: 1rem; max-height: 80vh; display: flex; flex-direction: column; }
 .checkin-sync-status { display: none; font-size: 0.82rem; color: var(--text-light); text-align: center; padding: 0.5rem; margin-top: 0.5rem; border-radius: var(--radius-md); background: var(--bg-card-raised); }
 .checkin-sync-status.checkin-sync-error { color: var(--warning); }
 .checkin-preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem; }
