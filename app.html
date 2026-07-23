@@ -1795,6 +1795,11 @@ body.view-locked {
 .wo-absence-reason { font-size: 0.82rem; color: var(--warning-text); }
 .wo-assign-btn { width: auto; padding: 0.4rem 0.9rem; font-size: 0.85rem; }
 .wo-empty { color: var(--text-light); font-size: 0.85rem; padding: 0.5rem 0; }
+
+/* 23.07: единый error-state — было 8+ разных стилей одного смысла (text-light/red/без стиля
+   в home.js/objects.js/tools.js/profile.js). Новый класс, старые места не трогаем (риск
+   визуальной регрессии без live-проверки), новые ошибки используют этот. */
+.js-error-state { padding: 1rem; color: var(--warning-text); text-align: center; font-size: 0.85rem; }
 .wo-object-block { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.75rem; margin-bottom: 0.6rem; }
 .wo-object-name { font-family: var(--font-heading); font-weight: 700; margin-bottom: 0.4rem; color: var(--text-main); }
 
