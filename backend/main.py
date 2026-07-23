@@ -420,6 +420,47 @@ def _hours_from_session(s: dict) -> float:
     return 0.0
 
 
+def _write_zeiterfassung_row(session: dict, object_id: str, user_id: str):
+    """24.07: учёт времени в Google Sheets (лист Zeiterfassung) — раньше писался
+    только в checkin_meta.json на VPS, не был виден владельцу как таблица для
+    бухгалтерии/отчётности заказчику. Вызывается из checkin_finish и checkin_manual,
+    best-effort (не блокирует ответ пользователю при сбое записи в Sheets)."""
+    try:
+        import objekte_lib as o
+        profiles = _load_worker_profiles()
+        worker_name = profiles.get(str(user_id), {}).get('name', str(user_id))
+
+        rows = _cached_get_used_range('Объекты')
+        object_name = object_id
+        if rows:
+            header, data = rows[0], rows[1:]
+            for r in data:
+                obj = dict(zip(header, r))
+                if str(obj.get('ID объекта', '')) == str(object_id):
+                    object_name = obj.get('Объект', object_id)
+                    break
+
+        if session.get('manual_entry'):
+            start_time = session.get('start_time', '')
+            end_time = session.get('end_time', '')
+            date_str = session.get('date', '')
+        else:
+            start_time = datetime.fromtimestamp(session['start_at']).strftime('%H:%M') if session.get('start_at') else ''
+            end_time = datetime.fromtimestamp(session['finish_at']).strftime('%H:%M') if session.get('finish_at') else ''
+            date_str = datetime.fromtimestamp(session['start_at']).strftime('%Y-%m-%d') if session.get('start_at') else ''
+
+        hours = round(_hours_from_session(session), 2)
+        done_summary = session.get('done_summary') or session.get('description') or ''
+        extra_work = session.get('extra_work') or ''
+
+        o.append_row_safe('Zeiterfassung', [
+            object_name, worker_name, date_str, start_time, end_time,
+            str(session.get('pause_minutes') or 0), str(hours), done_summary, extra_work,
+        ])
+    except Exception as e:
+        print(f'WARNING: Zeiterfassung sheet write failed: {e}')
+
+
 @app.get("/api/profile/stats")
 def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     """Агрегированная статистика для экрана профиля (Фаза 8 + 21.07 period-pills).
@@ -2754,6 +2795,8 @@ async def checkin_finish(
         session['pause_minutes'] = max(0, int(pause_minutes or 0))
         _save_checkin_meta(items)
 
+    _write_zeiterfassung_row(session, object_id, session['user_id'])
+
     if next_day_needs.strip():
         # Owner получает пуш только если worker реально указал, что нужно на завтра —
         # не спамим при пустом опроснике.
@@ -2929,6 +2972,7 @@ def checkin_manual(body: ZeiterfassungBody, user: dict = Depends(get_current_use
         items = _load_checkin_meta()
         items.append(entry)
         _save_checkin_meta(items)
+    _write_zeiterfassung_row(entry, entry['object_id'], target_user_id)
     _idempotency_save(idempotency_key, entry)
     return entry
 
