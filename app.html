@@ -156,6 +156,11 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg-app);
+  transition: padding 0.2s ease;
 }
 
 header h1 {
@@ -163,7 +168,17 @@ header h1 {
   font-size: 1.5rem;
   font-weight: 700;
   color: var(--bg-card); /* 23.07: header лежит прямо на тёмном body-фоне — светлый текст вместо тёмного */
+  transition: font-size 0.2s ease;
 }
+
+/* 23.07: sticky header компактное состояние при скролле — .view.header-scrolled добавляет JS
+   когда пользователь проскроллил длинный список (Инструменты/Объекты/Документы) */
+.view.header-scrolled header {
+  padding-top: calc(0.4rem + var(--tg-safe-top, env(safe-area-inset-top, 0px)));
+  padding-bottom: 0.4rem;
+  box-shadow: 0 2px 8px rgba(27,23,18,0.15);
+}
+.view.header-scrolled header h1 { font-size: 1.15rem; }
 
 .fab {
   width: 44px;
@@ -1734,7 +1749,7 @@ body.view-locked {
 /* 23.07: единая perspective-сцена на весь дашборд (было 5 разрозненных на каждом блоке —
    давало скачущую геометрию и визуальный наезд карточек друг на друга) */
 #home-dashboard-slot { perspective: 1400px; perspective-origin: 50% -10%; }
-.home-kpi-bar { display: flex; gap: 0.6rem; padding: 0.75rem 0.75rem 0; }
+.home-kpi-bar { display: flex; gap: 0.6rem; padding: 0.75rem 0.75rem 0.35rem; }
 .kpi-tile { flex: 1; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.1rem; }
 .kpi-tile.kpi-alert { border: 1px solid var(--warning); cursor: pointer; }
 .kpi-num { font-family: var(--font-heading); font-weight: 700; font-size: 1.8rem; color: var(--text-main); }
@@ -1748,7 +1763,7 @@ body.view-locked {
 .quick-primary-sub { font-size: 0.94rem; color: var(--text-light-oncard); margin-top: 0.1rem; }
 .quick-primary-badge { background: var(--red); color: #fff; font-weight: 700; font-size: 0.94rem; min-width: 24px; height: 24px; border-radius: 12px; display: flex; align-items: center; justify-content: center; padding: 0 5px; flex-shrink: 0; }
 .home-quick-secondary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; padding: 0 0.75rem 0.75rem; }
-.home-messages-wide { margin: 0 0.75rem 0.6rem; }
+.home-messages-wide { margin: 0.35rem 0.75rem 0.6rem; }
 .home-stack-wide { display: flex; flex-direction: column; gap: 0.6rem; padding: 0 0.75rem; margin-bottom: 0.75rem; }
 .quick-sec-item { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.7rem 0.25rem; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; cursor: pointer; transition: background 0.15s; }
 .quick-sec-item:active { background: var(--bg-card-raised); }
@@ -3328,6 +3343,19 @@ async function initApp() {
     window.visualViewport.addEventListener('scroll', _applyViewportHeight);
   }
   window.addEventListener('resize', _applyViewportHeight);
+
+  // 23.07: sticky header компактное состояние — body-level scroll (обычные view scroll'ятся
+  // вместе с document, не имеют собственного overflow-контейнера, в отличие от chat/ai fullscreen)
+  let _headerScrollTicking = false;
+  window.addEventListener('scroll', () => {
+    if (_headerScrollTicking) return;
+    _headerScrollTicking = true;
+    requestAnimationFrame(() => {
+      const activeView = document.querySelector('.view.active');
+      if (activeView) activeView.classList.toggle('header-scrolled', window.scrollY > 24);
+      _headerScrollTicking = false;
+    });
+  }, { passive: true });
 
   startUnreadChatPolling();
 
