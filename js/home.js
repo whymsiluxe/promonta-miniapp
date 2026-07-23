@@ -501,6 +501,7 @@ function _renderAlerts(alerts) {
 
 async function initWorkerHomeView(slot) {
   slot.innerHTML = `
+    <div id="worker-shift-cta" class="worker-shift-cta" style="display:none"></div>
     <div class="worker-tile-grid">
       <div class="worker-tile" id="worker-tile-messages" onclick="switchView('chat')">
         <span class="worker-tile-badge" id="worker-tile-messages-badge" style="display:none">0</span>
@@ -547,7 +548,66 @@ async function initWorkerHomeView(slot) {
 
   _loadHomeWeather();
   _loadWorkerTileCounts();
+  _loadWorkerShiftCta();
   initFeedTabs();
+}
+
+// 23.07: Start/Pause/Finish смены жил только внутри конкретного объекта (отчёт: "worker должен
+// выполнять основную работу с одного экрана"). Не дублируем checkin.js-логику (завязана на
+// конкретные #checkin-start-btn/#checkin-finish-btn внутри object-view) — вместо этого показываем
+// статус смены на Home и одним тапом ведём в нужный объект, где реальная кнопка уже на месте.
+async function _loadWorkerShiftCta() {
+  const cta = document.getElementById('worker-shift-cta');
+  if (!cta) return;
+  try {
+    const [checkinData, objData] = await Promise.all([
+      api('/api/checkin'),
+      api('/api/objects'),
+    ]);
+    const openSession = (checkinData.sessions || []).find(s => s.finish_at === null || s.finish_at === undefined);
+    if (openSession) {
+      const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(openSession.object_id));
+      cta.style.display = 'flex';
+      cta.className = 'worker-shift-cta worker-shift-cta-active';
+      cta.innerHTML = `
+        <div class="worker-shift-cta-text">
+          <div class="worker-shift-cta-status">🟢 Смена идёт</div>
+          <div class="worker-shift-cta-object">${esc(obj ? obj['Объект'] : openSession.object_id)}</div>
+        </div>
+        <span class="worker-shift-cta-arrow">Завершить ›</span>
+      `;
+      cta.onclick = () => _openObjectForShift(openSession.object_id, obj ? obj['Объект'] : '');
+      return;
+    }
+
+    // нет активной смены — предложить начать на первом назначенном сегодня объекте
+    const myObjects = (objData.objects || []).filter(o =>
+      (o.assigned_users || []).some(u => String(u.user_id) === String(currentUserId)) && o['Статус'] === 'В работе'
+    );
+    if (myObjects.length) {
+      const obj = myObjects[0];
+      cta.style.display = 'flex';
+      cta.className = 'worker-shift-cta worker-shift-cta-idle';
+      cta.innerHTML = `
+        <div class="worker-shift-cta-text">
+          <div class="worker-shift-cta-status">⚪ Смена не начата</div>
+          <div class="worker-shift-cta-object">${esc(obj['Объект'])}</div>
+        </div>
+        <span class="worker-shift-cta-arrow">Начать ›</span>
+      `;
+      cta.onclick = () => _openObjectForShift(obj['ID объекта'], obj['Объект']);
+    }
+  } catch (e) {}
+}
+
+function _openObjectForShift(objectId, objectName) {
+  // openStagesView (objects.js) — экран с реальными Start/Pause/Finish-кнопками смены,
+  // не сама карточка объекта (та лишь разворачивает детали, не открывает check-in).
+  // Не завязано на DOM карточки — objects.js инициализирует список независимо.
+  switchView('objects');
+  setTimeout(() => {
+    if (typeof openStagesView === 'function') openStagesView(objectId, objectName || '');
+  }, 150);
 }
 
 function _openWorkerAlerts(presetFilter) {

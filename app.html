@@ -2059,6 +2059,18 @@ body.view-locked #radio-fab { display: none; } /* в чате/ИИ не меша
 .worker-tile-label { font-size: 1.14rem; font-weight: 800; color: var(--text-main); }
 .worker-tile-badge { position: absolute; top: 0.7rem; right: 0.7rem; min-width: 22px; height: 22px; border-radius: 999px; background: var(--red); color: #fff; font-size: 0.75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 0.4rem; }
 
+/* ── Worker Home — Start/Finish shift CTA (23.07, отчёт: основная работа с одного экрана) ── */
+.worker-shift-cta { align-items: center; justify-content: space-between; margin: 0.75rem 0.75rem 0; padding: 1rem 1.1rem; border-radius: var(--radius-lg); cursor: pointer; box-shadow: var(--shadow-md); }
+.worker-shift-cta-active { background: linear-gradient(155deg, var(--green) 0%, #3d8a5c 100%); }
+.worker-shift-cta-idle { background: linear-gradient(155deg, var(--bg-card-raised) 0%, var(--bg-card) 100%); border: 1px solid var(--border-color); }
+.worker-shift-cta-status { font-weight: 700; font-size: 0.95rem; }
+.worker-shift-cta-active .worker-shift-cta-status, .worker-shift-cta-active .worker-shift-cta-object { color: #fff; }
+.worker-shift-cta-idle .worker-shift-cta-status, .worker-shift-cta-idle .worker-shift-cta-object { color: var(--text-main); }
+.worker-shift-cta-object { font-size: 0.85rem; opacity: 0.9; margin-top: 0.15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.worker-shift-cta-arrow { font-weight: 700; font-size: 0.9rem; flex-shrink: 0; }
+.worker-shift-cta-active .worker-shift-cta-arrow { color: #fff; }
+.worker-shift-cta-idle .worker-shift-cta-arrow { color: var(--accent); }
+
 /* ── Check-in FAB — плавающий, отдельно от bottom-nav (21.07 IA), worker-only.
    Позиция низ-справа, не конфликтует с будущим Radio FAB (низ-слева, batch 13). ── */
 .nav-item-start {
