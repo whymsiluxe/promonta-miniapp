@@ -3,16 +3,19 @@
 let _homeLoaded = false;
 
 async function initHomeView() {
-  if (_homeLoaded) return;
-  _homeLoaded = true;
-
   const slot = document.getElementById('home-dashboard-slot');
   if (!slot) return;
 
   if (currentRole === 'worker') {
+    // 24.07: worker-дашборд лёгкий (иконки + 2 API-вызова) — перерисовываем на каждый
+    // заход, иначе статус смены/счётчики ("Смена не начата" после реального старта
+    // смены в объекте) остаются устаревшими до перезагрузки всего приложения.
     initWorkerHomeView(slot);
     return;
   }
+
+  if (_homeLoaded) return;
+  _homeLoaded = true;
 
   slot.innerHTML = `
     <div id="home-kpi-bar" class="home-kpi-bar">
