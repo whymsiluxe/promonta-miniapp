@@ -2037,18 +2037,19 @@ body.view-locked {
 .news-load-more { text-align: center; padding: 1rem 0; color: var(--text-light); font-size: 0.85rem; }
 
 /* ── Radio Record floating mini-player ── */
-/* ── Radio Record floating mini-player ── */
-/* 22.07: перенесено на левую сторону — правая теперь занята Check-in FAB (.nav-item-start),
-   batch 13 явно требовал развести углы, чтобы два floating-элемента не конкурировали за один. */
-#radio-fab { position: fixed; left: 0.9rem; bottom: 96px; z-index: 1200; display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
-.radio-fab-row { position: relative; display: flex; flex-direction: row; align-items: center; gap: 0.4rem; }
+/* 23.07: перенесено с низа (конкурировало с bottom-nav/check-in FAB) в правый верхний угол,
+   под safe-area-top / зону Dynamic Island — там нет других floating-элементов.
+   Кнопка увеличена (Фаза 10.27/10.33, 82px) осталась — удобство тапа в перчатках сохранено,
+   меню теперь раскрывается вниз-влево от кнопки, а не вверх (нет места сверху безопасной зоны). */
+#radio-fab { position: fixed; right: 0.9rem; top: calc(0.7rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))); z-index: 1200; display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; }
+.radio-fab-row { position: relative; display: flex; flex-direction: row-reverse; align-items: center; gap: 0.4rem; }
 .radio-fab-btn { width: 52px; height: 52px; border-radius: 50%; border: none; background: rgba(32,32,32,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 6px 20px rgba(0,0,0,0.45); font-size: 1.4rem; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .radio-fab-btn.playing { box-shadow: 0 0 0 2px var(--accent), 0 6px 24px rgba(93,214,44,0.35); animation: radio-pulse 2s ease-in-out infinite; }
 @keyframes radio-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
 .radio-fab-label { background: rgba(32,32,32,0.88); color: var(--accent); font-size: 0.72rem; font-weight: 700; padding: 0.3rem 0.6rem; border-radius: 999px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-.radio-fab-stop { position: absolute; top: -6px; left: -6px; width: 20px; height: 20px; border-radius: 50%; border: none; background: var(--red); color: #fff; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
-.radio-fab-menu { display: flex; flex-direction: column; gap: 0.3rem; background: rgba(32,32,32,0.92); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 0.4rem; box-shadow: var(--shadow-md); min-width: 140px; }
-.radio-fab-menu-item { background: transparent; border: none; color: var(--text-main); font-family: var(--font-body); font-size: 0.82rem; font-weight: 600; text-align: left; padding: 0.5rem 0.7rem; border-radius: var(--radius-md); cursor: pointer; }
+.radio-fab-stop { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: none; background: var(--red); color: #fff; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+.radio-fab-menu { display: flex; flex-direction: column; gap: 0.3rem; align-items: stretch; background: rgba(32,32,32,0.92); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 0.4rem; box-shadow: var(--shadow-md); min-width: 140px; }
+.radio-fab-menu-item { background: transparent; border: none; color: var(--text-main); font-family: var(--font-body); font-size: 0.82rem; font-weight: 600; text-align: right; padding: 0.5rem 0.7rem; border-radius: var(--radius-md); cursor: pointer; }
 .radio-fab-menu-item.playing { color: var(--accent); background: rgba(93,214,44,0.12); }
 body.view-locked #radio-fab { display: none; } /* в чате/ИИ не мешаем клавиатуре */
 
@@ -2457,13 +2458,13 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .chat-voice-transcript { font-size: 0.78rem; color: var(--text-light); font-style: italic; margin-top: 0.2rem; max-width: 240px; }
 .chat-extract-task-btn { display: block; margin-top: 0.3rem; background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: var(--radius-sm); padding: 0.25rem 0.6rem; font-size: 0.75rem; cursor: pointer; }
 
-/* ── Radio FAB — увеличено в 2 раза (Фаза 10.27) + ещё 20% (10.33) ── */
-#radio-fab { bottom: 120px; gap: 0.9rem; }
+/* ── Radio FAB — увеличено в 2 раза (Фаза 10.27) + ещё 20% (10.33), удобно тапать в перчатках ── */
+#radio-fab { gap: 0.9rem; }
 .radio-fab-btn { width: 82px; height: 82px; font-size: 2.18rem; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
 .radio-fab-menu { min-width: 220px; padding: 0.7rem; gap: 0.5rem; border-radius: 24px; }
 .radio-fab-menu-item { font-size: 1.15rem; padding: 0.85rem 1.1rem; }
 .radio-fab-label { font-size: 1.05rem; padding: 0.5rem 0.9rem; }
-.radio-fab-stop { width: 38px; height: 38px; font-size: 1.14rem; top: -8px; left: -8px; }
+.radio-fab-stop { width: 38px; height: 38px; font-size: 1.14rem; top: -8px; right: -8px; }
 
 /* ── Alerts list: clickable abwesenheit items → переход в календарь (Фаза 10.28) ── */
 .alert-item-clickable { cursor: pointer; }
