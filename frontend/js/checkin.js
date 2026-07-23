@@ -49,7 +49,10 @@ async function refreshCheckinButtons() {
   let session = null;
   try {
     const data = await api(`/api/checkin?object_id=${encodeURIComponent(objectId)}`);
-    const sessions = (data.sessions || []).filter(s => s.date === new Date().toISOString().slice(0, 10));
+    // 24.07: НЕ фильтровать по дате здесь — сервер (Europe/Berlin) и клиент (UTC через
+    // toISOString) расходятся в дате на границе полуночи CEST, что ложно скрывало только
+    // что открытую смену. "Открыта" определяется исключительно finish_at, не датой.
+    const sessions = data.sessions || [];
     const open = sessions.find(s => s.finish_at === null || s.finish_at === undefined);
     if (open) {
       session = { id: open.id, finished: false };

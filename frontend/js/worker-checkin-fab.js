@@ -78,10 +78,10 @@ async function _openCheckinStatusScreen() {
 async function _findActiveWorkerCheckinObjectId() {
   try {
     const data = await api('/api/checkin');
-    const today = new Date().toISOString().slice(0, 10);
-    const open = (data.sessions || []).find(s =>
-      s.date === today && (s.finish_at === null || s.finish_at === undefined)
-    );
+    // 24.07: не фильтровать по дате — сервер (Europe/Berlin) и клиент (UTC) расходятся
+    // на границе полуночи CEST, ложно скрывая только что открытую смену. "Открыта"
+    // определяется исключительно finish_at.
+    const open = (data.sessions || []).find(s => s.finish_at === null || s.finish_at === undefined);
     if (open) {
       _setActiveCheckinSession(open.object_id, { id: open.id, finished: false });
       return open.object_id;
