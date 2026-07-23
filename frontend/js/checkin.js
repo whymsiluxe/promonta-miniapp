@@ -163,7 +163,7 @@ function _renderCheckinPreview() {
   grid.innerHTML = _checkinPreviewFiles.map((f, i) => {
     const url = URL.createObjectURL(f);
     return `<div class="checkin-preview-item">
-      <img src="${url}" alt="фото ${i + 1}">
+      <img src="${url}" alt="фото ${i + 1}" loading="lazy">
       <button class="checkin-preview-remove" data-idx="${i}" type="button">✕</button>
     </div>`;
   }).join('');
