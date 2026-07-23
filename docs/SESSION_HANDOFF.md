@@ -3,7 +3,7 @@
 **Date**: 2026-07-23, ~13:45 Berlin.
 **Branch**: `main` (renamed from `master` during this session, now the default on GitHub too).
 **Last commit**: `d30d2c9` "chore: add GitHub PR/issue templates and CODEOWNERS placeholder" — pushed.
-**Repo**: https://github.com/whymsiluxe/promonta-miniapp — **private**, confirmed via `gh repo view`.
+**Repo**: https://github.com/whymsiluxe/promonta-miniapp — private (briefly made public 2026-07-23 for a one-time ChatGPT read-only audit, reverted after — see CHANGELOG 2026-07-24 entry).
 
 ## Goal of this session
 

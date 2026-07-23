@@ -2887,6 +2887,29 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 </div>
 
 <!-- ═══════════ MÄNGEL + ПОТРЕБНОСТИ (Фаза 3 + 10.33) ═══════════ -->
+<div class="view" id="view-tasks">
+  <header>
+    <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
+    <h1>Потребности</h1>
+    <button class="fab" id="tasks-new-btn" type="button" aria-label="Новая потребность" style="display:none;">+</button>
+  </header>
+
+  <div id="tasks-tab-content">
+    <div id="tasks-form" class="mangel-form" style="display:none;">
+      <div class="voice-input-row">
+        <textarea id="tasks-title-input" class="mangel-textarea" placeholder="Что нужно? (например: перфоратор, 2 мешка цемента, каска)" rows="4"></textarea>
+        <button type="button" id="tasks-voice-btn" class="voice-input-btn">🎤</button>
+      </div>
+      <select id="tasks-object-select" class="mangel-select"><option value="">Объект (необязательно)…</option></select>
+      <div class="mangel-form-actions">
+        <button class="submit-btn" id="tasks-cancel-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);">Отмена</button>
+        <button class="submit-btn" id="tasks-submit-btn" type="button">Отправить</button>
+      </div>
+    </div>
+    <div id="tasks-list"></div>
+  </div>
+</div>
+
 <div class="view" id="view-mangel">
   <header>
     <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
@@ -2894,12 +2917,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <button class="fab" id="mangel-new-btn" type="button" aria-label="Новый тикет">+</button>
   </header>
 
-  <div class="doc-type-switch" style="margin:0 0.75rem 0.75rem;">
-    <div class="doc-type-opt active" data-mangel-tab="tasks">Потребности<span class="feed-tab-badge" id="tasks-tab-badge" style="display:none">0</span></div>
-    <div class="doc-type-opt" data-mangel-tab="defects">Дефекты</div>
-  </div>
-
-  <div id="mangel-tab-content" style="display:none;">
+  <div id="mangel-tab-content">
     <div id="mangel-form" class="mangel-form" style="display:none;">
       <select id="mangel-object-select" class="mangel-select"><option value="">Выбрать объект…</option></select>
       <select id="mangel-worker-select" class="mangel-select" style="display:none;"><option value="">Назначить работника (необязательно)…</option></select>
@@ -2932,21 +2950,6 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
         <div class="mangel-column-body" id="mangel-col-behoben"></div>
       </div>
     </div>
-  </div>
-
-  <div id="tasks-tab-content">
-    <div id="tasks-form" class="mangel-form" style="display:none;">
-      <div class="voice-input-row">
-        <textarea id="tasks-title-input" class="mangel-textarea" placeholder="Что нужно? (например: перфоратор, 2 мешка цемента, каска)" rows="4"></textarea>
-        <button type="button" id="tasks-voice-btn" class="voice-input-btn">🎤</button>
-      </div>
-      <select id="tasks-object-select" class="mangel-select"><option value="">Объект (необязательно)…</option></select>
-      <div class="mangel-form-actions">
-        <button class="submit-btn" id="tasks-cancel-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);">Отмена</button>
-        <button class="submit-btn" id="tasks-submit-btn" type="button">Отправить</button>
-      </div>
-    </div>
-    <div id="tasks-list"></div>
   </div>
 
   <div id="mangel-ticket-modal" class="mangel-modal" style="display:none;">
@@ -3305,6 +3308,7 @@ function switchView(viewName) {
     if (viewName === 'home') initHomeView();
     if (viewName === 'objects') initObjectsView();
     if (viewName === 'mangel') initMangelView();
+    if (viewName === 'tasks') initTasksView();
     if (viewName === 'tools') initToolsView();
     if (viewName === 'documents') initDocumentsView();
     if (viewName === 'feed') initFeedView();
