@@ -1,0 +1,579 @@
+// Home Dashboard: KPI bar, quick-actions (2-уровневые), Dynamic Island погода, ring-прогресс объектов.
+
+let _homeLoaded = false;
+
+async function initHomeView() {
+  if (_homeLoaded) return;
+  _homeLoaded = true;
+
+  const slot = document.getElementById('home-dashboard-slot');
+  if (!slot) return;
+
+  if (currentRole === 'worker') {
+    initWorkerHomeView(slot);
+    return;
+  }
+
+  slot.innerHTML = `
+    <div id="home-kpi-bar" class="home-kpi-bar">
+      <div class="kpi-tile" id="kpi-objects" onclick="switchView('objects')"><span class="kpi-num">—</span><span class="kpi-label">Объекты</span></div>
+      <div class="kpi-tile" id="kpi-working" onclick="switchView('working-objects')">
+        <span class="kpi-num" id="kpi-working-count">—</span><span class="kpi-label">Рабочие</span>
+      </div>
+    </div>
+
+    <div id="home-kpi-bar-2" class="home-kpi-bar">
+      <div class="kpi-tile" id="kpi-tasks" onclick="window._pendingMangelTab='tasks'; switchView('mangel')">
+        <span class="kpi-num" id="kpi-tasks-count">—</span><span class="kpi-label">Потребности</span>
+      </div>
+      <div class="kpi-tile kpi-alert" id="kpi-alerts" onclick="openAlertsView()">
+        <span class="kpi-num" id="kpi-alerts-count">—</span><span class="kpi-label">Алерты</span>
+        <span class="quick-primary-badge" id="alerts-badge" style="display:none">0</span>
+      </div>
+    </div>
+
+    <div id="home-messages-wide" class="quick-primary-item home-messages-wide" onclick="switchView('chat')">
+      <div class="quick-primary-icon-wrap qp-icon qp-icon-chat"><div class="qp-icon-sphere"></div><div class="qp-icon-bubble"></div></div>
+      <div class="quick-primary-text">
+        <div class="quick-primary-title">Сообщения</div>
+        <div class="quick-primary-sub">Командный чат</div>
+      </div>
+      <span class="quick-primary-badge" id="home-chat-badge" style="display:none">0</span>
+    </div>
+
+    <div id="home-stack-wide" class="home-stack-wide">
+      <div class="quick-primary-item" onclick="switchView('abwesenheit')">
+        <div class="quick-primary-icon-wrap qp-icon qp-icon-calendar"><div class="qp-icon-sphere"></div><div class="qp-icon-grid"><span></span><span></span><span></span><span></span></div></div>
+        <div class="quick-primary-text">
+          <div class="quick-primary-title">Общий календарь</div>
+          <div class="quick-primary-sub" id="abwesenheit-quick-sub">Календарь недоступностей</div>
+        </div>
+      </div>
+      <div class="quick-primary-item" onclick="switchView('tools')">
+        <div class="quick-primary-icon-wrap qp-icon qp-icon-tools-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-wrench"></div></div>
+        <div class="quick-primary-text"><div class="quick-primary-title">Инструменты</div></div>
+      </div>
+      <div class="quick-primary-item" onclick="switchView('documents')">
+        <div class="quick-primary-icon-wrap qp-icon qp-icon-docs-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-lines-wide"><span></span><span></span><span></span></div></div>
+        <div class="quick-primary-text"><div class="quick-primary-title">Документы</div></div>
+      </div>
+      <div class="quick-primary-item" onclick="switchView('ai')">
+        <div class="quick-primary-icon-wrap qp-icon qp-icon-ai-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-spark-wide"></div></div>
+        <div class="quick-primary-text"><div class="quick-primary-title">ИИ-ассистент</div></div>
+      </div>
+    </div>
+
+    <div id="home-rings-section" class="home-rings-section">
+      <div class="home-section-header">
+        <span class="home-section-title">Объекты</span>
+        <span class="home-section-action" onclick="switchView('objects')">Все ▸</span>
+      </div>
+      <div id="home-rings-grid" class="home-rings-grid">
+        <div style="color:var(--text-light);font-size:0.85rem;padding:0.5rem 0">Загрузка...</div>
+      </div>
+    </div>
+
+    <div id="home-weather-card" class="weather-card">
+      <div class="weather-card-loading">Загрузка погоды...</div>
+    </div>
+  `;
+
+  _loadHomeData();
+  initFeedTabs(); // суб-табы Инфо/Фото/Новости под dashboard (feed.js)
+}
+
+async function _loadHomeData() {
+  _loadHomeWeather();
+  _loadHomeObjectsRings();
+  _loadHomeAlerts();
+  _loadHomeAbwesenheitSummary();
+}
+
+// 10.11: Abwesenheit-плашка на Home — сводка вместо мелкой строки в Profile→Ещё.
+async function _loadHomeAbwesenheitSummary() {
+  const sub = document.getElementById('abwesenheit-quick-sub');
+  if (!sub) return;
+  try {
+    const data = currentRole === 'owner'
+      ? await api('/api/abwesenheit/all')
+      : await api('/api/abwesenheit');
+    const now = new Date();
+    const inThisMonth = e => {
+      const d = new Date(e.date_from);
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    };
+    const count = (data.entries || []).filter(inThisMonth).length;
+    sub.textContent = count > 0 ? `${count} ${count === 1 ? 'запись' : 'записи'} в этом месяце` : 'Нет отметок в этом месяце';
+  } catch (e) {
+    sub.textContent = 'Календарь недоступностей';
+  }
+}
+
+const WEATHER_DAY_NAMES = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+
+function _weatherKind(dayWave, risks) {
+  const riskText = (risks || []).join(' ').toLowerCase();
+  if (riskText.includes('гроза') || riskText.includes('молни')) return 'storm';
+  if (riskText.includes('снег') || riskText.includes('заморозки')) return 'snow';
+  if ((dayWave && dayWave.precip_prob >= 60) || riskText.includes('дождь')) return 'rain';
+  if ((dayWave && dayWave.wind >= 30) || riskText.includes('ветер')) return 'wind';
+  if (dayWave && dayWave.precip_prob >= 30) return 'cloudy';
+  return 'sunny';
+}
+
+const WEATHER_KIND_LABEL = {
+  storm: 'Гроза', rain: 'Дождь', snow: 'Снег', wind: 'Ветрено', cloudy: 'Облачно', sunny: 'Ясно',
+};
+
+function _weatherIllustration(kind) {
+  if (kind === 'storm') {
+    return `<div class="wx-illust wx-illust-storm">
+      <div class="wx-cloud wx-cloud-storm"><div class="wx-cloud-lobe3"></div><div class="wx-cloud-storm-glow"></div></div>
+      <div class="wx-bolt"></div>
+    </div>`;
+  }
+  if (kind === 'rain') {
+    return `<div class="wx-illust wx-illust-rain">
+      <div class="wx-cloud wx-cloud-rain"><div class="wx-cloud-lobe3"></div></div>
+      <div class="wx-drops"><span></span><span></span><span></span><span></span><span></span></div>
+    </div>`;
+  }
+  if (kind === 'snow') {
+    return `<div class="wx-illust wx-illust-snow">
+      <div class="wx-cloud wx-cloud-snow"><div class="wx-cloud-lobe3"></div></div>
+      <div class="wx-flakes"><span></span><span></span><span></span><span></span></div>
+    </div>`;
+  }
+  if (kind === 'wind') {
+    return `<div class="wx-illust wx-illust-wind">
+      <div class="wx-cloud wx-cloud-wind"><div class="wx-cloud-lobe3"></div></div>
+      <div class="wx-wind-lines"><span></span><span></span><span></span></div>
+    </div>`;
+  }
+  if (kind === 'cloudy') {
+    return `<div class="wx-illust wx-illust-cloudy">
+      <div class="wx-sun wx-sun-behind"></div>
+      <div class="wx-cloud wx-cloud-main"><div class="wx-cloud-lobe3"></div></div>
+    </div>`;
+  }
+  return `<div class="wx-illust wx-illust-sunny">
+    <div class="wx-sun"><div class="wx-sun-core"></div><div class="wx-sun-rays"></div></div>
+  </div>`;
+}
+
+function _extractCity(address) {
+  if (!address) return '';
+  const lastPart = address.split(',').pop().trim();
+  return lastPart.split(/\s+/).filter(w => !/^\d+$/.test(w)).join(' ') || lastPart;
+}
+
+let _weatherFeed = [];
+let _weatherActiveIdx = 0;
+
+async function _loadHomeWeather() {
+  const card = document.getElementById('home-weather-card');
+  if (!card) return;
+  try {
+    const data = await api('/api/feed/weather');
+    const rawFeed = data.feed || [];
+    const latestByObject = new Map();
+    for (const entry of rawFeed) {
+      const existing = latestByObject.get(entry.object);
+      if (!existing || entry.created > existing.created) latestByObject.set(entry.object, entry);
+    }
+    _weatherFeed = Array.from(latestByObject.values());
+    if (!_weatherFeed.length) {
+      card.innerHTML = '<div class="weather-card-loading">Нет данных о погоде</div>';
+      return;
+    }
+    if (_weatherActiveIdx >= _weatherFeed.length) _weatherActiveIdx = 0;
+    _renderWeatherCard();
+  } catch (e) {
+    card.innerHTML = '<div class="weather-card-loading">Ошибка загрузки погоды</div>';
+  }
+}
+
+function _renderWeatherCard() {
+  const card = document.getElementById('home-weather-card');
+  if (!card || !_weatherFeed.length) return;
+  const active = _weatherFeed[_weatherActiveIdx];
+  const wave = active.wave || [];
+  const forecast = active.forecast || [];
+  const today = wave[0] || {};
+  const todayRisks = (forecast[0] && forecast[0].risks) || [];
+  const kind = _weatherKind(today, todayRisks);
+  const dayName = WEATHER_DAY_NAMES[new Date().getDay()];
+  const tmax = today.tmax !== undefined ? Math.round(today.tmax) : '—';
+  const tmin = today.tmin !== undefined ? Math.round(today.tmin) : '—';
+
+  const objectTabs = _weatherFeed.map((f, i) => `
+    <div class="wx-object-tab${i === _weatherActiveIdx ? ' active' : ''}" data-idx="${i}">${f.object || 'Объект'}</div>
+  `).join('');
+
+  const stripDays = wave.slice(0, 4).map((w, i) => {
+    const risks = (forecast[i] && forecast[i].risks) || [];
+    const dayKind = _weatherKind(w, risks);
+    const d = new Date(w.date);
+    const shortDay = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'][d.getDay()];
+    return `<div class="wx-strip-day" data-day-idx="${i}">
+      <div class="wx-strip-label">${i === 0 ? 'Сегодня' : shortDay}</div>
+      <div class="wx-strip-icon">${_weatherMiniIcon(dayKind)}</div>
+      <div class="wx-strip-temp">${Math.round(w.tmax)}°</div>
+    </div>`;
+  }).join('');
+
+  const cityName = _extractCity(active.address);
+
+  card.innerHTML = `
+    <div class="wx-object-tabs">${objectTabs}</div>
+    <div class="weather-card-top">
+      <div class="weather-card-city">${esc(cityName)}</div>
+    </div>
+    ${_weatherIllustration(kind)}
+    <div class="weather-card-temp">${tmax}°</div>
+    <div class="weather-card-minmax">↓${tmin}° &nbsp; ↑${tmax}°</div>
+    <div class="weather-card-status wx-status-${kind}">${dayName}: ${WEATHER_KIND_LABEL[kind]}</div>
+    <div class="wx-strip">${stripDays}</div>
+  `;
+
+  card.querySelectorAll('.wx-object-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      _weatherActiveIdx = Number(tab.dataset.idx);
+      _renderWeatherCard();
+    });
+  });
+  card.querySelectorAll('.wx-strip-day').forEach(dayEl => {
+    dayEl.addEventListener('click', () => _openHourlyWeather(Number(dayEl.dataset.dayIdx)));
+  });
+}
+
+function _weatherMiniIcon(kind) {
+  const map = { storm: '⛈️', rain: '🌧️', snow: '🌨️', wind: '💨', cloudy: '⛅', sunny: '☀️' };
+  return map[kind] || '☀️';
+}
+
+function _openHourlyWeather(dayIdx) {
+  const active = _weatherFeed[_weatherActiveIdx];
+  if (!active) return;
+  const wave = active.wave || [];
+  const day = wave[dayIdx];
+  if (!day || !day.hourly || !day.hourly.length) return;
+
+  const d = new Date(day.date);
+  const dayLabel = dayIdx === 0 ? 'Сегодня' : WEATHER_DAY_NAMES[d.getDay()];
+
+  const rows = day.hourly.map(h => {
+    const kind = _weatherCodeToKind(h.weather_code);
+    return `<div class="wx-hourly-row">
+      <div class="wx-hourly-time">${String(h.hour).padStart(2, '0')}:00</div>
+      <div class="wx-hourly-icon">${_weatherMiniIcon(kind)}</div>
+      <div class="wx-hourly-temp">${Math.round(h.temp)}°</div>
+      <div class="wx-hourly-precip">${h.precip_prob}% 💧</div>
+    </div>`;
+  }).join('');
+
+  const sheet = document.createElement('div');
+  sheet.id = 'wx-hourly-sheet';
+  sheet.innerHTML = `
+    <div class="wx-hourly-inner">
+      <div class="wx-hourly-header">
+        <span class="wx-hourly-title">${dayLabel}, ${day.date}</span>
+        <button class="wx-hourly-close" onclick="document.getElementById('wx-hourly-sheet').remove()">✕</button>
+      </div>
+      <div class="wx-hourly-list">${rows}</div>
+    </div>
+  `;
+  document.body.appendChild(sheet);
+  sheet.addEventListener('click', e => { if (e.target === sheet) sheet.remove(); });
+}
+
+function _weatherCodeToKind(code) {
+  // WMO weather_code (Open-Meteo) -> наши 6 категорий иллюстраций
+  if ([95, 96, 99].includes(code)) return 'storm';
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return 'snow';
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return 'rain';
+  if ([45, 48].includes(code)) return 'cloudy';
+  if ([1, 2, 3].includes(code)) return 'cloudy';
+  return 'sunny';
+}
+
+function _ringSvg(pct, color) {
+  return `
+    <svg class="ring-progress" viewBox="0 0 44 44" width="52" height="52">
+      <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border-color)" stroke-width="4"/>
+      <circle cx="22" cy="22" r="18" fill="none" stroke="${color}" stroke-width="4"
+        stroke-dasharray="${(pct / 100 * 113.1).toFixed(1)} 113.1"
+        stroke-linecap="round" transform="rotate(-90 22 22)" style="transition:stroke-dasharray 0.6s ease"/>
+    </svg>`;
+}
+
+async function _fetchObjectProgress(oid) {
+  try {
+    const data = await api(`/api/objects/${oid}/stages`);
+    const stages = data.stages || [];
+    if (!stages.length) return null;
+    const done = stages.filter(s => s['Статус'] === 'готово').length;
+    return Math.round((done / stages.length) * 100);
+  } catch (e) {
+    return null;
+  }
+}
+
+function _ringCard(progressPct, progressColor, name, shortName, objectId, budgetPct, budgetColor) {
+  const budgetChip = currentRole === 'owner'
+    ? `<div class="home-ring-budget-chip" style="color:${budgetColor}">${budgetPct}% бюджет</div>` : '';
+  return `
+    <div class="home-ring-item" data-object-id="${esc(objectId)}" data-object-name="${esc(name)}" title="${esc(name)}">
+      <div class="home-ring-sub">${_ringSvg(progressPct, progressColor)}<div class="home-ring-pct" style="color:${progressColor}">${progressPct}%</div></div>
+      <div class="home-ring-label">${shortName}</div>
+      ${budgetChip}
+    </div>`;
+}
+
+function _attachHomeRingHandlers(container) {
+  container.querySelectorAll('.home-ring-item').forEach(el => {
+    el.addEventListener('click', () => {
+      switchView('objects');
+      const oid = el.dataset.objectId;
+      if (oid) setTimeout(() => openStagesView(oid, el.dataset.objectName), 0);
+    });
+  });
+}
+
+async function _loadHomeObjectsRings() {
+  const grid = document.getElementById('home-rings-grid');
+  const kpiEl = document.getElementById('kpi-objects');
+  try {
+    const data = await api('/api/objects');
+    const active = (data.objects || []).filter(o => o['Статус'] === 'В работе');
+    const kpiNum = kpiEl.querySelector('.kpi-num');
+    if (kpiNum) kpiNum.textContent = active.length;
+
+    if (!active.length) {
+      grid.innerHTML = '<div style="color:var(--text-light);font-size:0.85rem;padding:0.5rem 0">Нет активных объектов</div>';
+      return;
+    }
+    const shown = active.slice(0, 6);
+    const progressList = await Promise.all(shown.map(obj => _fetchObjectProgress(obj['ID объекта'])));
+
+    grid.innerHTML = shown.map((obj, i) => {
+      const name = obj['Объект'] || '';
+      const shortName = name.length > 18 ? name.slice(0, 17) + '…' : name;
+      const budgetPct = Math.round(parseFloat(obj['потрачено в % от бюджета']) || 0);
+      const budgetColor = budgetPct >= 90 ? 'var(--red)' : budgetPct >= 60 ? 'var(--warning)' : 'var(--accent)';
+      const progressPct = progressList[i];
+      if (progressPct === null) return _ringCard(0, 'var(--text-light)', name, shortName, obj['ID объекта'], budgetPct, budgetColor);
+      return _ringCard(progressPct, 'var(--accent2, #60a5fa)', name, shortName, obj['ID объекта'], budgetPct, budgetColor);
+    }).join('');
+
+    _attachHomeRingHandlers(grid);
+  } catch (e) {
+    grid.innerHTML = '<div style="color:var(--text-light);font-size:0.85rem">Ошибка загрузки объектов</div>';
+  }
+}
+
+async function _loadHomeAlerts() {
+  const badge = document.getElementById('alerts-badge');
+  const kpiAlerts = document.getElementById('kpi-alerts-count');
+  try {
+    const data = await api('/api/alerts');
+    const count = data.count || 0;
+    if (kpiAlerts) kpiAlerts.textContent = count;
+    if (badge) {
+      badge.textContent = count;
+      badge.style.display = count > 0 ? 'flex' : 'none';
+    }
+  } catch (e) {}
+
+  const kpiTasks = document.getElementById('kpi-tasks-count');
+  if (kpiTasks) {
+    try {
+      const data = await api('/api/tasks');
+      const open = (data.tasks || []).filter(t => t.status !== 'закрыто').length;
+      kpiTasks.textContent = open;
+    } catch (e) {}
+  }
+}
+
+// Alerts view/modal — открывается из Home
+let _alertsViewOpen = false;
+
+async function openAlertsView() {
+  if (_alertsViewOpen) return;
+  _alertsViewOpen = true;
+
+  const modal = document.createElement('div');
+  modal.id = 'alerts-modal';
+  modal.innerHTML = `
+    <div class="alerts-modal-inner">
+      <div class="alerts-modal-header">
+        <span class="alerts-modal-title">🔔 Алерты</span>
+        <button class="alerts-modal-close" onclick="_closeAlertsView()">✕</button>
+      </div>
+      <div class="alerts-filter-tabs">
+        <div class="alerts-tab active" data-filter="all" onclick="_filterAlerts(this,'all')">Все</div>
+        <div class="alerts-tab" data-filter="red" onclick="_filterAlerts(this,'red')">Важное</div>
+        <div class="alerts-tab" data-filter="yellow" onclick="_filterAlerts(this,'yellow')">Задачи</div>
+      </div>
+      <div id="alerts-list" class="alerts-list">
+        <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка...</div>
+      </div>
+      <button class="alerts-close-btn" onclick="_closeAlertsView()">Закрыть</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  try {
+    const data = await api('/api/alerts');
+    window._allAlerts = data.alerts || [];
+    _renderAlerts(window._allAlerts);
+  } catch (e) {
+    document.getElementById('alerts-list').innerHTML =
+      '<div style="padding:1rem;color:var(--red);text-align:center">Ошибка загрузки</div>';
+  }
+}
+
+function _closeAlertsView() {
+  const modal = document.getElementById('alerts-modal');
+  if (modal) modal.remove();
+  _alertsViewOpen = false;
+}
+
+function _filterAlerts(tabEl, filter) {
+  document.querySelectorAll('.alerts-tab').forEach(t => t.classList.remove('active'));
+  tabEl.classList.add('active');
+  const all = window._allAlerts || [];
+  const filtered = filter === 'all' ? all : all.filter(a => a.type === filter);
+  _renderAlerts(filtered);
+}
+
+function _renderAlerts(alerts) {
+  const list = document.getElementById('alerts-list');
+  if (!list) return;
+  if (!alerts.length) {
+    list.innerHTML = '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Нет алертов</div>';
+    return;
+  }
+  list.innerHTML = alerts.map(a => {
+    const color = a.type === 'red' ? 'var(--red)' : a.type === 'yellow' ? 'var(--warning)' : 'var(--accent)';
+    const timeStr = a.at ? new Date(a.at).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    const clickable = a.id && a.id.startsWith('abw-pending-');
+    return `
+      <div class="alert-item${clickable ? ' alert-item-clickable' : ''}" ${clickable ? `data-abw-id="${a.id.replace('abw-pending-', '')}"` : ''}>
+        <div class="alert-item-border" style="background:${color}"></div>
+        <div class="alert-item-icon" style="background:${color}22;color:${color}">
+          ${a.type === 'red' ? '🔴' : a.type === 'yellow' ? '🟡' : '🟢'}
+        </div>
+        <div class="alert-item-body">
+          <div class="alert-item-title">${a.title}</div>
+          <div class="alert-item-sub">${a.subtitle || ''}</div>
+        </div>
+        ${timeStr ? `<div class="alert-item-time">${timeStr}</div>` : ''}
+        ${clickable ? `<span class="alert-item-arrow">›</span>` : ''}
+      </div>`;
+  }).join('');
+
+  list.querySelectorAll('.alert-item-clickable').forEach(el => {
+    el.addEventListener('click', () => {
+      const abwId = el.dataset.abwId;
+      _closeAlertsView();
+      _pendingAbwesenheitFocusId = abwId;
+      const alreadyLoaded = typeof loadedViews !== 'undefined' && loadedViews.has('abwesenheit');
+      switchView('abwesenheit');
+      // switchView() инициализирует вкладку только при первом заходе (loadedViews-кэш) —
+      // при повторном заходе initAbwesenheitView() не вызовется, дёргаем loadAbwesenheit()
+      // сами, чтобы подсветка диапазона/скролл к записи сработали и во второй раз.
+      if (alreadyLoaded && typeof loadAbwesenheit === 'function') loadAbwesenheit();
+    });
+  });
+}
+
+
+// ═══════════ Worker Dashboard (Фаза 10.14) — 4-карточная плитка вместо owner-версии ═══════════
+
+async function initWorkerHomeView(slot) {
+  slot.innerHTML = `
+    <div class="worker-tile-grid">
+      <div class="worker-tile" id="worker-tile-messages" onclick="switchView('chat')">
+        <span class="worker-tile-badge" id="worker-tile-messages-badge" style="display:none">0</span>
+        <div class="wt-icon wt-icon-messages"><div class="wt-icon-sphere"></div><div class="wt-icon-tail"></div></div>
+        <div class="worker-tile-label">Сообщения</div>
+      </div>
+      <div class="worker-tile" id="worker-tile-tasks" onclick="switchView('objects')">
+        <span class="worker-tile-badge" id="worker-tile-tasks-badge" style="display:none">0</span>
+        <div class="wt-icon wt-icon-tasks"><div class="wt-icon-sphere"></div><div class="wt-icon-check"></div></div>
+        <div class="worker-tile-label">Задачи</div>
+      </div>
+      <div class="worker-tile" id="worker-tile-important" onclick="_openWorkerAlerts('yellow')">
+        <span class="worker-tile-badge" id="worker-tile-important-badge" style="display:none">0</span>
+        <div class="wt-icon wt-icon-important"><div class="wt-icon-triangle"></div><div class="wt-icon-bang"></div></div>
+        <div class="worker-tile-label">Алерты важно</div>
+      </div>
+      <div class="worker-tile" id="worker-tile-critical" onclick="_openWorkerAlerts('red')">
+        <span class="worker-tile-badge" id="worker-tile-critical-badge" style="display:none">0</span>
+        <div class="wt-icon wt-icon-critical"><div class="wt-icon-sphere"></div><div class="wt-icon-bang"></div></div>
+        <div class="worker-tile-label">Алерты критично</div>
+      </div>
+    </div>
+
+    <div class="worker-tile-wide" id="worker-tile-needs" onclick="window._pendingMangelTab='tasks'; switchView('mangel')">
+      <div class="wt-icon wt-icon-tasks"><div class="wt-icon-sphere"></div><div class="wt-icon-check"></div></div>
+      <div class="worker-tile-label">Потребности</div>
+      <span class="worker-tile-wide-arrow">›</span>
+    </div>
+    <div class="worker-tile-wide" id="worker-tile-objects" onclick="switchView('objects')">
+      <div class="wt-icon wt-icon-objects"><div class="wt-icon-sphere"></div><div class="wt-icon-blocks"><span></span><span></span><span></span></div></div>
+      <div class="worker-tile-label">Объекты</div>
+      <span class="worker-tile-wide-arrow">›</span>
+    </div>
+    <div class="worker-tile-wide" id="worker-tile-tools" onclick="switchView('tools')">
+      <div class="wt-icon qs-icon-tools"><div class="qs-icon-sphere"></div><div class="qs-icon-wrench"></div></div>
+      <div class="worker-tile-label">Инструменты</div>
+      <span class="worker-tile-wide-arrow">›</span>
+    </div>
+
+    <div id="home-weather-card" class="weather-card weather-card-compact">
+      <div class="weather-card-loading">Загрузка погоды...</div>
+    </div>
+  `;
+
+  _loadHomeWeather();
+  _loadWorkerTileCounts();
+  initFeedTabs();
+}
+
+function _openWorkerAlerts(presetFilter) {
+  openAlertsView().then(() => {
+    const tab = document.querySelector(`.alerts-tab[data-filter="${presetFilter}"]`);
+    if (tab) tab.click();
+  });
+}
+
+async function _loadWorkerTileCounts() {
+  try {
+    const chatData = await api('/api/chat/unread_count');
+    _setWorkerBadge('worker-tile-messages-badge', chatData.unread || 0);
+  } catch (e) {}
+
+  try {
+    const objData = await api('/api/objects');
+    const myTasks = (objData.objects || []).filter(o =>
+      (o.assigned_users || []).some(u => String(u.user_id) === String(currentUserId))
+    ).length;
+    _setWorkerBadge('worker-tile-tasks-badge', myTasks);
+  } catch (e) {}
+
+  try {
+    const alertsData = await api('/api/alerts');
+    const alerts = alertsData.alerts || [];
+    _setWorkerBadge('worker-tile-important-badge', alerts.filter(a => a.type === 'yellow').length);
+    _setWorkerBadge('worker-tile-critical-badge', alerts.filter(a => a.type === 'red').length);
+  } catch (e) {}
+}
+
+function _setWorkerBadge(elId, count) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.textContent = count;
+  el.style.display = count > 0 ? 'flex' : 'none';
+}

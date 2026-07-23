@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Angebot — Promonta Mini App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root {
+  --primary: #13325C;
+  --primary-dark: #0f172a;
+  --accent: #f59e0b;
+  --accent-hover: #d97706;
+  --text-main: #334155;
+  --text-light: #64748b;
+  --bg-light: #f8fafc;
+  --bg-white: #ffffff;
+  --border-color: #e2e8f0;
+  --font-heading: 'Outfit', sans-serif;
+  --font-body: 'Montserrat', sans-serif;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --red: #dc2626;
+  --green: #16a34a;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-light);
+  color: var(--text-main);
+  max-width: 480px;
+  margin: 0 auto;
+  padding-bottom: 6rem;
+}
+
+header {
+  padding: 1.25rem 1rem 1rem;
+}
+
+header h1 {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.section {
+  background: var(--bg-white);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1.25rem;
+  margin: 0 1rem 1rem;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+}
+
+.section-title {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--primary-dark);
+  margin-bottom: 0.8rem;
+}
+
+.field { margin-bottom: 0.7rem; }
+.field:last-child { margin-bottom: 0; }
+
+.field label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-light);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.field input, .field select {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  background: var(--bg-white);
+  color: var(--text-main);
+}
+
+.row-2 { display: flex; gap: 0.6rem; }
+.row-2 .field { flex: 1; }
+
+.position-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.8rem;
+  margin-bottom: 0.7rem;
+  position: relative;
+}
+
+.position-card .remove-pos {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-light);
+  color: var(--red);
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.position-sum {
+  text-align: right;
+  font-size: 0.8rem;
+  color: var(--text-light);
+  margin-top: 0.4rem;
+}
+
+.position-sum b { color: var(--primary-dark); }
+
+.add-position-btn {
+  width: 100%;
+  padding: 0.6rem;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-color);
+  background: var(--bg-light);
+  color: var(--primary);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.totals {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.totals .row { display: flex; justify-content: space-between; }
+.totals .row.grand { font-weight: 700; font-size: 1rem; color: var(--primary-dark); border-top: 1px solid var(--border-color); padding-top: 6px; margin-top: 4px; }
+
+.submit-bar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg-white);
+  border-top: 1px solid var(--border-color);
+  padding: 0.9rem 1rem;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+}
+
+.submit-btn {
+  width: 100%;
+  padding: 0.8rem;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--primary);
+  color: white;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.submit-btn:disabled { opacity: 0.5; cursor: default; }
+
+.error-banner {
+  margin: 0 1rem 1rem;
+  padding: 0.7rem 1rem;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+}
+
+.no-access {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--text-light);
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header><h1>Angebot erstellen</h1></header>
+  <div id="content"></div>
+</div>
+
+<script>
+const initData = window.Telegram?.WebApp?.initData;
+const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:8001' : '';
+
+function api(path, options = {}) {
+  return fetch(API_BASE + path, {
+    ...options,
+    headers: { 'X-Telegram-Init-Data': initData, ...(options.headers || {}) }
+  });
+}
+
+let positions = [{ titel: '', beschreibung: '', menge: 1, einheit: 'm²', preis: 0 }];
+
+function calcTotals() {
+  const mwstSatz = parseFloat(document.getElementById('mwstSatz')?.value) || 19;
+  const anzahlungPct = parseFloat(document.getElementById('anzahlungPct')?.value) || 40;
+  const netto = positions.reduce((s, p) => s + (p.menge * p.preis || 0), 0);
+  const mwst = netto * mwstSatz / 100;
+  const brutto = netto + mwst;
+  const anzahlung = brutto * anzahlungPct / 100;
+  return { netto, mwst, mwstSatz, brutto, anzahlung, rest: brutto - anzahlung };
+}
+
+function fmtEuro(v) {
+  return v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+}
+
+function renderPositions() {
+  return positions.map((p, i) => `
+    <div class="position-card" data-idx="${i}">
+      ${positions.length > 1 ? `<button class="remove-pos" data-remove="${i}">×</button>` : ''}
+      <div class="field">
+        <label>Название работы</label>
+        <input type="text" data-field="titel" data-idx="${i}" value="${p.titel}" placeholder="напр. Trockenbau Wandverkleidung">
+      </div>
+      <div class="field">
+        <label>Описание (опционально)</label>
+        <input type="text" data-field="beschreibung" data-idx="${i}" value="${p.beschreibung}" placeholder="Детали работы">
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label>Кол-во</label>
+          <input type="number" step="0.01" data-field="menge" data-idx="${i}" value="${p.menge}">
+        </div>
+        <div class="field">
+          <label>Ед.изм.</label>
+          <select data-field="einheit" data-idx="${i}">
+            ${['m²', 'Stk', 'Lfm', 'h', 'pauschal'].map(u => `<option value="${u}" ${p.einheit === u ? 'selected' : ''}>${u}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>Цена/ед €</label>
+          <input type="number" step="0.01" data-field="preis" data-idx="${i}" value="${p.preis}">
+        </div>
+      </div>
+      <div class="position-sum">Сумма: <b>${fmtEuro((p.menge || 0) * (p.preis || 0))}</b></div>
+    </div>
+  `).join('');
+}
+
+function renderTotals() {
+  const t = calcTotals();
+  return `
+    <div class="totals">
+      <div class="row"><span>Summe netto</span><span>${fmtEuro(t.netto)}</span></div>
+      <div class="row"><span>MwSt ${t.mwstSatz}%</span><span>${fmtEuro(t.mwst)}</span></div>
+      <div class="row grand"><span>Gesamt brutto</span><span>${fmtEuro(t.brutto)}</span></div>
+      <div class="row"><span>Anzahlung</span><span>${fmtEuro(t.anzahlung)}</span></div>
+      <div class="row"><span>Restzahlung</span><span>${fmtEuro(t.rest)}</span></div>
+    </div>`;
+}
+
+function renderForm() {
+  document.getElementById('content').innerHTML = `
+    <div class="section">
+      <div class="section-title">Kunde</div>
+      <div class="field">
+        <label>Тип клиента</label>
+        <select id="kundeTyp">
+          <option value="privat">Privatperson</option>
+          <option value="firma">Firma</option>
+        </select>
+      </div>
+      <div id="kunde-privat-fields" class="row-2">
+        <div class="field" style="flex:0 0 90px">
+          <label>Anrede</label>
+          <select id="anrede">
+            <option value="Herr">Herr</option>
+            <option value="Frau">Frau</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Имя</label>
+          <input type="text" id="kundeName" placeholder="Max Mustermann">
+        </div>
+      </div>
+      <div id="kunde-firma-fields" style="display:none">
+        <div class="field">
+          <label>Название фирмы</label>
+          <input type="text" id="firmaName" placeholder="Hans Fries GmbH">
+        </div>
+        <div class="field">
+          <label>Контактное лицо (опционально)</label>
+          <input type="text" id="firmaKontakt" placeholder="Hr. Fries">
+        </div>
+        <div class="field">
+          <label>Ust-ID клиента (опционально)</label>
+          <input type="text" id="firmaUstId" placeholder="DE123456789">
+        </div>
+      </div>
+      <div class="field">
+        <label>Адрес клиента</label>
+        <input type="text" id="kundeAdresse" placeholder="Straße, PLZ Ort">
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="kundeEmail" placeholder="email@beispiel.de">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Objekt</div>
+      <div class="field">
+        <label>Адрес объекта</label>
+        <input type="text" id="objektAdresse" placeholder="Если отличается от адреса клиента">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Positionen</div>
+      <div id="positions">${renderPositions()}</div>
+      <button class="add-position-btn" id="add-position">+ Позиция</button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Условия</div>
+      <div class="row-2">
+        <div class="field">
+          <label>MwSt %</label>
+          <input type="number" id="mwstSatz" value="19">
+        </div>
+        <div class="field">
+          <label>Anzahlung %</label>
+          <input type="number" id="anzahlungPct" value="40">
+        </div>
+        <div class="field">
+          <label>Gültig, дней</label>
+          <input type="number" id="gueltigTage" value="14">
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Итого</div>
+      <div id="totals">${renderTotals()}</div>
+    </div>
+
+    <div id="error-container"></div>
+  `;
+
+  attachFormHandlers();
+}
+
+function attachFormHandlers() {
+  document.querySelectorAll('[data-field]').forEach(el => {
+    el.addEventListener('input', (e) => {
+      const idx = parseInt(e.target.dataset.idx, 10);
+      const field = e.target.dataset.field;
+      let val = e.target.value;
+      if (field === 'menge' || field === 'preis') val = parseFloat(val) || 0;
+      positions[idx][field] = val;
+      document.getElementById('positions').innerHTML = renderPositions();
+      document.getElementById('totals').innerHTML = renderTotals();
+      attachFormHandlers();
+    });
+  });
+
+  document.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      positions.splice(parseInt(e.target.dataset.remove, 10), 1);
+      document.getElementById('positions').innerHTML = renderPositions();
+      document.getElementById('totals').innerHTML = renderTotals();
+      attachFormHandlers();
+    });
+  });
+
+  document.getElementById('add-position').addEventListener('click', () => {
+    positions.push({ titel: '', beschreibung: '', menge: 1, einheit: 'm²', preis: 0 });
+    document.getElementById('positions').innerHTML = renderPositions();
+    attachFormHandlers();
+  });
+
+  ['mwstSatz', 'anzahlungPct'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => {
+      document.getElementById('totals').innerHTML = renderTotals();
+    });
+  });
+
+  document.getElementById('kundeTyp').addEventListener('change', (e) => {
+    const isFirma = e.target.value === 'firma';
+    document.getElementById('kunde-privat-fields').style.display = isFirma ? 'none' : 'flex';
+    document.getElementById('kunde-firma-fields').style.display = isFirma ? 'block' : 'none';
+  });
+}
+
+async function submitAngebot() {
+  const errorContainer = document.getElementById('error-container');
+  errorContainer.innerHTML = '';
+
+  const isFirma = document.getElementById('kundeTyp').value === 'firma';
+  let kunde;
+  let displayName;
+
+  if (isFirma) {
+    const firmaName = document.getElementById('firmaName').value.trim();
+    if (!firmaName) {
+      errorContainer.innerHTML = '<div class="error-banner">Укажи название фирмы.</div>';
+      return;
+    }
+    displayName = firmaName;
+    kunde = {
+      typ: 'firma',
+      name: firmaName,
+      kontakt: document.getElementById('firmaKontakt').value.trim(),
+      ustId: document.getElementById('firmaUstId').value.trim(),
+      adresse: document.getElementById('kundeAdresse').value.trim(),
+      email: document.getElementById('kundeEmail').value.trim(),
+    };
+  } else {
+    const kundeName = document.getElementById('kundeName').value.trim();
+    if (!kundeName) {
+      errorContainer.innerHTML = '<div class="error-banner">Укажи имя клиента.</div>';
+      return;
+    }
+    displayName = kundeName;
+    kunde = {
+      typ: 'privat',
+      anrede: document.getElementById('anrede').value,
+      name: kundeName,
+      adresse: document.getElementById('kundeAdresse').value.trim(),
+      email: document.getElementById('kundeEmail').value.trim(),
+    };
+  }
+
+  const validPositions = positions.filter(p => p.titel.trim() && p.menge > 0 && p.preis >= 0);
+  if (!validPositions.length) {
+    errorContainer.innerHTML = '<div class="error-banner">Добавь хотя бы одну позицию с названием, кол-вом и ценой.</div>';
+    return;
+  }
+
+  const body = {
+    kunde,
+    objektAdresse: document.getElementById('objektAdresse').value.trim(),
+    positionen: validPositions,
+    mwstSatz: parseFloat(document.getElementById('mwstSatz').value) || 19,
+    anzahlungPct: parseFloat(document.getElementById('anzahlungPct').value) || 40,
+    gueltigTage: parseInt(document.getElementById('gueltigTage').value, 10) || 14,
+  };
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Генерация PDF...';
+
+  try {
+    const res = await api('/api/angebot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Angebot_${displayName.replace(/\s+/g, '_')}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    errorContainer.innerHTML = `<div class="error-banner">Ошибка: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Создать Angebot (PDF)';
+  }
+}
+
+async function init() {
+  const app = document.getElementById('app');
+
+  if (!initData) {
+    document.getElementById('content').innerHTML = '<div class="no-access">Открыто вне Telegram — нет initData.</div>';
+    return;
+  }
+
+  try {
+    const meRes = await api('/api/me');
+    const me = await meRes.json();
+    if (me.role !== 'owner' && me.role !== 'manager') {
+      document.getElementById('content').innerHTML = '<div class="no-access">Раздел доступен только владельцу и менеджерам.</div>';
+      return;
+    }
+  } catch (e) {
+    document.getElementById('content').innerHTML = `<div class="no-access">Ошибка авторизации: ${e.message}</div>`;
+    return;
+  }
+
+  renderForm();
+  app.insertAdjacentHTML('beforeend', `
+    <div class="submit-bar">
+      <button class="submit-btn" id="submit-btn">Создать Angebot (PDF)</button>
+    </div>
+  `);
+  document.getElementById('submit-btn').addEventListener('click', submitAngebot);
+}
+
+window.Telegram?.WebApp?.expand();
+init();
+</script>
+
+</body>
+</html>

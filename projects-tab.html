@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Объекты — Promonta Mini App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root {
+  --primary: #13325C;
+  --primary-dark: #0f172a;
+  --secondary: #334155;
+  --accent: #f59e0b;
+  --accent-hover: #d97706;
+  --text-main: #334155;
+  --text-light: #64748b;
+  --bg-light: #f8fafc;
+  --bg-white: #ffffff;
+  --border-color: #e2e8f0;
+  --font-heading: 'Outfit', sans-serif;
+  --font-body: 'Montserrat', sans-serif;
+  --spacing-xs: 0.5rem;
+  --spacing-sm: 1rem;
+  --spacing-md: 2rem;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --green: #16a34a;
+  --yellow: #f59e0b;
+  --red: #dc2626;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-light);
+  color: var(--text-main);
+  max-width: 480px;
+  margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+header {
+  padding: 1.25rem 1rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+header h1 {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.fab {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  border: none;
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: 0 1rem;
+}
+
+.card {
+  background: var(--bg-white);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: pan-y;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.card.pending { opacity: 0.6; }
+
+.card.dragging {
+  opacity: 0.92;
+  box-shadow: 0 12px 24px -6px rgba(0,0,0,0.25), 0 4px 8px -2px rgba(0,0,0,0.15);
+  z-index: 50;
+  transform: scale(1.03);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  animation: card-jiggle 0.25s ease-in-out infinite;
+}
+
+@keyframes card-jiggle {
+  0%, 100% { rotate: -0.6deg; }
+  50% { rotate: 0.6deg; }
+}
+
+.cards.has-dragging .card:not(.dragging) {
+  transition: transform 0.2s ease;
+}
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+  gap: 0.75rem;
+}
+
+.card-top > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.status-group { flex-shrink: 0; }
+
+.card-title {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--primary-dark);
+}
+
+.card-address {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  margin-top: 2px;
+}
+
+.badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.badge.active { background: #dcfce7; color: #15803d; }
+.badge.paused { background: #fef3c7; color: #92400e; }
+.badge.done { background: #dbeafe; color: #1d4ed8; }
+
+.card-stage {
+  font-size: 0.8rem;
+  color: var(--text-light);
+  margin-bottom: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.card-stage b { color: var(--text-main); font-weight: 600; }
+.card-stage .stage-dates {
+  color: var(--text-light);
+  white-space: nowrap;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.card-stage .stage-wait {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.status-group {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.segments {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 8px;
+  user-select: none;
+}
+
+.segment {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-color);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.segment.filled { background: #0d9488; }
+
+.status-switch {
+  display: flex;
+  background: var(--bg-light);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  margin-bottom: 0.75rem;
+  gap: 2px;
+}
+
+.status-switch .status-opt {
+  flex: 1;
+  text-align: center;
+  padding: 5px 4px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-light);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+}
+
+.status-switch .status-opt.active[data-status="В работе"] { background: #dcfce7; color: #15803d; }
+.status-switch .status-opt.active[data-status="Пауза"] { background: #fef3c7; color: #92400e; }
+.status-switch .status-opt.active[data-status="Завершён"] { background: #dbeafe; color: #1d4ed8; }
+.status-switch.readonly .status-opt { cursor: default; }
+
+.tasks-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-light);
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tasks-label .chevron {
+  font-size: 0.65rem;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+
+.tasks-label.collapsed .chevron { transform: rotate(-90deg); }
+
+.tasks-count {
+  font-weight: 400;
+  color: var(--text-light);
+  font-size: 0.75rem;
+}
+
+.tasks-body {
+  overflow: hidden;
+  max-height: 500px;
+  transition: max-height 0.25s ease;
+}
+
+.tasks-body.collapsed { max-height: 0; }
+
+.metrics {
+  display: flex;
+  gap: 1.25rem;
+  border-top: 1px solid var(--border-color);
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+}
+
+.metric { flex: 1; }
+
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.95rem;
+  color: var(--text-light);
+  margin-bottom: 4px;
+}
+
+.metric-row b {
+  color: var(--text-main);
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.metric-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+
+.metric-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.metric-fill.green { background: linear-gradient(90deg, #22c55e, var(--green)); }
+.metric-fill.yellow { background: linear-gradient(90deg, #fbbf24, var(--yellow)); }
+.metric-fill.red { background: linear-gradient(90deg, #ef4444, var(--red)); }
+.metric-fill.blue { background: linear-gradient(90deg, #93c5fd, #60a5fa); }
+
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+  font-size: 0.9rem;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 2px solid var(--border-color);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.checkbox:hover { border-color: var(--primary); transform: scale(1.08); }
+
+.checkbox.done {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+  font-size: 0.65rem;
+}
+
+.checkbox.disabled { cursor: default; opacity: 0.6; }
+.checkbox.disabled:hover { transform: none; border-color: var(--border-color); }
+
+.task-row span { transition: color 0.15s; }
+.task-row.done span { text-decoration: line-through; color: var(--text-light); }
+
+.add-task {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0 0.2rem;
+  font-size: 0.9rem;
+  color: var(--accent-hover);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--bg-white);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.modal-input, .modal-select { scroll-margin-top: 1rem; scroll-margin-bottom: 8rem; }
+
+.modal-title {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--primary-dark);
+  margin-bottom: 0.5rem;
+}
+
+.modal-label {
+  font-size: 0.8rem;
+  color: var(--text-light);
+  font-weight: 600;
+  margin-top: 0.4rem;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  background: var(--bg-white);
+  color: var(--text-main);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.modal-btn {
+  flex: 1;
+  padding: 0.65rem;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border: none;
+}
+
+.modal-btn.secondary { background: var(--bg-light); color: var(--text-main); }
+.modal-btn.primary { background: var(--primary); color: white; }
+
+#new-object-view {
+  display: none;
+  padding-bottom: 6rem;
+}
+
+#new-object-view.open { display: block; }
+
+.form-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem 1rem 1rem;
+}
+
+.form-header .back-btn {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  color: var(--primary);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.form-header h1 {
+  font-family: var(--font-heading);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.form-section { padding: 0 1rem; display: flex; flex-direction: column; gap: 0.9rem; }
+
+.form-field label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-light);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.form-field input {
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  background: var(--bg-white);
+  color: var(--text-main);
+}
+
+.form-row { display: flex; gap: 0.6rem; }
+.form-row .form-field { flex: 1; }
+
+.form-submit-bar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg-white);
+  border-top: 1px solid var(--border-color);
+  padding: 0.9rem 1rem;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+}
+
+.form-submit-btn {
+  width: 100%;
+  padding: 0.8rem;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--primary);
+  color: white;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.form-submit-btn:disabled { opacity: 0.5; cursor: default; }
+
+.form-error {
+  margin: 0 1rem;
+  padding: 0.7rem 1rem;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+}
+</style>
+</head>
+<body>
+
+<div id="list-view">
+  <header>
+    <h1>Объекты</h1>
+    <button class="fab" id="add-object" style="display:none">+</button>
+  </header>
+
+  <div class="cards" id="cards">
+    <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка...</div>
+  </div>
+</div>
+
+<div id="new-object-view">
+  <div class="form-header">
+    <button class="back-btn" id="new-obj-back">←</button>
+    <h1>Новый объект</h1>
+  </div>
+  <div class="form-section">
+    <div class="form-field">
+      <label>Название</label>
+      <input type="text" id="new-obj-name" placeholder="напр. Дом Шульц">
+    </div>
+    <div class="form-field">
+      <label>Адрес</label>
+      <input type="text" id="new-obj-adresse" placeholder="Straße, PLZ Ort">
+    </div>
+    <div class="form-field">
+      <label>Бюджет €</label>
+      <input type="number" step="0.01" id="new-obj-budget" placeholder="10000">
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label>Дата старта</label>
+        <input type="date" id="new-obj-start">
+      </div>
+      <div class="form-field">
+        <label>Дата окончания (план)</label>
+        <input type="date" id="new-obj-end">
+      </div>
+    </div>
+  </div>
+  <div id="new-obj-error"></div>
+  <div class="form-submit-bar">
+    <button class="form-submit-btn" id="new-obj-submit">Создать объект</button>
+  </div>
+</div>
+
+<script>
+const API_BASE = window.location.origin.includes('localhost') || window.location.protocol === 'file:'
+  ? null
+  : '';
+
+function budgetColor(pct) {
+  if (pct >= 90) return 'red';
+  if (pct >= 60) return 'yellow';
+  return 'green';
+}
+
+function statusClass(status) {
+  if (status === 'Пауза') return 'paused';
+  if (status === 'Завершён') return 'done';
+  return 'active';
+}
+
+function renderCard(obj) {
+  const budgetPct = Math.round(parseFloat(obj['потрачено в % от бюджета']) || 0);
+  const stage = obj['Текущий этап'] || '';
+  const isWaiting = stage.toLowerCase().startsWith('ожидает');
+  const stageLabel = isWaiting ? stage.replace(/^ожидает\s*/i, '') : stage;
+  const segFilled = Math.min(6, Math.max(0, Math.round(budgetPct / 100 * 6)));
+
+  const segs = Array.from({length: 6}, (_, i) =>
+    `<div class="segment${i < segFilled ? ' filled' : ''}"></div>`).join('');
+
+  const stageBlock = isWaiting
+    ? `<span class="stage-wait"><span>Ожидает:</span><b>${stageLabel}</b></span>`
+    : `<span>Текущий этап: <b>${stageLabel}</b></span>`;
+
+  return `
+  <div class="card" data-id="${obj['ID объекта']}">
+    <div class="card-top">
+      <div>
+        <div class="card-title">${obj['Объект'] || ''}</div>
+        <div class="card-address">${obj['Адрес'] || ''}</div>
+      </div>
+      <div class="status-group">
+        <div class="segments" data-total="6" data-filled="${segFilled}">${segs}</div>
+      </div>
+    </div>
+    <div class="status-switch" data-current="${obj['Статус'] || ''}">
+      ${['В работе', 'Пауза', 'Завершён'].map(s =>
+        `<div class="status-opt${s === obj['Статус'] ? ' active' : ''}" data-status="${s}">${s}</div>`
+      ).join('')}
+    </div>
+    <div class="card-stage">${stageBlock}</div>
+    <div class="tasks-label collapsed"><span class="chevron">▾</span>Задачи <span class="tasks-count"></span></div>
+    <div class="tasks-body collapsed">
+      <div class="tasks-list"><div style="padding:0.3rem 0;color:var(--text-light);font-size:0.85rem">Загрузка...</div></div>
+      <div class="add-task">+ Добавить задачу</div>
+    </div>
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-row"><span>Бюджет</span><b>${budgetPct}%</b></div>
+        <div class="metric-bar"><div class="metric-fill ${budgetColor(budgetPct)}" style="width:${budgetPct}%"></div></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+const initData = window.Telegram?.WebApp?.initData;
+let currentRole = 'worker';
+
+function api(path, options = {}) {
+  return fetch(path, {
+    ...options,
+    headers: { 'X-Telegram-Init-Data': initData, 'Content-Type': 'application/json', ...(options.headers || {}) }
+  }).then(async res => {
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    return res.json();
+  });
+}
+
+function renderTaskRow(t) {
+  const done = t['Статус'] === 'erledigt';
+  const canComplete = currentRole === 'owner' && !done;
+  return `
+  <div class="task-row ${done ? 'done' : ''}" data-task-id="${t['ID задачи']}">
+    <div class="checkbox ${done ? 'done' : ''} ${canComplete ? '' : 'disabled'}">${done ? '✓' : ''}</div>
+    <span>${t['Текст']}</span>
+  </div>`;
+}
+
+async function loadTasks(objectId, listEl, countEl) {
+  try {
+    const data = await api(`/api/objects/${objectId}/tasks`);
+    if (!data.tasks.length) {
+      listEl.innerHTML = '<div style="padding:0.3rem 0;color:var(--text-light);font-size:0.85rem">Задач нет</div>';
+    } else {
+      listEl.innerHTML = data.tasks.map(renderTaskRow).join('');
+    }
+    if (countEl) countEl.textContent = `(${data.tasks.length})`;
+    attachTaskHandlers(listEl, objectId);
+  } catch (e) {
+    listEl.innerHTML = `<div style="padding:0.3rem 0;color:var(--red);font-size:0.85rem">Ошибка: ${e.message}</div>`;
+  }
+}
+
+function attachTaskHandlers(listEl, objectId) {
+  listEl.querySelectorAll('.checkbox:not(.disabled)').forEach(box => {
+    box.addEventListener('click', async () => {
+      const taskId = box.closest('.task-row').dataset.taskId;
+      box.classList.add('disabled');
+      try {
+        await api(`/api/tasks/${taskId}/complete`, { method: 'PATCH' });
+        const card = listEl.closest('.card');
+        const countEl = card.querySelector('.tasks-count');
+        await loadTasks(objectId, listEl, countEl);
+      } catch (e) {
+        alert('Ошибка: ' + e.message);
+        box.classList.remove('disabled');
+      }
+    });
+  });
+}
+
+const ORDER_KEY = 'promonta_objects_order';
+
+function saveOrder() {
+  const ids = Array.from(document.querySelectorAll('#cards .card')).map(c => c.dataset.id);
+  localStorage.setItem(ORDER_KEY, JSON.stringify(ids));
+}
+
+function applyOrder(objects) {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]'); } catch (e) { saved = []; }
+  if (!saved.length) return objects;
+  const byId = new Map(objects.map(o => [o['ID объекта'], o]));
+  const ordered = [];
+  saved.forEach(id => { if (byId.has(id)) { ordered.push(byId.get(id)); byId.delete(id); } });
+  byId.forEach(o => ordered.push(o));
+  return ordered;
+}
+
+let dragState = null;
+
+function hapticImpact(style) {
+  try {
+    window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(style);
+  } catch (e) {}
+  if (window.navigator.vibrate) window.navigator.vibrate(style === 'medium' ? 15 : 8);
+}
+
+let dragAudioCtx = null;
+
+function playDragTickSound() {
+  try {
+    dragAudioCtx = dragAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const osc = dragAudioCtx.createOscillator();
+    const gain = dragAudioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, dragAudioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, dragAudioCtx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.08, dragAudioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, dragAudioCtx.currentTime + 0.1);
+    osc.connect(gain);
+    gain.connect(dragAudioCtx.destination);
+    osc.start();
+    osc.stop(dragAudioCtx.currentTime + 0.1);
+  } catch (e) {}
+}
+
+function playDropSound() {
+  try {
+    dragAudioCtx = dragAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const osc = dragAudioCtx.createOscillator();
+    const gain = dragAudioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(440, dragAudioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, dragAudioCtx.currentTime + 0.09);
+    gain.gain.setValueAtTime(0.09, dragAudioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, dragAudioCtx.currentTime + 0.12);
+    osc.connect(gain);
+    gain.connect(dragAudioCtx.destination);
+    osc.start();
+    osc.stop(dragAudioCtx.currentTime + 0.12);
+  } catch (e) {}
+}
+
+function attachDragHandlers() {
+  const container = document.getElementById('cards');
+  let longPressTimer = null;
+
+  container.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('touchstart', (e) => {
+      if (e.target.closest('.status-switch, .take-btn, .checkbox, .add-task, .tasks-label')) return;
+      longPressTimer = setTimeout(() => {
+        startDrag(card);
+        hapticImpact('medium');
+        playDragTickSound();
+      }, 450);
+    }, { passive: true });
+
+    card.addEventListener('touchmove', (e) => {
+      if (dragState && dragState.card === card) {
+        e.preventDefault();
+        handleDragMove(e.touches[0].clientY);
+      } else {
+        clearTimeout(longPressTimer);
+      }
+    }, { passive: false });
+
+    card.addEventListener('touchend', () => {
+      clearTimeout(longPressTimer);
+      if (dragState) endDrag();
+    });
+  });
+}
+
+function startDrag(card) {
+  dragState = { card, container: document.getElementById('cards') };
+  card.classList.add('dragging');
+}
+
+function handleDragMove(clientY) {
+  if (!dragState) return;
+  const { card, container } = dragState;
+  const cards = Array.from(container.querySelectorAll('.card:not(.dragging)'));
+  const target = cards.find(c => {
+    const rect = c.getBoundingClientRect();
+    return clientY < rect.top + rect.height / 2;
+  });
+  const before = card.nextElementSibling;
+  if (target) {
+    container.insertBefore(card, target);
+  } else {
+    container.appendChild(card);
+  }
+  if (card.nextElementSibling !== before) hapticImpact('light');
+}
+
+function endDrag() {
+  if (!dragState) return;
+  dragState.card.classList.remove('dragging');
+  hapticImpact('light');
+  playDropSound();
+  saveOrder();
+  dragState = null;
+}
+
+function attachHandlers() {
+  attachDragHandlers();
+
+  document.querySelectorAll('.metric-fill').forEach(fill => {
+    const target = fill.style.width;
+    fill.style.width = '0%';
+    requestAnimationFrame(() => requestAnimationFrame(() => fill.style.width = target));
+  });
+
+  document.querySelectorAll('.tasks-label').forEach(label => {
+    const card = label.closest('.card');
+    const objectId = card.dataset.id;
+    const body = label.nextElementSibling;
+    const listEl = body.querySelector('.tasks-list');
+    label.addEventListener('click', () => {
+      const willOpen = label.classList.contains('collapsed');
+      label.classList.toggle('collapsed');
+      body.classList.toggle('collapsed');
+      if (willOpen && !body.dataset.loaded) {
+        body.dataset.loaded = '1';
+        loadTasks(objectId, listEl, null);
+      }
+    });
+  });
+
+  document.querySelectorAll('.add-task').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const card = btn.closest('.card');
+      const objectId = card.dataset.id;
+      const text = prompt('Текст задачи:');
+      if (!text || !text.trim()) return;
+      try {
+        await api(`/api/objects/${objectId}/tasks`, { method: 'POST', body: JSON.stringify({ text: text.trim() }) });
+        const listEl = card.querySelector('.tasks-list');
+        const countEl = card.querySelector('.tasks-count');
+        listEl.closest('.tasks-body').dataset.loaded = '1';
+        await loadTasks(objectId, listEl, countEl);
+      } catch (e) {
+        alert('Ошибка: ' + e.message);
+      }
+    });
+  });
+
+  document.querySelectorAll('.status-switch').forEach(switchEl => {
+    if (currentRole !== 'owner') {
+      switchEl.classList.add('readonly');
+      return;
+    }
+    switchEl.querySelectorAll('.status-opt').forEach(opt => {
+      opt.addEventListener('click', async () => {
+        const next = opt.dataset.status;
+        if (next === switchEl.dataset.current) return;
+        const card = switchEl.closest('.card');
+        const objectId = card.dataset.id;
+        try {
+          await api(`/api/objects/${objectId}/status`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
+          switchEl.dataset.current = next;
+          switchEl.querySelectorAll('.status-opt').forEach(o => o.classList.toggle('active', o.dataset.status === next));
+        } catch (e) {
+          alert('Ошибка: ' + e.message);
+        }
+      });
+    });
+  });
+}
+
+function openNewObjectView() {
+  document.getElementById('list-view').style.display = 'none';
+  document.getElementById('new-object-view').classList.add('open');
+  document.getElementById('new-obj-error').innerHTML = '';
+  ['new-obj-name', 'new-obj-adresse', 'new-obj-budget', 'new-obj-start', 'new-obj-end'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+}
+
+function closeNewObjectView() {
+  document.getElementById('new-object-view').classList.remove('open');
+  document.getElementById('list-view').style.display = '';
+}
+
+async function submitNewObject() {
+  const errorEl = document.getElementById('new-obj-error');
+  errorEl.innerHTML = '';
+
+  const name = document.getElementById('new-obj-name').value.trim();
+  const adresse = document.getElementById('new-obj-adresse').value.trim();
+  const budget = document.getElementById('new-obj-budget').value.trim();
+  const start = document.getElementById('new-obj-start').value;
+  const end = document.getElementById('new-obj-end').value;
+
+  if (!name || !adresse || !budget) {
+    errorEl.innerHTML = '<div class="form-error">Заполни название, адрес и бюджет.</div>';
+    return;
+  }
+
+  // Оптимистичный UI: закрываем форму и показываем карточку сразу,
+  // не дожидаясь ответа сервера (Sheets API даёт заметную задержку).
+  const tempId = 'pending-' + Date.now();
+  const optimisticObj = {
+    'ID объекта': tempId, 'Объект': name, 'Адрес': adresse, 'Статус': 'В работе',
+    'потрачено в % от бюджета': '0', 'Текущий этап': ''
+  };
+  closeNewObjectView();
+  const container = document.getElementById('cards');
+  container.insertAdjacentHTML('afterbegin', renderCard(optimisticObj));
+  const card = container.querySelector(`[data-id="${tempId}"]`);
+  card.classList.add('pending');
+  attachHandlers();
+
+  try {
+    const res = await api('/api/objects', { method: 'POST', body: JSON.stringify({ name, adresse, budget, start, end }) });
+    card.dataset.id = res.object_id;
+    card.classList.remove('pending');
+    saveOrder();
+  } catch (e) {
+    card.remove();
+    alert('Не удалось создать объект: ' + e.message);
+  }
+}
+
+async function loadObjects() {
+  const container = document.getElementById('cards');
+
+  try {
+    const data = await api('/api/objects');
+    if (!data.objects || data.objects.length === 0) {
+      container.innerHTML = '<div style="padding:2rem 1rem;color:var(--text-light)">Объектов пока нет.</div>';
+      return;
+    }
+    const ordered = applyOrder(data.objects);
+    container.innerHTML = ordered.map(renderCard).join('');
+    attachHandlers();
+  } catch (e) {
+    container.innerHTML = `<div style="padding:2rem 1rem;color:var(--red)">Ошибка загрузки: ${e.message}</div>`;
+  }
+}
+
+async function init() {
+  const container = document.getElementById('cards');
+
+  if (!initData) {
+    container.innerHTML = '<div style="padding:2rem 1rem;color:var(--text-light)">Открыто вне Telegram — нет initData для авторизации API.</div>';
+    return;
+  }
+
+  try {
+    const me = await api('/api/me');
+    currentRole = me.role;
+    document.getElementById('add-object').style.display = currentRole === 'owner' ? 'flex' : 'none';
+  } catch (e) {
+    container.innerHTML = `<div style="padding:2rem 1rem;color:var(--red)">Ошибка авторизации: ${e.message}</div>`;
+    return;
+  }
+
+  await loadObjects();
+}
+
+window.Telegram?.WebApp?.expand();
+document.getElementById('add-object').addEventListener('click', () => {
+  if (currentRole !== 'owner') return;
+  openNewObjectView();
+});
+document.getElementById('new-obj-back').addEventListener('click', closeNewObjectView);
+document.getElementById('new-obj-submit').addEventListener('click', submitNewObject);
+init();
+</script>
+
+</body>
+</html>
