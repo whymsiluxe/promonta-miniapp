@@ -48,10 +48,6 @@ async def audit_log_middleware(request, call_next):
     response = await call_next(request)
 
     if request.method in ("POST", "PATCH", "DELETE") and response.status_code < 400:
-        try:
-            body_preview = json.loads(body_bytes) if body_bytes else None
-        except Exception:
-            body_preview = None
         user_id = None
         try:
             init_data = request.headers.get("x-telegram-init-data", "")
@@ -65,7 +61,6 @@ async def audit_log_middleware(request, call_next):
             "method": request.method,
             "path": request.url.path,
             "status": response.status_code,
-            "body": body_preview,
         }
         with AUDIT_LOCK:
             with open(AUDIT_FILE, "a", encoding="utf-8") as f:
@@ -91,8 +86,11 @@ def validate_init_data(init_data: str) -> dict:
         raise HTTPException(401, "initData: no hash")
 
     auth_date = parsed.get('auth_date')
-    if not auth_date or time.time() - int(auth_date) > INIT_DATA_MAX_AGE:
-        raise HTTPException(401, "initData: expired")
+    try:
+        if not auth_date or time.time() - int(auth_date) > INIT_DATA_MAX_AGE:
+            raise HTTPException(401, "initData: expired")
+    except ValueError:
+        raise HTTPException(401, "initData: malformed auth_date")
 
     data_check_string = '\n'.join(f'{k}={v}' for k, v in sorted(parsed.items()))
     computed_hash = hmac.new(_secret_key(), data_check_string.encode(), hashlib.sha256).hexdigest()
@@ -227,10 +225,9 @@ def list_roles(user: dict = Depends(get_current_user), _: None = Depends(require
 def set_role(body: RoleSetBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     if body.role not in ('owner', 'worker'):
         raise HTTPException(400, "role должен быть owner или worker")
-    with _lock_for(ROLES_FILE):
-        roles = _load_roles()
-        roles[str(body.user_id)] = body.role
-        _save_roles(roles)
+    roles = _load_roles()
+    roles[str(body.user_id)] = body.role
+    _save_roles(roles)
     try:
         send_telegram_message(int(body.user_id), f"Вам предоставлен доступ к miniapp (роль: {body.role}).")
     except Exception:
@@ -242,10 +239,9 @@ def set_role(body: RoleSetBody, user: dict = Depends(get_current_user), _: None 
 def revoke_role(target_user_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     if target_user_id == str(user['id']):
         raise HTTPException(400, "Нельзя удалить свою же роль")
-    with _lock_for(ROLES_FILE):
-        roles = _load_roles()
-        roles.pop(target_user_id, None)
-        _save_roles(roles)
+    roles = _load_roles()
+    roles.pop(target_user_id, None)
+    _save_roles(roles)
     return {"status": "ok"}
 
 
@@ -353,14 +349,13 @@ class ProfileUpdateBody(BaseModel):
 
 @app.patch("/api/profile/me")
 def update_my_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_user)):
-    with _lock_for(WORKER_PROFILES_FILE):
-        profiles = _load_worker_profiles()
-        key = str(user['id'])
-        profile = profiles.get(key, {"skills": [], "quiz_completed": False})
-        updates = body.dict(exclude_unset=True)
-        profile.update(updates)
-        profiles[key] = profile
-        _save_worker_profiles(profiles)
+    profiles = _load_worker_profiles()
+    key = str(user['id'])
+    profile = profiles.get(key, {"skills": [], "quiz_completed": False})
+    updates = body.dict(exclude_unset=True)
+    profile.update(updates)
+    profiles[key] = profile
+    _save_worker_profiles(profiles)
     return profile
 
 
@@ -659,58 +654,56 @@ def _dates_overlap(a_from: str, a_to: str, b_from: str, b_to: str) -> bool:
 
 @app.post("/api/objects/{object_id}/assign")
 def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    with _lock_for(OBJECT_ASSIGNMENTS_FILE):
-        assignments = _load_assignments()
-        key = str(object_id)
-        if key not in assignments:
-            assignments[key] = []
-        already = any(
-            a['user_id'] == str(body.user_id) and a.get('stage_id', '') == body.stage_id
-            for a in assignments[key]
-        )
-        if not already:
-            # 22.07: одобренный отпуск/больничный блокирует назначение — жёсткая проверка,
-            # не просто цветовая подсказка в календаре (юзер подтвердил явно).
-            for e in _load_abwesenheit():
-                if str(e.get('user_id')) != str(body.user_id) or e.get('status') != 'approved':
+    assignments = _load_assignments()
+    key = str(object_id)
+    if key not in assignments:
+        assignments[key] = []
+    already = any(
+        a['user_id'] == str(body.user_id) and a.get('stage_id', '') == body.stage_id
+        for a in assignments[key]
+    )
+    if not already:
+        # 22.07: одобренный отпуск/больничный блокирует назначение — жёсткая проверка,
+        # не просто цветовая подсказка в календаре (юзер подтвердил явно).
+        for e in _load_abwesenheit():
+            if str(e.get('user_id')) != str(body.user_id) or e.get('status') != 'approved':
+                continue
+            if _dates_overlap(body.date_from, body.date_to, e.get('date_from', ''), e.get('date_to', '')):
+                raise HTTPException(
+                    409,
+                    f"Работник недоступен ({e.get('reason', 'отсутствие')}) "
+                    f"{e.get('date_from')} — {e.get('date_to')}"
+                )
+        for other_oid, other_list in assignments.items():
+            if other_oid == key:
+                continue
+            for a in other_list:
+                if a['user_id'] != str(body.user_id):
                     continue
-                if _dates_overlap(body.date_from, body.date_to, e.get('date_from', ''), e.get('date_to', '')):
+                if _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', '')):
                     raise HTTPException(
                         409,
-                        f"Работник недоступен ({e.get('reason', 'отсутствие')}) "
-                        f"{e.get('date_from')} — {e.get('date_to')}"
+                        f"Этот работник уже назначен на объект {other_oid} "
+                        f"на период {a.get('date_from')} — {a.get('date_to')}"
                     )
-            for other_oid, other_list in assignments.items():
-                if other_oid == key:
-                    continue
-                for a in other_list:
-                    if a['user_id'] != str(body.user_id):
-                        continue
-                    if _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', '')):
-                        raise HTTPException(
-                            409,
-                            f"Этот работник уже назначен на объект {other_oid} "
-                            f"на период {a.get('date_from')} — {a.get('date_to')}"
-                        )
-            assignments[key].append({
-                'user_id': str(body.user_id),
-                'stage_id': body.stage_id,
-                'date_from': body.date_from,
-                'date_to': body.date_to,
-                'assigned_at': datetime.utcnow().isoformat()
-            })
-            _save_assignments(assignments)
+        assignments[key].append({
+            'user_id': str(body.user_id),
+            'stage_id': body.stage_id,
+            'date_from': body.date_from,
+            'date_to': body.date_to,
+            'assigned_at': datetime.utcnow().isoformat()
+        })
+        _save_assignments(assignments)
     return {"status": "ok"}
 
 
 @app.delete("/api/objects/{object_id}/assign/{user_id}")
 def unassign_user(object_id: str, user_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    with _lock_for(OBJECT_ASSIGNMENTS_FILE):
-        assignments = _load_assignments()
-        key = str(object_id)
-        if key in assignments:
-            assignments[key] = [a for a in assignments[key] if a['user_id'] != str(user_id)]
-            _save_assignments(assignments)
+    assignments = _load_assignments()
+    key = str(object_id)
+    if key in assignments:
+        assignments[key] = [a for a in assignments[key] if a['user_id'] != str(user_id)]
+        _save_assignments(assignments)
     return {"status": "ok"}
 
 
@@ -1742,14 +1735,17 @@ os.makedirs(CHAT_ATTACH_DIR, exist_ok=True)
 
 
 @app.post("/api/chat/messages/attachment")
-def post_chat_attachment(to_user_id: str = Form(''), file: UploadFile = File(...),
+def post_chat_attachment(thread_key: str = Form(''), to_user_id: str = Form(''), file: UploadFile = File(...),
                           user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     """Фото/файл-вложение в чат (10.27) — отдельный multipart endpoint, т.к. текстовые
     сообщения идут через простой JSON POST /api/chat/messages."""
-    thread_id = _chat_thread_id(user['id'], to_user_id or None)
-    thread_meta = _load_chat_thread_meta()
-    if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
-        raise HTTPException(403, "Чат закрыт руководством")
+    if thread_key:
+        _check_thread_access(thread_key, str(user['id']), role)
+    else:
+        thread_id = _chat_thread_id(user['id'], to_user_id or None)
+        thread_meta = _load_chat_thread_meta()
+        if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
+            raise HTTPException(403, "Чат закрыт руководством")
 
     ext = os.path.splitext(file.filename or '')[1] or '.bin'
     fname = f'{uuid.uuid4().hex}{ext}'
@@ -1958,10 +1954,9 @@ def _chat_thread_participants(thread_id: str) -> list:
 @app.post("/api/chat/threads/close")
 def close_chat_thread(body: ChatThreadCloseBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     thread_id = _chat_thread_id(user['id'], body.to_user_id)
-    with _lock_for(CHAT_THREAD_META_FILE):
-        meta = _load_chat_thread_meta()
-        meta[thread_id] = {'closed': True, 'closed_at': int(time.time()), 'closed_by': str(user['id'])}
-        _save_chat_thread_meta(meta)
+    meta = _load_chat_thread_meta()
+    meta[thread_id] = {'closed': True, 'closed_at': int(time.time()), 'closed_by': str(user['id'])}
+    _save_chat_thread_meta(meta)
 
     for uid in _chat_thread_participants(thread_id):
         if uid == str(user['id']):
@@ -1976,11 +1971,10 @@ def close_chat_thread(body: ChatThreadCloseBody, user: dict = Depends(get_curren
 @app.post("/api/chat/threads/reopen")
 def reopen_chat_thread(body: ChatThreadCloseBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     thread_id = _chat_thread_id(user['id'], body.to_user_id)
-    with _lock_for(CHAT_THREAD_META_FILE):
-        meta = _load_chat_thread_meta()
-        if thread_id in meta:
-            meta[thread_id]['closed'] = False
-            _save_chat_thread_meta(meta)
+    meta = _load_chat_thread_meta()
+    if thread_id in meta:
+        meta[thread_id]['closed'] = False
+        _save_chat_thread_meta(meta)
     return {"status": "ok", "thread_id": thread_id}
 
 
@@ -2507,7 +2501,7 @@ def get_mangel_photo_file(fname: str, user: dict = Depends(get_current_user)):
 
 
 @app.patch("/api/mangel/{ticket_id}/status")
-def update_mangel_status(ticket_id: str, body: MangelStatusBody, user: dict = Depends(get_current_user)):
+def update_mangel_status(ticket_id: str, body: MangelStatusBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     try:
         result = ml.update_status(ticket_id, body.status)
     except KeyError as e:
@@ -2686,6 +2680,7 @@ async def checkin_finish(
     pause_minutes: int = Form(0),
     files: list[UploadFile] = File(default=[]),
     user: dict = Depends(get_current_user),
+    role: str = Depends(get_role),
     idempotency_key: str = Header(default='', alias='Idempotency-Key'),
 ):
     cached = _idempotency_get(idempotency_key)
@@ -2697,6 +2692,8 @@ async def checkin_finish(
         session = next((i for i in items if i['id'] == session_id), None)
         if not session:
             raise HTTPException(404, "Сессия check-in не найдена")
+        if role != 'owner' and str(session.get('user_id')) != str(user['id']):
+            raise HTTPException(403, "Нельзя завершить чужую смену")
         if session['finish_at'] is not None:
             raise HTTPException(400, "Смена уже завершена")
         object_id, date_str = session['object_id'], session['date']
@@ -2880,7 +2877,8 @@ class ZeiterfassungBody(BaseModel):
 
 
 @app.post("/api/checkin/manual")
-def checkin_manual(body: ZeiterfassungBody, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+def checkin_manual(body: ZeiterfassungBody, user: dict = Depends(get_current_user), role: str = Depends(get_role),
+                    idempotency_key: str = Header(default='', alias='Idempotency-Key')):
     target_user_id = body.mitarbeiter_user_id if (role == 'owner' and body.mitarbeiter_user_id) else str(user['id'])
     entry = {
         "id": uuid.uuid4().hex,
@@ -2954,11 +2952,13 @@ def _call_glm_vision(system_prompt: str, image_paths: list, text_prompt: str) ->
         raise HTTPException(502, f"GLM недоступен: {str(e)[:200]}")
 
 
-def _get_checkin_session(session_id: str) -> dict:
+def _get_checkin_session(session_id: str, user_id=None, role=None) -> dict:
     items = _load_checkin_meta()
     session = next((i for i in items if i['id'] == session_id), None)
     if not session:
         raise HTTPException(404, "Сессия не найдена")
+    if role is not None and role != 'owner' and str(session.get('user_id')) != str(user_id):
+        raise HTTPException(403, "Нет доступа к этой смене")
     if not session.get('finish_photos'):
         raise HTTPException(400, "Смена ещё не завершена — нет финишных фото для сравнения")
     return session
@@ -2975,8 +2975,9 @@ def _save_checkin_analysis(session_id: str, key: str, value):
 
 
 @app.post("/api/checkin/{session_id}/analyze-progress")
-def analyze_checkin_progress(session_id: str, user: dict = Depends(get_current_user)):
-    session = _get_checkin_session(session_id)
+def analyze_checkin_progress(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    session = _get_checkin_session(session_id, user['id'], role)
+    _check_ai_rate(user['id'])
     result = _call_glm_vision(
         "Ты — опытный прораб на стройке. Сравниваешь фото 'до' и 'после' работ на одном участке "
         "объекта. Кратко (2-4 предложения, по-русски) опиши: какой прогресс виден, что изменилось, "
@@ -2989,8 +2990,9 @@ def analyze_checkin_progress(session_id: str, user: dict = Depends(get_current_u
 
 
 @app.post("/api/checkin/{session_id}/analyze-materials")
-def analyze_checkin_materials(session_id: str, user: dict = Depends(get_current_user)):
-    session = _get_checkin_session(session_id)
+def analyze_checkin_materials(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    session = _get_checkin_session(session_id, user['id'], role)
+    _check_ai_rate(user['id'])
     result = _call_glm_vision(
         "Ты — сметчик на стройке. По фото оцениваешь примерный расход строительных материалов "
         "(мешки, паллеты, упаковки — что видно в кадре). Дай краткую (2-3 предложения, по-русски) "
@@ -3004,8 +3006,9 @@ def analyze_checkin_materials(session_id: str, user: dict = Depends(get_current_
 
 
 @app.post("/api/checkin/{session_id}/analyze-defects")
-def analyze_checkin_defects(session_id: str, user: dict = Depends(get_current_user)):
-    session = _get_checkin_session(session_id)
+def analyze_checkin_defects(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    session = _get_checkin_session(session_id, user['id'], role)
+    _check_ai_rate(user['id'])
     result = _call_glm_vision(
         "Ты — инспектор качества на стройке. Смотришь на фото участка работ и ищешь видимые дефекты: "
         "трещины, протечки, неровности, брак. Ответь СТРОГО в формате: первая строка 'ДЕФЕКТ: да' или "
@@ -3064,10 +3067,9 @@ def _create_critical_alert(target_user_id: str, kind: str, title: str, ref_id: s
         "resolution_note": None,
         "resolution_photos": [],
     }
-    with _lock_for(CRITICAL_ALERTS_FILE):
-        items = _load_critical_alerts()
-        items.append(alert)
-        _save_critical_alerts(items)
+    items = _load_critical_alerts()
+    items.append(alert)
+    _save_critical_alerts(items)
 
     roles = _load_roles()
     owner_ids = [uid for uid, r in roles.items() if r == 'owner']
@@ -3105,16 +3107,15 @@ class CriticalAlertAckBody(BaseModel):
 
 @app.post("/api/critical-alerts/{alert_id}/ack")
 def ack_critical_alert(alert_id: str, body: CriticalAlertAckBody, user: dict = Depends(get_current_user)):
-    with _lock_for(CRITICAL_ALERTS_FILE):
-        items = _load_critical_alerts()
-        alert = next((a for a in items if a['id'] == alert_id), None)
-        if not alert:
-            raise HTTPException(404, "Алерт не найден")
-        if alert['target_user_id'] != str(user['id']):
-            raise HTTPException(403, "Не ваш алерт")
-        alert['acknowledged_at'] = int(time.time())
-        alert['comment'] = body.comment.strip()[:500] or None
-        _save_critical_alerts(items)
+    items = _load_critical_alerts()
+    alert = next((a for a in items if a['id'] == alert_id), None)
+    if not alert:
+        raise HTTPException(404, "Алерт не найден")
+    if alert['target_user_id'] != str(user['id']):
+        raise HTTPException(403, "Не ваш алерт")
+    alert['acknowledged_at'] = int(time.time())
+    alert['comment'] = body.comment.strip()[:500] or None
+    _save_critical_alerts(items)
 
     if alert['comment']:
         roles = _load_roles()
@@ -3140,29 +3141,34 @@ def resolve_critical_alert(alert_id: str, resolution: str = Form(...), note: str
                             user: dict = Depends(get_current_user)):
     if resolution not in ('yes', 'no'):
         raise HTTPException(400, "resolution должен быть yes или no")
-    with _lock_for(CRITICAL_ALERTS_FILE):
-        items = _load_critical_alerts()
-        alert = next((a for a in items if a['id'] == alert_id), None)
-        if not alert:
-            raise HTTPException(404, "Алерт не найден")
-        if alert['target_user_id'] != str(user['id']):
-            raise HTTPException(403, "Не ваш алерт")
+    items = _load_critical_alerts()
+    alert = next((a for a in items if a['id'] == alert_id), None)
+    if not alert:
+        raise HTTPException(404, "Алерт не найден")
+    if alert['target_user_id'] != str(user['id']):
+        raise HTTPException(403, "Не ваш алерт")
 
-        alert['resolution'] = resolution
-        alert['resolution_note'] = note.strip()[:500] or None
+    alert['resolution'] = resolution
+    alert['resolution_note'] = note.strip()[:500] or None
 
-        saved_photos = []
-        if resolution == 'yes' and files:
-            alert_dir = os.path.join(CRITICAL_ALERT_PHOTO_DIR, alert_id)
-            os.makedirs(alert_dir, exist_ok=True)
-            for f in files:
-                ext = os.path.splitext(f.filename or '')[1] or '.jpg'
-                fname = f"{uuid.uuid4().hex}{ext}"
-                with open(os.path.join(alert_dir, fname), 'wb') as out:
-                    out.write(f.file.read())
-                saved_photos.append(fname)
-        alert['resolution_photos'] = saved_photos
-        _save_critical_alerts(items)
+    saved_photos = []
+    if resolution == 'yes' and files:
+        alert_dir = os.path.join(CRITICAL_ALERT_PHOTO_DIR, alert_id)
+        os.makedirs(alert_dir, exist_ok=True)
+        for f in files:
+            content_type = f.content_type or ''
+            if not content_type.startswith('image/'):
+                raise HTTPException(400, "Файл должен быть изображением")
+            data = f.file.read()
+            if len(data) > 8 * 1024 * 1024:
+                raise HTTPException(400, "Файл слишком большой (макс. 8 МБ)")
+            ext = os.path.splitext(f.filename or '')[1] or '.jpg'
+            fname = f"{uuid.uuid4().hex}{ext}"
+            with open(os.path.join(alert_dir, fname), 'wb') as out:
+                out.write(data)
+            saved_photos.append(fname)
+    alert['resolution_photos'] = saved_photos
+    _save_critical_alerts(items)
 
     roles = _load_roles()
     owner_ids = [uid for uid, r in roles.items() if r == 'owner']
@@ -3323,10 +3329,9 @@ def create_abwesenheit(body: AbwesenheitBody, user: dict = Depends(get_current_u
         "created_at": int(time.time()),
         "status": "pending",
     }
-    with _lock_for(ABWESENHEIT_FILE):
-        items = _load_abwesenheit()
-        items.append(entry)
-        _save_abwesenheit(items)
+    items = _load_abwesenheit()
+    items.append(entry)
+    _save_abwesenheit(items)
     _notify_owner_abwesenheit_pending(entry)
     return entry
 
@@ -3334,16 +3339,15 @@ def create_abwesenheit(body: AbwesenheitBody, user: dict = Depends(get_current_u
 @app.patch("/api/abwesenheit/{entry_id}/close")
 def close_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     """Worker закрывает открытую запись досрочно ('поправился раньше'), owner может закрыть любую."""
-    with _lock_for(ABWESENHEIT_FILE):
-        items = _load_abwesenheit()
-        entry = next((i for i in items if i['id'] == entry_id), None)
-        if not entry:
-            raise HTTPException(404, "Запись не найдена")
-        if entry['user_id'] != str(user['id']) and role != 'owner':
-            raise HTTPException(403, "Можно закрывать только свои записи")
-        entry['date_to'] = datetime.utcnow().strftime('%Y-%m-%d')
-        entry['open_ended'] = False
-        _save_abwesenheit(items)
+    items = _load_abwesenheit()
+    entry = next((i for i in items if i['id'] == entry_id), None)
+    if not entry:
+        raise HTTPException(404, "Запись не найдена")
+    if entry['user_id'] != str(user['id']) and role != 'owner':
+        raise HTTPException(403, "Можно закрывать только свои записи")
+    entry['date_to'] = datetime.utcnow().strftime('%Y-%m-%d')
+    entry['open_ended'] = False
+    _save_abwesenheit(items)
     return entry
 
 
@@ -3356,13 +3360,12 @@ def update_abwesenheit_status(entry_id: str, body: AbwesenheitStatusBody,
                                user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     if body.status not in ('approved', 'rejected'):
         raise HTTPException(400, "status должен быть approved или rejected")
-    with _lock_for(ABWESENHEIT_FILE):
-        items = _load_abwesenheit()
-        entry = next((i for i in items if i['id'] == entry_id), None)
-        if not entry:
-            raise HTTPException(404, "Запись не найдена")
-        entry['status'] = body.status
-        _save_abwesenheit(items)
+    items = _load_abwesenheit()
+    entry = next((i for i in items if i['id'] == entry_id), None)
+    if not entry:
+        raise HTTPException(404, "Запись не найдена")
+    entry['status'] = body.status
+    _save_abwesenheit(items)
     _notify_worker_abwesenheit_decision(entry)
     _create_critical_alert(
         target_user_id=entry['user_id'],
@@ -3379,14 +3382,13 @@ def _auto_close_expired_open_ended_abwesenheit():
     до конца месяца без уведомления. Ленивая проверка при каждом GET (не отдельный
     systemd timer) — закрывает просроченные и пушит worker'у + owner'у."""
     today_str = datetime.utcnow().strftime('%Y-%m-%d')
-    with _lock_for(ABWESENHEIT_FILE):
-        items = _load_abwesenheit()
-        expired = [i for i in items if i.get('open_ended') and i['date_to'] < today_str]
-        if not expired:
-            return
-        for entry in expired:
-            entry['open_ended'] = False
-        _save_abwesenheit(items)
+    items = _load_abwesenheit()
+    expired = [i for i in items if i.get('open_ended') and i['date_to'] < today_str]
+    if not expired:
+        return
+    for entry in expired:
+        entry['open_ended'] = False
+    _save_abwesenheit(items)
 
     roles = _load_roles()
     owner_ids = [uid for uid, r in roles.items() if r == 'owner']
@@ -3424,13 +3426,12 @@ def list_all_abwesenheit(user: dict = Depends(get_current_user), _: None = Depen
 
 @app.delete("/api/abwesenheit/{entry_id}")
 def delete_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    with _lock_for(ABWESENHEIT_FILE):
-        items = _load_abwesenheit()
-        entry = next((i for i in items if i['id'] == entry_id), None)
-        if not entry:
-            raise HTTPException(404, "Запись не найдена")
-        if entry['user_id'] != str(user['id']) and role != 'owner':
-            raise HTTPException(403, "Можно удалять только свои записи")
-        items = [i for i in items if i['id'] != entry_id]
-        _save_abwesenheit(items)
+    items = _load_abwesenheit()
+    entry = next((i for i in items if i['id'] == entry_id), None)
+    if not entry:
+        raise HTTPException(404, "Запись не найдена")
+    if entry['user_id'] != str(user['id']) and role != 'owner':
+        raise HTTPException(403, "Можно удалять только свои записи")
+    items = [i for i in items if i['id'] != entry_id]
+    _save_abwesenheit(items)
     return {"status": "ok"}
