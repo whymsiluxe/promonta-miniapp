@@ -33,12 +33,35 @@ function _getGeolocation() {
   });
 }
 
-function refreshCheckinButtons() {
+// 24.07: источник истины — сервер (/api/checkin), не localStorage. localStorage
+// в Telegram WebView нестабилен между сессиями (подтверждено живым багом: старт смены
+// через FAB на Home записывал сессию, но stages-view открытый через "Завершить" на
+// дашборде читал пустой/устаревший localStorage — обе кнопки оставались в неверном
+// состоянии). _getActiveCheckinSession(localStorage) остаётся как synchronous fallback
+// для мест, где нельзя ждать — сама запись сессии при старте/финише не меняется.
+async function refreshCheckinButtons() {
   const objectId = _stagesCurrentObjectId;
-  const session = _getActiveCheckinSession(objectId);
   const startBtn = document.getElementById('checkin-start-btn');
   const finishBtn = document.getElementById('checkin-finish-btn');
   const analyzeBtn = document.getElementById('checkin-analyze-btn');
+  if (!startBtn || !finishBtn || !analyzeBtn) return;
+
+  let session = null;
+  try {
+    const data = await api(`/api/checkin?object_id=${encodeURIComponent(objectId)}`);
+    const sessions = (data.sessions || []).filter(s => s.date === new Date().toISOString().slice(0, 10));
+    const open = sessions.find(s => s.finish_at === null || s.finish_at === undefined);
+    if (open) {
+      session = { id: open.id, finished: false };
+    } else if (sessions.length) {
+      session = { id: sessions[sessions.length - 1].id, finished: true };
+    }
+    if (session) _setActiveCheckinSession(objectId, session);
+  } catch (e) {
+    // сеть недоступна — используем последнее известное локальное состояние, не блокируем UI
+    session = _getActiveCheckinSession(objectId);
+  }
+
   if (session && !session.finished) {
     startBtn.disabled = true;
     startBtn.textContent = '▶ Смена начата';

@@ -31,7 +31,7 @@ async function _workerCheckinTap() {
 }
 
 async function _openCheckinStatusScreen() {
-  const activeObjectId = _findActiveWorkerCheckinObjectId();
+  const activeObjectId = await _findActiveWorkerCheckinObjectId();
   const modal = document.getElementById('checkin-status-modal');
   const body = document.getElementById('checkin-status-body');
   if (!modal || !body) return;
@@ -71,18 +71,36 @@ async function _openCheckinStatusScreen() {
   modal.style.display = 'flex';
 }
 
-function _findActiveWorkerCheckinObjectId() {
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key || !key.startsWith('checkin_session_')) continue;
-    try {
-      const session = JSON.parse(localStorage.getItem(key));
-      if (session && !session.finished) {
-        return key.replace('checkin_session_', '');
-      }
-    } catch (e) {}
+// 24.07: сервер как источник истины (не localStorage — нестабилен в Telegram WebView
+// между открытием разных экранов, подтверждённый живой баг: FAB показывал "активная
+// смена", но stages-view той же сессии её не видел). Синхронизирует localStorage
+// заодно, чтобы synchronous-читатели (_getActiveCheckinSession) не расходились.
+async function _findActiveWorkerCheckinObjectId() {
+  try {
+    const data = await api('/api/checkin');
+    const today = new Date().toISOString().slice(0, 10);
+    const open = (data.sessions || []).find(s =>
+      s.date === today && (s.finish_at === null || s.finish_at === undefined)
+    );
+    if (open) {
+      _setActiveCheckinSession(open.object_id, { id: open.id, finished: false });
+      return open.object_id;
+    }
+    return null;
+  } catch (e) {
+    // сеть недоступна — локальный fallback, лучше устаревший статус чем никакой
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith('checkin_session_')) continue;
+      try {
+        const session = JSON.parse(localStorage.getItem(key));
+        if (session && !session.finished) {
+          return key.replace('checkin_session_', '');
+        }
+      } catch (e2) {}
+    }
+    return null;
   }
-  return null;
 }
 
 async function _openWorkerObjectPicker() {
@@ -140,11 +158,11 @@ function _startWorkerCheckin(objectId) {
   document.getElementById('checkin-photo-input').click();
 }
 
-function _refreshWorkerCheckinFabIcon() {
+async function _refreshWorkerCheckinFabIcon() {
   const icon = document.getElementById('nav-start-fab-icon');
   const fab = document.getElementById('nav-start-fab');
   if (!icon || !fab) return;
-  const active = _findActiveWorkerCheckinObjectId();
+  const active = await _findActiveWorkerCheckinObjectId();
   icon.textContent = active ? '■' : '▶';
   fab.classList.toggle('active-session', !!active);
 }
@@ -152,12 +170,12 @@ function _refreshWorkerCheckinFabIcon() {
 // checkin.js вызывает refreshCheckinButtons() после успешного старта/финиша —
 // синхронизируем иконку центральной кнопки тем же хуком.
 const _origRefreshCheckinButtons = typeof refreshCheckinButtons === 'function' ? refreshCheckinButtons : null;
-function refreshCheckinButtons() {
+async function refreshCheckinButtons() {
   // Оригинал трогает #checkin-start-btn/#checkin-finish-btn из stages-view — они существуют,
   // только если worker уже открывал детейл объекта. Если он стартовал смену через FAB,
   // не заходя в объект, эти элементы отсутствуют — оригинал должен молча пропустить это, не упасть.
   if (_origRefreshCheckinButtons) {
-    try { _origRefreshCheckinButtons(); } catch (e) {}
+    try { await _origRefreshCheckinButtons(); } catch (e) {}
   }
-  _refreshWorkerCheckinFabIcon();
+  await _refreshWorkerCheckinFabIcon();
 }
