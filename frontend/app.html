@@ -2656,50 +2656,6 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     </div>
     <div id="checkin-analysis-result" class="checkin-analysis" style="display:none;"></div>
     <input type="file" id="checkin-photo-input" accept="image/*" capture="environment" multiple style="display:none;">
-<div id="checkin-status-modal" class="checkin-status-modal" style="display:none;">
-  <div class="checkin-status-inner">
-    <button class="chat-back-btn" id="checkin-status-close-btn" type="button" aria-label="Закрыть">✕</button>
-    <div id="checkin-status-body"></div>
-  </div>
-</div>
-<div id="checkin-preview-modal" style="display:none;">
-  <div class="checkin-preview-inner">
-    <div class="checkin-preview-header">
-      <span class="checkin-preview-title" id="checkin-preview-title">Фото начала смены</span>
-      <button class="checkin-preview-close" id="checkin-preview-close" type="button">✕</button>
-    </div>
-    <div class="checkin-preview-hint">Сделай 2-4 фото объекта с разных углов</div>
-    <div class="checkin-preview-grid" id="checkin-preview-grid"></div>
-    <button class="checkin-preview-add-btn" id="checkin-preview-add-btn" type="button">📷 Добавить фото</button>
-
-    <div id="checkin-finish-survey" class="mangel-form" style="display:none;">
-      <div class="checkin-survey-field">
-        <label class="checkin-survey-label">Что сделано за день?</label>
-        <textarea id="checkin-survey-done" class="mangel-textarea" rows="2" placeholder="Например: оштукатурили стену в комнате 2, установили 3 окна"></textarea>
-      </div>
-      <div class="checkin-survey-field">
-        <label class="checkin-survey-label">Доп. работы (если были, вне плана)</label>
-        <textarea id="checkin-survey-extra" class="mangel-textarea" rows="2" placeholder="Например: пришлось докупить крепёж, заделали трещину, которую заметили"></textarea>
-      </div>
-      <div class="checkin-survey-field">
-        <label class="checkin-survey-label">Что нужно подготовить на завтра? <span class="checkin-survey-optional">(необязательно — заполняй, только если правда что-то нужно)</span></label>
-        <textarea id="checkin-survey-next" class="mangel-textarea" rows="2" placeholder="Например: докупить краску (2 банки), взять перфоратор с базы"></textarea>
-      </div>
-      <div class="checkin-survey-field">
-        <label class="checkin-survey-label">Сколько было пауз, минут?</label>
-        <div class="checkin-pause-row">
-          <button type="button" id="checkin-survey-pause-minus" class="checkin-pause-btn">−</button>
-          <span id="checkin-survey-pause-value">30 мин.</span>
-          <button type="button" id="checkin-survey-pause-plus" class="checkin-pause-btn">+</button>
-          <input type="hidden" id="checkin-survey-pause" value="30">
-        </div>
-      </div>
-    </div>
-
-    <button class="submit-btn" id="checkin-preview-confirm-btn" type="button" disabled>Подтвердить</button>
-  </div>
-</div>
-
     <div id="checkin-manual-form" class="mangel-form" style="display:none;">
       <select id="checkin-art-select" class="mangel-select">
         <option value="Arbeitszeit">🔧 Рабочее время</option>
@@ -2915,6 +2871,50 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 </div>
 
 <!-- ═══════════ Комментарии к фото (Инстаграм-стиль, 10.4) ═══════════ -->
+<!-- checkin-status-modal / checkin-preview-modal: перенесены сюда (24.07) из #stages-view — жили внутри #view-objects, поэтому position:fixed не спасал от display:none родителя, когда worker открывал FAB с Home (не с экрана объекта): модалка технически была display:flex, но невидима, т.к. .view предок скрыт. -->
+<div id="checkin-status-modal" class="checkin-status-modal" style="display:none;">
+  <div class="checkin-status-inner">
+    <button class="chat-back-btn" id="checkin-status-close-btn" type="button" aria-label="Закрыть">✕</button>
+    <div id="checkin-status-body"></div>
+  </div>
+</div>
+<div id="checkin-preview-modal" style="display:none;">
+  <div class="checkin-preview-inner">
+    <div class="checkin-preview-header">
+      <span class="checkin-preview-title" id="checkin-preview-title">Фото начала смены</span>
+      <button class="checkin-preview-close" id="checkin-preview-close" type="button">✕</button>
+    </div>
+    <div class="checkin-preview-hint">Сделай 2-4 фото объекта с разных углов</div>
+    <div class="checkin-preview-grid" id="checkin-preview-grid"></div>
+    <button class="checkin-preview-add-btn" id="checkin-preview-add-btn" type="button">📷 Добавить фото</button>
+
+    <div id="checkin-finish-survey" class="mangel-form" style="display:none;">
+      <div class="checkin-survey-field">
+        <label class="checkin-survey-label">Что сделано за день?</label>
+        <textarea id="checkin-survey-done" class="mangel-textarea" rows="2" placeholder="Например: оштукатурили стену в комнате 2, установили 3 окна"></textarea>
+      </div>
+      <div class="checkin-survey-field">
+        <label class="checkin-survey-label">Доп. работы (если были, вне плана)</label>
+        <textarea id="checkin-survey-extra" class="mangel-textarea" rows="2" placeholder="Например: пришлось докупить крепёж, заделали трещину, которую заметили"></textarea>
+      </div>
+      <div class="checkin-survey-field">
+        <label class="checkin-survey-label">Что нужно подготовить на завтра? <span class="checkin-survey-optional">(необязательно — заполняй, только если правда что-то нужно)</span></label>
+        <textarea id="checkin-survey-next" class="mangel-textarea" rows="2" placeholder="Например: докупить краску (2 банки), взять перфоратор с базы"></textarea>
+      </div>
+      <div class="checkin-survey-field">
+        <label class="checkin-survey-label">Сколько было пауз, минут?</label>
+        <div class="checkin-pause-row">
+          <button type="button" id="checkin-survey-pause-minus" class="checkin-pause-btn">−</button>
+          <span id="checkin-survey-pause-value">30 мин.</span>
+          <button type="button" id="checkin-survey-pause-plus" class="checkin-pause-btn">+</button>
+          <input type="hidden" id="checkin-survey-pause" value="30">
+        </div>
+      </div>
+    </div>
+
+    <button class="submit-btn" id="checkin-preview-confirm-btn" type="button" disabled>Подтвердить</button>
+  </div>
+</div>
 <div id="photo-comments-modal" class="photo-comments-modal" style="display:none;">
   <div class="pc-header">
     <button class="chat-back-btn" id="pc-back-btn" type="button" aria-label="Назад">←</button>
