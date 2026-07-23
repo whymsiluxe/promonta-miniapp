@@ -58,9 +58,9 @@ Being worked in dedicated branches (`feat/ui-batch-1`, etc.), one screen/feature
 - [ ] Objects: stacked-avatar team indicator on cards (people-dots already exist per `server-structure.md` — check if this already satisfies the ask before rebuilding)
 - [ ] Chat list: last message + time + unread count (partially exists — `unread_by_thread` endpoint already returns counts, verify frontend renders preview text)
 - [x] Chat thread: timestamp grouping ("Сегодня" etc.) — day-dividers added to thread detail view. Commit `98b0e25`.
-- [ ] Chat: attach location — deferred, see Batch 3 below (not simple, needs Telegram LocationManager permission flow).
-- [ ] Tools: notification when overdue return — **confirmed no expiry/due-date field exists anywhere in `CheckoutBody` or the tool data shape**. Needs a new backend field + migration before any frontend work; moved to the deferred-decision section below rather than building on top of nothing.
-- [ ] Tools: photo of condition at checkout/return — same issue, no backend endpoint accepts a photo on checkout currently (`PATCH /api/tools/{serial}/checkout` is JSON-only, no multipart). New backend work needed first.
+- [ ] ~~Chat: attach location~~ — **rejected, owner decision (2026-07-23)**: check-in already captures GPS at shift start (`checkin_meta.json`), which already establishes the worker is on-site — a separate location-in-chat message would be redundant. Not building.
+- [ ] ~~Tools: notification when overdue return~~ — **rejected, owner decision (2026-07-23)**: would need a new backend field + data migration for zero current benefit to the owner. Not building.
+- [ ] ~~Tools: photo of condition at checkout/return~~ — **rejected, owner decision (2026-07-23)**: same reasoning, no backend endpoint accepts a photo on checkout currently and owner doesn't want the migration work for it. Not building.
 
 **Batch 3 — higher effort / new UI patterns, needs its own scoping pass before starting**:
 - [ ] Object detail: tabs (Overview/Tasks/Documents/History/Budget) — likely a real restructure of the object detail view, not a tweak
@@ -74,12 +74,15 @@ Being worked in dedicated branches (`feat/ui-batch-1`, etc.), one screen/feature
 - [ ] Profile: interactive Stundenzettel chart instead of a number — deferred, same charting-library decision as budget donut/sparklines below.
 - [ ] ~~Profile: skills as progress bars instead of a list~~ — **skipped, data doesn't support it**: `worker_profiles.json` stores `skills` as a flat `list[str]` (skill names only), no proficiency/level field anywhere in the backend model (`main.py` lines ~278-559). A progress bar needs a 0-100 value; faking one would misrepresent actual worker skill data. Needs a product decision (add a level field + UI to set it) before this is buildable, not a frontend-only task.
 - [ ] ~~Profile: clothing sizes as an EU/US/UK conversion table~~ — **skipped, data doesn't support it**: sizes are stored as free-text strings (e.g. "52 / L", "XL", "44"), not a known size *system* per field — no way to know which system a given string is already in, so no reliable conversion is possible without asking workers to re-enter sizes in a structured format first. Same category of gap as skills above.
-- [ ] Tools: QR-code scanner for lookup (needs a camera/QR library decision)
+- [ ] ~~Tools: QR-code scanner for lookup~~ — **not needed for the current Telegram Mini App (owner decision, 2026-07-23)**. Camera-based QR scanning is a much better fit for a native phone app than a Telegram WebView. If a native app gets built, this belongs there, not here.
 - [ ] Tools: availability-calendar-based booking (new feature, not in current data model — `object_assignments.json`-style scoping would need a tools equivalent)
 - [ ] Home stat cards: sparkline mini-trend-graphs (needs a charting approach decision, same as budget donut)
 - [ ] News: tag-based category filter
 - [ ] Virtual scrolling for lists >20 items (vanilla equivalent: manual windowing or a small library — no framework virtualization available without React)
 - [ ] Image lazy loading + blur placeholder (`loading="lazy"` + a blurred low-res placeholder — doable in vanilla JS, no library needed)
+
+**Future native phone app backlog** (owner mentioned possibly building a native app later — logging ideas here so they aren't lost, not started):
+- [ ] QR-code scanner for tool lookup — camera-based, natural fit for native, awkward in Telegram WebView.
 
 **Explicitly deferred pending a security/architecture decision, not silently built**:
 - [ ] Backend: rate limiting across all API routes (currently only AI chat has rate limiting per `ai_chat_rate.json`) — needs scoping, could affect legitimate burst usage (e.g. photo uploads during check-in)
