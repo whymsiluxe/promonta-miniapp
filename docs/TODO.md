@@ -57,10 +57,10 @@ Being worked in dedicated branches (`feat/ui-batch-1`, etc.), one screen/feature
 - [ ] Objects: filters (city, status, budget), sort (progress/date/budget), search bar with 300ms debounce
 - [ ] Objects: stacked-avatar team indicator on cards (people-dots already exist per `server-structure.md` — check if this already satisfies the ask before rebuilding)
 - [ ] Chat list: last message + time + unread count (partially exists — `unread_by_thread` endpoint already returns counts, verify frontend renders preview text)
-- [ ] Chat thread: timestamp grouping ("Сегодня" etc.)
-- [ ] Chat: attach location (photo/document attachment already exists per API.md — location is the new part)
-- [ ] Tools: notification when overdue return (backend logic needed — check if any expiry field exists in the tool data shape first)
-- [ ] Tools: photo of condition at checkout/return
+- [x] Chat thread: timestamp grouping ("Сегодня" etc.) — day-dividers added to thread detail view. Commit `98b0e25`.
+- [ ] Chat: attach location — deferred, see Batch 3 below (not simple, needs Telegram LocationManager permission flow).
+- [ ] Tools: notification when overdue return — **confirmed no expiry/due-date field exists anywhere in `CheckoutBody` or the tool data shape**. Needs a new backend field + migration before any frontend work; moved to the deferred-decision section below rather than building on top of nothing.
+- [ ] Tools: photo of condition at checkout/return — same issue, no backend endpoint accepts a photo on checkout currently (`PATCH /api/tools/{serial}/checkout` is JSON-only, no multipart). New backend work needed first.
 
 **Batch 3 — higher effort / new UI patterns, needs its own scoping pass before starting**:
 - [ ] Object detail: tabs (Overview/Tasks/Documents/History/Budget) — likely a real restructure of the object detail view, not a tweak
@@ -70,10 +70,10 @@ Being worked in dedicated branches (`feat/ui-batch-1`, etc.), one screen/feature
 - [ ] Chat: swipe-to-reply gesture
 - [ ] Chat: voice messages via `tg.startRecordVideo()`/`stopRecordVideo()` — note: those are Telegram's *video* recording APIs, not audio; the app already has voice notes via a different mechanism (`POST /api/chat/messages/voice`, faster-whisper transcription) — verify which is actually wanted before implementing, this may be describing an already-existing feature incorrectly
 - [ ] Calendar: week/month/year views, color-coded by type, drag-and-drop event rescheduling, bottom-sheet on day tap
-- [ ] Profile: split into Мой профиль / Команда / Настройки — restructure, not a tweak
-- [ ] Profile: interactive Stundenzettel chart instead of a number
-- [ ] Profile: skills as progress bars instead of a list
-- [ ] Profile: clothing sizes as an EU/US/UK conversion table
+- [x] Profile: split into Мой профиль / Команда / Настройки — done as an in-page segmented-tab control (not separate routed views), zero markup deleted, all existing handlers/IDs preserved. Commit `aaef194`.
+- [ ] Profile: interactive Stundenzettel chart instead of a number — deferred, same charting-library decision as budget donut/sparklines below.
+- [ ] ~~Profile: skills as progress bars instead of a list~~ — **skipped, data doesn't support it**: `worker_profiles.json` stores `skills` as a flat `list[str]` (skill names only), no proficiency/level field anywhere in the backend model (`main.py` lines ~278-559). A progress bar needs a 0-100 value; faking one would misrepresent actual worker skill data. Needs a product decision (add a level field + UI to set it) before this is buildable, not a frontend-only task.
+- [ ] ~~Profile: clothing sizes as an EU/US/UK conversion table~~ — **skipped, data doesn't support it**: sizes are stored as free-text strings (e.g. "52 / L", "XL", "44"), not a known size *system* per field — no way to know which system a given string is already in, so no reliable conversion is possible without asking workers to re-enter sizes in a structured format first. Same category of gap as skills above.
 - [ ] Tools: QR-code scanner for lookup (needs a camera/QR library decision)
 - [ ] Tools: availability-calendar-based booking (new feature, not in current data model — `object_assignments.json`-style scoping would need a tools equivalent)
 - [ ] Home stat cards: sparkline mini-trend-graphs (needs a charting approach decision, same as budget donut)
