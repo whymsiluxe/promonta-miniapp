@@ -357,7 +357,7 @@ function _selectFeedTab(which, opts = {}) {
 
 // Новости (10.32): cron на VPS (news_pipeline.py) каждые 3-4ч добавляет пачку поверх
 // старых (накопительная лента) → GLM-саммари → JSON. Фронт рендерит порциями с infinite scroll.
-const NEWS_CAT_COLORS = { 'Украина': '#56768C', 'Германия': '#E37944', 'Технологии': '#4CA674' };
+const NEWS_CAT_COLORS = { 'Украина': '#56768C', 'Германия': '#B38B4D', 'Технологии': '#1F7A5F' };
 const NEWS_PAGE_SIZE = 10;
 let _newsItems = [];
 let _newsRenderedCount = 0;

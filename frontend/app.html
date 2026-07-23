@@ -10,23 +10,23 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root {
-  /* 22.07: тёплая бежево-фиолетовая палитра (утверждённое ТЗ пользователя) */
-  /* 23.07: тёмный фон приложения (было раньше) + бежевые карточки поверх — контраст,
-     а не всё одним тоном */
-  --bg-app: #1B1712;
-  --bg-card: #EFD7C7;
-  --bg-card-raised: #FAEAE0;
-  --bg-menu: #E3CABC;
-  --taupe: #B99687;
-  --primary-dark: #1B1E21;
-  --accent: #8158BC;
-  --accent-hover: #6D479E;
-  --warning: #E37944;
-  --text-main: #1B1E21;
-  --text-light: #8A7A6F;
-  --text-light-oncard: #675B53; /* 23.07: --text-light (2.99:1) проваливает WCAG AA конкретно на bg-card — эта версия (4.76:1) для secondary-текста ВНУТРИ карточек. --text-light сам не трогаем: часть usage лежит на тёмном body/header, где затемнение сделало бы хуже (2.72:1) */
-  --warning-text: #884929; /* 23.07: тёмный вариант warning для ТЕКСТА на bg-card (2.15:1→5.02:1); --warning остаётся ярким для фонов/иконок */
-  --border-color: #DCC2B2;
+  /* 23.07: Old Money — сдержанная роскошь, глубокий зелёный + золото sparingly.
+     Заменяет прежнюю бежево-фиолетовую light-тему полностью (владелец: "олд мани вместо лайт режима"). */
+  --bg-app: #0A0A0A;
+  --bg-card: #1C1C1C;
+  --bg-card-raised: #232323;
+  --bg-menu: #1C1C1C;
+  --taupe: #2A2A2A;
+  --primary-dark: #F2F0E8;
+  --accent: #0F3D2B;
+  --accent-hover: #144a35;
+  --accent-gold: #D4AF37;
+  --warning: #B38B4D;
+  --text-main: #F2F0E8;
+  --text-light: #B8B5A8;
+  --text-light-oncard: #B8B5A8;
+  --warning-text: #B38B4D;
+  --border-color: #2A2A2A;
   --steel-blue: #56768C;
   --font-heading: 'Outfit', sans-serif;
   --font-body: 'Montserrat', sans-serif;
@@ -36,18 +36,17 @@
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 22px;
-  /* тени тёплым таупом вместо чистого чёрного — двойной слой для 3D-глубины stacked-cards */
-  --shadow-sm: 0 1px 3px rgba(185,150,135,0.25), 0 1px 2px rgba(185,150,135,0.15);
-  --shadow-md: 0 2px 6px rgba(185,150,135,0.28), 0 12px 28px -8px rgba(185,150,135,0.40);
-  --green: #4CA674;
-  --yellow: #E37944;
-  --red: #D94B43;
-  /* мульти-цветные icon-плашки — каждая категория свой акцент */
-  --icon-bg-1: #1B1E21;
-  --icon-bg-2: #D94B43;
-  --icon-bg-3: #E37944;
-  --icon-bg-4: #8158BC;
-  --icon-bg-5: #56768C;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.25);
+  --shadow-md: 0 2px 6px rgba(0,0,0,0.4), 0 12px 28px -8px rgba(0,0,0,0.5);
+  --green: #1F7A5F;
+  --yellow: #B38B4D;
+  --red: #8C4A42;
+  /* icon-плашки — монохром/приглушённые тона вместо ярких, золото зарезервировано для акцентов, не заливок */
+  --icon-bg-1: #1C1C1C;
+  --icon-bg-2: #2A2A2A;
+  --icon-bg-3: #0F3D2B;
+  --icon-bg-4: #232323;
+  --icon-bg-5: #2A2A2A;
 
   /* Compat-алиасы: старые названия переменных (легаси Tools/Documents/Angebot/Rechnung/AI CSS)
      теперь указывают на новую систему — единый визуальный язык без переписывания каждого правила. */
@@ -64,6 +63,7 @@
   --primary-dark: #F8F8F8;
   --accent: #5DD62C;
   --accent-hover: #337418;
+  --accent-gold: #D4AF37;
   --warning: #f59e0b;
   --text-main: #F8F8F8;
   --text-light: #94a3b8;
@@ -643,11 +643,11 @@ header h1 {
   flex-shrink: 0;
 }
 
-.badge.active, .badge.free { background: #dcfce7; color: #15803d; }
-.badge.paused, .badge.in-use { background: #fef3c7; color: #92400e; }
-.badge.done { background: #dbeafe; color: #1d4ed8; }
-.badge.repair { background: #fee2e2; color: #b91c1c; }
-.badge.missing { background: #e2e8f0; color: #475569; }
+.badge.active, .badge.free { background: rgba(31,122,95,0.16); color: #4FA687; }
+.badge.paused, .badge.in-use { background: rgba(179,139,77,0.16); color: var(--accent-gold); }
+.badge.done { background: rgba(212,175,55,0.14); color: var(--accent-gold); }
+.badge.repair { background: rgba(140,74,66,0.18); color: #C77A6E; }
+.badge.missing { background: var(--bg-card-raised); color: var(--text-light); }
 
 .card-stage {
   font-size: 0.8rem;
@@ -703,9 +703,9 @@ header h1 {
   user-select: none;
 }
 
-.status-switch .status-opt.active[data-status="В работе"] { background: #dcfce7; color: #15803d; }
-.status-switch .status-opt.active[data-status="Пауза"] { background: #fef3c7; color: #92400e; }
-.status-switch .status-opt.active[data-status="Завершён"] { background: #dbeafe; color: #1d4ed8; }
+.status-switch .status-opt.active[data-status="В работе"] { background: rgba(31,122,95,0.16); color: #4FA687; }
+.status-switch .status-opt.active[data-status="Пауза"] { background: rgba(179,139,77,0.16); color: var(--accent-gold); }
+.status-switch .status-opt.active[data-status="Завершён"] { background: rgba(212,175,55,0.14); color: var(--accent-gold); }
 .status-switch.readonly .status-opt { cursor: default; }
 
 .tasks-label {
@@ -1001,8 +1001,8 @@ header h1 {
 }
 
 .stage-status-предстоит { background: var(--bg-light); color: var(--text-light); }
-.stage-status-в-процессе { background: #fef3c7; color: #92400e; }
-.stage-status-готово { background: #dcfce7; color: #15803d; }
+.stage-status-в-процессе { background: rgba(179,139,77,0.16); color: var(--accent-gold); }
+.stage-status-готово { background: rgba(31,122,95,0.16); color: #4FA687; }
 
 .stage-row-delete {
   width: 24px;
@@ -1099,8 +1099,8 @@ header h1 {
 .form-error {
   margin: 0 1rem;
   padding: 0.7rem 1rem;
-  background: #fee2e2;
-  color: #b91c1c;
+  background: rgba(140,74,66,0.18);
+  color: #C77A6E;
   border-radius: var(--radius-md);
   font-size: 0.85rem;
 }
@@ -1305,8 +1305,8 @@ header h1 {
 .error-banner {
   margin: 0 1rem 1rem;
   padding: 0.7rem 1rem;
-  background: #fee2e2;
-  color: #b91c1c;
+  background: rgba(140,74,66,0.18);
+  color: #C77A6E;
   border-radius: var(--radius-md);
   font-size: 0.85rem;
 }
@@ -1697,8 +1697,8 @@ body.view-locked {
 
 .ai-bubble-error {
   align-self: flex-start;
-  background: #fee2e2;
-  color: #b91c1c;
+  background: rgba(140,74,66,0.18);
+  color: #C77A6E;
   border-radius: var(--radius-md);
   font-size: 0.85rem;
   max-width: 90%;
@@ -2251,10 +2251,10 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .wt-icon { position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
 .wt-icon-sphere { position: absolute; inset: 0; border-radius: 50%; }
 
-.wt-icon-messages .wt-icon-sphere { background: radial-gradient(circle at 32% 28%, #93c5fd 0%, #3b82f6 50%, #1d4ed8 100%); box-shadow: inset -6px -8px 12px rgba(29,78,216,0.5), inset 5px 6px 10px rgba(255,255,255,0.35); border-radius: 50% 50% 50% 6px; }
-.wt-icon-tail { position: absolute; bottom: -3px; left: 8px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 3px solid transparent; border-top: 8px solid #1d4ed8; transform: rotate(-10deg); }
+.wt-icon-messages .wt-icon-sphere { background: radial-gradient(circle at 32% 28%, #2A5C46 0%, #163f2c 50%, #0F3D2B 100%); box-shadow: inset -6px -8px 12px rgba(0,0,0,0.5), inset 5px 6px 10px rgba(212,175,55,0.15); border-radius: 50% 50% 50% 6px; }
+.wt-icon-tail { position: absolute; bottom: -3px; left: 8px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 3px solid transparent; border-top: 8px solid #0F3D2B; transform: rotate(-10deg); }
 
-.wt-icon-tasks .wt-icon-sphere { background: radial-gradient(circle at 32% 28%, #86efac 0%, #22c55e 50%, #15803d 100%); box-shadow: inset -6px -8px 12px rgba(21,128,61,0.5), inset 5px 6px 10px rgba(255,255,255,0.35); }
+.wt-icon-tasks .wt-icon-sphere { background: radial-gradient(circle at 32% 28%, #3a8a6c 0%, #1F7A5F 50%, #145940 100%); box-shadow: inset -6px -8px 12px rgba(0,0,0,0.5), inset 5px 6px 10px rgba(212,175,55,0.12); }
 .wt-icon-check { position: absolute; width: 16px; height: 10px; border-left: 3px solid #fff; border-bottom: 3px solid #fff; transform: rotate(-45deg) translate(-1px, -2px); }
 
 .wt-icon-important .wt-icon-triangle { position: absolute; width: 0; height: 0; border-left: 20px solid transparent; border-right: 20px solid transparent; border-bottom: 34px solid #fbbf24; filter: drop-shadow(0 3px 4px rgba(180,83,9,0.5)); }
@@ -2262,7 +2262,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .wt-icon-important .wt-icon-bang { position: absolute; bottom: 4px; width: 3px; height: 12px; border-radius: 2px; background: #78350f; }
 .wt-icon-important .wt-icon-bang::after { content: ''; position: absolute; bottom: -6px; left: 0; width: 3px; height: 3px; border-radius: 50%; background: #78350f; }
 
-.wt-icon-critical .wt-icon-sphere { background: radial-gradient(circle at 32% 28%, #fca5a5 0%, #ef4444 50%, #b91c1c 100%); box-shadow: inset -6px -8px 12px rgba(185,28,28,0.55), inset 5px 6px 10px rgba(255,255,255,0.35); }
+.wt-icon-critical .wt-icon-sphere { background: radial-gradient(circle at 32% 28%, #a8615a 0%, #8C4A42 50%, #6b3830 100%); box-shadow: inset -6px -8px 12px rgba(0,0,0,0.55), inset 5px 6px 10px rgba(212,175,55,0.12); }
 .wt-icon-critical .wt-icon-bang { position: absolute; width: 3px; height: 13px; border-radius: 2px; background: #fff; top: 8px; }
 .wt-icon-critical .wt-icon-bang::after { content: ''; position: absolute; bottom: -6px; left: 0; width: 3px; height: 3px; border-radius: 50%; background: #fff; }
 
@@ -2335,7 +2335,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .qs-icon-sphere { position: absolute; inset: 0; border-radius: 50%; }
 .qs-icon-tools .qs-icon-sphere { background: radial-gradient(circle at 32% 28%, #d1d5db 0%, #6b7280 50%, #374151 100%); box-shadow: inset -4px -5px 8px rgba(31,41,55,0.6), inset 3px 4px 6px rgba(255,255,255,0.4); }
 .qs-icon-tools .qs-icon-wrench { position: absolute; inset: 8px; border: 2px solid #fff; border-radius: 2px; transform: rotate(45deg); }
-.qs-icon-docs .qs-icon-sphere { background: radial-gradient(circle at 32% 28%, #93c5fd 0%, #3b82f6 50%, #1d4ed8 100%); box-shadow: inset -4px -5px 8px rgba(29,78,216,0.55), inset 3px 4px 6px rgba(255,255,255,0.4); }
+.qs-icon-docs .qs-icon-sphere { background: radial-gradient(circle at 32% 28%, #2A5C46 0%, #163f2c 50%, #0F3D2B 100%); box-shadow: inset -4px -5px 8px rgba(0,0,0,0.5), inset 3px 4px 6px rgba(212,175,55,0.15); }
 .qs-icon-docs .qs-icon-lines { position: absolute; inset: 9px 10px; display: flex; flex-direction: column; gap: 2.5px; }
 .qs-icon-docs .qs-icon-lines span { height: 1.6px; background: rgba(255,255,255,0.85); border-radius: 1px; }
 .qs-icon-ai .qs-icon-sphere { background: radial-gradient(circle at 32% 28%, #d8b4fe 0%, #a855f7 50%, #7e22ce 100%); box-shadow: inset -4px -5px 8px rgba(126,34,206,0.55), inset 3px 4px 6px rgba(255,255,255,0.4); }
@@ -2502,8 +2502,8 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .abw-request-top { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.85rem; }
 .abw-request-avatar {
   width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
-  background: radial-gradient(circle at 32% 28%, #93c5fd 0%, #3b82f6 50%, #1d4ed8 100%);
-  box-shadow: inset -5px -6px 10px rgba(29,78,216,0.5), inset 4px 5px 8px rgba(255,255,255,0.35);
+  background: radial-gradient(circle at 32% 28%, #2A5C46 0%, #163f2c 50%, #0F3D2B 100%);
+  box-shadow: inset -5px -6px 10px rgba(0,0,0,0.5), inset 4px 5px 8px rgba(212,175,55,0.15);
   color: #fff; font-weight: 700; font-size: 1.05rem; display: flex; align-items: center; justify-content: center;
 }
 .abw-request-who { flex: 1; min-width: 0; }

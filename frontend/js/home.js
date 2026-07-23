@@ -398,7 +398,7 @@ async function _loadHomeObjectsRings() {
       const budgetColor = budgetPct >= 90 ? 'var(--red)' : budgetPct >= 60 ? 'var(--warning)' : 'var(--accent)';
       const progressPct = progressList[i];
       if (progressPct === null) return _ringCard(0, 'var(--text-light)', name, shortName, obj['ID объекта'], budgetPct, budgetColor);
-      return _ringCard(progressPct, 'var(--accent2, #60a5fa)', name, shortName, obj['ID объекта'], budgetPct, budgetColor);
+      return _ringCard(progressPct, 'var(--accent-gold)', name, shortName, obj['ID объекта'], budgetPct, budgetColor);
     }).join('');
 
     _attachHomeRingHandlers(grid);

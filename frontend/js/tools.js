@@ -68,11 +68,11 @@ function _toolIcon3d(tool) {
 
 // Градиент фона карточки инструмента по статусу
 function _toolHeroStyle(tool) {
-  if (tool.status === 'repair') return 'linear-gradient(135deg,#2a1010 0%,#4a2020 100%)';
-  if (tool.status === 'missing') return 'linear-gradient(135deg,#1a1a1a 0%,#333 100%)';
-  if (tool.status === 'in-use') return 'linear-gradient(135deg,#0a1828 0%,#1a2a40 100%)';
-  if (tool.status === 'reserved') return 'linear-gradient(135deg,#2a2410 0%,#4a4020 100%)';
-  return 'linear-gradient(135deg,#0f2010 0%,#1a3020 100%)';
+  if (tool.status === 'repair') return 'linear-gradient(135deg,#1f1512 0%,#3a2420 100%)';
+  if (tool.status === 'missing') return 'linear-gradient(135deg,#1a1a1a 0%,#2A2A2A 100%)';
+  if (tool.status === 'in-use') return 'linear-gradient(135deg,#161d18 0%,#233029 100%)';
+  if (tool.status === 'reserved') return 'linear-gradient(135deg,#241f10 0%,#3d3420 100%)';
+  return 'linear-gradient(135deg,#0F1F17 0%,#173627 100%)';
 }
 
 function renderToolCard(tool) {
