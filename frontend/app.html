@@ -404,6 +404,16 @@ header h1 {
 .mangel-count { margin-left: auto; color: var(--text-light); font-size: 0.8rem; }
 .mangel-column-body { display: flex; flex-direction: column; gap: 0.5rem; min-height: 60px; }
 .mangel-card { background: var(--bg-card-raised); border-radius: var(--radius-md); padding: 0.65rem; cursor: pointer; box-shadow: var(--shadow-sm); touch-action: none; }
+
+/* Мои задачи — карточка назначения + кнопка чата по объекту (24.07) */
+.my-task-card { background: var(--bg-card-raised); border-radius: var(--radius-lg); padding: 0.85rem 0.9rem; box-shadow: var(--c-shadow-raised, var(--shadow-md)); display: flex; align-items: center; gap: 0.75rem; }
+.my-task-card-body { flex: 1; min-width: 0; }
+.my-task-card-title { font-family: var(--font-heading); font-weight: 700; font-size: 0.95rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.my-task-card-stage { margin-top: 0.2rem; font-size: 0.8rem; color: var(--text-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.my-task-card-dates { margin-top: 0.35rem; font-size: 0.75rem; color: var(--accent-gold); }
+.my-task-chat-btn { flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%; border: none; background: linear-gradient(155deg, var(--bg-card) 0%, var(--bg-card-raised) 100%); box-shadow: var(--c-shadow-control, var(--shadow-sm)), inset 0 1px 0 rgba(255,255,255,0.06); color: var(--accent); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease; position: relative; }
+.my-task-chat-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.my-task-chat-btn:active { transform: scale(0.93); box-shadow: var(--c-shadow-pressed, inset 0 1px 3px rgba(0,0,0,0.3)); }
 .mangel-card-photo { width: 100%; height: 90px; border-radius: var(--radius-sm); background-size: cover; background-position: center; margin-bottom: 0.4rem; }
 .mangel-card-desc { font-size: 1rem; font-weight: 600; margin-bottom: 0.3rem; }
 .mangel-card-meta { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-light); }
