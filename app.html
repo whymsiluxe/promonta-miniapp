@@ -680,7 +680,7 @@ header h1 {
 
 .status-switch {
   display: flex;
-  background: var(--bg-light);
+  background: var(--bg-card-raised);
   border-radius: var(--radius-md);
   padding: 3px;
   margin-bottom: 0.75rem;
@@ -961,7 +961,7 @@ header h1 {
   border: none;
 }
 
-.modal-btn.secondary { background: var(--bg-light); color: var(--text-main); }
+.modal-btn.secondary { background: var(--bg-card); color: var(--text-main); }
 .modal-btn.primary { background: var(--primary); color: white; }
 
 /* ── Полноэкранная форма (Новый объект) ── */
@@ -1105,7 +1105,7 @@ header h1 {
 /* ── Angebot ── */
 .doc-type-switch {
   display: flex;
-  background: var(--bg-light);
+  background: var(--bg-card-raised);
   border-radius: var(--radius-md);
   padding: 3px;
   margin: 0 1rem 1rem;
@@ -1386,7 +1386,8 @@ header h1 {
   height: 100dvh;
   height: var(--tg-vp-height, 100dvh);
   overflow: hidden;
-  background: var(--bg-light);
+  background: var(--bg-card); /* 23.07: было bg-light(теперь тёмный) — .chat-thread-name и другой текст
+     внутри не задают свой color, наследуют text-main(тёмный) от body → были бы нечитаемы */
   z-index: 300;
 }
 
@@ -1607,7 +1608,7 @@ body.view-locked {
   padding: 0.3rem 0.5rem;
   height: 32px;
   border-radius: var(--radius-md);
-  background: var(--bg-light);
+  background: var(--bg-card-raised);
   color: var(--text-main);
   border: 1px solid var(--border-color);
   font-size: 0.78rem;
@@ -2432,7 +2433,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 
 .chat-attach-img-wrap { border-radius: var(--radius-md); overflow: hidden; margin-bottom: 0.3rem; max-width: 220px; }
 .chat-attach-img { width: 100%; display: block; }
-.chat-attach-file { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--bg-light); border-radius: var(--radius-md); padding: 0.4rem 0.6rem; font-size: 0.82rem; color: var(--text-main); text-decoration: none; margin-bottom: 0.3rem; }
+.chat-attach-file { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.4rem 0.6rem; font-size: 0.82rem; color: var(--text-main); text-decoration: none; margin-bottom: 0.3rem; }
 
 /* ── Voice messages (10.37) ── */
 #chat-voice-recording-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem; background: var(--bg-white); border-top: 1px solid var(--border-color); }
