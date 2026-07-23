@@ -1,72 +1,43 @@
 # Session handoff
 
-**Date**: 2026-07-23, ~13:20 Berlin.
-**Branch**: `master` (repo root: `/home/promonta/agent/miniapp-repo/` on the VPS).
-**Last commit**: `8836e81` "chore: merge frontend git history (14 commits) as frontend/ subtree" — a documentation commit adding everything in `docs/` plus `README.md`/`CLAUDE.md` was pending as of this handoff, see below.
+**Date**: 2026-07-23, ~13:45 Berlin.
+**Branch**: `main` (renamed from `master` during this session, now the default on GitHub too).
+**Last commit**: `d30d2c9` "chore: add GitHub PR/issue templates and CODEOWNERS placeholder" — pushed.
+**Repo**: https://github.com/whymsiluxe/promonta-miniapp — **private**, confirmed via `gh repo view`.
 
 ## Goal of this session
 
 Recover from a lost Claude Code session on the Promonta Mini App: locate the real (VPS) state of the code, secure it in version control, document it accurately from the actual code (not assumption), and publish to a private GitHub repo — without doing any destructive operations or starting a UI redesign.
 
-## What was done
+## What was done (all completed)
 
-1. Audited the project (see conversation history / this doc's siblings for full detail) — found the Mac-local copy was stale (Jul 8-12) vs. the live VPS code (through Jul 23), and that backend + frontend lived in separate directories with separate (or no) git history.
-2. Built `/home/promonta/agent/miniapp-repo/` on the VPS: `backend/` (copied source, no data) + `frontend/` (git-subtree-merged from `/var/www/miniapp`'s existing 14-commit history).
-3. Verified no hardcoded secrets in anything committed.
+1. Audited the project — found the Mac-local copy was stale (Jul 8-12) vs. the live VPS code (through Jul 23), and that backend + frontend lived in separate directories with separate (or no) git history.
+2. Built `/home/promonta/agent/miniapp-repo/` on the VPS: `backend/` (copied source only, no data) + `frontend/` (git-subtree-merged from `/var/www/miniapp`'s existing 14-commit history, full history preserved).
+3. Verified no hardcoded secrets anywhere committed (multiple grep passes, including a final pass on the docs themselves).
 4. Wrote `.gitignore`, `backend/.env.example`, `backend/requirements.txt` (none existed before).
-5. Wrote the full `docs/` set plus `README.md` from reading the actual code (`main.py`, frontend JS modules, systemd/Caddy config) — see `docs/PROJECT_STATE.md` for the itemized list.
-6. Flagged (did not silently fix) one permission gap: `POST /api/objects/{object_id}/tasks` not assignment-scoped.
-7. (Off-task but blocking) found and killed ~400+ orphaned `chroma-mcp` processes on the Mac that had filled the local disk to zero free space mid-session, making every shell command fail with ENOSPC. Not related to the miniapp itself.
-8. Started `gh auth login --web` for GitHub publishing — **awaiting user to complete browser auth as of this handoff**.
+5. Wrote the full `docs/` set (17 files) plus `README.md` and `CLAUDE.md` (governance) from reading the actual code — `main.py` (93 routes, all grepped and classified by permission; GPS/chat/tools/critical-alerts routes read in full detail), frontend JS module list, systemd/Caddy config, installed Python packages.
+6. Corrected one piece of stale institutional memory: unknown Telegram user IDs get a hard 403 now, not a silent `worker` default (a whitelist hardening happened since the note that said otherwise was written) — documented in `docs/ROLES_AND_PERMISSIONS.md` and `docs/CHANGELOG.md`.
+7. Flagged (did not silently fix) one permission gap: `POST /api/objects/{object_id}/tasks` lets any worker add a task to any object, not just their own assignment. See `docs/ROLES_AND_PERMISSIONS.md` and `docs/TODO.md` REC-9.
+8. Added `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/{bug_report,feature_request,config}`, `.github/CODEOWNERS` (placeholder — owner's GitHub username unknown, not guessed).
+9. Authenticated `gh` CLI on the Mac (account `whymsiluxe`, via device-code browser flow, no token pasted in chat).
+10. Created the private GitHub repo, transferred the token to the VPS over SSH stdin (never displayed), pushed, then **removed the token from the VPS disk and from `git remote -v`** immediately after — `origin` now points at a plain HTTPS URL with no embedded credential.
+11. (Off-task, blocking) found and killed ~400+ orphaned `chroma-mcp` processes on the Mac that had filled local disk to zero free space mid-session (`ENOSPC` on every shell command, including `df -h` itself). User manually freed additional space via Finder. Not a miniapp issue — a `claude-mem`/`uvx` process-reaping bug worth someone looking into separately.
 
-## What was NOT done
+## What was NOT done (deliberately, or as follow-up)
 
-- **Not pushed to GitHub yet** — blocked on `gh auth login` completing (user was mid-authorization when this handoff was written).
-- **Documentation commit not yet created** — all `docs/*.md`, `README.md`, and `CLAUDE.md` were written to a local scratchpad path on the Mac (`/private/tmp/claude-501/.../scratchpad/`) and need to be `scp`'d to the VPS repo and committed. See "Next steps" below for exact commands.
-- Full endpoint-by-endpoint permission audit (only GPS/chat/tools/critical-alerts routes were spot-checked; ~93 routes total — see `docs/TODO.md` REC-3).
-- Branch rename `master` → `main` (docs reference `main` as convention; repo is actually on `master` — reconcile one way or the other, see `docs/PROJECT_STATE.md` note).
-- GitHub PR/issue templates, CODEOWNERS (needs the owner's actual GitHub username, not yet known).
-- Deciding what to do with the stale Mac-local copy at `~/Projects/promonta/miniapp/frontend/` (left untouched, not deleted — see `docs/TODO.md` REC-2).
+- Full endpoint-by-endpoint permission audit — only GPS/chat/tools/critical-alerts routes were read in full; the other ~85 were classified by decorator (owner-gated vs. not) via grep, not individually read line-by-line. See `docs/TODO.md` REC-3.
+- Deciding what to do with the stale Mac-local copy at `~/Projects/promonta/miniapp/frontend/` — left untouched (not deleted, per the no-destructive-action-without-confirmation rule). See `docs/TODO.md` REC-2.
+- Setting up an actual deploy pipeline from this repo back to the VPS's live-serving directories (`/var/www/miniapp/`, `/home/promonta/agent/miniapp/`) — this repo is the source of truth now, but nothing yet automates syncing a commit here to production. See `docs/TODO.md` REC-1 and `docs/DEPLOYMENT.md`.
+- Any UI/UX changes — explicitly out of scope for this recovery per the task brief.
+- No CI, no automated tests were added (none existed before either) — `docs/TESTING.md` and `docs/TODO.md` REC-6 record this honestly rather than fabricating either.
 
-## Files changed/created this session (on the Mac, pending sync to VPS)
+## Next recommended step
 
-All under `/private/tmp/claude-501/-Users-mac/d60acb86-70ba-4b7e-99ef-2c71e59608e9/scratchpad/`:
-`README.md`, `.env.example`, `requirements.txt`, `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, `docs/DEPLOYMENT.md`, `docs/ENVIRONMENT.md`, `docs/SECURITY.md`, `docs/TROUBLESHOOTING.md`, `docs/TESTING.md`, `docs/ROLES_AND_PERMISSIONS.md`, `docs/API.md`, `docs/FEATURES.md`, `docs/UI_UX.md`, `docs/DECISIONS.md`, `docs/CHANGELOG.md`, `docs/TODO.md`, `docs/PROJECT_STATE.md`, `docs/RELEASE_PROCESS.md`, this file. `CLAUDE.md` (governance) still pending as of this handoff.
-
-## Next steps (exact commands)
-
-```bash
-# 1. finish GitHub auth if not done
-gh auth status
-
-# 2. copy all scratchpad docs to the VPS repo
-scp -i ~/.ssh/promonta_hetzner -r /private/tmp/claude-501/-Users-mac/d60acb86-70ba-4b7e-99ef-2c71e59608e9/scratchpad/docs \
-  /private/tmp/claude-501/-Users-mac/d60acb86-70ba-4b7e-99ef-2c71e59608e9/scratchpad/README.md \
-  /private/tmp/claude-501/-Users-mac/d60acb86-70ba-4b7e-99ef-2c71e59608e9/scratchpad/CLAUDE.md \
-  root@162.55.53.147:/home/promonta/agent/miniapp-repo/
-scp -i ~/.ssh/promonta_hetzner /private/tmp/claude-501/-Users-mac/d60acb86-70ba-4b7e-99ef-2c71e59608e9/scratchpad/.env.example \
-  root@162.55.53.147:/home/promonta/agent/miniapp-repo/backend/.env.example
-scp -i ~/.ssh/promonta_hetzner /private/tmp/claude-501/-Users-mac/d60acb86-70ba-4b7e-99ef-2c71e59608e9/scratchpad/requirements.txt \
-  root@162.55.53.147:/home/promonta/agent/miniapp-repo/backend/requirements.txt
-
-# 3. commit on the VPS
-ssh -i ~/.ssh/promonta_hetzner root@162.55.53.147 'cd /home/promonta/agent/miniapp-repo && \
-  git add . && git commit -m "docs: rebuild project documentation from source"'
-
-# 4. create private GitHub repo and push
-ssh -i ~/.ssh/promonta_hetzner root@162.55.53.147 'cd /home/promonta/agent/miniapp-repo && \
-  gh repo create promonta-miniapp --private --source=. --remote=origin && \
-  git push -u origin master'
-```
-
-(`gh` needs to be installed and authenticated on whichever machine runs step 4 — check `gh --version` on the VPS first; if not present there, run step 4 from the Mac instead, after adding a `origin` remote pointing at a repo created via the Mac's `gh`.)
-
-## Blocking questions for the user
-
-None outstanding beyond completing GitHub auth (see above) — no destructive action, secret-in-history, or conflicting architectural choice was hit that needed a decision beyond what's already logged in `docs/DECISIONS.md` and `docs/TODO.md`.
+Set up the sync-back path from `miniapp-repo` to the live VPS directories (`docs/TODO.md` REC-1), so future edits go: edit in repo → commit → sync to `/var/www/miniapp` or `/home/promonta/agent/miniapp` → restart service — rather than editing production directly again, which is the exact failure mode this recovery fixed.
 
 ## Warnings for whoever continues this
 
-- Do not treat `~/Projects/promonta/miniapp/` (Mac-local) as current — it is 2-3 weeks stale versus the VPS.
-- Do not edit `/var/www/miniapp/` or `/home/promonta/agent/miniapp/` directly on the VPS anymore without also syncing the change into `/home/promonta/agent/miniapp-repo/` and committing — that's the whole point of this recovery, and skipping it recreates the original problem.
-- The `chroma-mcp` process leak (see above) may recur — if shell commands start failing with `ENOSPC` again, check `ps aux | grep chroma-mcp` count before assuming it's a miniapp-related disk issue.
+- Do not treat `~/Projects/promonta/miniapp/` (Mac-local) as current — it is 2-3 weeks stale versus the VPS/GitHub state.
+- Do not edit `/var/www/miniapp/` or `/home/promonta/agent/miniapp/` directly on the VPS without also syncing the change into `/home/promonta/agent/miniapp-repo/` and committing/pushing it.
+- If shell commands start failing with `ENOSPC` again on the Mac, check `ps aux | grep -c chroma-mcp` before assuming it's unrelated — this leak may recur until its root cause (in the `claude-mem`/`uvx` tooling, not this project) is fixed.
+- `gh` on the Mac is now authenticated as `whymsiluxe` for this repo — any future GitHub operation for this project should use that account unless told otherwise.
