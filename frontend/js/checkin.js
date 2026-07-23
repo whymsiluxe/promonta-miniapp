@@ -272,11 +272,11 @@ function _closeCheckinManualForm() {
 }
 
 function _updateCheckinPauseDisplay() {
-  document.getElementById('checkin-pause-value').textContent = `${_checkinPauseMinutes} Min.`;
+  document.getElementById('checkin-pause-value').textContent = `${_checkinPauseMinutes} мин.`;
 }
 
 function _updateCheckinSurveyPauseDisplay() {
-  document.getElementById('checkin-survey-pause-value').textContent = `${_checkinSurveyPauseMinutes} Min.`;
+  document.getElementById('checkin-survey-pause-value').textContent = `${_checkinSurveyPauseMinutes} мин.`;
   document.getElementById('checkin-survey-pause').value = _checkinSurveyPauseMinutes;
 }
 
@@ -349,8 +349,13 @@ function initCheckinControls() {
   document.getElementById('checkin-analyze-btn').addEventListener('click', runCheckinAnalysis);
 
   document.getElementById('checkin-manual-link-btn').addEventListener('click', () => {
+    const form = document.getElementById('checkin-manual-form');
+    if (form.style.display === 'block') {
+      _closeCheckinManualForm();
+      return;
+    }
     document.getElementById('checkin-date-input').value = new Date().toISOString().slice(0, 10);
-    document.getElementById('checkin-manual-form').style.display = 'block';
+    form.style.display = 'block';
   });
   document.getElementById('checkin-manual-cancel-btn').addEventListener('click', _closeCheckinManualForm);
   document.getElementById('checkin-manual-save-btn').addEventListener('click', _submitCheckinManual);

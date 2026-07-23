@@ -2639,7 +2639,16 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
       <h1>Этапы объекта</h1>
     </div>
 
-    <div class="checkin-bar">
+    <div id="stages-list" class="form-section"></div>
+    <div class="form-section">
+      <div class="form-field">
+        <label>Новый этап</label>
+        <input type="text" id="new-stage-name" placeholder="напр. Фасад, Стяжка пола">
+      </div>
+      <button class="form-submit-btn" id="add-stage-btn" style="margin-top:0.5rem">+ Добавить этап</button>
+    </div>
+
+    <div class="checkin-bar" style="margin-top:1.25rem;">
       <button class="submit-btn checkin-btn" id="checkin-start-btn" type="button">▶ Старт смены</button>
       <button class="submit-btn checkin-btn" id="checkin-finish-btn" type="button" style="background:var(--red);" disabled>■ Финиш смены</button>
       <button class="checkin-manual-link" id="checkin-analyze-btn" type="button" style="display:none;">✨ AI-анализ смены</button>
@@ -2680,7 +2689,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
         <label class="checkin-survey-label">Сколько было пауз, минут?</label>
         <div class="checkin-pause-row">
           <button type="button" id="checkin-survey-pause-minus" class="checkin-pause-btn">−</button>
-          <span id="checkin-survey-pause-value">30 Min.</span>
+          <span id="checkin-survey-pause-value">30 мин.</span>
           <button type="button" id="checkin-survey-pause-plus" class="checkin-pause-btn">+</button>
           <input type="hidden" id="checkin-survey-pause" value="30">
         </div>
@@ -2693,9 +2702,9 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 
     <div id="checkin-manual-form" class="mangel-form" style="display:none;">
       <select id="checkin-art-select" class="mangel-select">
-        <option value="Arbeitszeit">🔧 Arbeitszeit</option>
-        <option value="Fahrzeit">🚗 Fahrzeit</option>
-        <option value="Wartezeit">⏳ Wartezeit</option>
+        <option value="Arbeitszeit">🔧 Рабочее время</option>
+        <option value="Fahrzeit">🚗 Время в пути</option>
+        <option value="Wartezeit">⏳ Время ожидания</option>
       </select>
       <input type="date" id="checkin-date-input" class="mangel-select">
       <div style="display:flex;gap:0.5rem;">
@@ -2703,27 +2712,19 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
         <input type="time" id="checkin-end-time-input" class="mangel-select" style="flex:1;">
       </div>
       <div class="checkin-pause-row">
-        <span>Pause</span>
+        <span>Пауза</span>
         <button type="button" id="checkin-pause-minus" class="checkin-pause-btn">−</button>
-        <span id="checkin-pause-value">0 Min.</span>
+        <span id="checkin-pause-value">0 мин.</span>
         <button type="button" id="checkin-pause-plus" class="checkin-pause-btn">+</button>
       </div>
-      <textarea id="checkin-description" class="mangel-textarea" placeholder="Leistung, Material…" rows="2"></textarea>
+      <textarea id="checkin-description" class="mangel-textarea" placeholder="Что сделано, материалы…" rows="2"></textarea>
       <div class="mangel-form-actions">
-        <button class="submit-btn" id="checkin-manual-cancel-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);">Abbrechen</button>
-        <button class="submit-btn" id="checkin-manual-save-btn" type="button">Speichern</button>
+        <button class="submit-btn" id="checkin-manual-cancel-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);">Отмена</button>
+        <button class="submit-btn" id="checkin-manual-save-btn" type="button">Сохранить</button>
       </div>
     </div>
 
-    <button class="submit-btn" id="object-chat-btn" type="button" style="margin:0.5rem 0.75rem;width:calc(100% - 1.5rem);background:var(--bg-card-raised);color:var(--text-main);">💬 Чат объекта</button>
-    <div id="stages-list" class="form-section"></div>
-    <div class="form-section">
-      <div class="form-field">
-        <label>Новый этап</label>
-        <input type="text" id="new-stage-name" placeholder="напр. Фасад, Стяжка пола">
-      </div>
-      <button class="form-submit-btn" id="add-stage-btn" style="margin-top:0.5rem">+ Добавить этап</button>
-    </div>
+    <button class="submit-btn" id="object-chat-btn" type="button" style="margin:1.25rem 0.75rem 0.5rem;width:calc(100% - 1.5rem);background:var(--bg-card-raised);color:var(--text-main);">💬 Чат объекта</button>
   </div>
 </div>
 
