@@ -1,0 +1,43 @@
+# secrets / env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+*.gdrive_creds.json
+*.gdrive_token.json
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# node
+node_modules/
+
+# backups created by manual VPS edits
+*.bak-*
+*.broken-*
+
+# OS
+.DS_Store
+
+# logs
+*.log
+
+# runtime data (JSON stores with personal/business data — never in git)
+backend/*.json
+!backend/package.json
+backend/*_photos/
+backend/avatars/
+backend/angebote/
+backend/rechnungen/
+backend/checkin_photos/
+backend/chat_attachments/
+backend/critical_alert_photos/
