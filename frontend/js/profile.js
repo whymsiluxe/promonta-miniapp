@@ -12,6 +12,17 @@ function initProfileView() {
   const slot = document.getElementById('profile-content');
   if (!slot) return;
 
+  const tabsHtml = currentRole === 'owner'
+    ? `<div class="profile-tabs" id="profile-tabs">
+        <div class="profile-tab active" data-tab="me">Мой профиль</div>
+        <div class="profile-tab" data-tab="team">Команда</div>
+        <div class="profile-tab" data-tab="settings">Настройки</div>
+      </div>`
+    : `<div class="profile-tabs" id="profile-tabs">
+        <div class="profile-tab active" data-tab="me">Мой профиль</div>
+        <div class="profile-tab" data-tab="settings">Настройки</div>
+      </div>`;
+
   slot.innerHTML = `
     <div class="profile-header-card">
       <div class="profile-avatar-wrap" id="profile-avatar-wrap" title="Сменить фото">
@@ -25,82 +36,89 @@ function initProfileView() {
         <div class="profile-role-badge" id="profile-role-badge"></div>
       </div>
     </div>
-    <div id="profile-worker-picker-slot"></div>
 
-    <div class="card profile-week-card">
-      <div class="profile-period-pills" id="profile-period-pills">
-        ${Object.keys(PROFILE_PERIOD_LABEL).map(p =>
-          `<div class="profile-period-pill${p === _profilePeriod ? ' active' : ''}" data-period="${p}">${PROFILE_PERIOD_LABEL[p]}</div>`
-        ).join('')}
-      </div>
-      <div class="home-section-header" style="padding:0 0 0.5rem;">
-        <span class="home-section-title" id="profile-period-title">Часы за 7 дней</span>
-        <span class="profile-week-total" id="profile-week-total">—</span>
-      </div>
-      <div class="profile-week-rings" id="profile-week-rings">
-        <div style="color:var(--text-light);font-size:0.85rem">Загрузка…</div>
-      </div>
-      ${currentRole === 'owner'
-        ? `<button class="submit-btn profile-inline-btn" id="profile-export-stundenzettel-btn" type="button">📄 Скачать табель (CSV)</button>`
-        : `<a class="profile-csv-link-secondary" id="profile-export-stundenzettel-btn">Скачать табель (CSV)</a>`}
-    </div>
+    ${tabsHtml}
 
-    <div class="card profile-urlaub-card" id="profile-urlaub-card" style="display:none;">
-      <div class="home-section-header" style="padding:0 0 0.5rem;">
-        <span class="home-section-title">Отпуск</span>
-        <span class="profile-week-total" id="profile-urlaub-remaining">—</span>
-      </div>
-      <div class="profile-urlaub-bar"><div class="profile-urlaub-bar-fill" id="profile-urlaub-bar-fill"></div></div>
-      <div class="profile-urlaub-caption" id="profile-urlaub-caption"></div>
-    </div>
+    <div class="profile-tab-panel" data-panel="me">
+      <div id="profile-worker-picker-slot"></div>
 
-    <div class="card profile-speed-card" id="profile-speed-card" style="display:none"></div>
-
-    <div class="accordion-section" id="profile-availability-section" style="display:none">
-      <div class="accordion-header"><span class="accordion-icon" style="background:#60a5fa22">📅</span><span class="accordion-title">Доступность</span><span class="accordion-chevron">▾</span></div>
-      <div class="accordion-body collapsed">
-        <div id="profile-availability-summary" style="font-size:0.85rem;color:var(--text-light)">—</div>
-        <button class="submit-btn profile-inline-btn" id="profile-availability-link-btn" type="button" onclick="switchView('abwesenheit')">Открыть календарь →</button>
-      </div>
-    </div>
-
-    <div class="accordion-section">
-      <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-5)">🏗️</span><span class="accordion-title">Объекты</span><span class="accordion-chevron">▾</span></div>
-      <div class="accordion-body collapsed"><div id="profile-objects-list"></div></div>
-    </div>
-
-    <div class="accordion-section">
-      <div class="accordion-header"><span class="accordion-icon" style="background:#f59e0b22">🛠</span><span class="accordion-title">Навыки</span><span class="accordion-chevron">▾</span></div>
-      <div class="accordion-body collapsed">
-        <div id="profile-skills-chips" class="profile-skills-chips"></div>
-        <div id="profile-skills-edit" style="display:none"></div>
-        <button class="submit-btn profile-inline-btn" id="profile-skills-edit-btn" type="button">Изменить навыки</button>
-      </div>
-    </div>
-
-    <div class="accordion-section">
-      <div class="accordion-header"><span class="accordion-icon" style="background:#60a5fa22">👕</span><span class="accordion-title">Размеры одежды</span><span class="accordion-chevron">▾</span></div>
-      <div class="accordion-body collapsed">
-        <div class="profile-sizes-grid">
-          <label>Штаны<input id="profile-size-pants" class="mangel-select" placeholder="напр. 52 / L"></label>
-          <label>Футболка<input id="profile-size-shirt" class="mangel-select" placeholder="напр. XL"></label>
-          <label>Обувь<input id="profile-size-shoe" class="mangel-select" placeholder="напр. 44"></label>
+      <div class="card profile-week-card">
+        <div class="profile-period-pills" id="profile-period-pills">
+          ${Object.keys(PROFILE_PERIOD_LABEL).map(p =>
+            `<div class="profile-period-pill${p === _profilePeriod ? ' active' : ''}" data-period="${p}">${PROFILE_PERIOD_LABEL[p]}</div>`
+          ).join('')}
         </div>
-        <button class="submit-btn profile-inline-btn" id="profile-sizes-save-btn" type="button">Сохранить размеры</button>
-        <div id="profile-sizes-status" style="font-size:0.8rem;color:var(--accent);margin-top:0.4rem"></div>
+        <div class="home-section-header" style="padding:0 0 0.5rem;">
+          <span class="home-section-title" id="profile-period-title">Часы за 7 дней</span>
+          <span class="profile-week-total" id="profile-week-total">—</span>
+        </div>
+        <div class="profile-week-rings" id="profile-week-rings">
+          <div style="color:var(--text-light);font-size:0.85rem">Загрузка…</div>
+        </div>
+        ${currentRole === 'owner'
+          ? `<button class="submit-btn profile-inline-btn" id="profile-export-stundenzettel-btn" type="button">📄 Скачать табель (CSV)</button>`
+          : `<a class="profile-csv-link-secondary" id="profile-export-stundenzettel-btn">Скачать табель (CSV)</a>`}
+      </div>
+
+      <div class="card profile-urlaub-card" id="profile-urlaub-card" style="display:none;">
+        <div class="home-section-header" style="padding:0 0 0.5rem;">
+          <span class="home-section-title">Отпуск</span>
+          <span class="profile-week-total" id="profile-urlaub-remaining">—</span>
+        </div>
+        <div class="profile-urlaub-bar"><div class="profile-urlaub-bar-fill" id="profile-urlaub-bar-fill"></div></div>
+        <div class="profile-urlaub-caption" id="profile-urlaub-caption"></div>
+      </div>
+
+      <div class="card profile-speed-card" id="profile-speed-card" style="display:none"></div>
+
+      <div class="accordion-section" id="profile-availability-section" style="display:none">
+        <div class="accordion-header"><span class="accordion-icon" style="background:#60a5fa22">📅</span><span class="accordion-title">Доступность</span><span class="accordion-chevron">▾</span></div>
+        <div class="accordion-body collapsed">
+          <div id="profile-availability-summary" style="font-size:0.85rem;color:var(--text-light)">—</div>
+          <button class="submit-btn profile-inline-btn" id="profile-availability-link-btn" type="button" onclick="switchView('abwesenheit')">Открыть календарь →</button>
+        </div>
+      </div>
+
+      <div class="accordion-section">
+        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-5)">🏗️</span><span class="accordion-title">Объекты</span><span class="accordion-chevron">▾</span></div>
+        <div class="accordion-body collapsed"><div id="profile-objects-list"></div></div>
       </div>
     </div>
 
     ${currentRole === 'owner' ? `
-    <div class="accordion-section">
-      <div class="accordion-header"><span class="accordion-icon" style="background:#e0304f22">👥</span><span class="accordion-title">Команда</span><span class="accordion-chevron">▾</span></div>
-      <div class="accordion-body collapsed">
-        <div id="profile-team-list" style="font-size:0.85rem;color:var(--text-light)">Загрузка…</div>
+    <div class="profile-tab-panel" data-panel="team" style="display:none">
+      <div class="accordion-section" style="display:block">
+        <div id="profile-team-list" style="font-size:0.85rem;color:var(--text-light);padding:0.75rem 0">Загрузка…</div>
       </div>
     </div>` : ''}
+
+    <div class="profile-tab-panel" data-panel="settings" style="display:none">
+      <div class="accordion-section">
+        <div class="accordion-header"><span class="accordion-icon" style="background:#f59e0b22">🛠</span><span class="accordion-title">Навыки</span><span class="accordion-chevron">▾</span></div>
+        <div class="accordion-body collapsed">
+          <div id="profile-skills-chips" class="profile-skills-chips"></div>
+          <div id="profile-skills-edit" style="display:none"></div>
+          <button class="submit-btn profile-inline-btn" id="profile-skills-edit-btn" type="button">Изменить навыки</button>
+        </div>
+      </div>
+
+      <div class="accordion-section">
+        <div class="accordion-header"><span class="accordion-icon" style="background:#60a5fa22">👕</span><span class="accordion-title">Размеры одежды</span><span class="accordion-chevron">▾</span></div>
+        <div class="accordion-body collapsed">
+          <div class="profile-sizes-grid">
+            <label>Штаны<input id="profile-size-pants" class="mangel-select" placeholder="напр. 52 / L"></label>
+            <label>Футболка<input id="profile-size-shirt" class="mangel-select" placeholder="напр. XL"></label>
+            <label>Обувь<input id="profile-size-shoe" class="mangel-select" placeholder="напр. 44"></label>
+          </div>
+          <button class="submit-btn profile-inline-btn" id="profile-sizes-save-btn" type="button">Сохранить размеры</button>
+          <div id="profile-sizes-status" style="font-size:0.8rem;color:var(--accent);margin-top:0.4rem"></div>
+        </div>
+      </div>
+    </div>
   `;
 
   initAccordions(document.getElementById('view-profile'));
+  _bindProfileTabs();
   _bindProfileHandlers();
   _loadProfileStats();
   if (currentRole === 'owner') {
@@ -109,6 +127,20 @@ function initProfileView() {
   } else {
     _loadProfileAvailabilitySummary();
   }
+}
+
+function _bindProfileTabs() {
+  const tabs = document.getElementById('profile-tabs');
+  if (!tabs) return;
+  tabs.addEventListener('click', e => {
+    const tab = e.target.closest('.profile-tab');
+    if (!tab) return;
+    tabs.querySelectorAll('.profile-tab').forEach(t => t.classList.toggle('active', t === tab));
+    document.querySelectorAll('.profile-tab-panel').forEach(panel => {
+      panel.style.display = panel.dataset.panel === tab.dataset.tab ? '' : 'none';
+    });
+    hapticImpact('light');
+  });
 }
 
 // 21.07: worker — summary-строка Urlaub-баланс + deep-link в Календарь, НЕ дублирование UI календаря

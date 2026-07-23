@@ -36,7 +36,7 @@ async function initHomeView() {
       <div class="quick-primary-icon-wrap qp-icon qp-icon-chat"><div class="qp-icon-sphere"></div><div class="qp-icon-bubble"></div></div>
       <div class="quick-primary-text">
         <div class="quick-primary-title">Сообщения</div>
-        <div class="quick-primary-sub">Командный чат</div>
+        <div class="quick-primary-sub" id="home-chat-quick-sub">Командный чат</div>
       </div>
       <span class="quick-primary-badge" id="home-chat-badge" style="display:none">0</span>
     </div>
@@ -87,6 +87,7 @@ async function _loadHomeData() {
   _loadHomeObjectsRings();
   _loadHomeAlerts();
   _loadHomeAbwesenheitSummary();
+  _loadHomeChatSummary();
 }
 
 // 10.11: Abwesenheit-плашка на Home — сводка вместо мелкой строки в Profile→Ещё.
@@ -98,14 +99,40 @@ async function _loadHomeAbwesenheitSummary() {
       ? await api('/api/abwesenheit/all')
       : await api('/api/abwesenheit');
     const now = new Date();
-    const inThisMonth = e => {
-      const d = new Date(e.date_from);
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-    };
-    const count = (data.entries || []).filter(inThisMonth).length;
-    sub.textContent = count > 0 ? `${count} ${count === 1 ? 'запись' : 'записи'} в этом месяце` : 'Нет отметок в этом месяце';
+    now.setHours(0, 0, 0, 0);
+    const upcoming = (data.entries || [])
+      .filter(e => new Date(e.date_from) >= now)
+      .sort((a, b) => new Date(a.date_from) - new Date(b.date_from));
+    if (upcoming.length === 0) {
+      sub.textContent = 'Нет ближайших событий';
+      return;
+    }
+    const next = upcoming[0];
+    const d = new Date(next.date_from);
+    const dateLabel = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    const who = currentRole === 'owner' && next.name ? `${next.name}: ` : '';
+    sub.textContent = `${who}${next.reason || 'Отсутствие'} · ${dateLabel}`;
   } catch (e) {
     sub.textContent = 'Календарь недоступностей';
+  }
+}
+
+async function _loadHomeChatSummary() {
+  const sub = document.getElementById('home-chat-quick-sub');
+  if (!sub) return;
+  try {
+    const data = await api('/api/chat/my_threads');
+    const threads = data.threads || [];
+    if (threads.length === 0) {
+      sub.textContent = 'Командный чат';
+      return;
+    }
+    const last = threads[0]; // already sorted by last_ts desc (backend)
+    const title = last.title ? `${last.title}: ` : '';
+    const preview = (last.last_preview || '').slice(0, 40);
+    sub.textContent = preview ? `${title}${preview}` : 'Командный чат';
+  } catch (e) {
+    sub.textContent = 'Командный чат';
   }
 }
 

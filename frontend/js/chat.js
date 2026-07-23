@@ -29,6 +29,15 @@ function _fmtChatTime(ts) {
   return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + ' ' + timeStr;
 }
 
+function _fmtChatDayLabel(ts) {
+  const d = new Date(ts * 1000);
+  const now = new Date();
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return 'Сегодня';
+  if (d.toDateString() === yesterday.toDateString()) return 'Вчера';
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+}
+
 function _renderChatMessages(messages) {
   const container = document.getElementById('chat-messages');
   if (!container) return;
@@ -45,9 +54,16 @@ function _renderChatMessages(messages) {
   const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
   _chatLastTs = maxTs;
 
+  let lastDayKey = null;
   container.innerHTML = messages.map(msg => {
     const isOwn = msg.user_id === _chatMyId;
-    return `
+    const dayKey = new Date(msg.ts * 1000).toDateString();
+    let divider = '';
+    if (dayKey !== lastDayKey) {
+      divider = `<div class="chat-day-divider">${_fmtChatDayLabel(msg.ts)}</div>`;
+      lastDayKey = dayKey;
+    }
+    return `${divider}
     <div class="chat-bubble ${isOwn ? 'chat-bubble-own' : 'chat-bubble-other'}" data-msg-id="${msg.id}" data-uid="${msg.user_id}">
       ${!isOwn ? `<div class="chat-name" style="cursor:pointer" onclick="openUserCard('${msg.user_id}')">${_escChat(msg.name)}</div>` : ''}
       ${msg.attachment ? _renderChatAttachment(msg) : ''}
@@ -297,32 +313,60 @@ async function _loadMyChatThreads() {
   } catch (e) {}
 }
 
+function _threadTimeLabel(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+}
+
+function _threadByKey(key) {
+  return _chatMyThreads.find(t => t.thread_key === key);
+}
+
 function renderChatThreadList() {
   const listEl = document.getElementById('chat-thread-list');
   const q = _chatSearchQuery.trim().toLowerCase();
 
   if (_chatCategory === 'general') {
+    const t = _threadByKey('group');
+    const preview = t?.last_preview ? _escChat(t.last_preview) : 'Команда Promonta';
+    const time = _threadTimeLabel(t?.last_ts);
     const groupItem = `
       <div class="chat-thread-item" data-thread="">
         <div class="chat-thread-avatar group">👤</div>
         <div class="chat-thread-info">
           <div class="chat-thread-name">Общий чат</div>
-          <div class="chat-thread-preview">Команда Promonta</div>
+          <div class="chat-thread-preview">${preview}</div>
         </div>
-        ${_threadBadge(_chatUnreadByThread.group || 0)}
+        <div class="chat-thread-meta">
+          ${time ? `<span class="chat-thread-time">${time}</span>` : ''}
+          ${_threadBadge(_chatUnreadByThread.group || 0)}
+        </div>
       </div>`;
     listEl.innerHTML = groupItem;
   } else if (_chatCategory === 'dm') {
     const filteredWorkers = q ? _chatWorkers.filter(w => (w.name || '').toLowerCase().includes(q)) : _chatWorkers;
-    listEl.innerHTML = filteredWorkers.map(w => `
+    listEl.innerHTML = filteredWorkers.map(w => {
+      const t = _threadByKey(String(w.user_id));
+      const preview = t?.last_preview ? _escChat(t.last_preview) : (w.role === 'owner' ? 'Владелец' : 'Работник');
+      const time = _threadTimeLabel(t?.last_ts);
+      return `
       <div class="chat-thread-item" data-thread="${w.user_id}">
         <div class="chat-thread-avatar">${(w.name || '?')[0].toUpperCase()}</div>
         <div class="chat-thread-info">
           <div class="chat-thread-name">${_escChat(w.name || w.user_id)}</div>
-          <div class="chat-thread-preview">${w.role === 'owner' ? 'Владелец' : 'Работник'}</div>
+          <div class="chat-thread-preview">${preview}</div>
         </div>
-        ${_threadBadge(_chatUnreadByThread[String(w.user_id)] || 0)}
-      </div>`).join('') || '<div class="chat-empty">Нет личных чатов</div>';
+        <div class="chat-thread-meta">
+          ${time ? `<span class="chat-thread-time">${time}</span>` : ''}
+          ${_threadBadge(_chatUnreadByThread[String(w.user_id)] || 0)}
+        </div>
+      </div>`;
+    }).join('') || '<div class="chat-empty">Нет личных чатов</div>';
   } else {
     const prefix = _chatCategory === 'obj' ? 'obj:' : _chatCategory === 'mangel' ? 'mangel:' : 'task:';
     let filtered = _chatMyThreads.filter(t => t.thread_key.startsWith(prefix));
@@ -333,6 +377,9 @@ function renderChatThreadList() {
         <div class="chat-thread-info">
           <div class="chat-thread-name">${_escChat(t.title)}</div>
           <div class="chat-thread-preview">${_escChat(t.last_preview || '')}</div>
+        </div>
+        <div class="chat-thread-meta">
+          ${_threadTimeLabel(t.last_ts) ? `<span class="chat-thread-time">${_threadTimeLabel(t.last_ts)}</span>` : ''}
         </div>
       </div>`).join('') || '<div class="chat-empty">Чатов пока нет</div>';
   }

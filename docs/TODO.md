@@ -43,24 +43,24 @@ Source: owner-provided audit list. React/TSX starter code in that list does not 
 
 Being worked in dedicated branches (`feat/ui-batch-1`, etc.), one screen/feature per commit, pushed incrementally so progress is visible on GitHub. Full list, ordered by what's being tackled first:
 
-**Batch 1 — low-risk, high-value, no new dependencies** (in progress):
-- [ ] Home: remove radio widget
-- [ ] Home: "4 АЛЕРТЫ" tile becomes tappable → opens alerts view (partially exists via `_renderAlerts()`, verify/extend)
-- [ ] Home: "Сообщения" tile shows last message preview
-- [ ] Home: "Общий календарь" tile shows next upcoming event
-- [ ] News: "Читать источник" opens via `tg.openLink()` instead of default anchor behavior (verify current behavior first)
-- [ ] News: Share button via `tg.shareURL()`
-- [ ] News: likes/dislikes persisted via `tg.CloudStorage` instead of (or in addition to) the existing `news_reactions.json` backend store — needs a decision: is CloudStorage replacing server-side storage (breaks cross-device sync) or supplementing it (optimistic UI)? Flagging before building, not assuming.
-- [ ] Theme: adopt `tg.themeParams` for color adaptation, persist any user override via `tg.CloudStorage`
+**Batch 1 — low-risk, high-value, no new dependencies** (done, branch `feat/ui-batch-1`, not yet deployed to production — owner wants to accumulate more before deploying):
+- [x] Home: radio widget — owner decided **relocate, not remove** (was blocking bottom-nav zone conceptually). Moved to top-right under `--tg-safe-top` (Dynamic Island/status-bar safe zone), 82px glove-friendly size kept. Commit `02e19a1`.
+- [x] Home: "4 АЛЕРТЫ" tile tappable → **already implemented** in both owner (`kpi-alerts` → `openAlertsView()`) and worker (`_openWorkerAlerts()`) dashboards. No code change needed.
+- [x] Home: "Сообщения" tile shows last message preview — owner dashboard only (worker's compact 2x2 tile has no room without breaking layout). Reuses `last_preview` already returned by `GET /api/chat/my_threads`. Commit `b10c38f`.
+- [x] Home: "Общий календарь" tile shows next upcoming event — was showing a static this-month count, now shows the actual nearest absence entry (who/reason/date). Commit `b10c38f`.
+- [x] News: "Читать источник" via `tg.openLink()` — **already implemented** (`openExternalLink()` in `shared.js`, existing code, has a `window.open` fallback). No change needed.
+- [x] News: Share button via `tg.shareURL()` — was missing entirely for news (existed for weather posts only, different data shape). Added `shareNewsLink()`, prefers `tg.shareURL(url, title)`, falls back to `navigator.share` then clipboard. Commit `dbdd4be`.
+- [ ] ~~News: likes/dislikes via `tg.CloudStorage`~~ — **skipped, owner decision**: source of this ask was unclear/possibly not the owner's own intent ("хуй знает это не я писал"), and it would duplicate the existing server-side `news_reactions.json` store, risking cross-device desync. Not building without a clearer ask.
+- [ ] ~~Theme: `tg.themeParams` auto-adaptation~~ — **skipped, owner decision**: light theme was deliberately fixed on 2026-07-22 after a bug where dark-Telegram users saw a broken old dark style; owner does not want theme auto-following Telegram again. Also skipped moving the manual theme toggle from `localStorage` to `tg.CloudStorage` — CloudStorage is async and would risk a flash-of-wrong-theme on load that localStorage's synchronous read avoids; not worth it for a device-local preference.
 
 **Batch 2 — moderate effort, existing patterns to extend**:
 - [ ] Objects: filters (city, status, budget), sort (progress/date/budget), search bar with 300ms debounce
 - [ ] Objects: stacked-avatar team indicator on cards (people-dots already exist per `server-structure.md` — check if this already satisfies the ask before rebuilding)
 - [ ] Chat list: last message + time + unread count (partially exists — `unread_by_thread` endpoint already returns counts, verify frontend renders preview text)
-- [ ] Chat thread: timestamp grouping ("Сегодня" etc.)
-- [ ] Chat: attach location (photo/document attachment already exists per API.md — location is the new part)
-- [ ] Tools: notification when overdue return (backend logic needed — check if any expiry field exists in the tool data shape first)
-- [ ] Tools: photo of condition at checkout/return
+- [x] Chat thread: timestamp grouping ("Сегодня" etc.) — day-dividers added to thread detail view. Commit `98b0e25`.
+- [ ] ~~Chat: attach location~~ — **rejected, owner decision (2026-07-23)**: check-in already captures GPS at shift start (`checkin_meta.json`), which already establishes the worker is on-site — a separate location-in-chat message would be redundant. Not building.
+- [ ] ~~Tools: notification when overdue return~~ — **rejected, owner decision (2026-07-23)**: would need a new backend field + data migration for zero current benefit to the owner. Not building.
+- [ ] ~~Tools: photo of condition at checkout/return~~ — **rejected, owner decision (2026-07-23)**: same reasoning, no backend endpoint accepts a photo on checkout currently and owner doesn't want the migration work for it. Not building.
 
 **Batch 3 — higher effort / new UI patterns, needs its own scoping pass before starting**:
 - [ ] Object detail: tabs (Overview/Tasks/Documents/History/Budget) — likely a real restructure of the object detail view, not a tweak
@@ -70,16 +70,19 @@ Being worked in dedicated branches (`feat/ui-batch-1`, etc.), one screen/feature
 - [ ] Chat: swipe-to-reply gesture
 - [ ] Chat: voice messages via `tg.startRecordVideo()`/`stopRecordVideo()` — note: those are Telegram's *video* recording APIs, not audio; the app already has voice notes via a different mechanism (`POST /api/chat/messages/voice`, faster-whisper transcription) — verify which is actually wanted before implementing, this may be describing an already-existing feature incorrectly
 - [ ] Calendar: week/month/year views, color-coded by type, drag-and-drop event rescheduling, bottom-sheet on day tap
-- [ ] Profile: split into Мой профиль / Команда / Настройки — restructure, not a tweak
-- [ ] Profile: interactive Stundenzettel chart instead of a number
-- [ ] Profile: skills as progress bars instead of a list
-- [ ] Profile: clothing sizes as an EU/US/UK conversion table
-- [ ] Tools: QR-code scanner for lookup (needs a camera/QR library decision)
+- [x] Profile: split into Мой профиль / Команда / Настройки — done as an in-page segmented-tab control (not separate routed views), zero markup deleted, all existing handlers/IDs preserved. Commit `aaef194`.
+- [ ] Profile: interactive Stundenzettel chart instead of a number — deferred, same charting-library decision as budget donut/sparklines below.
+- [ ] ~~Profile: skills as progress bars instead of a list~~ — **skipped, data doesn't support it**: `worker_profiles.json` stores `skills` as a flat `list[str]` (skill names only), no proficiency/level field anywhere in the backend model (`main.py` lines ~278-559). A progress bar needs a 0-100 value; faking one would misrepresent actual worker skill data. Needs a product decision (add a level field + UI to set it) before this is buildable, not a frontend-only task.
+- [ ] ~~Profile: clothing sizes as an EU/US/UK conversion table~~ — **skipped, data doesn't support it**: sizes are stored as free-text strings (e.g. "52 / L", "XL", "44"), not a known size *system* per field — no way to know which system a given string is already in, so no reliable conversion is possible without asking workers to re-enter sizes in a structured format first. Same category of gap as skills above.
+- [ ] ~~Tools: QR-code scanner for lookup~~ — **not needed for the current Telegram Mini App (owner decision, 2026-07-23)**. Camera-based QR scanning is a much better fit for a native phone app than a Telegram WebView. If a native app gets built, this belongs there, not here.
 - [ ] Tools: availability-calendar-based booking (new feature, not in current data model — `object_assignments.json`-style scoping would need a tools equivalent)
 - [ ] Home stat cards: sparkline mini-trend-graphs (needs a charting approach decision, same as budget donut)
 - [ ] News: tag-based category filter
 - [ ] Virtual scrolling for lists >20 items (vanilla equivalent: manual windowing or a small library — no framework virtualization available without React)
 - [ ] Image lazy loading + blur placeholder (`loading="lazy"` + a blurred low-res placeholder — doable in vanilla JS, no library needed)
+
+**Future native phone app backlog** (owner mentioned possibly building a native app later — logging ideas here so they aren't lost, not started):
+- [ ] QR-code scanner for tool lookup — camera-based, natural fit for native, awkward in Telegram WebView.
 
 **Explicitly deferred pending a security/architecture decision, not silently built**:
 - [ ] Backend: rate limiting across all API routes (currently only AI chat has rate limiting per `ai_chat_rate.json`) — needs scoping, could affect legitimate burst usage (e.g. photo uploads during check-in)
