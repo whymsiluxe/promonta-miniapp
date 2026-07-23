@@ -43,15 +43,15 @@ Source: owner-provided audit list. React/TSX starter code in that list does not 
 
 Being worked in dedicated branches (`feat/ui-batch-1`, etc.), one screen/feature per commit, pushed incrementally so progress is visible on GitHub. Full list, ordered by what's being tackled first:
 
-**Batch 1 — low-risk, high-value, no new dependencies** (in progress):
-- [ ] Home: remove radio widget
-- [ ] Home: "4 АЛЕРТЫ" tile becomes tappable → opens alerts view (partially exists via `_renderAlerts()`, verify/extend)
-- [ ] Home: "Сообщения" tile shows last message preview
-- [ ] Home: "Общий календарь" tile shows next upcoming event
-- [ ] News: "Читать источник" opens via `tg.openLink()` instead of default anchor behavior (verify current behavior first)
-- [ ] News: Share button via `tg.shareURL()`
-- [ ] News: likes/dislikes persisted via `tg.CloudStorage` instead of (or in addition to) the existing `news_reactions.json` backend store — needs a decision: is CloudStorage replacing server-side storage (breaks cross-device sync) or supplementing it (optimistic UI)? Flagging before building, not assuming.
-- [ ] Theme: adopt `tg.themeParams` for color adaptation, persist any user override via `tg.CloudStorage`
+**Batch 1 — low-risk, high-value, no new dependencies** (done, branch `feat/ui-batch-1`, not yet deployed to production — owner wants to accumulate more before deploying):
+- [x] Home: radio widget — owner decided **relocate, not remove** (was blocking bottom-nav zone conceptually). Moved to top-right under `--tg-safe-top` (Dynamic Island/status-bar safe zone), 82px glove-friendly size kept. Commit `02e19a1`.
+- [x] Home: "4 АЛЕРТЫ" tile tappable → **already implemented** in both owner (`kpi-alerts` → `openAlertsView()`) and worker (`_openWorkerAlerts()`) dashboards. No code change needed.
+- [x] Home: "Сообщения" tile shows last message preview — owner dashboard only (worker's compact 2x2 tile has no room without breaking layout). Reuses `last_preview` already returned by `GET /api/chat/my_threads`. Commit `b10c38f`.
+- [x] Home: "Общий календарь" tile shows next upcoming event — was showing a static this-month count, now shows the actual nearest absence entry (who/reason/date). Commit `b10c38f`.
+- [x] News: "Читать источник" via `tg.openLink()` — **already implemented** (`openExternalLink()` in `shared.js`, existing code, has a `window.open` fallback). No change needed.
+- [x] News: Share button via `tg.shareURL()` — was missing entirely for news (existed for weather posts only, different data shape). Added `shareNewsLink()`, prefers `tg.shareURL(url, title)`, falls back to `navigator.share` then clipboard. Commit `dbdd4be`.
+- [ ] ~~News: likes/dislikes via `tg.CloudStorage`~~ — **skipped, owner decision**: source of this ask was unclear/possibly not the owner's own intent ("хуй знает это не я писал"), and it would duplicate the existing server-side `news_reactions.json` store, risking cross-device desync. Not building without a clearer ask.
+- [ ] ~~Theme: `tg.themeParams` auto-adaptation~~ — **skipped, owner decision**: light theme was deliberately fixed on 2026-07-22 after a bug where dark-Telegram users saw a broken old dark style; owner does not want theme auto-following Telegram again. Also skipped moving the manual theme toggle from `localStorage` to `tg.CloudStorage` — CloudStorage is async and would risk a flash-of-wrong-theme on load that localStorage's synchronous read avoids; not worth it for a device-local preference.
 
 **Batch 2 — moderate effort, existing patterns to extend**:
 - [ ] Objects: filters (city, status, budget), sort (progress/date/budget), search bar with 300ms debounce
