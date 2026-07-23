@@ -97,10 +97,10 @@ function renderObjectCard(obj) {
     </div>
     <div class="obj-mangel-link" onclick="event.stopPropagation();window._pendingMangelObjectFilter='${oid}';window._pendingMangelTab='defects';switchView('mangel')">🚩 Дефекты объекта</div>
     <div class="tasks-label collapsed"><span class="chevron">▾</span>Документы <span class="tasks-count"></span></div>
-    <div class="tasks-body collapsed">
+    <div class="tasks-body collapsed"><div class="tasks-body-inner">
       <div class="tasks-list"><div style="padding:0.3rem 0;color:var(--text-light);font-size:0.85rem">Загрузка...</div></div>
       <div class="add-task">+ Добавить задачу</div>
-    </div>
+    </div></div>
     ${currentRole === 'owner' ? `
     <div class="metrics">
       <div class="metric">

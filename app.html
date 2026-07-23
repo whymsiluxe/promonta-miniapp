@@ -707,13 +707,17 @@ header h1 {
 
 .tasks-count { font-weight: 400; color: var(--text-light); font-size: 0.75rem; }
 
+/* 23.07: было fixed max-height:500px — если контента меньше, оставался пустой хвост
+   после collapse→expand; если больше 500px, обрезался. Тот же grid-трюк что .accordion-body. */
 .tasks-body, .history-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.3s ease, opacity 0.25s ease;
+  opacity: 1;
   overflow: hidden;
-  max-height: 500px;
-  transition: max-height 0.25s ease;
 }
-
-.tasks-body.collapsed, .history-body.collapsed { max-height: 0; }
+.tasks-body-inner, .history-body > * { overflow: hidden; min-height: 0; }
+.tasks-body.collapsed, .history-body.collapsed { grid-template-rows: 0fr; opacity: 0; }
 
 .metrics {
   display: flex;
