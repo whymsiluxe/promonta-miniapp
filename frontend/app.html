@@ -1636,6 +1636,12 @@ body.view-locked {
   margin-bottom: 2px;
 }
 
+/* 24.07: группировка последовательных сообщений одного отправителя (Connecteam-стиль
+   из брифа) — второе+ сообщение подряд от того же юзера в пределах короткого окна
+   времени садится вплотную к предыдущему (не gap:0.5rem контейнера), без повторного
+   имени/аватара. JS (_renderChatMessages) решает когда добавлять этот класс. */
+.chat-bubble-grouped { margin-top: -0.35rem; }
+
 .chat-text { font-size: 1rem; line-height: 1.45; white-space: pre-wrap; }
 .chat-time { font-size: 0.62rem; color: var(--text-light); margin-top: 3px; text-align: right; }
 .chat-bubble-own .chat-time { color: rgba(255,255,255,0.65); }
@@ -3153,10 +3159,10 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <header>
       <button class="chat-back-btn" id="chat-thread-back-btn" type="button" aria-label="Назад">←</button>
       <h1 id="chat-thread-title">Общий чат</h1>
-      <button class="chat-close-thread-btn" id="chat-close-thread-btn" type="button" style="display:none;" title="Закрыть чат">🔒</button>
+      <button class="chat-close-thread-btn" id="chat-close-thread-btn" type="button" style="display:none;" title="Закрыть чат"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 11V8a6 6 0 1 1 12 0v3M5 11h14v9a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-9z"/></svg></button>
     </header>
     <div id="chat-closed-banner" class="chat-closed-banner" style="display:none;">
-      🔒 Чат закрыт руководством
+      <svg viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 11V8a6 6 0 1 1 12 0v3M5 11h14v9a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-9z"/></svg> Чат закрыт руководством
       <button id="chat-reopen-btn" type="button" style="display:none;">Открыть снова</button>
     </div>
     <div id="chat-messages" class="chat-messages">
@@ -3165,10 +3171,10 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <div id="chat-error" class="error-banner" style="display:none;margin:0 0.75rem;"></div>
     <input type="file" id="chat-file-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none;">
     <div class="chat-input-bar" id="chat-input-bar">
-      <button id="chat-attach-btn" class="chat-attach-btn" aria-label="Прикрепить файл" type="button">📎</button>
-      <button id="chat-voice-btn" class="chat-attach-btn" aria-label="Голосовое сообщение" type="button">🎤</button>
+      <button id="chat-attach-btn" class="chat-attach-btn" aria-label="Прикрепить файл" type="button"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a1.5 1.5 0 0 1-2.12-2.12l8.49-8.48"/></svg></button>
+      <button id="chat-voice-btn" class="chat-attach-btn" aria-label="Голосовое сообщение" type="button"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg></button>
       <textarea id="chat-input" class="chat-input" placeholder="Написать сообщение..." rows="1"></textarea>
-      <button id="chat-send" class="chat-send-btn" aria-label="Отправить">➤</button>
+      <button id="chat-send" class="chat-send-btn" aria-label="Отправить"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>
     </div>
     <div id="chat-voice-recording-bar" style="display:none;">
       <span class="chat-voice-rec-dot"></span>

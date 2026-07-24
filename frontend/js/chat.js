@@ -54,7 +54,13 @@ function _renderChatMessages(messages) {
   const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
   _chatLastTs = maxTs;
 
+  // 24.07: группировка последовательных сообщений одного отправителя (Connecteam-стиль) —
+  // второе+ сообщение подряд от того же юзера в пределах 120 сек не повторяет имя, садится
+  // вплотную к предыдущему пузырю (chat-bubble-grouped, см. CSS).
+  const GROUP_WINDOW_SECONDS = 120;
   let lastDayKey = null;
+  let lastUid = null;
+  let lastTs = null;
   container.innerHTML = messages.map(msg => {
     const isOwn = msg.user_id === _chatMyId;
     const dayKey = new Date(msg.ts * 1000).toDateString();
@@ -62,10 +68,14 @@ function _renderChatMessages(messages) {
     if (dayKey !== lastDayKey) {
       divider = `<div class="chat-day-divider">${_fmtChatDayLabel(msg.ts)}</div>`;
       lastDayKey = dayKey;
+      lastUid = null; // новый день — не группировать через границу дня
     }
+    const isGrouped = !divider && msg.user_id === lastUid && lastTs !== null && (msg.ts - lastTs) < GROUP_WINDOW_SECONDS;
+    lastUid = msg.user_id;
+    lastTs = msg.ts;
     return `${divider}
-    <div class="chat-bubble ${isOwn ? 'chat-bubble-own' : 'chat-bubble-other'}" data-msg-id="${msg.id}" data-uid="${msg.user_id}">
-      ${!isOwn ? `<div class="chat-name" style="cursor:pointer" onclick="openUserCard('${msg.user_id}')">${_escChat(msg.name)}</div>` : ''}
+    <div class="chat-bubble ${isOwn ? 'chat-bubble-own' : 'chat-bubble-other'}${isGrouped ? ' chat-bubble-grouped' : ''}" data-msg-id="${msg.id}" data-uid="${msg.user_id}">
+      ${!isOwn && !isGrouped ? `<div class="chat-name" style="cursor:pointer" onclick="openUserCard('${msg.user_id}')">${_escChat(msg.name)}</div>` : ''}
       ${msg.attachment ? _renderChatAttachment(msg) : ''}
       ${msg.text ? `<div class="chat-text">${_escChat(msg.text)}</div>` : ''}
       <div class="chat-time">${_fmtChatTime(msg.ts)}</div>
@@ -441,7 +451,8 @@ async function _refreshChatThreadCloseState() {
   if (banner) banner.style.display = closed ? 'flex' : 'none';
   if (reopenBtn) reopenBtn.style.display = closed && _chatIsOwner ? 'inline-block' : 'none';
   if (inputBar) inputBar.style.display = closed && !_chatIsOwner ? 'none' : 'flex';
-  if (closeBtn) closeBtn.textContent = closed ? '' : '🔒';
+  // 24.07: closeBtn.textContent больше не перезаписывается — стирал SVG-иконку замка
+  // (была в статичной разметке app.html). Видимость уже полностью управляется display.
   if (closeBtn) closeBtn.style.display = _chatIsOwner && !closed ? 'flex' : 'none';
 }
 
