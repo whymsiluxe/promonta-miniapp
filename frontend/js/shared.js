@@ -7,13 +7,36 @@ let currentUserId = null;
 
 // Прогрев данных на splash-экране: initApp() кладёт сюда промисы GET-запросов заранее,
 // пока грузится анимация — к моменту открытия таба Объекты/Инструмент/Лента данные уже готовы.
-// Каждый путь используется из кэша один раз, дальше идёт обычный живой fetch.
+// Большинство путей используется из кэша один раз, дальше идёт обычный живой fetch —
+// см. исключение _isMultiConsumerPath() ниже для путей с несколькими независимыми consumers.
 const _prefetchCache = {};
+
+// 24.07: некоторые пути (/api/objects, /api/objects/{id}/stages) читаются НЕСКОЛЬКИМИ
+// независимыми функциями сразу после splash (Home KPI, worker-checkin FAB, дашборд-кольца
+// прогресса и т.д.) — если каждый путь потребляется одноразово, первый же consumer съедает
+// кэш и все остальные (включая реальный экран, который юзер открывает секундой позже —
+// "Объекты"/"Этапы объекта") идут в живой fetch, что и выглядело как "опять грузится".
+// Для этих путей держим кэш живым короткое TTL-окно вместо немедленного delete — достаточно
+// покрыть все параллельные consumers на старте, но не мешает live-обновлению данных позже
+// (TTL истёк → обычный fetch, как и было). Сам общий механизм api()/prefetchTracked() для
+// остальных путей (/api/tools, /api/feed/weather и т.п.) не трогаем — остаётся одноразовым.
+const _MULTI_CONSUMER_TTL_MS = 8000;
+function _isMultiConsumerPath(path) {
+  return path === '/api/objects' || /^\/api\/objects\/[^/]+\/stages$/.test(path);
+}
 
 function api(path, options = {}) {
   const isGet = !options.method || options.method === 'GET';
   if (isGet && _prefetchCache[path]) {
     const cached = _prefetchCache[path];
+    if (_isMultiConsumerPath(path)) {
+      // Не удаляем сразу — оставляем на TTL, чтобы следующий independent consumer (Home KPI,
+      // checkin FAB, rings, а потом и сам экран Объекты/Этапы) тоже попал в тёплый кэш.
+      if (!cached._prefetchExpiry) cached._prefetchExpiry = Date.now() + _MULTI_CONSUMER_TTL_MS;
+      if (Date.now() < cached._prefetchExpiry) {
+        return cached.then(v => v); // тот же результат, без повторного delete-гонки
+      }
+    }
     delete _prefetchCache[path];
     return cached;
   }
