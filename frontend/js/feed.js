@@ -300,9 +300,16 @@ function renderPhotoItem(p) {
   const caption = p.object_id || p.caption
     ? `${esc(p.object_id) || ''}${p.object_id && p.caption ? ' — ' : ''}${esc(p.caption) || ''}`
     : esc(p.name);
+  const fileCount = (p.files || []).length;
+  // 24.07: мультифото — карточка в ленте показывает только обложку (первое фото,
+  // index=0) + счётчик если их больше одного; полный просмотр остальных — в модалке
+  // комментариев (openPhotoComments), не растягиваем сетку ленты под каждое фото поста.
   return `
-  <div class="feed-photo-item" data-photo-id="${p.id}" onclick="openPhotoComments('${p.id}')">
-    <div class="feed-photo-img-wrap"><img data-auth-src="/api/feed/photos/${p.id}/file" loading="lazy" alt=""></div>
+  <div class="feed-photo-item" data-photo-id="${p.id}" onclick="openPhotoComments('${p.id}', ${fileCount})">
+    <div class="feed-photo-img-wrap">
+      <img data-auth-src="/api/feed/photos/${p.id}/file?index=0" loading="lazy" alt="">
+      ${fileCount > 1 ? `<span class="feed-photo-count-badge">1/${fileCount}</span>` : ''}
+    </div>
     <div class="feed-photo-meta">${caption}<div class="feed-photo-time">${fmtPhotoTime(p.ts)}</div></div>
     <div class="feed-photo-actions"><span class="feed-photo-comment-count">💬 ${p.comment_count || 0}</span></div>
   </div>`;
@@ -323,9 +330,9 @@ async function loadFeedPhotos() {
   }
 }
 
-async function _uploadFeedPhoto(file) {
+async function _uploadFeedPhoto(files) {
   const formData = new FormData();
-  formData.append('file', file);
+  for (const f of files) formData.append('files', f);
   try {
     await fetch(`${API_BASE}/api/feed/photos`, {
       method: 'POST',
@@ -480,13 +487,36 @@ function _initFeedSwitch() {
     opt.addEventListener('click', () => _selectFeedTab(opt.dataset.feed));
   });
 
-  const input = document.getElementById('feed-photo-input');
-  if (input) {
-    input.addEventListener('change', () => {
-      if (input.files && input.files[0]) _uploadFeedPhoto(input.files[0]);
-      input.value = '';
+  // 24.07: было capture=environment (только камера, галерея недоступна — двойная
+  // жалоба юзера). Теперь два отдельных input: камера (оставляет capture) и галерея
+  // (multiple, без capture) — переключаются через _openFeedPhotoSourceSheet().
+  const cameraInput = document.getElementById('feed-photo-input-camera');
+  const galleryInput = document.getElementById('feed-photo-input-gallery');
+  const addBtn = document.getElementById('feed-add-photo-btn');
+  if (addBtn) addBtn.addEventListener('click', _openFeedPhotoSourceSheet);
+  if (cameraInput) {
+    cameraInput.addEventListener('change', () => {
+      if (cameraInput.files && cameraInput.files.length) _uploadFeedPhoto(Array.from(cameraInput.files));
+      cameraInput.value = '';
     });
   }
+  if (galleryInput) {
+    galleryInput.addEventListener('change', () => {
+      if (galleryInput.files && galleryInput.files.length) _uploadFeedPhoto(Array.from(galleryInput.files));
+      galleryInput.value = '';
+    });
+  }
+}
+
+function _openFeedPhotoSourceSheet() {
+  const sheet = document.getElementById('feed-photo-source-sheet');
+  if (!sheet) return;
+  sheet.style.display = 'flex';
+}
+
+function _closeFeedPhotoSourceSheet() {
+  const sheet = document.getElementById('feed-photo-source-sheet');
+  if (sheet) sheet.style.display = 'none';
 }
 
 // Свайп внутри Ленты переключает Инфо ↔ Фото (звук + вибрация).
@@ -620,11 +650,35 @@ async function _renderPhotoCommentsList() {
   });
 }
 
-async function openPhotoComments(photoId) {
+let _pcFileCount = 1;
+let _pcPhotoIndex = 0;
+
+function _pcRenderPhotoAt(index) {
+  _pcPhotoIndex = index;
+  authImg(document.getElementById('pc-photo'), `/api/feed/photos/${_pcCurrentPhotoId}/file?index=${index}`);
+  const prevBtn = document.getElementById('pc-photo-prev');
+  const nextBtn = document.getElementById('pc-photo-next');
+  const dotsEl = document.getElementById('pc-photo-dots');
+  if (_pcFileCount > 1) {
+    prevBtn.style.display = index > 0 ? 'flex' : 'none';
+    nextBtn.style.display = index < _pcFileCount - 1 ? 'flex' : 'none';
+    dotsEl.innerHTML = Array.from({ length: _pcFileCount }, (_, i) =>
+      `<span class="pc-photo-dot${i === index ? ' active' : ''}"></span>`).join('');
+  } else {
+    prevBtn.style.display = 'none';
+    nextBtn.style.display = 'none';
+    dotsEl.innerHTML = '';
+  }
+}
+
+async function openPhotoComments(photoId, fileCount) {
+  // 24.07: мультифото — fileCount передаётся с карточки ленты (renderPhotoItem уже
+  // знает p.files.length); если вызвано без него (старый путь), считаем 1 фото.
   _pcCurrentPhotoId = photoId;
+  _pcFileCount = fileCount || 1;
   const modal = document.getElementById('photo-comments-modal');
   modal.style.display = 'flex';
-  authImg(document.getElementById('pc-photo'), `/api/feed/photos/${photoId}/file`);
+  _pcRenderPhotoAt(0);
   const list = document.getElementById('pc-list');
   list.innerHTML = '<div style="padding:1rem;color:var(--text-light);text-align:center">Загрузка...</div>';
   try {
@@ -658,4 +712,10 @@ async function _sendPhotoComment() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pc-back-btn')?.addEventListener('click', closePhotoComments);
   document.getElementById('pc-comment-send-btn')?.addEventListener('click', _sendPhotoComment);
+  document.getElementById('pc-photo-prev')?.addEventListener('click', () => {
+    if (_pcPhotoIndex > 0) { _pcRenderPhotoAt(_pcPhotoIndex - 1); hapticImpact('light'); }
+  });
+  document.getElementById('pc-photo-next')?.addEventListener('click', () => {
+    if (_pcPhotoIndex < _pcFileCount - 1) { _pcRenderPhotoAt(_pcPhotoIndex + 1); hapticImpact('light'); }
+  });
 });

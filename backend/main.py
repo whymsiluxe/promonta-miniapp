@@ -1492,37 +1492,51 @@ def list_feed_photos(user: dict = Depends(get_current_user)):
     for p in reversed(items):
         p = dict(p)
         p['comment_count'] = len(p.pop('comments', []))
+        # 24.07: мультифото — старые записи (до этой правки) хранили один 'file',
+        # новые хранят 'files' (список). Нормализуем на чтение, не трогаем сами
+        # старые JSON-записи на диске (не нужно, чтение уже покрывает оба случая).
+        if 'files' not in p:
+            p['files'] = [p['file']] if p.get('file') else []
         photos.append(p)
     return {"photos": photos}
 
 
+PHOTO_MAX_FILES = 10  # разумный потолок на пост, не архитектурное ограничение
+
+
 @app.post("/api/feed/photos")
 async def upload_feed_photo(
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     object_id: str = Form(''),
     caption: str = Form(''),
     user: dict = Depends(get_current_user),
 ):
-    content_type = file.content_type or ''
-    if not content_type.startswith('image/'):
-        raise HTTPException(400, "Файл должен быть изображением")
+    if not files:
+        raise HTTPException(400, "Нужно хотя бы одно фото")
+    if len(files) > PHOTO_MAX_FILES:
+        raise HTTPException(400, f"Максимум {PHOTO_MAX_FILES} фото за раз")
 
-    raw = await file.read()
-    if len(raw) > PHOTO_MAX_BYTES:
-        raise HTTPException(400, "Фото слишком большое (макс. 8 МБ)")
-
-    ext = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif'}.get(content_type, 'jpg')
     photo_id = uuid.uuid4().hex
-    fname = f"{photo_id}.{ext}"
-    with open(os.path.join(PHOTO_DIR, fname), 'wb') as f:
-        f.write(raw)
+    saved_files = []
+    for f in files:
+        content_type = f.content_type or ''
+        if not content_type.startswith('image/'):
+            raise HTTPException(400, "Все файлы должны быть изображениями")
+        raw = await f.read()
+        if len(raw) > PHOTO_MAX_BYTES:
+            raise HTTPException(400, "Фото слишком большое (макс. 8 МБ на файл)")
+        ext = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif'}.get(content_type, 'jpg')
+        fname = f"{photo_id}_{len(saved_files)}.{ext}"
+        with open(os.path.join(PHOTO_DIR, fname), 'wb') as out:
+            out.write(raw)
+        saved_files.append(fname)
 
     entry = {
         "id": photo_id,
-        "file": fname,
+        "files": saved_files,
         "ts": int(time.time()),
         "user_id": user['id'],
-        "name": user.get('first_name', str(user['id'])),
+        "name": _sanitize_display_name(user.get('first_name'), str(user['id'])),
         "object_id": object_id.strip()[:100],
         "caption": caption.strip()[:300],
     }
@@ -1532,9 +1546,10 @@ async def upload_feed_photo(
         items.append(entry)
         if len(items) > PHOTO_MAX_COUNT:
             for old in items[:-PHOTO_MAX_COUNT]:
-                old_path = os.path.join(PHOTO_DIR, old['file'])
-                if os.path.exists(old_path):
-                    os.remove(old_path)
+                for old_fname in (old.get('files') or ([old['file']] if old.get('file') else [])):
+                    old_path = os.path.join(PHOTO_DIR, old_fname)
+                    if os.path.exists(old_path):
+                        os.remove(old_path)
             items = items[-PHOTO_MAX_COUNT:]
         _save_photo_meta(items)
 
@@ -1595,13 +1610,16 @@ def delete_feed_photo_comment(photo_id: str, comment_id: str, user: dict = Depen
 
 
 @app.get("/api/feed/photos/{photo_id}/file")
-def get_feed_photo_file(photo_id: str, user: dict = Depends(get_current_user)):
+def get_feed_photo_file(photo_id: str, index: int = 0, user: dict = Depends(get_current_user)):
     with _photo_lock:
         items = _load_photo_meta()
     entry = next((p for p in items if p['id'] == photo_id), None)
     if not entry:
         raise HTTPException(404, "Фото не найдено")
-    path = os.path.join(PHOTO_DIR, entry['file'])
+    files = entry.get('files') or ([entry['file']] if entry.get('file') else [])
+    if index < 0 or index >= len(files):
+        raise HTTPException(404, "Файл не найден по этому индексу")
+    path = os.path.join(PHOTO_DIR, files[index])
     if not os.path.exists(path):
         raise HTTPException(404, "Файл отсутствует")
     return FileResponse(path)

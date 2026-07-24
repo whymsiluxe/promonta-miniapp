@@ -1115,6 +1115,8 @@ header h1 {
   cursor: pointer;
 }
 .feed-photo-item .feed-photo-img-wrap { width: 100%; aspect-ratio: 4/3; background: var(--bg-light); }
+.feed-photo-item .feed-photo-img-wrap { position: relative; }
+.feed-photo-count-badge { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.65); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 999px; }
 .feed-photo-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .feed-photo-item .feed-photo-meta {
   padding: 0.55rem 0.75rem 0.7rem;
@@ -1138,7 +1140,14 @@ header h1 {
   flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem;
   padding: calc(0.75rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) 1rem 0.75rem; border-bottom: 1px solid var(--border-color);
 }
-.photo-comments-modal .pc-photo { width: 100%; max-height: 45vh; object-fit: cover; flex-shrink: 0; }
+.photo-comments-modal .pc-photo { width: 100%; max-height: 45vh; object-fit: cover; flex-shrink: 0; display: block; }
+.pc-photo-wrap { position: relative; flex-shrink: 0; }
+.pc-photo-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; border-radius: 50%; border: none; background: rgba(0,0,0,0.45); color: #fff; font-size: 1.3rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.pc-photo-nav-prev { left: 8px; }
+.pc-photo-nav-next { right: 8px; }
+.pc-photo-dots { position: absolute; bottom: 10px; left: 0; right: 0; display: flex; justify-content: center; gap: 5px; }
+.pc-photo-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.5); }
+.pc-photo-dot.active { background: #fff; width: 8px; height: 8px; }
 .photo-comments-modal .pc-list { flex: 1; overflow-y: auto; padding: 0.75rem 1rem; }
 .photo-comments-modal .pc-comment { margin-bottom: 0.75rem; font-size: 0.85rem; }
 .photo-comments-modal .pc-comment-head { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.15rem; }
@@ -2833,10 +2842,9 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 
   <div id="feed-photos-content" style="display:none;">
     <div style="padding:0 0.75rem 0.75rem;">
-      <label class="submit-btn" style="display:block;text-align:center;cursor:pointer;">
-        📷 Добавить фото
-        <input type="file" id="feed-photo-input" accept="image/*" capture="environment" style="display:none;">
-      </label>
+      <button class="submit-btn" id="feed-add-photo-btn" type="button">📷 Добавить фото</button>
+      <input type="file" id="feed-photo-input-camera" accept="image/*" capture="environment" style="display:none;">
+      <input type="file" id="feed-photo-input-gallery" accept="image/*" multiple style="display:none;">
     </div>
     <div id="feed-photo-grid" class="feed-photo-grid">
       <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка...</div>
@@ -2981,12 +2989,27 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <button class="submit-btn" id="checkin-preview-confirm-btn" type="button" disabled>Подтвердить</button>
   </div>
 </div>
+<!-- 24.07: выбор источника фото для ленты (камера/галерея) — раньше был только
+     capture=environment (камера), юзер дважды жаловался что нельзя выбрать готовое фото. -->
+<div id="feed-photo-source-sheet" style="display:none; position:fixed; inset:0; z-index:1700; background:rgba(0,0,0,0.5); align-items:flex-end;" onclick="if(event.target===this)_closeFeedPhotoSourceSheet()">
+  <div style="width:100%; background:var(--bg-card); border-radius:20px 20px 0 0; padding:1rem 1rem calc(1rem + env(safe-area-inset-bottom));">
+    <button class="submit-btn" type="button" style="margin-bottom:0.5rem;" onclick="_closeFeedPhotoSourceSheet(); document.getElementById('feed-photo-input-camera').click();">📷 Сделать фото</button>
+    <button class="submit-btn" type="button" style="margin-bottom:0.5rem;" onclick="_closeFeedPhotoSourceSheet(); document.getElementById('feed-photo-input-gallery').click();">🖼 Выбрать из галереи</button>
+    <button class="submit-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);" onclick="_closeFeedPhotoSourceSheet()">Отмена</button>
+  </div>
+</div>
+
 <div id="photo-comments-modal" class="photo-comments-modal" style="display:none;">
   <div class="pc-header">
     <button class="chat-back-btn" id="pc-back-btn" type="button" aria-label="Назад">←</button>
     <h1 style="font-size:1rem;margin:0;">Комментарии</h1>
   </div>
-  <img id="pc-photo" class="pc-photo" alt="">
+  <div id="pc-photo-wrap" class="pc-photo-wrap">
+    <img id="pc-photo" class="pc-photo" alt="">
+    <button id="pc-photo-prev" class="pc-photo-nav pc-photo-nav-prev" type="button" aria-label="Предыдущее фото" style="display:none;">‹</button>
+    <button id="pc-photo-next" class="pc-photo-nav pc-photo-nav-next" type="button" aria-label="Следующее фото" style="display:none;">›</button>
+    <div id="pc-photo-dots" class="pc-photo-dots"></div>
+  </div>
   <div id="pc-list" class="pc-list"></div>
   <div class="pc-input-row">
     <input type="text" id="pc-comment-input" placeholder="Комментарий…" class="mangel-select" style="flex:1;">
