@@ -1154,6 +1154,7 @@ header h1 {
 }
 .photo-comments-modal .pc-photo { width: 100%; max-height: 45vh; object-fit: cover; flex-shrink: 0; display: block; }
 .pc-photo-wrap { position: relative; flex-shrink: 0; }
+.pc-photo-label { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.55); color: #fff; font-size: 0.78rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; }
 .pc-photo-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; border-radius: 50%; border: none; background: rgba(0,0,0,0.45); color: #fff; font-size: 1.3rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .pc-photo-nav-prev { left: 8px; }
 .pc-photo-nav-next { right: 8px; }
@@ -3021,6 +3022,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <button id="pc-photo-prev" class="pc-photo-nav pc-photo-nav-prev" type="button" aria-label="Предыдущее фото" style="display:none;">‹</button>
     <button id="pc-photo-next" class="pc-photo-nav pc-photo-nav-next" type="button" aria-label="Следующее фото" style="display:none;">›</button>
     <div id="pc-photo-dots" class="pc-photo-dots"></div>
+    <div id="pc-photo-label" class="pc-photo-label" style="display:none;"></div>
   </div>
   <div id="pc-list" class="pc-list"></div>
   <div class="pc-input-row">

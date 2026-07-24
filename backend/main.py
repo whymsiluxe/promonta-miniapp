@@ -1484,6 +1484,67 @@ def _save_photo_meta(items: list):
         json.dump(items, f, ensure_ascii=False)
 
 
+def _copy_checkin_photos_to_feed(rel_paths: list, prefix: str) -> list:
+    """Копирует check-in фото (уже сохранены под CHECKIN_PHOTO_BASE) в PHOTO_DIR под
+    новыми именами, возвращает список имён файлов для feed_photos.json. 24.07: фото
+    старта/финиша смены теперь дублируются в общую фото-ленту — юзер явно попросил
+    "чтоб фото начала и конца работ летели в ленту с фото"."""
+    saved = []
+    for i, rel in enumerate(rel_paths):
+        src_path = os.path.join(CHECKIN_PHOTO_BASE, rel)
+        if not os.path.exists(src_path):
+            continue
+        ext = os.path.splitext(rel)[1] or '.jpg'
+        fname = f"{prefix}_{i}{ext}"
+        with open(src_path, 'rb') as fsrc, open(os.path.join(PHOTO_DIR, fname), 'wb') as fdst:
+            fdst.write(fsrc.read())
+        saved.append(fname)
+    return saved
+
+
+def _upsert_checkin_feed_post(session: dict, kind: str, object_name: str, user_id, user_name: str):
+    """kind: 'start' | 'finish'. Один пост на смену (session['id']) в фото-ленте — старт
+    создаёт пост, финиш дописывает свои фото в тот же пост (не два отдельных поста).
+    Каждое фото подписывается через _photo_captions (index -> подпись), отдельно от
+    общей caption поста."""
+    rel_paths = session.get('start_photos' if kind == 'start' else 'finish_photos') or []
+    if not rel_paths:
+        return
+    prefix = f"checkin_{session['id']}_{kind}"
+    new_files = _copy_checkin_photos_to_feed(rel_paths, prefix)
+    if not new_files:
+        return
+
+    time_str = datetime.fromtimestamp(
+        session['start_at'] if kind == 'start' else session['finish_at']
+    ).strftime('%H:%M')
+    label = ('Начало смены' if kind == 'start' else 'Конец смены') + f' · {time_str}'
+
+    with _photo_lock:
+        items = _load_photo_meta()
+        post = next((p for p in items if p.get('checkin_session_id') == session['id']), None)
+        if post:
+            start_idx = len(post['files'])
+            post['files'].extend(new_files)
+            post.setdefault('photo_labels', {})
+            for i, _f in enumerate(new_files):
+                post['photo_labels'][str(start_idx + i)] = label
+        else:
+            post = {
+                "id": uuid.uuid4().hex,
+                "files": new_files,
+                "ts": int(time.time()),
+                "user_id": user_id,
+                "name": user_name,
+                "object_id": object_name,
+                "caption": "",
+                "checkin_session_id": session['id'],
+                "photo_labels": {str(i): label for i in range(len(new_files))},
+            }
+            items.append(post)
+        _save_photo_meta(items)
+
+
 @app.get("/api/feed/photos")
 def list_feed_photos(user: dict = Depends(get_current_user)):
     with _photo_lock:
@@ -2814,6 +2875,24 @@ async def checkin_start(
             raise HTTPException(409, f"У вас уже есть незавершённая смена на объекте {open_session['object_id']} — сначала завершите её")
         items.append(entry)
         _save_checkin_meta(items)
+
+    if photo_paths:
+        try:
+            profiles = _load_worker_profiles()
+            worker_name = _sanitize_display_name(profiles.get(str(user['id']), {}).get('name'), str(user['id']))
+            rows = _cached_get_used_range('Объекты')
+            object_name = entry['object_id']
+            if rows:
+                header, data = rows[0], rows[1:]
+                for r in data:
+                    obj = dict(zip(header, r))
+                    if str(obj.get('ID объекта', '')) == entry['object_id']:
+                        object_name = obj.get('Объект', entry['object_id'])
+                        break
+            _upsert_checkin_feed_post(entry, 'start', object_name, user['id'], worker_name)
+        except Exception as e:
+            print(f'WARNING: checkin-start feed post failed: {e}')
+
     _idempotency_save(idempotency_key, entry)
     return entry
 
@@ -2915,6 +2994,23 @@ async def checkin_finish(
         _save_checkin_meta(items)
 
     _write_zeiterfassung_row(session, object_id, session['user_id'])
+
+    if photo_paths:
+        try:
+            profiles = _load_worker_profiles()
+            worker_name = _sanitize_display_name(profiles.get(str(session['user_id']), {}).get('name'), str(session['user_id']))
+            rows = _cached_get_used_range('Объекты')
+            object_name = object_id
+            if rows:
+                header, data = rows[0], rows[1:]
+                for r in data:
+                    obj = dict(zip(header, r))
+                    if str(obj.get('ID объекта', '')) == object_id:
+                        object_name = obj.get('Объект', object_id)
+                        break
+            _upsert_checkin_feed_post(session, 'finish', object_name, session['user_id'], worker_name)
+        except Exception as e:
+            print(f'WARNING: checkin-finish feed post failed: {e}')
 
     if extra_work.strip() or next_day_needs.strip():
         # Owner получает пуш только если worker реально что-то указал — не спамим

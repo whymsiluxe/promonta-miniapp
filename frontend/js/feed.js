@@ -338,10 +338,13 @@ function _initFeedPhotoSwipeDots(grid) {
   });
 }
 
+let _feedPhotosCache = [];
+
 async function loadFeedPhotos() {
   const grid = document.getElementById('feed-photo-grid');
   try {
     const data = await api('/api/feed/photos');
+    _feedPhotosCache = data.photos || [];
     if (!data.photos || data.photos.length === 0) {
       grid.innerHTML = '<div class="empty-state">Фото пока нет. Загрузите первым 📷</div>';
       return;
@@ -683,6 +686,15 @@ function _pcRenderPhotoAt(index) {
   const prevBtn = document.getElementById('pc-photo-prev');
   const nextBtn = document.getElementById('pc-photo-next');
   const dotsEl = document.getElementById('pc-photo-dots');
+  const labelEl = document.getElementById('pc-photo-label');
+  // 24.07: подпись "Начало смены · 09:12" / "Конец смены · 17:30" — для постов из
+  // check-in (checkin_session_id), обычные загруженные фото labels не имеют.
+  const post = _feedPhotosCache.find(p => p.id === _pcCurrentPhotoId);
+  const label = post?.photo_labels?.[String(index)];
+  if (labelEl) {
+    if (label) { labelEl.textContent = label; labelEl.style.display = 'block'; }
+    else { labelEl.style.display = 'none'; }
+  }
   if (_pcFileCount > 1) {
     prevBtn.style.display = index > 0 ? 'flex' : 'none';
     nextBtn.style.display = index < _pcFileCount - 1 ? 'flex' : 'none';
