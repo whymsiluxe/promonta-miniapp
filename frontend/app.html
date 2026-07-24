@@ -3508,6 +3508,11 @@ const loadedViews = new Set();
 // (открытие детейла из списка), replaceRoot для клика по nav-таб (не растим стек бесконечно
 // при простой смене вкладки), ничего не трогаем при возврате через .back() (fromBack).
 function switchView(viewName, opts = {}) {
+  // Если #chat-thread-detail-view был перемещён в obj-detail-panel-chat (embed),
+  // вернуть его домой до смены вида -- иначе #view-chat окажется без этого узла и
+  // обычный чат перестанет работать до следующего закрытия экрана объекта.
+  if (typeof unembedObjectChat === 'function') unembedObjectChat();
+
   if (typeof NavigationManager !== 'undefined' && !opts.fromBack) {
     if (opts.isTabSwitch) {
       NavigationManager.replaceRoot(viewName, opts.params || {});

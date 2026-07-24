@@ -285,6 +285,35 @@ async function renderObjectStagesTab(objectId) {
   const panel = document.getElementById('obj-detail-panel-stages');
   panel.innerHTML = `<div id="obj-stages-roadmap" class="obj-stages-roadmap"></div>`;
   await _loadObjStages(objectId);
+  // Checkin shortcut для работника — владелец смены не отмечает, FAB есть у всех,
+  // но вход со страницы этапов интуитивен: тут видно текущий этап и хочется начать смену.
+  if (currentRole !== 'owner' && typeof _openCheckinStatusScreen === 'function') {
+    _appendCheckinShortcut(panel, objectId);
+  }
+}
+
+async function _appendCheckinShortcut(panel, objectId) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'padding:1rem 0 0.5rem;border-top:1px solid var(--border-color);margin-top:1.25rem;';
+  wrap.innerHTML = `<div style="font-size:0.82rem;color:var(--text-light);text-align:center;margin-bottom:0.6rem;">Учёт рабочего времени</div>
+    <button id="obj-stages-checkin-btn" class="submit-btn" style="width:100%">…</button>`;
+  panel.appendChild(wrap);
+
+  let activeObjectId = null;
+  try { activeObjectId = await _findActiveWorkerCheckinObjectId(); } catch (e) {}
+
+  const btn = document.getElementById('obj-stages-checkin-btn');
+  if (!btn) return;
+  if (activeObjectId) {
+    btn.textContent = '■ Завершить смену';
+    btn.style.background = 'var(--red)';
+  } else {
+    btn.textContent = '▶ Начать смену';
+  }
+  btn.addEventListener('click', () => {
+    _stagesCurrentObjectId = objectId;
+    _openCheckinStatusScreen();
+  });
 }
 
 async function _loadObjStages(objectId) {
