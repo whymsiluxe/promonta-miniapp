@@ -308,6 +308,13 @@ let _chatUnreadByThread = {};
 let _chatSearchQuery = '';
 
 
+function _hideBottomNavInline() {
+  const ownerNav = document.getElementById('bottom-nav-owner');
+  const workerNav = document.getElementById('bottom-nav-worker');
+  if (ownerNav) ownerNav.style.display = 'none';
+  if (workerNav) workerNav.style.display = 'none';
+}
+
 function _chatAvatarHue(id) {
   const s = String(id || '');
   let h = 0;
@@ -428,6 +435,7 @@ function openChatThread(threadUserId, title) {
   document.getElementById('chat-thread-list-view').style.display = 'none';
   document.getElementById('chat-thread-detail-view').style.display = 'flex';
   document.body.classList.add('chat-dialog-open');
+  _hideBottomNavInline();
   _chatLastTs = 0;
   _loadChatMessages(true);
   _refreshChatThreadCloseState();
@@ -443,6 +451,7 @@ function openObjectOrMangelChat(threadKey, title, returnToView) {
   document.getElementById('chat-thread-list-view').style.display = 'none';
   document.getElementById('chat-thread-detail-view').style.display = 'flex';
   document.body.classList.add('chat-dialog-open');
+  _hideBottomNavInline();
   document.getElementById('chat-close-thread-btn').style.display = 'none'; // закрытие тредов не поддержано для obj:/mangel:
   _chatLastTs = 0;
   _loadChatMessages(true);
@@ -500,6 +509,7 @@ function closeChatThread() {
   document.getElementById('chat-thread-detail-view').style.display = 'none';
   document.getElementById('chat-thread-list-view').style.display = 'flex';
   document.body.classList.remove('chat-dialog-open');
+  if (typeof applyRoleNav === 'function') applyRoleNav();
   _chatActiveThread = null;
   _chatActiveThreadKey = null;
   if (_chatReturnToView) {
