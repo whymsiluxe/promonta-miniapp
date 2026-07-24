@@ -238,6 +238,9 @@ async function _sendChatMessage() {
     input.style.height = 'auto';
     _chatLastTs = 0;
     await _loadChatMessages(true);
+    _loadMyChatThreads(); // 24.07: обновляет last_ts/last_preview в списке тредов, иначе
+                           // дата/превью там оставались устаревшими до следующего захода
+                           // в чат — my_threads грузился только один раз при initChatView.
     hapticImpact('light');
   } catch (e) {
     const errEl = document.getElementById('chat-error');

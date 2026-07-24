@@ -3527,9 +3527,12 @@ function _applyViewportHeight() {
   const activeFull = document.querySelector('#view-chat.active, #view-ai.active');
   if (activeFull) {
     activeFull.style.height = h + 'px';
-    // На iOS visualViewport может смещаться вверх при скролле страницы под клавиатурой —
-    // компенсируем offsetTop в обратную сторону (было переставлено не туда).
-    if (vv) activeFull.style.transform = `translateY(${-vv.offsetTop}px)`;
+    // 24.07 v3: убран translateY(-vv.offsetTop) на ВЕСЬ #view-chat/#view-ai — контейнер
+    // fixed+inset:0 включает header (стрелка "назад"), и transform сдвигал header вместе
+    // с остальным контентом при появлении клавиатуры -- визуально "стрелка пропадает",
+    // плюс offsetTop приходит от WebView не сразу, а несколькими шагами -> заметная
+    // "перерисовка через секунду". height уже сжимает контейнер снизу под клавиатуру,
+    // этого достаточно -- offsetTop-компенсация была лишней.
   }
 
   // 24.07: универсальный keyboard-open детект (не только chat/ai) — bottom-nav прятался
