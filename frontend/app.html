@@ -530,7 +530,9 @@ header h1 {
 .chat-thread-item { display: flex; align-items: center; gap: 0.65rem; padding: 0.7rem 0.5rem; cursor: pointer; border-radius: var(--radius-md); }
 .chat-thread-item:active { background: var(--bg-card); }
 .chat-thread-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: var(--primary-dark); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; font-size: 1.1rem; }
-.chat-thread-avatar.group { background: #e0304f; color: #fff; font-size: 1.3rem; }
+.chat-thread-avatar.group { background: var(--accent); color: var(--primary-dark); font-size: 1.1rem; }
+.chat-thread-avatar-wrap { position: relative; flex-shrink: 0; }
+.chat-online-dot { position: absolute; bottom: 1px; right: 1px; width: 11px; height: 11px; border-radius: 50%; background: #3EB56D; border: 2px solid var(--bg-app); }
 .chat-thread-info { flex: 1; min-width: 0; }
 .chat-thread-name { font-weight: 700; font-size: 1.05rem; }
 .chat-thread-preview { color: var(--text-light); font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

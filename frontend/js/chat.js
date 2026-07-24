@@ -347,7 +347,7 @@ function renderChatThreadList() {
     const time = _threadTimeLabel(t?.last_ts);
     const groupItem = `
       <div class="chat-thread-item" data-thread="">
-        <div class="chat-thread-avatar group">👤</div>
+        <div class="chat-thread-avatar group"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
         <div class="chat-thread-info">
           <div class="chat-thread-name">Общий чат</div>
           <div class="chat-thread-preview">${preview}</div>
@@ -366,7 +366,10 @@ function renderChatThreadList() {
       const time = _threadTimeLabel(t?.last_ts);
       return `
       <div class="chat-thread-item" data-thread="${w.user_id}">
-        <div class="chat-thread-avatar">${(w.name || '?')[0].toUpperCase()}</div>
+        <div class="chat-thread-avatar-wrap">
+          <div class="chat-thread-avatar">${(w.name || '?')[0].toUpperCase()}</div>
+          ${w.online ? '<span class="chat-online-dot"></span>' : ''}
+        </div>
         <div class="chat-thread-info">
           <div class="chat-thread-name">${_escChat(w.name || w.user_id)}</div>
           <div class="chat-thread-preview">${preview}</div>
@@ -383,7 +386,7 @@ function renderChatThreadList() {
     if (q) filtered = filtered.filter(t => t.title.toLowerCase().includes(q));
     listEl.innerHTML = filtered.map(t => `
       <div class="chat-thread-item" data-thread-key="${t.thread_key}">
-        <div class="chat-thread-avatar group">💬</div>
+        <div class="chat-thread-avatar group"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
         <div class="chat-thread-info">
           <div class="chat-thread-name">${_escChat(t.title)}</div>
           <div class="chat-thread-preview">${_escChat(t.last_preview || '')}</div>

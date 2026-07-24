@@ -180,6 +180,16 @@ def _notify_owner_new_user(user: dict, roles: dict):
     _save_notified_users(notified)
 
 
+# 24.07: online-статус для чата (зелёный дот на аватаре в личных чатах, Connecteam-
+# референс из брифа) — in-memory, не персистентный на диск. Обновляется на каждый
+# authenticated-запрос (get_current_user — центральная точка, вызывается везде через
+# Depends), не отдельный heartbeat-эндпоинт. Переживает не рестарт сервиса (все "не в
+# сети" до первого запроса после рестарта) — приемлемо для присутствия-индикатора,
+# не для чего-то critical.
+_last_seen: dict = {}
+ONLINE_THRESHOLD_SECONDS = 5 * 60
+
+
 def get_current_user(x_telegram_init_data: str = Header(...)) -> dict:
     user = validate_init_data(x_telegram_init_data)
     # Whitelist (Фаза 10.1): доступ только тем, кого владелец явно добавил в roles.json —
@@ -188,6 +198,7 @@ def get_current_user(x_telegram_init_data: str = Header(...)) -> dict:
     if str(user['id']) not in roles:
         _notify_owner_new_user(user, roles)
         raise HTTPException(403, "Доступ не предоставлен. Обратитесь к владельцу.")
+    _last_seen[str(user['id'])] = time.time()
     return user
 
 
@@ -270,12 +281,14 @@ def list_workers(user: dict = Depends(get_current_user)):
     workers = []
     for uid in all_ids:
         p = profiles.get(uid, {})
+        last_seen = _last_seen.get(uid)
         workers.append({
             'user_id': uid,
             'role': roles.get(uid, 'worker'),
             'name': _sanitize_display_name(p.get('name'), uid),
             'skills': p.get('skills', []),
             'quiz_completed': p.get('quiz_completed', False),
+            'online': bool(last_seen and (time.time() - last_seen) < ONLINE_THRESHOLD_SECONDS),
         })
     return {'workers': workers}
 
