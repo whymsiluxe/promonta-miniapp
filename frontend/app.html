@@ -20,6 +20,9 @@ body {
   max-width: 480px;
   margin: 0 auto;
   padding-bottom: 7.5rem; /* место под нижнее меню */
+  overflow-x: hidden; /* 24.07: страховка — любой локальный overflow (длинный текст без
+     truncate, случайно широкий элемент) раньше растягивал скролл всей страницы вбок,
+     не только своего контейнера ("Команда вылазит за границы"). */
 }
 
 /* ── Нижнее меню: floating glass pill (референс glassmorphism nav) ── */
@@ -429,7 +432,8 @@ header h1 {
 .mangel-form { padding: 0.75rem; background: var(--bg-card); margin: 0 0.75rem 0.75rem; border-radius: var(--radius-lg); }
 /* 23.07: было background var(--bg-app) — тот стал тёмным (body-фон), color var(--text-main) почти-чёрный
    поверх него был бы нечитаем. bg-card (светлая карточка) сохраняет исходный контраст. */
-.mangel-select, .mangel-textarea { width: 100%; padding: 0.6rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); margin-bottom: 0.6rem; font-family: var(--font-body); }
+.mangel-select, .mangel-textarea { width: 100%; padding: 0.6rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); margin-bottom: 0.6rem; font-family: var(--font-body); font-size: 16px; }
+/* 24.07: font-size < 16px на <input>/<textarea> триггерит авто-zoom при фокусе на iOS Safari — весь экран уезжал вбок при открытии клавиатуры на любой форме (сообщено на поле ввода имени, но баг общий для всех .mangel-select/.mangel-textarea). 16px — порог, ниже которого Safari зумит. */
 
 #tasks-form .mangel-select, #tasks-form .mangel-textarea { font-size: 1.2rem; }
 #tasks-form .mangel-select::placeholder, #tasks-form .mangel-textarea::placeholder { font-size: 1.2rem; }

@@ -597,8 +597,7 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
     for rec in objects_hist:
         rec['total_hours'] = round(rec['total_hours'], 1)
     try:
-        import objekte_lib as o
-        rows = o.get_used_range('Объекты')
+        rows = _cached_get_used_range('Объекты')
         names = {}
         if rows:
             hdr = rows[0]
