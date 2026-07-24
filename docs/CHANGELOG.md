@@ -16,6 +16,15 @@
 - Corrected a stale claim from `server-structure.md` (2026-07-15 note): unknown Telegram user IDs get a **403**, not a silent `worker` role default — that changed with a whitelist hardening ("Фаза 10.1") since that note was written.
 - Flagged one product-level permission gap for owner review (not silently fixed): `POST /api/objects/{object_id}/tasks` lets any authenticated worker add a task to any object, not just their assigned one. See `docs/ROLES_AND_PERMISSIONS.md`.
 
+## 2026-07-24 (evening — autonomous session)
+
+### Fixed
+- **Chat embed stranded** (`frontend/app.html` `switchView()`): navigating away from Object Detail via bottom nav while Chat tab was active left `#chat-thread-detail-view` embedded inside `#obj-detail-panel-chat` instead of `#view-chat`, breaking regular chat until back-button was pressed. Fix: call `unembedObjectChat()` unconditionally at the top of `switchView()` (no-op when not embedded).
+- **Checkin inaccessible from Stages tab** (`frontend/js/object-info.js`): the old `openStagesView()` showed a checkin-bar; the new 6-tab object detail screen's Stages tab only showed the roadmap. Fix: `_appendCheckinShortcut()` added at bottom of Stages panel for workers — calls `_openCheckinStatusScreen()` modal (same flow as FAB, no DOM duplication). Owners see no shortcut.
+
+### Not yet deployed
+Frontend changes committed+pushed but not copied to `/var/www/miniapp/` (requires root). See SESSION_HANDOFF.md.
+
 ## 2026-07-24 (fix/security-reliability-p1)
 
 ### Fixed
