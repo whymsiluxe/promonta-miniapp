@@ -643,7 +643,15 @@ function _initObjDetailTab(tab) {
     renderObjectInfoTab(_objDetailCurrentId);
     return;
   }
-  // Steps 4-6 (tasks/needs/defects/stages content) wire real rendering here
+  if (tab === 'tasks') {
+    renderObjectTasksTab(_objDetailCurrentId);
+    return;
+  }
+  if (tab === 'needs') {
+    renderObjectNeedsTab(_objDetailCurrentId);
+    return;
+  }
+  // Steps 5-6 (defects/stages content) wire real rendering here
   // one at a time -- placeholder keeps the shell testable/deployable on its own first.
   panel.innerHTML = `<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>`;
 }

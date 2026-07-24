@@ -152,3 +152,92 @@ function _closeObjInfoDocViewer() {
   const viewer = document.getElementById('obj-info-doc-viewer');
   if (viewer) viewer.style.display = 'none';
 }
+
+// ═══════════ Задачи объекта — Step 4 ═══════════
+// Owner -> worker, переиспользует loadTasks/attachTaskHandlers/renderTaskRow (objects.js),
+// уже принимают произвольные listEl/countEl -- сюда встраиваются как есть, без дублирования.
+async function renderObjectTasksTab(objectId) {
+  const panel = document.getElementById('obj-detail-panel-tasks');
+  panel.innerHTML = `
+    <div id="obj-tasks-list" class="obj-info-items-list"></div>
+    ${currentRole === 'owner' ? `
+    <div class="obj-info-add-row">
+      <input type="text" id="obj-tasks-new-text" class="obj-info-input" placeholder="Новая задача">
+      <button id="obj-tasks-add-btn" class="obj-info-add-btn" type="button">+</button>
+    </div>` : ''}
+  `;
+  const listEl = document.getElementById('obj-tasks-list');
+  await loadTasks(objectId, listEl, null);
+
+  const addBtn = document.getElementById('obj-tasks-add-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', async () => {
+      const textEl = document.getElementById('obj-tasks-new-text');
+      const text = textEl.value.trim();
+      if (!text) return;
+      try {
+        await api(`/api/objects/${objectId}/tasks`, { method: 'POST', body: JSON.stringify({ text }) });
+        textEl.value = '';
+        hapticImpact('light');
+        await loadTasks(objectId, listEl, null);
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  }
+}
+
+// ═══════════ Потребности объекта — Step 4 ═══════════
+// Worker -> owner, глобальный /api/tasks с новым object_id-фильтром (backend Step 4).
+function _renderNeedRow(n) {
+  return `
+  <div class="obj-info-item-row">
+    <span class="obj-info-item-text">${esc(n.title || '')}</span>
+    <span class="obj-info-item-qty">${esc(n.status || 'открыто')}</span>
+  </div>`;
+}
+
+async function renderObjectNeedsTab(objectId) {
+  const panel = document.getElementById('obj-detail-panel-needs');
+  panel.innerHTML = `
+    <div id="obj-needs-list" class="obj-info-items-list"></div>
+    ${currentRole !== 'owner' ? `
+    <div class="obj-info-add-row">
+      <input type="text" id="obj-needs-new-text" class="obj-info-input" placeholder="Например: нужен перфоратор">
+      <button id="obj-needs-add-btn" class="obj-info-add-btn" type="button">+</button>
+    </div>` : ''}
+  `;
+  await _loadObjNeeds(objectId);
+
+  const addBtn = document.getElementById('obj-needs-add-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', async () => {
+      const textEl = document.getElementById('obj-needs-new-text');
+      const text = textEl.value.trim();
+      if (!text) return;
+      try {
+        await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: text, object_id: objectId }) });
+        textEl.value = '';
+        hapticImpact('light');
+        await _loadObjNeeds(objectId);
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  }
+}
+
+async function _loadObjNeeds(objectId) {
+  const list = document.getElementById('obj-needs-list');
+  if (!list) return;
+  try {
+    const { tasks } = await api(`/api/tasks?object_id=${encodeURIComponent(objectId)}`);
+    if (!tasks.length) {
+      list.innerHTML = `<div class="obj-info-empty">Потребностей нет</div>`;
+      return;
+    }
+    list.innerHTML = tasks.map(_renderNeedRow).join('');
+  } catch (e) {
+    list.innerHTML = `<div class="obj-info-empty">Ошибка: ${esc(e.message)}</div>`;
+  }
+}

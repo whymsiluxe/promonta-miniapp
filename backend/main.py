@@ -2695,10 +2695,12 @@ TASK_STATUSES = ('открыто', 'в работе', 'закрыто')
 
 
 @app.get("/api/tasks")
-def list_tasks(user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+def list_tasks(object_id: str = '', user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     items = _load_tasks()
     if role != 'owner':
         items = [t for t in items if str(t.get('from_user_id')) == str(user['id'])]
+    if object_id:
+        items = [t for t in items if t.get('object_id') == object_id]
     return {"tasks": sorted(items, key=lambda t: t.get('created_at', 0), reverse=True)}
 
 
