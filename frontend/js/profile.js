@@ -96,7 +96,7 @@ function initProfileView() {
       <div class="accordion-section">
         <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-4)">✎</span><span class="accordion-title">Имя</span><span class="accordion-chevron">▾</span></div>
         <div class="accordion-body collapsed"><div class="accordion-body-inner">
-          <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.5rem">Если в Telegram у тебя нет имени/ника — задай его здесь, оно будет видно везде в приложении.</div>
+          <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.5rem">Telegram молчит о твоём имени? Представься тут 👋</div>
           <input type="text" id="profile-name-input" class="mangel-select" placeholder="Например: Иван" maxlength="100">
           <button class="submit-btn profile-inline-btn" id="profile-name-save-btn" type="button" style="margin-top:0.5rem">Сохранить имя</button>
           <div id="profile-name-status" style="font-size:0.8rem;color:var(--accent);margin-top:0.4rem"></div>
