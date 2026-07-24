@@ -2727,6 +2727,8 @@ async def checkin_start(
         "finish_photos": [],
         "finish_lat": None,
         "finish_lon": None,
+        "pause_started_at": None,
+        "pause_accumulated_seconds": 0,
     }
     with _checkin_lock:
         items = _load_checkin_meta()
@@ -2740,6 +2742,42 @@ async def checkin_start(
         _save_checkin_meta(items)
     _idempotency_save(idempotency_key, entry)
     return entry
+
+
+@app.post("/api/checkin/{session_id}/pause")
+def checkin_pause(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """Тоггл паузы во время активной смены (24.07) — тап 'Пауза' фиксирует момент
+    начала, повторный тап 'Продолжить' добавляет прошедшее время в накопленную паузу.
+    Клиент подставляет накопленные минуты как default в анкету при Финише, юзер может
+    доправить вручную если нужно."""
+    with _checkin_lock:
+        items = _load_checkin_meta()
+        session = next((i for i in items if i['id'] == session_id), None)
+        if not session:
+            raise HTTPException(404, "Сессия check-in не найдена")
+        if role != 'owner' and str(session.get('user_id')) != str(user['id']):
+            raise HTTPException(403, "Нельзя управлять чужой сменой")
+        if session.get('finish_at') is not None:
+            raise HTTPException(400, "Смена уже завершена")
+
+        now = int(time.time())
+        if session.get('pause_started_at'):
+            # Продолжить — закрываем текущий отрезок паузы, добавляем в накопленное
+            elapsed = max(0, now - session['pause_started_at'])
+            session['pause_accumulated_seconds'] = session.get('pause_accumulated_seconds', 0) + elapsed
+            session['pause_started_at'] = None
+            paused = False
+        else:
+            # Пауза — фиксируем момент начала
+            session['pause_started_at'] = now
+            paused = True
+        _save_checkin_meta(items)
+
+    return {
+        "paused": paused,
+        "pause_accumulated_seconds": session['pause_accumulated_seconds'],
+        "pause_accumulated_minutes": round(session['pause_accumulated_seconds'] / 60),
+    }
 
 
 @app.post("/api/checkin/{session_id}/finish")
@@ -2792,6 +2830,13 @@ async def checkin_finish(
         session['done_summary'] = done_summary.strip()[:1000] or None
         session['extra_work'] = extra_work.strip()[:1000] or None
         session['next_day_needs'] = next_day_needs.strip()[:1000] or None
+        # 24.07: если воркер финиширует смену прямо во время активной паузы (забыл нажать
+        # "Продолжить") — закрываем её здесь же, не оставляем pause_started_at висеть
+        # в завершённой сессии.
+        if session.get('pause_started_at'):
+            elapsed = max(0, int(time.time()) - session['pause_started_at'])
+            session['pause_accumulated_seconds'] = session.get('pause_accumulated_seconds', 0) + elapsed
+            session['pause_started_at'] = None
         session['pause_minutes'] = max(0, int(pause_minutes or 0))
         _save_checkin_meta(items)
 

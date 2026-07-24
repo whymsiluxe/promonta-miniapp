@@ -39,6 +39,8 @@ function _getGeolocation() {
 // дашборде читал пустой/устаревший localStorage — обе кнопки оставались в неверном
 // состоянии). _getActiveCheckinSession(localStorage) остаётся как synchronous fallback
 // для мест, где нельзя ждать — сама запись сессии при старте/финише не меняется.
+let _checkinButtonsGeneration = 0;
+
 async function refreshCheckinButtons() {
   const objectId = _stagesCurrentObjectId;
   const startBtn = document.getElementById('checkin-start-btn');
@@ -46,24 +48,32 @@ async function refreshCheckinButtons() {
   const analyzeBtn = document.getElementById('checkin-analyze-btn');
   if (!startBtn || !finishBtn || !analyzeBtn) return;
 
+  // 24.07: generation counter вместо сравнения objectId — предыдущий фикс (сравнивать
+  // _stagesCurrentObjectId до/после await) не спасал, если ДВА вызова этой функции
+  // случились для ОДНОГО И ТОГО ЖЕ объекта (initCheckinControls на входе на экран +
+  // повторный вызов после успешного /api/checkin/start): objectId у обоих совпадает,
+  // а более медленный первый (ещё "нет сессии") мог завершиться ПОСЛЕ второго (уже
+  // "сессия открыта") и переписать UI обратно на неверное "Старт" состояние. Теперь
+  // каждый вызов получает свой номер; если к моменту готовности ответа успел стартовать
+  // более новый вызов — этот результат считается устаревшим и отбрасывается, независимо
+  // от того совпадает ли objectId.
+  const myGeneration = ++_checkinButtonsGeneration;
+
   let session = null;
   try {
     const data = await api(`/api/checkin?object_id=${encodeURIComponent(objectId)}`);
-    // 24.07: race guard — этот вызов может быть один из нескольких параллельных
-    // (initWorkerCheckinFab на старте приложения запускает первый с objectId=null,
-    // затем реальное открытие объекта запускает второй с настоящим objectId; await
-    // не гарантирует порядок завершения, более медленный первый мог дописать UI
-    // ПОСЛЕ второго и перезаписать его правильный результат неверным). Если
-    // _stagesCurrentObjectId сменился, пока этот запрос летал — его результат устарел,
-    // не трогаем UI.
-    if (_stagesCurrentObjectId !== objectId) return;
+    if (myGeneration !== _checkinButtonsGeneration) return;
     // 24.07: НЕ фильтровать по дате здесь — сервер (Europe/Berlin) и клиент (UTC через
     // toISOString) расходятся в дате на границе полуночи CEST, что ложно скрывало только
     // что открытую смену. "Открыта" определяется исключительно finish_at, не датой.
     const sessions = data.sessions || [];
     const open = sessions.find(s => s.finish_at === null || s.finish_at === undefined);
     if (open) {
-      session = { id: open.id, finished: false };
+      session = {
+        id: open.id, finished: false,
+        pauseStartedAt: open.pause_started_at || null,
+        pauseAccumulatedSeconds: open.pause_accumulated_seconds || 0,
+      };
     } else if (sessions.length) {
       session = { id: sessions[sessions.length - 1].id, finished: true };
     }
@@ -72,23 +82,48 @@ async function refreshCheckinButtons() {
     // сеть недоступна — используем последнее известное локальное состояние, не блокируем UI
     session = _getActiveCheckinSession(objectId);
   }
-  if (_stagesCurrentObjectId !== objectId) return;
+  if (myGeneration !== _checkinButtonsGeneration) return;
+
+  const pauseBtn = document.getElementById('checkin-pause-toggle-btn');
 
   if (session && !session.finished) {
     startBtn.disabled = true;
     startBtn.textContent = '▶ Смена начата';
     finishBtn.disabled = false;
     analyzeBtn.style.display = 'none';
+    if (pauseBtn) {
+      pauseBtn.style.display = 'flex';
+      pauseBtn.dataset.paused = session.pauseStartedAt ? '1' : '0';
+      pauseBtn.textContent = session.pauseStartedAt ? '▶ Продолжить' : '⏸ Пауза';
+    }
   } else if (session && session.finished) {
     startBtn.disabled = false;
     startBtn.textContent = '▶ Старт смены';
     finishBtn.disabled = true;
     analyzeBtn.style.display = 'block';
+    if (pauseBtn) pauseBtn.style.display = 'none';
   } else {
     startBtn.disabled = false;
     startBtn.textContent = '▶ Старт смены';
     finishBtn.disabled = true;
     analyzeBtn.style.display = 'none';
+    if (pauseBtn) pauseBtn.style.display = 'none';
+  }
+}
+
+async function _toggleCheckinPause() {
+  const session = _getActiveCheckinSession(_stagesCurrentObjectId);
+  if (!session) return;
+  const btn = document.getElementById('checkin-pause-toggle-btn');
+  btn.disabled = true;
+  try {
+    const result = await api(`/api/checkin/${session.id}/pause`, { method: 'POST' });
+    hapticImpact('light');
+    await refreshCheckinButtons();
+  } catch (e) {
+    showToast('Ошибка: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -175,7 +210,11 @@ function _openCheckinPreviewModal() {
   title.textContent = isFinish ? 'Фото окончания смены' : 'Фото начала смены';
   survey.style.display = isFinish ? 'block' : 'none';
   if (isFinish) {
-    _checkinSurveyPauseMinutes = 30;
+    // 24.07: default теперь реально накопленное время паузы (кнопка Пауза/Продолжить
+    // во время смены), не хардкод 30 — юзер может доправить вручную если что-то не учтено.
+    const session = _getActiveCheckinSession(_stagesCurrentObjectId);
+    const accumulatedSeconds = session?.pauseAccumulatedSeconds || 0;
+    _checkinSurveyPauseMinutes = Math.round(accumulatedSeconds / 60);
     _updateCheckinSurveyPauseDisplay();
   }
   modal.style.display = 'flex';
@@ -333,6 +372,9 @@ function initCheckinControls() {
   const startBtn = document.getElementById('checkin-start-btn');
   if (startBtn.dataset.wired) return;
   startBtn.dataset.wired = '1';
+
+  const pauseBtn = document.getElementById('checkin-pause-toggle-btn');
+  if (pauseBtn) pauseBtn.addEventListener('click', _toggleCheckinPause);
 
   // 21.07: связь восстановилась, модалка с несинхронизированными фото ещё открыта — авто-retry
   // без ожидания что worker сам заметит и тапнет ещё раз (может отвлечься на работу на объекте).
