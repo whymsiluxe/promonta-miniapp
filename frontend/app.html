@@ -1397,6 +1397,12 @@ header h1 {
   height: 100vh;
   height: 100dvh;
   height: var(--tg-vp-height, 100dvh);
+  /* 24.07: visualViewport resize-события на iOS приходят не одним кадром синхронно
+     с нативной анимацией клавиатуры (~250-300ms), а несколькими шагами -- без
+     transition высота дёргалась скачками ("композер подтягивается по частям").
+     Плавный transition сглаживает это в одно видимое движение независимо от того,
+     сколько промежуточных resize-событий реально пришло. */
+  transition: height 0.25s ease;
   overflow: hidden;
   background: var(--bg-card); /* 23.07: было bg-light(теперь тёмный) — .chat-thread-name и другой текст
      внутри не задают свой color, наследуют text-main(тёмный) от body → были бы нечитаемы */
@@ -1509,9 +1515,9 @@ body.view-locked {
 .chat-input, .ai-input {
   flex: 1;
   min-width: 0;
-  padding: 0.7rem 0.9rem;
+  padding: 0.6rem 0.9rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: 999px;
   font-family: var(--font-body);
   font-size: 1rem;
   background: var(--bg-white);
@@ -1521,7 +1527,7 @@ body.view-locked {
   min-height: 44px;
   max-height: 120px;
   overflow-y: auto;
-  line-height: 1.4;
+  line-height: 1.3;
 }
 
 .chat-send-btn, .ai-send-btn {
@@ -3231,7 +3237,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <div class="chat-input-bar" id="chat-input-bar">
       <button id="chat-attach-btn" class="chat-attach-btn" aria-label="Прикрепить файл" type="button"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a1.5 1.5 0 0 1-2.12-2.12l8.49-8.48"/></svg></button>
       <button id="chat-voice-btn" class="chat-attach-btn" aria-label="Голосовое сообщение" type="button"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg></button>
-      <textarea id="chat-input" class="chat-input" placeholder="Написать сообщение..." rows="1"></textarea>
+      <textarea id="chat-input" class="chat-input" placeholder="Сообщение…" rows="1"></textarea>
       <button id="chat-send" class="chat-send-btn" aria-label="Отправить"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>
     </div>
     <div id="chat-voice-recording-bar" style="display:none;">
