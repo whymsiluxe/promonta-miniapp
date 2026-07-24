@@ -613,6 +613,13 @@ function openObjectDetail(objectId, objectName, initialTab) {
   _initObjDetailTab(tab);
 }
 
+function _objDetailTabClick(tab) {
+  document.querySelectorAll('#obj-detail-tabs .doc-type-opt').forEach(o => o.classList.toggle('active', o.dataset.objTab === tab));
+  document.querySelectorAll('.obj-detail-panel').forEach(p => { p.style.display = 'none'; });
+  document.getElementById(`obj-detail-panel-${tab}`).style.display = 'block';
+  _initObjDetailTab(tab);
+}
+
 function closeObjectDetail() {
   document.getElementById('view-object-detail').style.display = 'none';
   document.getElementById('objects-list-view').style.display = '';
@@ -624,7 +631,15 @@ function _initObjDetailTab(tab) {
   if (_objDetailLoadedTabs.has(tab)) return;
   _objDetailLoadedTabs.add(tab);
   const panel = document.getElementById(`obj-detail-panel-${tab}`);
-  // Steps 2-6 (chat/info/tasks/needs/defects/stages content) wire real rendering here
+  if (tab === 'chat') {
+    // 24.07 Step 2: чат объекта переиспользует существующий fullscreen #view-chat
+    // (openObjectOrMangelChat) -- он остаётся живым под этим экраном (не .view-элемент,
+    // switchView его не трогает), закрытие треда просто возвращает сюда без reopen/refetch.
+    _objDetailLoadedTabs.delete(tab); // не placeholder-контент, переоткрывать можно каждый раз
+    openObjectOrMangelChat(`obj:${_objDetailCurrentId}`, `Чат: ${_objDetailCurrentName}`, 'object-detail');
+    return;
+  }
+  // Steps 3-6 (info/tasks/needs/defects/stages content) wire real rendering here
   // one at a time -- placeholder keeps the shell testable/deployable on its own first.
   panel.innerHTML = `<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>`;
 }
@@ -634,12 +649,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (backBtn) backBtn.addEventListener('click', closeObjectDetail);
 
   document.querySelectorAll('#obj-detail-tabs .doc-type-opt').forEach(opt => {
-    opt.addEventListener('click', () => {
-      const tab = opt.dataset.objTab;
-      document.querySelectorAll('#obj-detail-tabs .doc-type-opt').forEach(o => o.classList.toggle('active', o === opt));
-      document.querySelectorAll('.obj-detail-panel').forEach(p => { p.style.display = 'none'; });
-      document.getElementById(`obj-detail-panel-${tab}`).style.display = 'block';
-      _initObjDetailTab(tab);
-    });
+    opt.addEventListener('click', () => _objDetailTabClick(opt.dataset.objTab));
   });
 });

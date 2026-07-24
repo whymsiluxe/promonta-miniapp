@@ -518,7 +518,10 @@ function closeChatThread() {
   if (_chatReturnToView) {
     const target = _chatReturnToView;
     _chatReturnToView = null;
-    switchView(target);
+    // 24.07: object-detail не входит в switchView() (не .view-элемент, свой display-контракт) --
+    // он остаётся видимым под #view-chat всё время, скрывать/показывать заново не нужно,
+    // просто не переключаем на другой view поверх него.
+    if (target !== 'object-detail') switchView(target);
   }
 }
 
