@@ -265,6 +265,14 @@ async function _confirmCheckinPreview() {
     }
     _setCheckinSyncStatus('');
     refreshCheckinButtons();
+    // 24.07: после старта/финиша через FAB (не заходя в объект) карточка "Смена
+    // идёт/не начата" на Home оставалась устаревшей, пока юзер не уходил с Home и не
+    // возвращался — initWorkerHomeView() перерисовывается только при switchView('home'),
+    // а тут юзер физически остаётся на том же view. Обновляем карточку напрямую, если
+    // она есть в DOM прямо сейчас.
+    if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
+      _loadWorkerShiftCta();
+    }
     _closeCheckinPreviewModal();
   } catch (e) {
     // Файлы и idempotency-key НЕ сбрасываются — повторный тап "Подтвердить" безопасен (дедуп на сервере),
