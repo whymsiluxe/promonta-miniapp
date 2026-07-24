@@ -3236,15 +3236,9 @@ function switchView(viewName) {
   if (navItem) navItem.classList.add('active');
 
   const isFullView = viewName === 'chat' || viewName === 'ai';
-  document.querySelectorAll('.bottom-nav').forEach(nav => {
-    if (isFullView) {
-      nav.dataset.hiddenForFullView = nav.style.display !== 'none' ? nav.style.display : '';
-      nav.style.display = 'none';
-    } else if (nav.dataset.hiddenForFullView !== undefined) {
-      nav.style.display = nav.dataset.hiddenForFullView || (nav.id === 'bottom-nav-worker' && currentRole === 'worker' ? 'flex' : nav.id === 'bottom-nav-owner' && currentRole !== 'worker' ? 'flex' : 'none');
-      delete nav.dataset.hiddenForFullView;
-    }
-  });
+  // 24.07: nav-bar больше НЕ скрывается в чате — юзер явно попросил видеть его на всех
+  // вкладках, включая чат. isFullView остаётся (ниже) только для клавиатурного/скролл-фикса
+  // (view-locked), это отдельная логика, не про видимость nav.
 
   // disableVerticalSwipes() глушит и скролл внутри собственных контейнеров (не только жест закрытия) —
   // включаем свайпы только в чат/ИИ, где нужен вертикальный скролл списка сообщений.
