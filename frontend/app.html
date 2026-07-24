@@ -959,6 +959,13 @@ header h1 {
 #stages-view { display: none; padding-bottom: 2rem; }
 #stages-view.open { display: block; }
 
+/* ── Детали объекта (24.07, 6-таб экран) ── */
+#view-object-detail { padding-bottom: 2rem; min-height: 100vh; background: var(--bg-app); }
+#obj-detail-tabs { overflow-x: auto; scrollbar-width: none; }
+#obj-detail-tabs::-webkit-scrollbar { display: none; }
+#obj-detail-tabs .doc-type-opt { flex-shrink: 0; padding: 0.5rem 0.9rem; }
+.obj-detail-panel { padding: 0 0.75rem; min-height: 40vh; }
+
 .stage-clickable { cursor: pointer; align-items: center; }
 .stage-edit-icon { font-size: 0.75rem; margin-left: 4px; opacity: 0.6; }
 
@@ -2787,6 +2794,28 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <div class="form-submit-bar">
       <button class="form-submit-btn" id="new-obj-submit">Создать объект</button>
     </div>
+  </div>
+
+  <!-- ═══════════ ДЕТАЛИ ОБЪЕКТА (24.07, 6 табов) ═══════════ -->
+  <div id="view-object-detail" style="display:none;">
+    <div class="form-header">
+      <button class="back-btn" id="obj-detail-back">←</button>
+      <h1 id="obj-detail-title">Объект</h1>
+    </div>
+    <div class="doc-type-switch chat-filter-tabs" id="obj-detail-tabs">
+      <div class="doc-type-opt active" data-obj-tab="chat">Чат</div>
+      <div class="doc-type-opt" data-obj-tab="info">Инфо</div>
+      <div class="doc-type-opt" data-obj-tab="tasks">Задачи</div>
+      <div class="doc-type-opt" data-obj-tab="needs">Потребности</div>
+      <div class="doc-type-opt" data-obj-tab="defects">Дефекты</div>
+      <div class="doc-type-opt" data-obj-tab="stages">Этапы</div>
+    </div>
+    <div id="obj-detail-panel-chat" class="obj-detail-panel" style="display:block;"></div>
+    <div id="obj-detail-panel-info" class="obj-detail-panel" style="display:none;"></div>
+    <div id="obj-detail-panel-tasks" class="obj-detail-panel" style="display:none;"></div>
+    <div id="obj-detail-panel-needs" class="obj-detail-panel" style="display:none;"></div>
+    <div id="obj-detail-panel-defects" class="obj-detail-panel" style="display:none;"></div>
+    <div id="obj-detail-panel-stages" class="obj-detail-panel" style="display:none;"></div>
   </div>
 
   <div id="stages-view">

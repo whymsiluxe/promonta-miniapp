@@ -245,7 +245,7 @@ function attachObjectsHandlers() {
   });
 
   document.querySelectorAll('#objects-cards .stage-clickable').forEach(el => {
-    el.addEventListener('click', () => openStagesView(el.dataset.objectId, el.dataset.objectName));
+    el.addEventListener('click', () => openObjectDetail(el.dataset.objectId, el.dataset.objectName, 'stages'));
   });
 
   document.querySelectorAll('#objects-cards .tasks-label').forEach(label => {
@@ -586,3 +586,60 @@ function initObjectsView() {
   initObjectsToolbar();
   loadObjects();
 }
+
+
+// ═══════════ Детали объекта — 6-таб экран (24.07, Step 1: shell + lazy tab init) ═══════════
+// Каждая вкладка лениво инициализируется при первом открытии (тот же паттерн, что
+// loadedViews в switchView() app.html) -- не грузим все 6 источников данных разом.
+let _objDetailCurrentId = null;
+let _objDetailCurrentName = '';
+const _objDetailLoadedTabs = new Set();
+
+function openObjectDetail(objectId, objectName, initialTab) {
+  _objDetailCurrentId = objectId;
+  _objDetailCurrentName = objectName || objectId;
+  _objDetailLoadedTabs.clear();
+  document.getElementById('objects-list-view').style.display = 'none';
+  const view = document.getElementById('view-object-detail');
+  view.style.display = 'block';
+  document.getElementById('obj-detail-title').textContent = _objDetailCurrentName;
+
+  const tab = initialTab || 'chat';
+  document.querySelectorAll('#obj-detail-tabs .doc-type-opt').forEach(opt => {
+    opt.classList.toggle('active', opt.dataset.objTab === tab);
+  });
+  document.querySelectorAll('.obj-detail-panel').forEach(p => { p.style.display = 'none'; });
+  document.getElementById(`obj-detail-panel-${tab}`).style.display = 'block';
+  _initObjDetailTab(tab);
+}
+
+function closeObjectDetail() {
+  document.getElementById('view-object-detail').style.display = 'none';
+  document.getElementById('objects-list-view').style.display = '';
+  _objDetailCurrentId = null;
+  loadObjects();
+}
+
+function _initObjDetailTab(tab) {
+  if (_objDetailLoadedTabs.has(tab)) return;
+  _objDetailLoadedTabs.add(tab);
+  const panel = document.getElementById(`obj-detail-panel-${tab}`);
+  // Steps 2-6 (chat/info/tasks/needs/defects/stages content) wire real rendering here
+  // one at a time -- placeholder keeps the shell testable/deployable on its own first.
+  panel.innerHTML = `<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const backBtn = document.getElementById('obj-detail-back');
+  if (backBtn) backBtn.addEventListener('click', closeObjectDetail);
+
+  document.querySelectorAll('#obj-detail-tabs .doc-type-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      const tab = opt.dataset.objTab;
+      document.querySelectorAll('#obj-detail-tabs .doc-type-opt').forEach(o => o.classList.toggle('active', o === opt));
+      document.querySelectorAll('.obj-detail-panel').forEach(p => { p.style.display = 'none'; });
+      document.getElementById(`obj-detail-panel-${tab}`).style.display = 'block';
+      _initObjDetailTab(tab);
+    });
+  });
+});
