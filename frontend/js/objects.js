@@ -655,7 +655,10 @@ function _initObjDetailTab(tab) {
     renderObjectDefectsTab(_objDetailCurrentId);
     return;
   }
-  // Step 6 (stages content) wires real rendering here
+  if (tab === 'stages') {
+    renderObjectStagesTab(_objDetailCurrentId);
+    return;
+  }
   // one at a time -- placeholder keeps the shell testable/deployable on its own first.
   panel.innerHTML = `<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>`;
 }

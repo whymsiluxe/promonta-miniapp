@@ -271,3 +271,94 @@ async function _loadObjDefects(objectId) {
     list.innerHTML = `<div class="obj-info-empty">Ошибка: ${esc(e.message)}</div>`;
   }
 }
+
+// ═══════════ Этапы объекта — Step 6 (roadmap) ═══════════
+// Reorder = up/down-кнопки, не drag -- порядок хранится как число '№ этапа' в Google
+// Sheets, нет физической перестановки строк, только swap двух значений (backend
+// swap_stage_order). Полноценный touch drag на этом сторе рискованнее, чем стоит
+// (per plan: "decide after a quick spike" -- спайк показал, что Sheets-swap безопаснее
+// как two-button move, не drag). Worker видит кнопку "Готово" только на своём текущем
+// этапе (backend worker_complete_stage сам это перепроверяет, фронт не единственная защита).
+const OBJ_STAGE_STATUS_LABEL = { 'предстоит': 'Предстоит', 'в процессе': 'В процессе', 'готово': 'Готово' };
+
+async function renderObjectStagesTab(objectId) {
+  const panel = document.getElementById('obj-detail-panel-stages');
+  panel.innerHTML = `<div id="obj-stages-roadmap" class="obj-stages-roadmap"></div>`;
+  await _loadObjStages(objectId);
+}
+
+async function _loadObjStages(objectId) {
+  const wrap = document.getElementById('obj-stages-roadmap');
+  if (!wrap) return;
+  try {
+    const { stages } = await api(`/api/objects/${objectId}/stages`);
+    if (!stages.length) {
+      wrap.innerHTML = `<div class="obj-info-empty">Этапов пока нет</div>`;
+      return;
+    }
+    const currentIdx = stages.findIndex(s => s['Статус'] === 'в процессе');
+    wrap.innerHTML = stages.map((s, i) => _renderStageRoadmapNode(s, i, stages.length, i === currentIdx)).join('');
+    _attachObjStagesHandlers(objectId, stages);
+  } catch (e) {
+    wrap.innerHTML = `<div class="obj-info-empty">Ошибка: ${esc(e.message)}</div>`;
+  }
+}
+
+function _renderStageRoadmapNode(s, idx, total, isCurrent) {
+  const status = s['Статус'] || 'предстоит';
+  const dotClass = status === 'готово' ? 'done' : status === 'в процессе' ? 'active' : '';
+  const canMoveUp = currentRole === 'owner' && idx > 0;
+  const canMoveDown = currentRole === 'owner' && idx < total - 1;
+  const canWorkerComplete = currentRole !== 'owner' && isCurrent;
+  return `
+  <div class="obj-stage-node" data-row="${s['_row']}" data-num="${s['№ этапа']}">
+    <div class="obj-stage-line">
+      <div class="obj-stage-dot ${dotClass}"></div>
+      ${idx < total - 1 ? '<div class="obj-stage-connector"></div>' : ''}
+    </div>
+    <div class="obj-stage-body">
+      <div class="obj-stage-name">${esc(s['Название этапа'] || '')}</div>
+      <div class="obj-stage-status-label obj-stage-status-${status.replace(/\s/g, '-')}">${OBJ_STAGE_STATUS_LABEL[status] || status}</div>
+      ${canWorkerComplete ? `<button class="obj-stage-complete-btn" data-row="${s['_row']}" type="button">Готово</button>` : ''}
+    </div>
+    ${currentRole === 'owner' ? `
+    <div class="obj-stage-move-col">
+      <button class="obj-stage-move-btn" data-dir="up" data-row="${s['_row']}" type="button" ${canMoveUp ? '' : 'disabled'}>▲</button>
+      <button class="obj-stage-move-btn" data-dir="down" data-row="${s['_row']}" type="button" ${canMoveDown ? '' : 'disabled'}>▼</button>
+    </div>` : ''}
+  </div>`;
+}
+
+function _attachObjStagesHandlers(objectId, stages) {
+  document.querySelectorAll('.obj-stage-move-btn:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const rowNum = parseInt(btn.dataset.row, 10);
+      const idx = stages.findIndex(s => s['_row'] === rowNum);
+      const targetIdx = btn.dataset.dir === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= stages.length) return;
+      const rowNumB = stages[targetIdx]['_row'];
+      try {
+        await api(`/api/objects/${objectId}/stages/${rowNum}/swap`, { method: 'PATCH', body: JSON.stringify({ row_num_b: rowNumB }) });
+        hapticImpact('light');
+        await _loadObjStages(objectId);
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  });
+
+  document.querySelectorAll('.obj-stage-complete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Отметить этап завершённым?')) return;
+      btn.disabled = true;
+      try {
+        await api(`/api/objects/${objectId}/stages/${btn.dataset.row}/complete`, { method: 'POST' });
+        hapticImpact('medium');
+        await _loadObjStages(objectId);
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+}

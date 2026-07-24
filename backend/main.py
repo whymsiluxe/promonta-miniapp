@@ -2666,6 +2666,31 @@ def remove_stage(object_id: str, row_num: int, user: dict = Depends(get_current_
     return {"status": "ok"}
 
 
+class StageSwapBody(BaseModel):
+    row_num_b: int
+
+
+@app.patch("/api/objects/{object_id}/stages/{row_num}/swap")
+def swap_stage(object_id: str, row_num: int, body: StageSwapBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    import objekte_lib as o
+    try:
+        o.swap_stage_order(object_id, row_num, body.row_num_b)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"status": "ok"}
+
+
+@app.post("/api/objects/{object_id}/stages/{row_num}/complete")
+def worker_complete_stage(object_id: str, row_num: int, user: dict = Depends(get_current_user)):
+    import objekte_lib as o
+    from datetime import date
+    try:
+        o.worker_complete_stage(object_id, row_num, str(user['id']), date.today().isoformat())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"status": "ok"}
+
+
 # ---------- Потребности (10.33) — worker → owner запросы (инструмент/материалы/защита) ----------
 TASKS_FILE = '/home/promonta/agent/miniapp/tasks.json'
 
