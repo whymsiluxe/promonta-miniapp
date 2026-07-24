@@ -314,15 +314,32 @@ async function _loadProfileStats() {
     // owner смотрит СВОЙ профиль — не личные часы (пусты, owner не делает check-in),
     // а агрегат "часы команды за неделю", bar по каждому работнику.
     periodTitle.textContent = 'Часы команды за неделю';
-    rings.className = 'profile-period-bar-chart profile-team-bar-chart';
     const team = stats.team_hours;
-    const maxH = Math.max(1, ...team.map(t => t.hours));
-    rings.innerHTML = team.length ? team.map(t =>
-      `<div class="profile-bar-col" title="${esc(t.name)}: ${t.hours}ч">
-        <div class="profile-bar-fill" style="height:${Math.round(t.hours / maxH * 100)}%"></div>
-        <div class="profile-bar-label">${esc(t.name).split(' ')[0]}</div>
-      </div>`
-    ).join('') : '<div style="color:var(--text-light);font-size:0.85rem">Нет работников в команде.</div>';
+    if (team.length === 1) {
+      // 24.07: единственный работник = единственный столбик = мат. всегда 100% высоты —
+      // бар-график тут бессмыслен (не с чем сравнивать), выглядел как "сплошная заливка".
+      // Крупная карточка-число вместо голого бара — не просто "убрать баг", юзер попросил
+      // сделать красиво: карточка в стиле RaisedTab (тёплая тень, приподнятая поверхность).
+      rings.className = 'profile-period-bar-chart';
+      const t = team[0];
+      rings.innerHTML = `
+        <div class="profile-single-worker-card">
+          <div class="profile-single-worker-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 21c0-4 3.5-7 7-7M12 21c0-4-3.5-7-7-7M12 21V3M9 6l3-3 3 3"/></svg>
+          </div>
+          <div class="profile-single-worker-hours">${esc(String(t.hours))}<span class="profile-single-worker-unit">ч</span></div>
+          <div class="profile-single-worker-name">${esc(t.name)}</div>
+        </div>`;
+    } else {
+      rings.className = 'profile-period-bar-chart profile-team-bar-chart';
+      const maxH = Math.max(1, ...team.map(t => t.hours));
+      rings.innerHTML = team.length ? team.map(t =>
+        `<div class="profile-bar-col" title="${esc(t.name)}: ${t.hours}ч">
+          <div class="profile-bar-fill" style="height:${Math.round(t.hours / maxH * 100)}%"></div>
+          <div class="profile-bar-label">${esc(t.name).split(' ')[0]}</div>
+        </div>`
+      ).join('') : '<div style="color:var(--text-light);font-size:0.85rem">Нет работников в команде.</div>';
+    }
     document.getElementById('profile-week-total').textContent = Math.round(team.reduce((s, t) => s + t.hours, 0) * 10) / 10 + ' ч';
   } else if (stats.period === 'week' || !pd) {
     periodTitle.textContent = 'Часы за 7 дней';

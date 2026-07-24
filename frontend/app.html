@@ -1901,6 +1901,41 @@ body.view-locked {
 .profile-bar-fill { width: 100%; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 2px; }
 .profile-team-bar-chart { height: 90px; padding-bottom: 1rem; position: relative; }
 .profile-team-bar-chart .profile-bar-col { position: relative; }
+
+/* 24.07: единственный работник в команде — карточка вместо бар-графика (график с одним
+   столбиком всегда рендерился на 100% высоты, выглядел как сплошная заливка без смысла). */
+.profile-period-bar-chart:has(.profile-single-worker-card) { height: auto; align-items: stretch; }
+.profile-single-worker-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 1.1rem 1rem;
+  background: var(--c-surface-raised, var(--bg-card-raised));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--c-shadow-raised, var(--shadow-md));
+}
+.profile-single-worker-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  margin-bottom: 0.15rem;
+}
+.profile-single-worker-hours {
+  font-family: var(--font-heading);
+  font-size: 2.1rem;
+  font-weight: 800;
+  color: var(--text-main);
+  line-height: 1;
+}
+.profile-single-worker-unit { font-size: 1.1rem; font-weight: 700; color: var(--text-light); margin-left: 0.15rem; }
+.profile-single-worker-name { font-size: 0.9rem; color: var(--text-light); font-weight: 600; }
 .profile-bar-label { position: absolute; bottom: -1rem; left: 0; right: 0; font-size: 0.6rem; color: var(--text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
 .profile-speed-card { margin: 0 0.75rem 0.75rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 0.85rem; }
 
