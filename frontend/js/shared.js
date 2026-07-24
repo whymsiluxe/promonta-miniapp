@@ -278,3 +278,29 @@ function attachVoiceInputButton(buttonEl, onTranscript) {
     }
   });
 }
+
+
+// 24.07: человекочитаемый диапазон дат (Calendar polish) — юзер жаловался на сырой
+// ISO-формат "2026-07-16 — 2026-07-16" в карточках Abwesenheit. Общий helper, не
+// специфичен для одного экрана — lift в shared.js для переиспользования где ещё
+// понадобится (план явно это требовал).
+const FMT_MONTH_GENITIVE = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+function fmtDateHuman(isoDate) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  if (!y || !m || !d) return isoDate;
+  return `${d} ${FMT_MONTH_GENITIVE[m - 1]}`;
+}
+
+function fmtDateRangeHuman(isoFrom, isoTo) {
+  if (!isoFrom || !isoTo) return '';
+  if (isoFrom === isoTo) return fmtDateHuman(isoFrom);
+  const [yFrom, mFrom] = isoFrom.split('-').map(Number);
+  const [yTo, mTo] = isoTo.split('-').map(Number);
+  // Тот же месяц и год — "16 — 20 июля", не повторяем месяц дважды.
+  if (yFrom === yTo && mFrom === mTo) {
+    const dFrom = parseInt(isoFrom.split('-')[2], 10);
+    return `${dFrom} — ${fmtDateHuman(isoTo)}`;
+  }
+  return `${fmtDateHuman(isoFrom)} — ${fmtDateHuman(isoTo)}`;
+}

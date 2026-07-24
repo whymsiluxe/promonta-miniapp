@@ -132,21 +132,21 @@ function renderAbwesenheitList() {
       <div class="abw-request-body">
         <div class="abw-request-range">
           <span class="abw-request-range-icon">📅</span>
-          ${e.date_from} — ${e.date_to}${e.open_ended ? '<span class="abw-request-openbadge">открыто</span>' : ''}
+          ${fmtDateRangeHuman(e.date_from, e.date_to)}${e.open_ended ? '<span class="abw-request-openbadge">открыто</span>' : ''}
         </div>
-        ${timeStr ? `<div class="abw-request-time"><span class="abw-request-range-icon">🕐</span>${timeStr}</div>` : ''}
+        ${timeStr ? `<div class="abw-request-time"><span class="abw-request-range-icon"><svg viewBox="0 0 24 24" width="13" height="13"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 7v5l3 3"/></svg></span>${timeStr}</div>` : ''}
         <div class="abw-request-reason">${ABW_REASON_LABEL[e.reason] || e.reason}</div>
         ${e.note ? `<div class="abw-request-note">${e.note}</div>` : ''}
       </div>
 
       ${canDecide ? `
         <div class="abw-request-actions">
-          <button class="abw-request-action-btn abw-request-reject" onclick="_decideAbwesenheit('${e.id}','rejected')">❌</button>
-          <button class="abw-request-action-btn abw-request-approve" onclick="_decideAbwesenheit('${e.id}','approved')">✅</button>
+          <button class="abw-request-action-btn abw-request-reject" onclick="_decideAbwesenheit('${e.id}','rejected')"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M18 6L6 18M6 6l12 12"/></svg></button>
+          <button class="abw-request-action-btn abw-request-approve" onclick="_decideAbwesenheit('${e.id}','approved')"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M20 6L9 17l-5-5"/></svg></button>
         </div>` : ''}
       ${canClose ? `
         <div class="abw-request-actions">
-          <button class="abw-decide-btn abw-decide-close" onclick="_closeOpenAbwesenheit('${e.id}')" style="width:100%;">✔️ Завершить сегодня</button>
+          <button class="abw-decide-btn abw-decide-close" onclick="_closeOpenAbwesenheit('${e.id}')" style="width:100%;"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M20 6L9 17l-5-5"/></svg> Завершить сегодня</button>
         </div>` : ''}
     </div>`;
   }).join('');

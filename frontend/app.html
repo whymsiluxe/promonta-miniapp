@@ -2528,6 +2528,10 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
   background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md); padding: 1rem; margin: 0 0.75rem 0.75rem; transition: box-shadow 0.3s, background 0.3s;
 }
+/* 24.07: последняя карточка списка (обычно с approve/reject кнопками) упиралась в
+   нижний край под bottom-nav — body padding-bottom (7.5rem) не всегда достаточен для
+   карточки с высокими action-кнопками + safe-area на части устройств. Явный запас. */
+.abw-request-card:last-child { margin-bottom: 2rem; }
 .abw-day-card-focus, .abw-request-card.abw-day-card-focus {
   box-shadow: 0 0 0 3px var(--accent), var(--shadow-md); background: rgba(93,214,44,0.06);
 }
@@ -2568,12 +2572,16 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .abw-metric-chip { flex: 1; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.6rem 0.5rem; text-align: center; }
 .abw-metric-value { font-size: 1.15rem; font-weight: 800; color: var(--text-main); }
 .abw-metric-label { font-size: 0.72rem; color: var(--text-light); margin-top: 0.15rem; }
+/* 24.07: было — 4 inline-span без wrap-контроля, при узком экране переносилось
+   на 2 строки вразнобой (жалоба из брифа). 2-колоночный grid — предсказуемая раскладка
+   на любой ширине, не завязан на длину каждой подписи. */
+#abw-availability-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 0.75rem; padding: 0 0.75rem 0.6rem; }
 .abw-legend-item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; color: var(--text-light); }
-.abw-legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.abw-legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .abw-legend-green { background: var(--accent); }
 .abw-legend-red { background: var(--red); }
-.abw-legend-worked { background: #94a3b8; }
-.abw-legend-assigned { background: #60a5fa; }
+.abw-legend-worked { background: var(--text-light); }
+.abw-legend-assigned { background: var(--c-brass, var(--accent-gold)); }
 
 .abw-avail-cell { cursor: default; position: relative; }
 /* 21.07 + 22.07: единая система 4 состояний, одна заливка на состояние (не заливка+точка вперемешку) —
