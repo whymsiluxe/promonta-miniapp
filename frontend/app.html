@@ -516,12 +516,17 @@ header h1 {
 .abw-day-reason { color: var(--text-light); font-size: 0.78rem; }
 
 /* ── Chat thread-selector (Фаза 6, Connecteam-полировка 10.14) ── */
-.chat-search-wrap { padding: 0 0.75rem 0.6rem; }
+.chat-search-wrap { display: flex; align-items: center; gap: 0.5rem; padding: 0 0.75rem 0.6rem; }
 .chat-search-input {
-  width: 100%; box-sizing: border-box; border: none; border-radius: var(--radius-md);
+  flex: 1; min-width: 0; box-sizing: border-box; border: none; border-radius: var(--radius-md);
   background: var(--bg-card); color: var(--text-main); padding: 0.55rem 0.85rem; font-size: 0.88rem;
 }
 .chat-search-input::placeholder { color: var(--text-light); }
+.chat-archive-btn {
+  flex-shrink: 0; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--radius-md); background: var(--bg-card); color: var(--text-light); cursor: pointer;
+}
+.chat-archive-btn:active { background: var(--bg-card-raised); }
 .chat-filter-tabs { display: flex; gap: 0.5rem; padding: 0 0.75rem 0.75rem; }
 .chat-category-tabs { overflow-x: auto; scrollbar-width: none; }
 .chat-category-tabs::-webkit-scrollbar { display: none; }
@@ -1396,27 +1401,24 @@ header h1 {
   width: 100%;
 }
 
-/* 22.07: bottom-nav теперь виден в чате/ИИ (было display:none) — поднимаем z-index
-   выше view-chat/view-ai (300), input-бар получает padding-bottom под высоту pill. */
+/* 22.07: bottom-nav виден в списке тредов чата/ИИ — поднимаем z-index выше
+   view-chat/view-ai (300), список получает padding-bottom под высоту pill. */
 body:has(#view-chat.active) .bottom-nav,
 body:has(#view-ai.active) .bottom-nav {
   z-index: 310;
 }
 #view-chat.active #chat-thread-list-view,
-#view-chat.active #chat-thread-detail-view,
 #view-ai.active {
   padding-bottom: calc(64px + env(safe-area-inset-bottom));
   transition: padding-bottom 0.15s ease;
 }
-/* 24.07: клавиатура открыта — плавающий nav скрыт (body.keyboard-open, см. правило
-   .bottom-nav выше), но этот отступ-"зазор под пилюлю" оставался и забирал 64px+
-   у панели ввода внутри уже урезанного клавиатурой view-chat/view-ai — композер
-   выглядел зажатым/будто перекрытым. Обнуляем padding пока nav не виден. */
-body.keyboard-open #view-chat.active #chat-thread-list-view,
-body.keyboard-open #view-chat.active #chat-thread-detail-view,
-body.keyboard-open #view-ai.active {
-  padding-bottom: 0;
-}
+/* 24.07 v3: открытый диалог (тред) — референс Connecteam не показывает bottom-nav
+   вообще, композер сидит у самого низа экрана. body.chat-dialog-open ставится JS
+   при открытии/закрытии треда (openChatThread/openObjectOrMangelChat/closeChatThread),
+   т.к. #chat-thread-detail-view переключается через inline style.display, не class —
+   :has(#chat-thread-detail-view[style*="flex"]) ненадёжен для CSS-селектора. */
+body.chat-dialog-open .bottom-nav { display: none; }
+#chat-thread-detail-view { padding-bottom: 0; }
 
 .chat-back-btn {
   display: flex;
@@ -3184,7 +3186,8 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
       <h1>Чат</h1>
     </header>
     <div class="chat-search-wrap">
-      <input type="text" id="chat-thread-search" class="chat-search-input" placeholder="Поиск...">
+      <input type="text" id="chat-thread-search" class="chat-search-input" placeholder="Поиск">
+      <button class="chat-archive-btn" type="button" aria-label="Архив" title="Архив"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 4h18v4H3zM5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 13h4"/></svg></button>
     </div>
     <div class="chat-filter-tabs chat-category-tabs">
       <div class="doc-type-opt active" data-chat-category="general">Общий</div>
@@ -3389,6 +3392,7 @@ function switchView(viewName, opts = {}) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById(`view-${viewName}`).classList.add('active');
+  if (viewName !== 'chat') document.body.classList.remove('chat-dialog-open');
   const navItem = document.querySelector(`.nav-item[data-view="${viewName}"]`);
   if (navItem) navItem.classList.add('active');
 

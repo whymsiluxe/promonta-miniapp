@@ -419,6 +419,7 @@ function openChatThread(threadUserId, title) {
   document.getElementById('chat-thread-title').textContent = title;
   document.getElementById('chat-thread-list-view').style.display = 'none';
   document.getElementById('chat-thread-detail-view').style.display = 'flex';
+  document.body.classList.add('chat-dialog-open');
   _chatLastTs = 0;
   _loadChatMessages(true);
   _refreshChatThreadCloseState();
@@ -433,6 +434,7 @@ function openObjectOrMangelChat(threadKey, title, returnToView) {
   document.getElementById('chat-thread-title').textContent = title;
   document.getElementById('chat-thread-list-view').style.display = 'none';
   document.getElementById('chat-thread-detail-view').style.display = 'flex';
+  document.body.classList.add('chat-dialog-open');
   document.getElementById('chat-close-thread-btn').style.display = 'none'; // закрытие тредов не поддержано для obj:/mangel:
   _chatLastTs = 0;
   _loadChatMessages(true);
@@ -489,6 +491,7 @@ async function _reopenCurrentChatThread() {
 function closeChatThread() {
   document.getElementById('chat-thread-detail-view').style.display = 'none';
   document.getElementById('chat-thread-list-view').style.display = 'flex';
+  document.body.classList.remove('chat-dialog-open');
   _chatActiveThread = null;
   _chatActiveThreadKey = null;
   if (_chatReturnToView) {
