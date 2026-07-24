@@ -1114,10 +1114,22 @@ header h1 {
   background: var(--bg-card);
   cursor: pointer;
 }
-.feed-photo-item .feed-photo-img-wrap { width: 100%; aspect-ratio: 4/3; background: var(--bg-light); }
-.feed-photo-item .feed-photo-img-wrap { position: relative; }
-.feed-photo-count-badge { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.65); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 999px; }
-.feed-photo-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.feed-photo-item .feed-photo-img-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4/3;
+  background: var(--bg-light);
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.feed-photo-item .feed-photo-img-wrap::-webkit-scrollbar { display: none; }
+.feed-photo-count-badge { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.65); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 999px; z-index: 2; pointer-events: none; }
+.feed-photo-item img { width: 100%; height: 100%; object-fit: cover; display: block; flex-shrink: 0; scroll-snap-align: start; }
+.feed-photo-item-dots { position: absolute; bottom: 8px; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; z-index: 2; pointer-events: none; }
+.feed-photo-item-dots span { width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,0.5); }
+.feed-photo-item-dots span.active { background: #fff; }
 .feed-photo-item .feed-photo-meta {
   padding: 0.55rem 0.75rem 0.7rem;
   font-size: 0.82rem;

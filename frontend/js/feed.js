@@ -301,18 +301,41 @@ function renderPhotoItem(p) {
     ? `${esc(p.object_id) || ''}${p.object_id && p.caption ? ' — ' : ''}${esc(p.caption) || ''}`
     : esc(p.name);
   const fileCount = (p.files || []).length;
-  // 24.07: мультифото — карточка в ленте показывает только обложку (первое фото,
-  // index=0) + счётчик если их больше одного; полный просмотр остальных — в модалке
-  // комментариев (openPhotoComments), не растягиваем сетку ленты под каждое фото поста.
+  // 24.07: мультифото — свайп прямо в карточке ленты (как в Инсте), не только в модалке.
+  // img-wrap — горизонтальный scroll-snap контейнер со всеми фото поста; badge/dots
+  // обновляются по scroll-позиции (см. _initFeedPhotoSwipeDots). Тап на карточку всё
+  // ещё открывает модалку комментариев — браузер сам различает drag-scroll от click,
+  // отдельная логика не нужна.
+  const imgs = (fileCount ? Array.from({ length: fileCount }, (_, i) => i) : [0])
+    .map(i => `<img data-auth-src="/api/feed/photos/${p.id}/file?index=${i}" loading="lazy" alt="">`).join('');
+  const dots = fileCount > 1
+    ? `<div class="feed-photo-item-dots">${Array.from({ length: fileCount }, (_, i) => `<span class="${i === 0 ? 'active' : ''}"></span>`).join('')}</div>`
+    : '';
   return `
   <div class="feed-photo-item" data-photo-id="${p.id}" onclick="openPhotoComments('${p.id}', ${fileCount})">
-    <div class="feed-photo-img-wrap">
-      <img data-auth-src="/api/feed/photos/${p.id}/file?index=0" loading="lazy" alt="">
+    <div class="feed-photo-img-wrap" data-file-count="${fileCount}">
+      ${imgs}
       ${fileCount > 1 ? `<span class="feed-photo-count-badge">1/${fileCount}</span>` : ''}
+      ${dots}
     </div>
     <div class="feed-photo-meta">${caption}<div class="feed-photo-time">${fmtPhotoTime(p.ts)}</div></div>
     <div class="feed-photo-actions"><span class="feed-photo-comment-count">💬 ${p.comment_count || 0}</span></div>
   </div>`;
+}
+
+function _initFeedPhotoSwipeDots(grid) {
+  grid.querySelectorAll('.feed-photo-img-wrap[data-file-count]').forEach(wrap => {
+    const count = parseInt(wrap.dataset.fileCount, 10);
+    if (count <= 1 || wrap.dataset.swipeWired) return;
+    wrap.dataset.swipeWired = '1';
+    const badge = wrap.querySelector('.feed-photo-count-badge');
+    const dots = wrap.querySelectorAll('.feed-photo-item-dots span');
+    wrap.addEventListener('scroll', () => {
+      const idx = Math.round(wrap.scrollLeft / wrap.clientWidth);
+      if (badge) badge.textContent = `${idx + 1}/${count}`;
+      dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+    }, { passive: true });
+  });
 }
 
 async function loadFeedPhotos() {
@@ -325,6 +348,7 @@ async function loadFeedPhotos() {
     }
     grid.innerHTML = data.photos.map(renderPhotoItem).join('');
     grid.querySelectorAll('img[data-auth-src]').forEach(img => authImg(img, img.dataset.authSrc));
+    _initFeedPhotoSwipeDots(grid);
   } catch (e) {
     grid.innerHTML = `<div class="empty-state" style="color:var(--red)">Ошибка загрузки: ${esc(e.message)}</div>`;
   }
