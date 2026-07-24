@@ -532,17 +532,29 @@ header h1 {
 .chat-category-tabs::-webkit-scrollbar { display: none; }
 .chat-category-tabs .doc-type-opt { flex-shrink: 0; padding: 0.4rem 0.75rem; font-size: 0.82rem; }
 .chat-thread-list { padding: 0 0.75rem; }
-.chat-thread-item { display: flex; align-items: center; gap: 0.65rem; padding: 0.7rem 0.5rem; cursor: pointer; border-radius: var(--radius-md); }
+.chat-thread-item {
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 0.5rem; cursor: pointer;
+  border-bottom: 1px solid var(--border-color);
+}
+.chat-thread-item:last-child { border-bottom: none; }
 .chat-thread-item:active { background: var(--bg-card); }
-.chat-thread-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: var(--primary-dark); display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; font-size: 1.1rem; }
-.chat-thread-avatar.group { background: var(--accent); color: var(--primary-dark); font-size: 1.1rem; }
+.chat-thread-avatar {
+  width: 48px; height: 48px; border-radius: 50%; background: var(--c-brass, var(--accent));
+  color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700;
+  flex-shrink: 0; font-size: 1.15rem; border: 2px solid color-mix(in srgb, var(--c-brass, var(--accent)) 35%, transparent);
+}
+.chat-thread-avatar.group {
+  background: color-mix(in srgb, var(--c-accent, var(--accent)) 12%, var(--bg-card-raised));
+  color: var(--c-accent, var(--accent));
+  border-color: color-mix(in srgb, var(--c-accent, var(--accent)) 35%, transparent);
+}
 .chat-thread-avatar-wrap { position: relative; flex-shrink: 0; }
-.chat-online-dot { position: absolute; bottom: 1px; right: 1px; width: 11px; height: 11px; border-radius: 50%; background: #3EB56D; border: 2px solid var(--bg-app); }
+.chat-online-dot { position: absolute; bottom: 2px; right: 2px; width: 12px; height: 12px; border-radius: 50%; background: #3EB56D; border: 2px solid var(--bg-app); }
 .chat-thread-info { flex: 1; min-width: 0; }
-.chat-thread-name { font-weight: 700; font-size: 1.05rem; }
-.chat-thread-preview { color: var(--text-light); font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-thread-name { font-weight: 700; font-size: 1rem; color: var(--text-main); }
+.chat-thread-preview { color: var(--text-light); font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
 .chat-thread-badge { min-width: 20px; height: 20px; border-radius: 999px; background: #ff3b30; color: #fff; font-size: 0.7rem; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 5px; flex-shrink: 0; }
-.chat-thread-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 0.3rem; flex-shrink: 0; }
+.chat-thread-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem; flex-shrink: 0; }
 .chat-thread-time { font-size: 0.72rem; color: var(--text-light); white-space: nowrap; }
 .chat-day-divider { text-align: center; font-size: 0.72rem; color: var(--text-light); font-weight: 600; padding: 0.6rem 0 0.3rem; }
 
@@ -1092,7 +1104,7 @@ header h1 {
   flex: 1;
   text-align: center;
   padding: 8px 4px;
-  border-radius: 6px;
+  border-radius: 999px;
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-light);
@@ -1101,6 +1113,8 @@ header h1 {
 }
 
 .doc-type-opt.active { background: var(--primary); color: white; }
+.chat-category-tabs .doc-type-opt { background: var(--bg-card); border-radius: 999px; }
+.chat-category-tabs .doc-type-opt.active { background: var(--c-accent, var(--accent)); color: #fff; }
 
 .feed-tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; margin-left: 4px; border-radius: 999px; background: var(--red); color: #fff; font-size: 0.65rem; font-weight: 700; vertical-align: middle; }
 
@@ -3181,7 +3195,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <!-- ═══════════ ЧАТ ═══════════ -->
 <div class="view" id="view-chat">
   <div id="chat-thread-list-view">
-    <header>
+    <header class="chat-list-header">
       <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
       <h1>Чат</h1>
     </header>
