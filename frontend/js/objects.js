@@ -229,6 +229,7 @@ function handleObjectDragMove(clientY) {
 function endObjectDrag() {
   if (!objDragState) return;
   objDragState.card.classList.remove('dragging');
+  objDragState.card.dataset.wasDragged = '1'; // подавляет click-open на этот тап (это был drag, не тап)
   hapticImpact('light');
   playDropSound();
   saveObjectsOrder();
@@ -245,7 +246,22 @@ function attachObjectsHandlers() {
   });
 
   document.querySelectorAll('#objects-cards .stage-clickable').forEach(el => {
-    el.addEventListener('click', () => openObjectDetail(el.dataset.objectId, el.dataset.objectName, 'stages'));
+    el.addEventListener('click', (e) => {
+      e.stopPropagation(); // не даём всплыть до card-level клика ниже -- открылось бы дважды/на неверный таб
+      openObjectDetail(el.dataset.objectId, el.dataset.objectName, 'stages');
+    });
+  });
+
+  // 24.07: клик по всей карточке объекта -> новый 6-таб экран (было доступно только
+  // через узкую строку "Текущий этап"). Исключаем интерактивные элементы внутри карточки
+  // (тот же exclusion-list что у drag touchstart выше) + сам drag/long-press не должен
+  // триггерить открытие -- card.dataset.wasDragged ставится в endObjectDrag().
+  document.querySelectorAll('#objects-cards .card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.status-switch, .take-btn, .checkbox, .add-task, .tasks-label, .obj-people-add, .obj-address-link, .obj-mangel-link, .stage-clickable, .stage-edit-icon')) return;
+      if (card.dataset.wasDragged === '1') { card.dataset.wasDragged = ''; return; }
+      openObjectDetail(card.dataset.id, card.querySelector('.obj-card-title')?.textContent || '', 'chat');
+    });
   });
 
   document.querySelectorAll('#objects-cards .tasks-label').forEach(label => {
@@ -614,6 +630,7 @@ function openObjectDetail(objectId, objectName, initialTab) {
 }
 
 function _objDetailTabClick(tab) {
+  if (tab !== 'chat' && typeof unembedObjectChat === 'function') unembedObjectChat();
   document.querySelectorAll('#obj-detail-tabs .doc-type-opt').forEach(o => o.classList.toggle('active', o.dataset.objTab === tab));
   document.querySelectorAll('.obj-detail-panel').forEach(p => { p.style.display = 'none'; });
   document.getElementById(`obj-detail-panel-${tab}`).style.display = 'block';
@@ -621,6 +638,7 @@ function _objDetailTabClick(tab) {
 }
 
 function closeObjectDetail() {
+  if (typeof unembedObjectChat === 'function') unembedObjectChat();
   document.getElementById('view-object-detail').style.display = 'none';
   document.getElementById('objects-list-view').style.display = '';
   _objDetailCurrentId = null;
@@ -632,11 +650,13 @@ function _initObjDetailTab(tab) {
   _objDetailLoadedTabs.add(tab);
   const panel = document.getElementById(`obj-detail-panel-${tab}`);
   if (tab === 'chat') {
-    // 24.07 Step 2: чат объекта переиспользует существующий fullscreen #view-chat
-    // (openObjectOrMangelChat) -- он остаётся живым под этим экраном (не .view-элемент,
-    // switchView его не трогает), закрытие треда просто возвращает сюда без reopen/refetch.
-    _objDetailLoadedTabs.delete(tab); // не placeholder-контент, переоткрывать можно каждый раз
-    openObjectOrMangelChat(`obj:${_objDetailCurrentId}`, `Чат: ${_objDetailCurrentName}`, 'object-detail');
+    // 24.07 Step 2 v2: юзер явно потребовал ВСТРОЕННЫЙ чат (не отдельный fullscreen-экран,
+    // который открывался поверх всего) -- реализовано физическим переносом существующего
+    // #chat-thread-detail-view DOM-узла внутрь панели таба (embedObjectChat в object-info.js),
+    // а не switchView('chat'). Переоткрывать можно каждый раз -- дешёвая операция, не
+    // считается "загруженным" в obj detail lazy-init смысле.
+    _objDetailLoadedTabs.delete(tab);
+    embedObjectChat(_objDetailCurrentId, _objDetailCurrentName);
     return;
   }
   if (tab === 'info') {

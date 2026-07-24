@@ -966,6 +966,30 @@ header h1 {
 #obj-detail-tabs .doc-type-opt { flex-shrink: 0; padding: 0.5rem 0.9rem; }
 .obj-detail-panel { padding: 0 0.75rem; min-height: 40vh; }
 
+/* ── Чат-таб объекта -- встроен под таб-баром, не поверх всего экрана (24.07 Step 2 v2) ──
+   Высота считается через ResizeObserver на #obj-detail-tabs (JS ниже, переменная
+   --obj-detail-chat-offset) + тот же --tg-vp-height, что держит клавиатуру всех
+   остальных full-height экранов -- один источник истины, не дублируем rAF-логику. */
+#obj-detail-panel-chat.obj-chat-active {
+  position: fixed;
+  left: 0; right: 0;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 480px;
+  top: var(--obj-detail-chat-offset, 120px);
+  height: calc(var(--tg-vp-height, 100dvh) - var(--obj-detail-chat-offset, 120px));
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 250;
+  background: var(--bg-app);
+  overflow: hidden;
+}
+#obj-detail-panel-chat.obj-chat-active #chat-thread-detail-view {
+  display: flex; flex: 1; min-height: 0; width: 100%;
+}
+#obj-detail-panel-chat.obj-chat-active #chat-thread-detail-view header { display: none; } /* заголовок треда не нужен -- уже есть header объекта + таб-бар сверху */
+
 /* ── Инфо-таб объекта (24.07, Step 3) ── */
 .obj-info-section { margin: 1rem 0; }
 .obj-info-section-title { font-size: 0.85rem; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.5rem; }

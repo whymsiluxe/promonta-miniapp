@@ -362,3 +362,66 @@ function _attachObjStagesHandlers(objectId, stages) {
     });
   });
 }
+
+// ═══════════ Встроенный чат объекта — Step 2 v2 (24.07) ═══════════
+// Физически переносит #chat-thread-detail-view DOM-узел (со всей его viewport/composer
+// логикой нетронутой) из его обычного места внутри #view-chat в панель этого таба, и
+// возвращает обратно при выходе -- не дублируем chat.js, не строим параллельный рендер.
+let _objChatHomeParent = null; // куда вернуть DOM при unembed
+let _objChatHomeNextSibling = null;
+let _objChatOffsetObserver = null;
+
+function _updateObjChatOffset() {
+  const tabs = document.getElementById('obj-detail-tabs');
+  if (!tabs) return;
+  const rect = tabs.getBoundingClientRect();
+  document.documentElement.style.setProperty('--obj-detail-chat-offset', `${rect.bottom}px`);
+}
+
+async function embedObjectChat(objectId, objectName) {
+  const panel = document.getElementById('obj-detail-panel-chat');
+  const chatView = document.getElementById('chat-thread-detail-view');
+  if (!panel || !chatView) return;
+
+  if (!_objChatHomeParent) {
+    _objChatHomeParent = chatView.parentElement;
+    _objChatHomeNextSibling = chatView.nextElementSibling;
+  }
+  panel.innerHTML = '';
+  panel.appendChild(chatView);
+  panel.classList.add('obj-chat-active');
+  chatView.style.display = 'flex';
+
+  _updateObjChatOffset();
+  if (!_objChatOffsetObserver && window.ResizeObserver) {
+    _objChatOffsetObserver = new ResizeObserver(_updateObjChatOffset);
+    _objChatOffsetObserver.observe(document.getElementById('obj-detail-tabs'));
+  }
+
+  // Переиспользуем chat.js внутреннее состояние напрямую -- не switchView('chat'),
+  // не openObjectOrMangelChat (та тянет за собой chat-dialog-open/nav-hide/fullscreen
+  // header, ничего из этого тут не нужно -- nav и header объекта остаются на месте).
+  _chatActiveThread = null;
+  _chatActiveThreadKey = `obj:${objectId}`;
+  _chatReturnToView = null;
+  document.getElementById('chat-close-thread-btn').style.display = 'none';
+  _chatLastTs = 0;
+  await _loadChatMessages(true);
+}
+
+function unembedObjectChat() {
+  const panel = document.getElementById('obj-detail-panel-chat');
+  const chatView = document.getElementById('chat-thread-detail-view');
+  if (!panel || !chatView || !_objChatHomeParent) return;
+  panel.classList.remove('obj-chat-active');
+  chatView.style.display = 'none';
+  if (_objChatHomeNextSibling) {
+    _objChatHomeParent.insertBefore(chatView, _objChatHomeNextSibling);
+  } else {
+    _objChatHomeParent.appendChild(chatView);
+  }
+  if (_objChatOffsetObserver) {
+    _objChatOffsetObserver.disconnect();
+    _objChatOffsetObserver = null;
+  }
+}
