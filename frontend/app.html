@@ -3401,6 +3401,18 @@ function _applyTelegramSafeArea() {
   document.documentElement.style.setProperty('--tg-safe-top', top + 'px');
 }
 
+// 24.07 v2: window.innerHeight НЕЛЬЗЯ использовать как "полная высота без клавиатуры" —
+// в Telegram iOS WebView (особенно в fullscreen-режиме, см. requestFullscreen() ниже)
+// layout viewport (innerHeight) сам подстраивается под появление клавиатуры почти
+// синхронно с visualViewport, поэтому (innerHeight - vv.height) остаётся близко к нулю
+// даже при открытой клавиатуре — старый детект keyboard-open никогда не срабатывал
+// на реальном устройстве, хотя в обычном desktop Safari работал бы. Фикс: держим
+// СОБСТВЕННЫЙ зафиксированный baseline полной высоты экрана (без клавиатуры), обновляем
+// его только когда уверены что клавиатура закрыта (текущая vv.height >= baseline —
+// например после поворота экрана или первой загрузки), и сравниваем с ним, а не с
+// живым innerHeight.
+let _fullViewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+
 function _applyViewportHeight() {
   // 100dvh не пересчитывается надёжно в Telegram fullscreen при появлении клавиатуры —
   // клавиатура перекрывает fixed-контейнер вместо того чтобы сжимать его.
@@ -3424,19 +3436,78 @@ function _applyViewportHeight() {
   // видимой поверх/рядом с ней, поле ввода терялось за клавиатурой. keyboard-open класс —
   // общий сигнал для любого экрана, не завязан на конкретный view.
   if (vv) {
-    const keyboardLikelyOpen = (window.innerHeight - vv.height) > 120;
+    // Если текущая высота >= зафиксированного baseline — клавиатуры точно нет,
+    // обновляем baseline (ловит поворот экрана, изменение системного UI и т.п.).
+    if (vv.height >= _fullViewportHeight) {
+      _fullViewportHeight = vv.height;
+    }
+    const keyboardLikelyOpen = (_fullViewportHeight - vv.height) > 120;
     document.body.classList.toggle('keyboard-open', keyboardLikelyOpen);
   }
 }
 
-// Любой input/textarea в фокусе, пока открыта клавиатура — прокручиваем в видимую часть
-// экрана (над клавиатурой), не полагаясь только на нативное поведение WebView (на iOS
-// scrollIntoView сам по себе не всегда учитывает visualViewport-урезанную область).
+// Любой input/textarea в фокусе — прокручиваем в видимую часть экрана (над клавиатурой),
+// не полагаясь только на нативное поведение WebView (на iOS scrollIntoView сам по себе
+// не всегда учитывает visualViewport-урезанную область). 24.07 v2: фиксированный setTimeout(300)
+// гонялся с CSS-анимацией раскрытия аккордеона (.accordion-body transition 0.3s) — если поле
+// внутри только что открытого аккордеона, scrollIntoView мог выполниться ДО того как аккордеон
+// закончил анимацию высоты, читая ещё не финальный layout → скролл "мимо". Плюс клавиатура на
+// iOS может доезжать дольше/короче 300мс. Фикс: ждём transitionend родительского .accordion-body
+// (если есть), и переподтверждаем скролл ещё раз на следующем visualViewport resize (когда
+// клавиатура реально домонтировалась), а не только один раз по таймеру.
+function _scrollFieldIntoView(el) {
+  if (!el || !el.isConnected) return;
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
 document.addEventListener('focusin', (e) => {
-  if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) return;
-  setTimeout(() => {
-    e.target.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, 300); // ждём пока клавиатура реально доедет и visualViewport пересчитается
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return;
+
+  const accordionBody = el.closest('.accordion-body');
+  let settleDelay = 320; // fallback ожидание, чуть больше времени клавиатуры
+
+  const doScroll = () => _scrollFieldIntoView(el);
+
+  if (accordionBody) {
+    // Если аккордеон ещё анимируется (раскрывается прямо сейчас) — ждём конца transition
+    // вместо угадывания таймаутом.
+    let settled = false;
+    const onEnd = (ev) => {
+      if (ev.target !== accordionBody || ev.propertyName !== 'grid-template-rows') return;
+      if (settled) return;
+      settled = true;
+      accordionBody.removeEventListener('transitionend', onEnd);
+      requestAnimationFrame(doScroll);
+    };
+    accordionBody.addEventListener('transitionend', onEnd);
+    // Safety net: если transitionend почему-то не пришёл (аккордеон уже был раскрыт —
+    // тогда transitionend не сработает вовсе), скроллим по таймеру всё равно.
+    setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      accordionBody.removeEventListener('transitionend', onEnd);
+      doScroll();
+    }, settleDelay);
+  } else {
+    setTimeout(doScroll, settleDelay);
+  }
+
+  // Дополнительно: переподтверждаем позицию когда клавиатура реально закончит открываться
+  // (следующее стабильное visualViewport-событие), т.к. на iOS клавиатура может доехать
+  // позже/раньше любого фиксированного таймаута выше.
+  if (window.visualViewport) {
+    let reconfirmed = false;
+    const onVvResize = () => {
+      if (reconfirmed) return;
+      reconfirmed = true;
+      window.visualViewport.removeEventListener('resize', onVvResize);
+      // element может уже быть вне фокуса (юзер ушёл) — перепроверяем перед скроллом
+      if (document.activeElement === el) requestAnimationFrame(doScroll);
+    };
+    window.visualViewport.addEventListener('resize', onVvResize);
+    setTimeout(() => window.visualViewport.removeEventListener('resize', onVvResize), 1500);
+  }
 });
 
 async function initApp() {
