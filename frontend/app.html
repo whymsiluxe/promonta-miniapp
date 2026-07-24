@@ -52,7 +52,13 @@ body {
   padding: 10px 8px;
   box-shadow: 0 8px 30px rgb(0 0 0 / 0.25), 0 2px 8px rgb(0 0 0 / 0.15);
   z-index: 200;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
+/* 24.07: клавиатура открыта на ЛЮБОМ экране (не только chat/ai, у которых своя
+   view-locked-логика) — nav-панель уезжает вниз за пределы видимой области вместо того
+   чтобы оставаться поверх клавиатуры, освобождая место для формы. body.keyboard-open
+   ставится глобальным visualViewport-детектом в _applyViewportHeight(). */
+body.keyboard-open .bottom-nav { opacity: 0; transform: translateX(-50%) translateY(120%); pointer-events: none; }
 
 .nav-item {
   flex: 1;
@@ -3411,7 +3417,27 @@ function _applyViewportHeight() {
     // компенсируем offsetTop в обратную сторону (было переставлено не туда).
     if (vv) activeFull.style.transform = `translateY(${-vv.offsetTop}px)`;
   }
+
+  // 24.07: универсальный keyboard-open детект (не только chat/ai) — bottom-nav прятался
+  // только в чате/ИИ через отдельный view-locked механизм; на остальных экранах (например
+  // Профиль → Настройки → форма ввода имени) клавиатура открывалась, а nav-панель оставалась
+  // видимой поверх/рядом с ней, поле ввода терялось за клавиатурой. keyboard-open класс —
+  // общий сигнал для любого экрана, не завязан на конкретный view.
+  if (vv) {
+    const keyboardLikelyOpen = (window.innerHeight - vv.height) > 120;
+    document.body.classList.toggle('keyboard-open', keyboardLikelyOpen);
+  }
 }
+
+// Любой input/textarea в фокусе, пока открыта клавиатура — прокручиваем в видимую часть
+// экрана (над клавиатурой), не полагаясь только на нативное поведение WebView (на iOS
+// scrollIntoView сам по себе не всегда учитывает visualViewport-урезанную область).
+document.addEventListener('focusin', (e) => {
+  if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) return;
+  setTimeout(() => {
+    e.target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, 300); // ждём пока клавиатура реально доедет и visualViewport пересчитается
+});
 
 async function initApp() {
   initTheme();
