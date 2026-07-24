@@ -633,11 +633,13 @@ async function _loadWorkerShiftCta() {
 function _openObjectForShift(objectId, objectName) {
   // openStagesView (objects.js) — экран с реальными Start/Pause/Finish-кнопками смены,
   // не сама карточка объекта (та лишь разворачивает детали, не открывает check-in).
-  // Не завязано на DOM карточки — objects.js инициализирует список независимо.
+  // 24.07: убран искусственный setTimeout(150) — он давал заметное мигание (список
+  // Объекты на долю секунды показывался пустым/грузящимся, потом резко перекрывался
+  // Этапами объекта). openStagesView сам ждёт свои данные через await, а его DOM-цели
+  // (#objects-list-view, #stages-view) статичны в разметке — не нужно ждать
+  // initObjectsView()/loadObjects() до вызова.
   switchView('objects');
-  setTimeout(() => {
-    if (typeof openStagesView === 'function') openStagesView(objectId, objectName || '');
-  }, 150);
+  if (typeof openStagesView === 'function') openStagesView(objectId, objectName || '');
 }
 
 function _openWorkerAlerts(presetFilter) {
