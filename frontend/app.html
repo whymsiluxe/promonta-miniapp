@@ -98,7 +98,12 @@ header h1 {
   font-family: var(--font-heading);
   font-size: 1.75rem; /* 23.07: было 1.5rem(24px) — отчёт рекомендует page title 28-32px, page title должен доминировать над section title (1.26rem) */
   font-weight: 700;
-  color: var(--bg-card); /* 23.07: header лежит прямо на тёмном body-фоне — светлый текст вместо тёмного */
+  color: var(--text-main); /* 24.07: было var(--bg-card) — светлый текст на тёмном фоне,
+     осталось от до-Phase-0 тёмной темы. После Phase 0 :root стал светлым (Old Money
+     ivory), header лежит на var(--bg-app) (тоже светлый) — светлый-на-светлом делал
+     заголовок невидимым на каждом экране ("Профиль"/"Объекты"/"Чат" и т.д. читались
+     еле-еле под системным Close). text-main — обычный тёмный текстовый токен, даёт
+     нормальный контраст в обеих темах (light Old Money и retuned dark). */
   transition: font-size 0.2s ease;
 }
 
@@ -1861,7 +1866,7 @@ body.view-locked {
 .profile-avatar-wrap img {
   width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
 }
-#profile-avatar-fallback { font-size: 2rem; }
+#profile-avatar-fallback { display: flex; align-items: center; justify-content: center; color: var(--accent); }
 .profile-avatar-edit {
   position: absolute; bottom: -4px; right: -4px;
   width: 26px; height: 26px; border-radius: 50%;
@@ -1893,7 +1898,7 @@ body.view-locked {
 .profile-heatmap-cell { aspect-ratio: 1; border-radius: 3px; }
 .profile-period-bar-chart { display: flex; align-items: flex-end; gap: 3px; height: 70px; }
 .profile-bar-col { flex: 1; height: 100%; display: flex; align-items: flex-end; }
-.profile-bar-fill { width: 100%; background: var(--accent2, #60a5fa); border-radius: 2px 2px 0 0; min-height: 2px; }
+.profile-bar-fill { width: 100%; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 2px; }
 .profile-team-bar-chart { height: 90px; padding-bottom: 1rem; position: relative; }
 .profile-team-bar-chart .profile-bar-col { position: relative; }
 .profile-bar-label { position: absolute; bottom: -1rem; left: 0; right: 0; font-size: 0.6rem; color: var(--text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
