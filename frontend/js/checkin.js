@@ -273,6 +273,21 @@ function _setCheckinSyncStatus(text, isError) {
 
 async function _confirmCheckinPreview() {
   if (!_checkinPreviewFiles.length) return;
+
+  // 24.07: "Что сделано за день" и "Что нужно подготовить на завтра" обязательны
+  // при финише — owner должен всегда получать эти данные, не полагаться на то что
+  // worker вспомнит заполнить. HTML required без <form> не валидирует сам, проверяем
+  // явно перед отправкой.
+  if (_checkinPendingAction === 'finish') {
+    const doneEl = document.getElementById('checkin-survey-done');
+    const nextEl = document.getElementById('checkin-survey-next');
+    if (!doneEl.value.trim() || !nextEl.value.trim()) {
+      showToast('Заполни "Что сделано за день" и "Что нужно подготовить на завтра" — обязательные поля', 'error');
+      (!doneEl.value.trim() ? doneEl : nextEl).focus();
+      return;
+    }
+  }
+
   const confirmBtn = document.getElementById('checkin-preview-confirm-btn');
   confirmBtn.disabled = true;
 

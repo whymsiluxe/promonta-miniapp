@@ -2493,23 +2493,27 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .abw-state-assigned { background: rgba(96,165,250,0.28); color: #fff; }
 
 /* ── Checkin photo preview modal — multi-photo + retake + удаление (Фаза 10.31) ── */
-#checkin-preview-modal { position: fixed; inset: 0; z-index: 1600; background: rgba(0,0,0,0.75); display: flex; align-items: flex-end; }
-.checkin-preview-inner { width: 100%; background: var(--bg-card); border-radius: 20px 20px 0 0; padding: 1rem; max-height: 80vh; display: flex; flex-direction: column; }
-.checkin-sync-status { display: none; font-size: 0.82rem; color: var(--text-light); text-align: center; padding: 0.5rem; margin-top: 0.5rem; border-radius: var(--radius-md); background: var(--bg-card-raised); }
+/* 24.07: экран фото-фиксации (особенно финиш смены — опрос дня) на весь экран,
+   крупнее текст — юзер жаловался что "надо с лупой читать". */
+#checkin-preview-modal { position: fixed; inset: 0; z-index: 1600; background: var(--bg-app); display: flex; }
+.checkin-preview-inner { width: 100%; height: 100%; background: var(--bg-app); padding: 1.25rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; overflow-y: auto; box-sizing: border-box; }
+.checkin-sync-status { display: none; font-size: 0.95rem; color: var(--text-light); text-align: center; padding: 0.6rem; margin-top: 0.5rem; border-radius: var(--radius-md); background: var(--bg-card-raised); }
 .checkin-sync-status.checkin-sync-error { color: var(--warning); }
-.checkin-preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem; }
-.checkin-preview-title { font-weight: 700; font-size: 1.05rem; color: var(--text-main); }
-.checkin-preview-close { background: none; border: none; color: var(--text-light); font-size: 1.2rem; cursor: pointer; }
-.checkin-preview-hint { font-size: 0.82rem; color: var(--text-light); margin-bottom: 0.75rem; }
-.checkin-preview-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.6rem; overflow-y: auto; margin-bottom: 0.75rem; }
+.checkin-preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.checkin-preview-title { font-weight: 700; font-size: 1.4rem; color: var(--text-main); }
+.checkin-preview-close { background: none; border: none; color: var(--text-light); font-size: 1.6rem; cursor: pointer; padding: 0.25rem; }
+.checkin-preview-hint { font-size: 1rem; color: var(--text-light); margin-bottom: 1rem; }
+.checkin-preview-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; overflow-y: auto; margin-bottom: 1rem; }
 .checkin-preview-item { position: relative; border-radius: var(--radius-md); overflow: hidden; aspect-ratio: 4/3; background: var(--bg-card); }
 .checkin-preview-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.checkin-preview-remove { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; border: none; background: rgba(0,0,0,0.7); color: #fff; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.checkin-preview-add-btn { background: var(--bg-card-raised); color: var(--text-main); border: 1px dashed var(--border-color); border-radius: var(--radius-md); padding: 0.75rem; font-size: 0.9rem; font-weight: 600; cursor: pointer; margin-bottom: 0.6rem; }
+.checkin-preview-remove { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(0,0,0,0.7); color: #fff; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.checkin-preview-add-btn { background: var(--bg-card-raised); color: var(--text-main); border: 1px dashed var(--border-color); border-radius: var(--radius-md); padding: 1rem; font-size: 1.05rem; font-weight: 600; cursor: pointer; margin-bottom: 0.8rem; }
 #checkin-preview-confirm-btn:disabled { opacity: 0.5; }
-.checkin-survey-field { margin-bottom: 0.75rem; }
-.checkin-survey-label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.3rem; }
-.checkin-survey-optional { font-weight: 400; color: var(--text-light); font-size: 0.78rem; }
+.checkin-survey-field { margin-bottom: 1rem; }
+.checkin-survey-label { display: block; font-size: 1.02rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.4rem; }
+.checkin-survey-optional { font-weight: 400; color: var(--text-light); font-size: 0.88rem; }
+.checkin-survey-required { color: var(--red); }
+#checkin-finish-survey .mangel-textarea { font-size: 1.02rem; padding: 0.75rem; }
 </style>
 </head>
 <body>
@@ -2891,16 +2895,16 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 
     <div id="checkin-finish-survey" class="mangel-form" style="display:none;">
       <div class="checkin-survey-field">
-        <label class="checkin-survey-label">Что сделано за день?</label>
-        <textarea id="checkin-survey-done" class="mangel-textarea" rows="2" placeholder="Например: оштукатурили стену в комнате 2, установили 3 окна"></textarea>
+        <label class="checkin-survey-label">Что сделано за день? <span class="checkin-survey-required">*</span></label>
+        <textarea id="checkin-survey-done" class="mangel-textarea" rows="2" placeholder="Например: оштукатурили стену в комнате 2, установили 3 окна" required></textarea>
       </div>
       <div class="checkin-survey-field">
         <label class="checkin-survey-label">Доп. работы (если были, вне плана)</label>
         <textarea id="checkin-survey-extra" class="mangel-textarea" rows="2" placeholder="Например: пришлось докупить крепёж, заделали трещину, которую заметили"></textarea>
       </div>
       <div class="checkin-survey-field">
-        <label class="checkin-survey-label">Что нужно подготовить на завтра? <span class="checkin-survey-optional">(необязательно — заполняй, только если правда что-то нужно)</span></label>
-        <textarea id="checkin-survey-next" class="mangel-textarea" rows="2" placeholder="Например: докупить краску (2 банки), взять перфоратор с базы"></textarea>
+        <label class="checkin-survey-label">Что нужно подготовить на завтра? <span class="checkin-survey-required">*</span></label>
+        <textarea id="checkin-survey-next" class="mangel-textarea" rows="2" placeholder="Например: докупить краску (2 банки), взять перфоратор с базы" required></textarea>
       </div>
       <div class="checkin-survey-field">
         <label class="checkin-survey-label">Сколько было пауз, минут?</label>
@@ -3407,8 +3411,9 @@ async function initApp() {
   // все данные, которые показываются сразу при заходе на соответствующие вкладки
   // (объекты, инструменты, погода, лента новостей/фото, алерты, чат, календарь) —
   // чтобы после splash пользователь не видел "Загрузка..." ни на одной вкладке (10.22).
+  const _objectsPrefetch = prefetchTracked('/api/objects');
   const _splashWaits = [
-    prefetchTracked('/api/objects'),
+    _objectsPrefetch,
     prefetchTracked('/api/tools'),
     prefetchTracked('/api/feed/weather'),
     prefetchTracked('/api/feed/photos'),
@@ -3418,6 +3423,18 @@ async function initApp() {
     prefetchTracked(currentRole === 'owner' ? '/api/abwesenheit/all' : '/api/abwesenheit'),
     prefetchTracked('/api/critical-alerts/pending'),
   ];
+
+  // 24.07: юзер явно потребовал "всё необходимое грузится пока идёт анимация, не по
+  // кускам во время использования" — список этапов конкретного объекта (открывается
+  // через "Этапы объекта") требует object_id, известный только после /api/objects,
+  // поэтому не параллелится с остальным списком выше, а прогревается сразу как только
+  // объекты пришли (всего 3 объекта в системе на 24.07 — дёшево прогреть все, не только
+  // тот что связан с активной сменой).
+  const _stagesPrefetchWait = _objectsPrefetch.then(data => {
+    const objects = data?.objects || [];
+    return Promise.allSettled(objects.map(o => prefetchTracked(`/api/objects/${o['ID объекта']}/stages`)));
+  }).catch(() => null);
+  _splashWaits.push(_stagesPrefetchWait);
 
   // Ждём реального прогрева данных (не таймер) — splash висит ровно пока все API-запросы не ответят.
   await Promise.allSettled(_splashWaits);
