@@ -241,3 +241,33 @@ async function _loadObjNeeds(objectId) {
     list.innerHTML = `<div class="obj-info-empty">Ошибка: ${esc(e.message)}</div>`;
   }
 }
+
+// ═══════════ Дефекты объекта — Step 5 ═══════════
+// Постоянный object_id-фильтр вместо одноразового window._pendingMangelObjectFilter
+// (тот флаг остаётся как есть для общей Дефекты-вкладки -- не трогаем). Список карточек,
+// не полный kanban с drag-and-drop (тот завязан на глобальные #mangel-col-* ID, не
+// параметризован под произвольный контейнер) -- переиспользуем только карточку и модалку.
+async function renderObjectDefectsTab(objectId) {
+  const panel = document.getElementById('obj-detail-panel-defects');
+  panel.innerHTML = `<div id="obj-defects-list" class="obj-info-items-list"></div>`;
+  await _loadObjDefects(objectId);
+}
+
+async function _loadObjDefects(objectId) {
+  const list = document.getElementById('obj-defects-list');
+  if (!list) return;
+  try {
+    const { tickets } = await api(`/api/mangel?object_id=${encodeURIComponent(objectId)}`);
+    if (!tickets.length) {
+      list.innerHTML = `<div class="obj-info-empty">Дефектов нет</div>`;
+      return;
+    }
+    list.innerHTML = tickets.map(renderMangelTicketCard).join('');
+    document.querySelectorAll('#obj-defects-list [data-auth-bg]').forEach(el => authBgImage(el, el.dataset.authBg));
+    list.querySelectorAll('.mangel-card').forEach(card => {
+      card.addEventListener('click', () => openMangelTicketModal(card.dataset.ticketId));
+    });
+  } catch (e) {
+    list.innerHTML = `<div class="obj-info-empty">Ошибка: ${esc(e.message)}</div>`;
+  }
+}
