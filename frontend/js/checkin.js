@@ -49,6 +49,14 @@ async function refreshCheckinButtons() {
   let session = null;
   try {
     const data = await api(`/api/checkin?object_id=${encodeURIComponent(objectId)}`);
+    // 24.07: race guard — этот вызов может быть один из нескольких параллельных
+    // (initWorkerCheckinFab на старте приложения запускает первый с objectId=null,
+    // затем реальное открытие объекта запускает второй с настоящим objectId; await
+    // не гарантирует порядок завершения, более медленный первый мог дописать UI
+    // ПОСЛЕ второго и перезаписать его правильный результат неверным). Если
+    // _stagesCurrentObjectId сменился, пока этот запрос летал — его результат устарел,
+    // не трогаем UI.
+    if (_stagesCurrentObjectId !== objectId) return;
     // 24.07: НЕ фильтровать по дате здесь — сервер (Europe/Berlin) и клиент (UTC через
     // toISOString) расходятся в дате на границе полуночи CEST, что ложно скрывало только
     // что открытую смену. "Открыта" определяется исключительно finish_at, не датой.
@@ -64,6 +72,7 @@ async function refreshCheckinButtons() {
     // сеть недоступна — используем последнее известное локальное состояние, не блокируем UI
     session = _getActiveCheckinSession(objectId);
   }
+  if (_stagesCurrentObjectId !== objectId) return;
 
   if (session && !session.finished) {
     startBtn.disabled = true;
