@@ -2797,17 +2797,27 @@ async def checkin_finish(
 
     _write_zeiterfassung_row(session, object_id, session['user_id'])
 
-    if next_day_needs.strip():
-        # Owner получает пуш только если worker реально указал, что нужно на завтра —
-        # не спамим при пустом опроснике.
+    if extra_work.strip() or next_day_needs.strip():
+        # Owner получает пуш только если worker реально что-то указал — не спамим
+        # при пустом опроснике. 24.07: extra_work (доп-работы вне плана) теперь тоже
+        # шлётся — раньше уходила только в Zeiterfassung sheet, owner мог её пропустить
+        # без захода в таблицу. Нужно для billing: если заказчик попросил доп-работу на
+        # месте, а её не заметили — компании не доплатят, хотя воркеру платят за время.
         roles = _load_roles()
         owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
         if owner_id:
-            try:
-                send_telegram_message(int(owner_id),
-                    f"📋 На завтра нужно ({object_id}): {next_day_needs.strip()[:300]}")
-            except Exception:
-                pass
+            if extra_work.strip():
+                try:
+                    send_telegram_message(int(owner_id),
+                        f"⚠️ Доп-работы вне плана ({object_id}): {extra_work.strip()[:300]}")
+                except Exception:
+                    pass
+            if next_day_needs.strip():
+                try:
+                    send_telegram_message(int(owner_id),
+                        f"📋 На завтра нужно ({object_id}): {next_day_needs.strip()[:300]}")
+                except Exception:
+                    pass
     _idempotency_save(idempotency_key, session)
     return session
 
