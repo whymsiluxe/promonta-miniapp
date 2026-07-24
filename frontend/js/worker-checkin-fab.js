@@ -169,8 +169,26 @@ async function _refreshWorkerCheckinFabIcon() {
 
 // checkin.js вызывает refreshCheckinButtons() после успешного старта/финиша —
 // синхронизируем иконку центральной кнопки тем же хуком.
+//
+// 24.07: БАГ — "const _origRefreshCheckinButtons = ... refreshCheckinButtons ..." читалось
+// как "захватить оригинал ИЗ checkin.js", но function-декларации хоистятся целиком (с телом)
+// в начало исполнения файла. К моменту выполнения этой строки глобальный refreshCheckinButtons
+// УЖЕ был переписан на хоистнутую версию ИЗ ЭТОГО ЖЕ файла (объявленную чуть ниже как
+// "async function refreshCheckinButtons()") — _origRefreshCheckinButtons ссылалась сама на себя.
+// Результат: await _origRefreshCheckinButtons() внутри обёртки вызывал саму обёртку —
+// бесконечная рекурсия без условия выхода, каждый виток дополнительно бил
+// GET /api/checkin через _refreshWorkerCheckinFabIcon() (подтверждено живым логом: 2500+
+// запросов/мин на один клиент, воспроизведено в изоляции — стектрейс показал цепочку
+// refreshCheckinButtons → refreshCheckinButtons → refreshCheckinButtons...).
+// Фикс: обёртка здесь больше НЕ объявлена как "function refreshCheckinButtons" (что
+// хоистилось бы под тем же именем и снова себя перезаписывало) — она объявлена под
+// другим именем (_refreshCheckinButtonsWithFabIcon), поэтому строка ниже, читающая
+// глобальный refreshCheckinButtons, гарантированно видит ещё не тронутый оригинал
+// из checkin.js. Глобальная refreshCheckinButtons переопределяется ПОСЛЕ, обычным
+// присваиванием (не декларацией) — присваивания не хоистятся, порядок исполнения
+// строго сверху вниз.
 const _origRefreshCheckinButtons = typeof refreshCheckinButtons === 'function' ? refreshCheckinButtons : null;
-async function refreshCheckinButtons() {
+async function _refreshCheckinButtonsWithFabIcon() {
   // Оригинал трогает #checkin-start-btn/#checkin-finish-btn из stages-view — они существуют,
   // только если worker уже открывал детейл объекта. Если он стартовал смену через FAB,
   // не заходя в объект, эти элементы отсутствуют — оригинал должен молча пропустить это, не упасть.
@@ -179,3 +197,7 @@ async function refreshCheckinButtons() {
   }
   await _refreshWorkerCheckinFabIcon();
 }
+// Переопределяем глобальную refreshCheckinButtons ПОСЛЕ того как оригинал уже захвачен
+// в замыкание выше — присваивание (не декларация) не хоистится, поэтому порядок здесь
+// гарантирован и не может повторить тот же баг.
+refreshCheckinButtons = _refreshCheckinButtonsWithFabIcon;
