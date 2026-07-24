@@ -72,16 +72,16 @@ function initProfileView() {
       <div class="card profile-speed-card" id="profile-speed-card" style="display:none"></div>
 
       <div class="accordion-section" id="profile-availability-section" style="display:none">
-        <div class="accordion-header"><span class="accordion-icon" style="background:#60a5fa22">📅</span><span class="accordion-title">Доступность</span><span class="accordion-chevron">▾</span></div>
-        <div class="accordion-body collapsed">
+        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-2)">📅</span><span class="accordion-title">Доступность</span><span class="accordion-chevron">▾</span></div>
+        <div class="accordion-body collapsed"><div class="accordion-body-inner">
           <div id="profile-availability-summary" style="font-size:0.85rem;color:var(--text-light)">—</div>
           <button class="submit-btn profile-inline-btn" id="profile-availability-link-btn" type="button" onclick="switchView('abwesenheit')">Открыть календарь →</button>
-        </div>
+        </div></div>
       </div>
 
       <div class="accordion-section">
         <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-5)">🏗️</span><span class="accordion-title">Объекты</span><span class="accordion-chevron">▾</span></div>
-        <div class="accordion-body collapsed"><div id="profile-objects-list"></div></div>
+        <div class="accordion-body collapsed"><div class="accordion-body-inner"><div id="profile-objects-list"></div></div></div>
       </div>
     </div>
 
@@ -94,17 +94,17 @@ function initProfileView() {
 
     <div class="profile-tab-panel" data-panel="settings" style="display:none">
       <div class="accordion-section">
-        <div class="accordion-header"><span class="accordion-icon" style="background:#f59e0b22">🛠</span><span class="accordion-title">Навыки</span><span class="accordion-chevron">▾</span></div>
-        <div class="accordion-body collapsed">
+        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-1)">🛠</span><span class="accordion-title">Навыки</span><span class="accordion-chevron">▾</span></div>
+        <div class="accordion-body collapsed"><div class="accordion-body-inner">
           <div id="profile-skills-chips" class="profile-skills-chips"></div>
           <div id="profile-skills-edit" style="display:none"></div>
           <button class="submit-btn profile-inline-btn" id="profile-skills-edit-btn" type="button">Изменить навыки</button>
-        </div>
+        </div></div>
       </div>
 
       <div class="accordion-section">
-        <div class="accordion-header"><span class="accordion-icon" style="background:#60a5fa22">👕</span><span class="accordion-title">Размеры одежды</span><span class="accordion-chevron">▾</span></div>
-        <div class="accordion-body collapsed">
+        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-2)">👕</span><span class="accordion-title">Размеры одежды</span><span class="accordion-chevron">▾</span></div>
+        <div class="accordion-body collapsed"><div class="accordion-body-inner">
           <div class="profile-sizes-grid">
             <label>Штаны<input id="profile-size-pants" class="mangel-select" placeholder="напр. 52 / L"></label>
             <label>Футболка<input id="profile-size-shirt" class="mangel-select" placeholder="напр. XL"></label>
@@ -112,7 +112,7 @@ function initProfileView() {
           </div>
           <button class="submit-btn profile-inline-btn" id="profile-sizes-save-btn" type="button">Сохранить размеры</button>
           <div id="profile-sizes-status" style="font-size:0.8rem;color:var(--accent);margin-top:0.4rem"></div>
-        </div>
+        </div></div>
       </div>
     </div>
   `;

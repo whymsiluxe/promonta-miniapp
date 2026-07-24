@@ -215,9 +215,12 @@ def list_roles(user: dict = Depends(get_current_user), _: None = Depends(require
     profiles = _load_worker_profiles()
     pending = sorted(set(notified.keys()) - set(roles.keys()))
     return {
-        "roles": [{"user_id": uid, "role": r, "name": profiles.get(uid, {}).get('name', uid)}
+        "roles": [{"user_id": uid, "role": r,
+                   "name": _sanitize_display_name(profiles.get(uid, {}).get('name'), uid)}
                   for uid, r in roles.items()],
-        "pending": [{"user_id": uid, "name": profiles.get(uid, {}).get('name', uid)} for uid in pending],
+        "pending": [{"user_id": uid,
+                     "name": _sanitize_display_name(profiles.get(uid, {}).get('name'), uid)}
+                    for uid in pending],
     }
 
 
@@ -270,7 +273,7 @@ def list_workers(user: dict = Depends(get_current_user)):
         workers.append({
             'user_id': uid,
             'role': roles.get(uid, 'worker'),
-            'name': p.get('name', uid),
+            'name': _sanitize_display_name(p.get('name'), uid),
             'skills': p.get('skills', []),
             'quiz_completed': p.get('quiz_completed', False),
         })
@@ -471,7 +474,7 @@ def _write_zeiterfassung_row(session: dict, object_id: str, user_id: str):
     try:
         import objekte_lib as o
         profiles = _load_worker_profiles()
-        worker_name = profiles.get(str(user_id), {}).get('name', str(user_id))
+        worker_name = _sanitize_display_name(profiles.get(str(user_id), {}).get('name'), str(user_id))
 
         rows = _cached_get_used_range('Объекты')
         object_name = object_id
@@ -710,7 +713,7 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
 
     def _user_info(uid: str) -> dict:
         p = profiles.get(str(uid), {})
-        return {"user_id": str(uid), "name": p.get('name', str(uid))}
+        return {"user_id": str(uid), "name": _sanitize_display_name(p.get('name'), str(uid))}
 
     objects = []
     for r in data:
@@ -1361,7 +1364,7 @@ def _check_upcoming_birthdays():
         if (uid, target_date.year) in already_alerted:
             continue
 
-        name = profile.get('name', uid)
+        name = _sanitize_display_name(profile.get('name'), uid)
         entry = {
             'user_id': uid, 'name': name, 'year': target_date.year,
             'date': target_date.strftime('%Y-%m-%d'), 'created_at': int(time.time()),
@@ -2488,7 +2491,7 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
         'id': uuid.uuid4().hex,
         'type': 'request',
         'from_user_id': str(user['id']),
-        'from_name': profile.get('name') or str(user['id']),
+        'from_name': _sanitize_display_name(profile.get('name'), str(user['id'])),
         'to_user_id': owner_id,
         'object_id': body.object_id.strip(),
         'title': body.title.strip()[:200],
