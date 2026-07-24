@@ -1141,6 +1141,132 @@ def complete_task(task_id: str, user: dict = Depends(get_current_user), _: None 
     return {"status": "ok"}
 
 
+# ---------- Инфо объекта (24.07, Step 3): work-items + документы ----------
+OBJECT_INFO_FILE = '/home/promonta/agent/miniapp/object_info.json'
+OBJECT_DOC_DIR = '/home/promonta/agent/miniapp/object_documents'
+os.makedirs(OBJECT_DOC_DIR, exist_ok=True)
+
+
+def _load_object_info() -> dict:
+    if not os.path.exists(OBJECT_INFO_FILE):
+        return {}
+    return json.load(open(OBJECT_INFO_FILE))
+
+
+def _save_object_info(data: dict):
+    _atomic_write_json(OBJECT_INFO_FILE, data)
+
+
+def _object_info_entry(object_id: str) -> dict:
+    data = _load_object_info()
+    return data.get(object_id, {"items": [], "documents": []})
+
+
+@app.get("/api/objects/{object_id}/info-items")
+def get_object_info_items(object_id: str, user: dict = Depends(get_current_user)):
+    return {"items": _object_info_entry(object_id).get("items", [])}
+
+
+class InfoItemBody(BaseModel):
+    text: str
+    qty: str = ''
+
+
+@app.post("/api/objects/{object_id}/info-items")
+def create_object_info_item(object_id: str, body: InfoItemBody, user: dict = Depends(get_current_user)):
+    if not body.text.strip():
+        raise HTTPException(400, "Текст не может быть пустым")
+    item = {
+        "id": uuid.uuid4().hex,
+        "text": body.text.strip()[:300],
+        "qty": body.qty.strip()[:50],
+        "created_by": user.get('first_name', str(user['id'])),
+        "created_at": int(time.time()),
+    }
+    data = _load_object_info()
+    entry = data.setdefault(object_id, {"items": [], "documents": []})
+    entry.setdefault("items", []).append(item)
+    _save_object_info(data)
+    return {"item": item}
+
+
+@app.delete("/api/objects/{object_id}/info-items/{item_id}")
+def delete_object_info_item(object_id: str, item_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    data = _load_object_info()
+    entry = data.get(object_id)
+    if not entry:
+        raise HTTPException(404, "Не найдено")
+    before = len(entry.get("items", []))
+    entry["items"] = [i for i in entry.get("items", []) if i["id"] != item_id]
+    if len(entry["items"]) == before:
+        raise HTTPException(404, "Не найдено")
+    _save_object_info(data)
+    return {"status": "ok"}
+
+
+@app.get("/api/objects/{object_id}/documents")
+def get_object_documents(object_id: str, user: dict = Depends(get_current_user)):
+    return {"documents": _object_info_entry(object_id).get("documents", [])}
+
+
+@app.post("/api/objects/{object_id}/documents")
+async def upload_object_document(object_id: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    content_type = file.content_type or ''
+    allowed = content_type.startswith('image/') or content_type == 'application/pdf'
+    if not allowed:
+        raise HTTPException(400, "Разрешены только изображения и PDF")
+    data_bytes = await file.read()
+    if len(data_bytes) > 8 * 1024 * 1024:
+        raise HTTPException(400, "Файл слишком большой (макс. 8 МБ)")
+    ext = os.path.splitext(file.filename or '')[1] or '.bin'
+    fname = f'{uuid.uuid4().hex}{ext}'
+    with open(os.path.join(OBJECT_DOC_DIR, fname), 'wb') as f:
+        f.write(data_bytes)
+
+    doc = {
+        "id": uuid.uuid4().hex,
+        "file": fname,
+        "name": file.filename or fname,
+        "content_type": content_type,
+        "uploaded_by": user.get('first_name', str(user['id'])),
+        "uploaded_at": int(time.time()),
+    }
+    data = _load_object_info()
+    entry = data.setdefault(object_id, {"items": [], "documents": []})
+    entry.setdefault("documents", []).append(doc)
+    _save_object_info(data)
+    return {"document": doc}
+
+
+@app.delete("/api/objects/{object_id}/documents/{doc_id}")
+def delete_object_document(object_id: str, doc_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    data = _load_object_info()
+    entry = data.get(object_id)
+    if not entry:
+        raise HTTPException(404, "Не найдено")
+    doc = next((d for d in entry.get("documents", []) if d["id"] == doc_id), None)
+    if not doc:
+        raise HTTPException(404, "Не найдено")
+    entry["documents"] = [d for d in entry.get("documents", []) if d["id"] != doc_id]
+    _save_object_info(data)
+    fpath = os.path.join(OBJECT_DOC_DIR, doc["file"])
+    if os.path.exists(fpath):
+        os.remove(fpath)
+    return {"status": "ok"}
+
+
+@app.get("/api/objects/{object_id}/documents/{fname}/file")
+def get_object_document_file(object_id: str, fname: str, user: dict = Depends(get_current_user)):
+    entry = _object_info_entry(object_id)
+    doc = next((d for d in entry.get("documents", []) if d["file"] == fname), None)
+    if not doc:
+        raise HTTPException(404, "Файл не найден")
+    path = os.path.join(OBJECT_DOC_DIR, fname)
+    if not os.path.exists(path):
+        raise HTTPException(404, "Файл не найден")
+    return FileResponse(path, media_type=doc.get("content_type") or None)
+
+
 # ---------- Neues Objekt ----------
 class NewObjectBody(BaseModel):
     name: str

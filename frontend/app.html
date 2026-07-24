@@ -966,6 +966,30 @@ header h1 {
 #obj-detail-tabs .doc-type-opt { flex-shrink: 0; padding: 0.5rem 0.9rem; }
 .obj-detail-panel { padding: 0 0.75rem; min-height: 40vh; }
 
+/* ── Инфо-таб объекта (24.07, Step 3) ── */
+.obj-info-section { margin: 1rem 0; }
+.obj-info-section-title { font-size: 0.85rem; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.5rem; }
+.obj-info-items-list, .obj-info-docs-list { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.6rem; }
+.obj-info-item-row { display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0.8rem; background: var(--bg-card); border-radius: var(--radius-sm); }
+.obj-info-item-qty { color: var(--text-light); font-size: 0.85rem; flex-shrink: 0; margin-left: 0.5rem; }
+.obj-info-add-row { display: flex; gap: 0.4rem; }
+.obj-info-input { flex: 1; min-width: 0; padding: 0.6rem 0.8rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9rem; }
+.obj-info-input-qty { flex: 0 0 90px; }
+.obj-info-add-btn { flex-shrink: 0; width: 44px; height: 44px; border-radius: var(--radius-sm); border: none; background: var(--c-accent, var(--green)); color: #fff; font-size: 1.3rem; cursor: pointer; }
+.obj-info-doc-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.8rem; background: var(--bg-card); border-radius: var(--radius-sm); cursor: pointer; }
+.obj-info-doc-row:active { background: color-mix(in srgb, var(--bg-card) 80%, var(--text-main) 10%); }
+.obj-info-doc-icon { flex-shrink: 0; color: var(--text-light); display: flex; }
+.obj-info-doc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obj-info-add-doc-btn { width: 100%; padding: 0.7rem; border-radius: var(--radius-sm); border: 1px dashed var(--border-color); background: none; color: var(--text-light); font-size: 0.9rem; cursor: pointer; }
+.obj-info-empty { padding: 1rem 0.5rem; text-align: center; color: var(--text-light); font-size: 0.85rem; }
+
+#obj-info-doc-viewer { display: none; position: fixed; inset: 0; z-index: 400; background: var(--bg-app); flex-direction: column; }
+.obj-doc-viewer-header { display: flex; align-items: center; gap: 0.5rem; padding: calc(0.6rem + var(--tg-safe-top, 0px)) 0.75rem 0.6rem; flex-shrink: 0; }
+.obj-doc-viewer-header h1 { font-size: 1rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
+.obj-doc-viewer-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; }
+.obj-doc-viewer-body img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.obj-doc-viewer-body iframe { width: 100%; height: 100%; border: none; }
+
 .stage-clickable { cursor: pointer; align-items: center; }
 .stage-edit-icon { font-size: 0.75rem; margin-left: 4px; opacity: 0.6; }
 
@@ -3365,6 +3389,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <script src="js/shared.js"></script>
 <script src="js/ui/navigation-manager.js"></script>
 <script src="js/objects.js"></script>
+<script src="js/object-info.js"></script>
 <script src="js/tools.js"></script>
 <script src="js/angebot.js"></script>
 <script src="js/rechnung.js"></script>
