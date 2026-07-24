@@ -13,16 +13,26 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* 24.07 v2: overflow-x:hidden ТОЛЬКО на body не клипует горизонтальный rubber-band
+   overscroll в iOS WKWebView (Telegram iOS) -- там скроллящий элемент визуального
+   viewport это html, не body. body-only guard работал в Chrome/Playwright (там
+   html и body делят один и тот же scrolling box), но не на реальном iPhone --
+   отсюда "Команда вылазит за границы" сохранялся после первого fix. Нужен guard
+   на обоих уровнях. */
+html {
+  overflow-x: hidden;
+  width: 100%;
+}
+
 body {
   font-family: var(--font-body);
   background: var(--bg-light);
   color: var(--text-main);
   max-width: 480px;
+  width: 100%;
   margin: 0 auto;
   padding-bottom: 7.5rem; /* место под нижнее меню */
-  overflow-x: hidden; /* 24.07: страховка — любой локальный overflow (длинный текст без
-     truncate, случайно широкий элемент) раньше растягивал скролл всей страницы вбок,
-     не только своего контейнера ("Команда вылазит за границы"). */
+  overflow-x: hidden; /* страховка на уровне body (недостаточна одна, см. html выше) */
 }
 
 /* ── Нижнее меню: floating glass pill (референс glassmorphism nav) ── */
