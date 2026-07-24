@@ -304,18 +304,61 @@ def _get_worker_profile(user_id) -> dict:
     return profiles.get(str(user_id), {"skills": [], "quiz_completed": False})
 
 
+_INVISIBLE_FILLER_CHARS = (
+    'ᅟᅠㅤﾠ'  # Hangul choseong/jungseong filler + halfwidth filler —
+                                 # популярный трюк для "невидимого" имени в Telegram
+)
+
+
+def _sanitize_display_name(raw: str | None, fallback: str) -> str:
+    """Telegram first_name может быть невидимыми символами (заполнители Hangul,
+    zero-width, чистые пробелы) или бессмысленным набором ('X13') — сохранённым
+    как есть при первой авторизации. На экране это выглядит как "битый"/нечитаемый
+    паттерн, а не как проблема шрифта (баг 23.07: юзер видел "нечитаемый паттерн"
+    в имени и "X13" вместо имени в подписи графика — оба места брали profile['name']
+    без проверки на осмысленность).
+    Hangul filler (U+3164 и родня) — валидная Unicode-буква категории Lo, поэтому
+    обычный \\w её не отсеивает; сначала вычищаем known invisible-filler + все
+    юникод-символы категории Cf (format, включает zero-width space/joiner и т.п.),
+    и только потом проверяем, остался ли хоть один "буквенный" символ."""
+    if not raw:
+        return fallback
+    stripped = raw.strip()
+    if not stripped:
+        return fallback
+    import re
+    import unicodedata
+    visible = ''.join(
+        ch for ch in stripped
+        if ch not in _INVISIBLE_FILLER_CHARS and unicodedata.category(ch) != 'Cf'
+    ).strip()
+    if not visible or not re.search(r'\w', visible, re.UNICODE):
+        return fallback
+    return stripped
+
+
 @app.get("/api/profile/me")
 def get_my_profile(user: dict = Depends(get_current_user)):
     profile = _get_worker_profile(user['id'])
-    if not profile.get('name') and user.get('first_name'):
+    healed_name = _sanitize_display_name(profile.get('name'), '') or None
+    if not healed_name and user.get('first_name'):
         # Раньше имя сохранялось только при загрузке аватара — работник без аватара
         # отображался у всех числовым Telegram ID (в чате, people-dots, Abwesenheit).
-        profiles = _load_worker_profiles()
-        key = str(user['id'])
-        profile = profiles.get(key, {"skills": [], "quiz_completed": False})
-        profile['name'] = user['first_name']
-        profiles[key] = profile
-        _save_worker_profiles(profiles)
+        # 23.07: то же самое — если сохранённое имя оказалось "битым" (невидимые
+        # символы/бессмысленный набор из Telegram first_name), перезаписываем его
+        # текущим Telegram first_name (обычно тем же значением — тогда ничего не
+        # меняется — но если юзер уже поправил имя в Telegram, подхватываем новое).
+        candidate = _sanitize_display_name(user.get('first_name'), '')
+        if candidate:
+            profiles = _load_worker_profiles()
+            key = str(user['id'])
+            profile = profiles.get(key, {"skills": [], "quiz_completed": False})
+            profile['name'] = candidate
+            profiles[key] = profile
+            _save_worker_profiles(profiles)
+            healed_name = candidate
+    if healed_name:
+        profile = {**profile, 'name': healed_name}
     return {"user_id": user['id'], "skill_options": SKILL_OPTIONS, **profile}
 
 
@@ -331,7 +374,7 @@ def get_user_card(target_id: str, user: dict = Depends(get_current_user)):
     has_avatar = bool(profile.get('avatar'))
     return {
         "user_id": target_id,
-        "name": profile.get('name', target_id),
+        "name": _sanitize_display_name(profile.get('name'), target_id),
         "role": roles[target_id],
         "skills": profile.get('skills', []),
         "has_avatar": has_avatar,
@@ -488,7 +531,7 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
             hours = round(sum(_hours_from_session(s) for s in w_sessions), 1)
             team_hours.append({
                 'user_id': wid,
-                'name': profiles_map.get(wid, {}).get('name', wid),
+                'name': _sanitize_display_name(profiles_map.get(wid, {}).get('name'), wid),
                 'hours': hours,
             })
         team_hours.sort(key=lambda t: t['hours'], reverse=True)
@@ -590,7 +633,10 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
     profile = _get_worker_profile(target)
     return {
         'user_id': target,
-        'name': profile.get('name') or (user.get('first_name') if target == str(user['id']) else target),
+        'name': _sanitize_display_name(
+            profile.get('name') or (user.get('first_name') if target == str(user['id']) else None),
+            target,
+        ),
         'role': _load_roles().get(target, 'worker'),
         'skills': profile.get('skills', []),
         'sizes': {

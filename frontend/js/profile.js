@@ -27,7 +27,7 @@ function initProfileView() {
     <div class="profile-header-card">
       <div class="profile-avatar-wrap" id="profile-avatar-wrap" title="Сменить фото">
         <img id="profile-avatar-img" alt="" style="display:none">
-        <span id="profile-avatar-fallback">👤</span>
+        <span id="profile-avatar-fallback"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"></path></svg></span>
         <span class="profile-avatar-edit">📷</span>
       </div>
       <input type="file" id="profile-avatar-input" accept="image/*" style="display:none">
