@@ -1406,6 +1406,16 @@ body:has(#view-ai.active) .bottom-nav {
 #view-chat.active #chat-thread-detail-view,
 #view-ai.active {
   padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  transition: padding-bottom 0.15s ease;
+}
+/* 24.07: клавиатура открыта — плавающий nav скрыт (body.keyboard-open, см. правило
+   .bottom-nav выше), но этот отступ-"зазор под пилюлю" оставался и забирал 64px+
+   у панели ввода внутри уже урезанного клавиатурой view-chat/view-ai — композер
+   выглядел зажатым/будто перекрытым. Обнуляем padding пока nav не виден. */
+body.keyboard-open #view-chat.active #chat-thread-list-view,
+body.keyboard-open #view-chat.active #chat-thread-detail-view,
+body.keyboard-open #view-ai.active {
+  padding-bottom: 0;
 }
 
 .chat-back-btn {
@@ -1428,6 +1438,24 @@ body:has(#view-ai.active) .bottom-nav {
 .chat-back-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
 
 #view-chat header, #view-ai header { flex-shrink: 0; }
+
+/* 24.07: заголовок треда (назад + название + замок закрытия) — три элемента в одном
+   ряду. Общий header{justify-content:space-between} рассчитан на 2 элемента (заголовок
+   слева, что-то одно справа) — с 3 детьми замок "отрывался" в правый угол экрана вместо
+   того чтобы стоять рядом с заголовком. Фикс: заголовок треда получает свой ряд с
+   justify-content:flex-start + title растягивается flex:1, замок остаётся справа
+   вплотную к тексту (никакого margin-left:auto - убран у .chat-close-thread-btn). */
+#chat-thread-detail-view header {
+  justify-content: flex-start;
+  gap: 0.5rem;
+}
+#chat-thread-detail-view header #chat-thread-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .chat-messages, .ai-messages {
   flex: 1;
@@ -1693,8 +1721,8 @@ body.view-locked {
 
 .ai-bubble-error {
   align-self: flex-start;
-  background: rgba(140,74,66,0.18);
-  color: #C77A6E;
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+  color: var(--red);
   border-radius: var(--radius-md);
   font-size: 0.85rem;
   max-width: 90%;
@@ -2168,8 +2196,11 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .abw-time-sep { color: var(--text-light); }
 
 /* ── Chat thread close (Фаза 10.17) ── */
-.chat-close-thread-btn { background: none; border: none; font-size: 1.1rem; cursor: pointer; margin-left: auto; }
-.chat-closed-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; background: rgba(248,113,113,0.12); color: var(--red); font-size: 0.82rem; font-weight: 600; padding: 0.6rem 0.9rem; margin: 0 0.75rem 0.5rem; border-radius: var(--radius-md); }
+/* 24.07: margin-left:auto убран — держал замок оторванным от заголовка при
+   justify-content:space-between родителя (см. #chat-thread-detail-view header выше);
+   теперь позиция замка в общем ряду задаётся flex:1 на #chat-thread-title. */
+.chat-close-thread-btn { background: none; border: none; font-size: 1.1rem; cursor: pointer; flex-shrink: 0; color: var(--text-light); display: flex; align-items: center; justify-content: center; }
+.chat-closed-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); font-size: 0.82rem; font-weight: 600; padding: 0.6rem 0.9rem; margin: 0 0.75rem 0.5rem; border-radius: var(--radius-md); }
 .chat-closed-banner button { background: var(--red); color: #fff; border: none; border-radius: var(--radius-sm); padding: 0.3rem 0.6rem; font-size: 0.75rem; cursor: pointer; }
 
 /* ── Weather Card (Фаза 10.18) — крупная карточка с анимированной иллюстрацией, по референсу ── */

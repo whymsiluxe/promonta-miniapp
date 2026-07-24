@@ -43,7 +43,7 @@ function _renderChatMessages(messages) {
   if (!container) return;
 
   if (!messages || messages.length === 0) {
-    container.innerHTML = '<div class="chat-empty">Сообщений пока нет. Напишите первым! 👋</div>';
+    container.innerHTML = '<div class="chat-empty">Сообщений пока нет. Напишите первым!</div>';
     _chatLastTs = 0;
     return;
   }
