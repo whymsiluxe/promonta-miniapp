@@ -55,7 +55,7 @@ function showToast(message, type) {
   el.textContent = message;
   el.classList.add('app-toast-show');
   clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => el.classList.remove('app-toast-show'), 3000);
+  _toastTimer = setTimeout(() => el.classList.remove('app-toast-show'), Math.max(3000, message.length * 60));
 }
 
 async function authImageUrl(path) {

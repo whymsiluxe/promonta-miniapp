@@ -2394,7 +2394,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
   font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;
 }
 /* ── Toast (10.39) — заменяет alert() для некритичных ошибок/уведомлений ── */
-#app-toast { position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%) translateY(20px); max-width: 90%; padding: 0.75rem 1.1rem; border-radius: var(--radius-lg); background: rgba(20,20,20,0.95); color: #fff; font-size: 0.88rem; text-align: center; z-index: 99999; opacity: 0; pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+#app-toast { position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%) translateY(20px); width: 92%; max-width: 420px; padding: 1rem 1.25rem; border-radius: var(--radius-lg); background: rgba(20,20,20,0.97); color: #fff; font-size: 1.05rem; line-height: 1.4; text-align: center; z-index: 99999; opacity: 0; pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
 #app-toast.app-toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
 #app-toast.app-toast-error { background: rgba(185,28,28,0.95); }
 #app-toast.app-toast-success { background: rgba(21,128,61,0.95); }
