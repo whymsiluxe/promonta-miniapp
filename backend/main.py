@@ -385,6 +385,9 @@ def get_user_card(target_id: str, user: dict = Depends(get_current_user)):
 
 
 class ProfileUpdateBody(BaseModel):
+    name: str | None = None  # 24.07: ручное имя — нужно, когда Telegram first_name
+    # пуст/скрыт/состоит из невидимых символов (self-heal в get_my_profile не может
+    # исцелиться нечем в этом случае).
     skills: list[str] | None = None
     quiz_completed: bool | None = None
     pants_size: str | None = None
@@ -399,6 +402,11 @@ def update_my_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_
     key = str(user['id'])
     profile = profiles.get(key, {"skills": [], "quiz_completed": False})
     updates = body.dict(exclude_unset=True)
+    if 'name' in updates:
+        cleaned = _sanitize_display_name(updates['name'], '')
+        if not cleaned:
+            raise HTTPException(400, "Имя не должно быть пустым")
+        updates['name'] = cleaned[:100]
     profile.update(updates)
     profiles[key] = profile
     _save_worker_profiles(profiles)

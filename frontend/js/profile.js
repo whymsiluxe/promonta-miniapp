@@ -94,6 +94,16 @@ function initProfileView() {
 
     <div class="profile-tab-panel" data-panel="settings" style="display:none">
       <div class="accordion-section">
+        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-4)">✎</span><span class="accordion-title">Имя</span><span class="accordion-chevron">▾</span></div>
+        <div class="accordion-body collapsed"><div class="accordion-body-inner">
+          <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.5rem">Если в Telegram у тебя нет имени/ника — задай его здесь, оно будет видно везде в приложении.</div>
+          <input type="text" id="profile-name-input" class="mangel-select" placeholder="Например: Иван" maxlength="100">
+          <button class="submit-btn profile-inline-btn" id="profile-name-save-btn" type="button" style="margin-top:0.5rem">Сохранить имя</button>
+          <div id="profile-name-status" style="font-size:0.8rem;color:var(--accent);margin-top:0.4rem"></div>
+        </div></div>
+      </div>
+
+      <div class="accordion-section">
         <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-1)">🛠</span><span class="accordion-title">Навыки</span><span class="accordion-chevron">▾</span></div>
         <div class="accordion-body collapsed"><div class="accordion-body-inner">
           <div id="profile-skills-chips" class="profile-skills-chips"></div>
@@ -226,6 +236,7 @@ function _bindProfileHandlers() {
 
   document.getElementById('profile-skills-edit-btn').addEventListener('click', _toggleSkillsEdit);
   document.getElementById('profile-sizes-save-btn').addEventListener('click', _saveSizes);
+  document.getElementById('profile-name-save-btn').addEventListener('click', _saveName);
   document.getElementById('profile-export-stundenzettel-btn').addEventListener('click', _downloadStundenzettel);
 
   document.getElementById('profile-period-pills').addEventListener('click', e => {
@@ -383,9 +394,13 @@ async function _loadProfileStats() {
       `Использовано ${stats.urlaub.used} из ${stats.urlaub.total} дней в этом году`;
   }
 
-  // Work-speed
+  // Work-speed — только для worker: считается из личных check-in фото-сессий, у owner их
+  // нет (он не делает check-in своей смены) — карточка "пока нет данных" была бессмысленной
+  // заглушкой на его собственном профиле.
   const speedCard = document.getElementById('profile-speed-card');
-  if (stats.work_speed || stats.avg_session_hours) {
+  if (currentRole === 'owner') {
+    speedCard.style.display = 'none';
+  } else if (stats.work_speed || stats.avg_session_hours) {
     const ws = stats.work_speed;
     const avgPct = stats.avg_session_hours ? Math.min(100, stats.avg_session_hours / 8 * 100) : 0;
     speedCard.style.display = 'block';
@@ -427,6 +442,11 @@ async function _loadProfileStats() {
   chips.innerHTML = (stats.skills || []).length
     ? stats.skills.map(s => `<span class="profile-skill-chip">${s}</span>`).join('')
     : '<div style="font-size:0.85rem;color:var(--text-light)">Навыки не указаны.</div>';
+
+  // Имя — предзаполняем только если оно реальное (не совпадает с user_id, значит
+  // не fallback после _sanitize_display_name на бэкенде).
+  const nameInput = document.getElementById('profile-name-input');
+  if (nameInput) nameInput.value = (stats.name && stats.name !== String(stats.user_id)) ? stats.name : '';
 
   // Размеры
   document.getElementById('profile-size-pants').value = stats.sizes?.pants || '';
@@ -497,6 +517,32 @@ async function _toggleSkillsEdit() {
     _skillsEditOpen = true;
   } catch (e) {
     showToast('Ошибка: ' + e.message, 'error');
+  }
+}
+
+async function _saveName() {
+  const input = document.getElementById('profile-name-input');
+  const statusEl = document.getElementById('profile-name-status');
+  const name = input.value.trim();
+  if (!name) {
+    statusEl.textContent = 'Введи имя';
+    statusEl.style.color = 'var(--red)';
+    return;
+  }
+  try {
+    await api('/api/profile/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    });
+    hapticImpact('light');
+    statusEl.style.color = 'var(--accent)';
+    statusEl.textContent = '✓ Сохранено';
+    const nameEl = document.getElementById('profile-name');
+    if (nameEl) nameEl.textContent = name;
+    setTimeout(() => { statusEl.textContent = ''; }, 2500);
+  } catch (e) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = 'Ошибка: ' + e.message;
   }
 }
 
