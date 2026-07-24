@@ -1505,7 +1505,7 @@ body.view-locked {
   display: flex;
   align-items: flex-end;
   gap: 0.5rem;
-  padding: 0.6rem 0.65rem calc(0.6rem + env(safe-area-inset-bottom));
+  padding: 0.5rem 0.6rem calc(0.4rem + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border-color);
   background: var(--bg-white);
   position: relative;
@@ -3521,7 +3521,20 @@ function _applyTelegramSafeArea() {
 // живым innerHeight.
 let _fullViewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
 
+let _vvRafPending = false;
 function _applyViewportHeight() {
+  // 24.07 v4: scroll+resize на visualViewport оба вызывали этот пересчёт напрямую —
+  // во время анимации клавиатуры iOS шлёт scroll-события много раз за кадр (visualViewport
+  // смещается пока клавиатура едет), каждый вызов бил новое значение height в стиль,
+  // CSS transition просто непрерывно догонял очередную мишень -> визуально дёргание,
+  // а не одно плавное движение. rAF-throttle: не более одного реального пересчёта за кадр,
+  // используем последнее известное состояние visualViewport на момент кадра.
+  if (_vvRafPending) return;
+  _vvRafPending = true;
+  requestAnimationFrame(() => { _vvRafPending = false; _applyViewportHeightNow(); });
+}
+
+function _applyViewportHeightNow() {
   // 100dvh не пересчитывается надёжно в Telegram fullscreen при появлении клавиатуры —
   // клавиатура перекрывает fixed-контейнер вместо того чтобы сжимать его.
   // Ставим фактическую высоту напрямую в px на активный полноэкранный view (chat/ai),
