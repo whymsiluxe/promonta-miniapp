@@ -2692,7 +2692,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <!-- ═══════════ ИНСТРУМЕНТ ═══════════ -->
 <div class="view" id="view-tools">
   <header>
-    <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
+    <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>Инструмент</h1>
     <button class="fab" id="add-tool" style="display:none">+</button>
   </header>
@@ -2712,7 +2712,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <!-- ═══════════ ANGEBOT ═══════════ -->
 <div class="view" id="view-documents">
   <header>
-    <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
+    <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1 id="documents-title">Angebot erstellen</h1>
   </header>
   <div class="doc-type-switch">
@@ -2748,7 +2748,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <!-- ═══════════ РАБОЧИЕ ОБЪЕКТЫ (10.32, заглушка — прорабатывается отдельно) ═══════════ -->
 <div class="view" id="view-working-objects">
   <header>
-    <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
+    <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>Объекты рабочие</h1>
   </header>
   <div id="working-objects-slot"><!-- 23.07: без объекта / по объектам / отсутствуют --></div>
@@ -2792,7 +2792,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <!-- ═══════════ МОИ ЗАДАЧИ (24.07) — назначения воркера, отдельно от общего списка Объекты ═══════════ -->
 <div class="view" id="view-my-tasks">
   <header>
-    <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
+    <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>Мои задачи</h1>
   </header>
   <div id="my-tasks-list" style="padding:0.75rem;"></div>
@@ -2801,7 +2801,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <!-- ═══════════ MÄNGEL + ПОТРЕБНОСТИ (Фаза 3 + 10.33) ═══════════ -->
 <div class="view" id="view-tasks">
   <header>
-    <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
+    <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>Потребности</h1>
     <button class="fab" id="tasks-new-btn" type="button" aria-label="Новая потребность" style="display:none;">+</button>
   </header>
@@ -2824,7 +2824,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 
 <div class="view" id="view-mangel">
   <header>
-    <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
+    <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>Дефекты</h1>
     <button class="fab" id="mangel-new-btn" type="button" aria-label="Новый тикет">+</button>
   </header>
@@ -2973,7 +2973,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <!-- ═══════════ ABWESENHEIT (Фаза 5) ═══════════ -->
 <div class="view" id="view-abwesenheit">
   <header>
-    <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
+    <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>Общий календарь</h1>
   </header>
   <div id="abw-profile-selector-wrap" style="display:none;">
@@ -3035,7 +3035,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <div class="view" id="view-chat">
   <div id="chat-thread-list-view">
     <header>
-      <button class="chat-back-btn" onclick="switchView('home')" type="button" aria-label="Назад">←</button>
+      <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
       <h1>Чат</h1>
     </header>
     <div class="chat-search-wrap">
@@ -3085,7 +3085,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <!-- ═══════════ ИИ-АССИСТЕНТ ═══════════ -->
 <div class="view" id="view-ai">
   <header>
-    <button class="chat-back-btn" onclick="switchView('feed')" type="button" aria-label="Назад">←</button>
+    <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>ИИ</h1>
     <button id="ai-clear" class="ai-clear-btn" type="button">Очист.</button>
   </header>
@@ -3155,6 +3155,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 
 <script src="js/theme.js"></script>
 <script src="js/shared.js"></script>
+<script src="js/ui/navigation-manager.js"></script>
 <script src="js/objects.js"></script>
 <script src="js/tools.js"></script>
 <script src="js/angebot.js"></script>
@@ -3228,7 +3229,18 @@ function renderRingProgress(pct, size = 44, strokeWidth = 4, label = '') {
 
 const loadedViews = new Set();
 
-function switchView(viewName) {
+// 24.07 (Phase 0.5): NavigationManager стек — push для программных переходов вглубь
+// (открытие детейла из списка), replaceRoot для клика по nav-таб (не растим стек бесконечно
+// при простой смене вкладки), ничего не трогаем при возврате через .back() (fromBack).
+function switchView(viewName, opts = {}) {
+  if (typeof NavigationManager !== 'undefined' && !opts.fromBack) {
+    if (opts.isTabSwitch) {
+      NavigationManager.replaceRoot(viewName, opts.params || {});
+    } else {
+      NavigationManager.push(viewName, opts.params || {});
+    }
+  }
+
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById(`view-${viewName}`).classList.add('active');
@@ -3276,10 +3288,14 @@ function switchView(viewName) {
   initAccordions(document.getElementById(`view-${viewName}`));
 
   if (viewName === 'chat') markChatRead();
+
+  if (opts.fromBack && typeof opts.scrollY === 'number') {
+    requestAnimationFrame(() => window.scrollTo(0, opts.scrollY));
+  }
 }
 
 document.querySelectorAll('.nav-item[data-view]').forEach(item => {
-  item.addEventListener('click', () => switchView(item.dataset.view));
+  item.addEventListener('click', () => switchView(item.dataset.view, { isTabSwitch: true }));
 });
 
 function applyRoleNav() {
@@ -3393,6 +3409,7 @@ async function initApp() {
     applyRoleNav();
     initWorkerCheckinFab();
     initCriticalAlertsPolling();
+    if (typeof NavigationManager !== 'undefined') NavigationManager.init();
   } catch (e) {
     hideSplash();
     document.body.innerHTML = `<div style="padding:2rem 1rem;text-align:center;color:var(--red)">Ошибка авторизации: ${esc(e.message)}</div>`;
@@ -3440,7 +3457,7 @@ async function initApp() {
     await checkOnboardingQuiz();
   }
 
-  switchView('home');
+  switchView('home', { isTabSwitch: true });
 }
 
 initApp();
