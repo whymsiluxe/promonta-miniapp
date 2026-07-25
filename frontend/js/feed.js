@@ -707,6 +707,8 @@ function _pcRenderPhotoAt(index) {
   }
 }
 
+let _pcOverlayUnregister = null;
+
 async function openPhotoComments(photoId, fileCount) {
   // 24.07: мультифото — fileCount передаётся с карточки ленты (renderPhotoItem уже
   // знает p.files.length); если вызвано без него (старый путь), считаем 1 фото.
@@ -714,6 +716,13 @@ async function openPhotoComments(photoId, fileCount) {
   _pcFileCount = fileCount || 1;
   const modal = document.getElementById('photo-comments-modal');
   modal.style.display = 'flex';
+  // 25.07: модалка теперь зарегистрирована в NavigationManager.overlayStack -- раньше
+  // Telegram BackButton её не видел (display-toggle вне навигации), при нажатии "назад"
+  // NavigationManager.back() падал сразу на pop реального route-стека, закрывая не эту
+  // модалку, а уводя на предыдущий экран (баг: Back из комментариев кидал в Профиль).
+  if (typeof NavigationManager !== 'undefined' && !_pcOverlayUnregister) {
+    _pcOverlayUnregister = NavigationManager.registerOverlay(() => _closePhotoCommentsInternal());
+  }
   _pcRenderPhotoAt(0);
   const list = document.getElementById('pc-list');
   list.innerHTML = '<div style="padding:1rem;color:var(--text-light);text-align:center">Загрузка...</div>';
@@ -725,7 +734,18 @@ async function openPhotoComments(photoId, fileCount) {
   }
 }
 
+// Вызывается ТОЛЬКО из NavigationManager (top.close()) — модалка уже popped из
+// overlayStack на этот момент, повторный unregister тут не нужен и не должен вызываться.
+function _closePhotoCommentsInternal() {
+  document.getElementById('photo-comments-modal').style.display = 'none';
+  _pcCurrentPhotoId = null;
+  _pcOverlayUnregister = null;
+}
+
+// Вызывается при ручном закрытии (крестик/клик-вне) — модалка ещё в overlayStack,
+// нужно явно её оттуда снять, иначе следующий Back попытается закрыть уже закрытую модалку.
 function closePhotoComments() {
+  if (_pcOverlayUnregister) { _pcOverlayUnregister(); _pcOverlayUnregister = null; }
   document.getElementById('photo-comments-modal').style.display = 'none';
   _pcCurrentPhotoId = null;
 }
