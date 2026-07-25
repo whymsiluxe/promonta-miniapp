@@ -2695,8 +2695,13 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .chat-voice-transcript { font-size: 0.78rem; color: var(--text-light); font-style: italic; margin-top: 0.2rem; max-width: 240px; }
 .chat-extract-task-btn { display: block; margin-top: 0.3rem; background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: var(--radius-sm); padding: 0.25rem 0.6rem; font-size: 0.75rem; cursor: pointer; }
 
-/* ── Radio FAB — увеличено в 2 раза (Фаза 10.27) + ещё 20% (10.33), удобно тапать в перчатках ── */
-#radio-fab { gap: 0.9rem; }
+/* ── Radio FAB — увеличено в 2 раза (Фаза 10.27) + ещё 20% (10.33), удобно тапать в перчатках.
+   25.07: виджет теперь виден только на Home (см. switchView(), commit 3053107), но на самом
+   Home top-offset был рассчитан под 52px кружок (#radio-fab, base rule выше) -- при 82px
+   нижняя граница уходит на ~30px глубже прежнего и залезает в системную зону Telegram
+   (chevron/меню справа сверху). Сдвигаем сам блок чуть левее от угла и увеличиваем top --
+   не уменьшаем размер кружка, чтобы не потерять тач-таргет для перчаток. */
+#radio-fab { gap: 0.9rem; right: 1.4rem; top: calc(1.6rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))); }
 .radio-fab-btn { width: 82px; height: 82px; font-size: 2.18rem; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
 .radio-fab-menu { min-width: 220px; padding: 0.7rem; gap: 0.5rem; border-radius: 24px; }
 .radio-fab-menu-item { font-size: 1.15rem; padding: 0.85rem 1.1rem; }
