@@ -57,23 +57,16 @@ function renderObjectCard(obj) {
   const statusColor = obj['Статус'] === 'Завершён' ? 'var(--accent)' : obj['Статус'] === 'Пауза' ? 'var(--warning)' : bColor;
   const statusDot = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${statusColor};margin-right:4px;vertical-align:middle"></span>`;
 
-  // Stat chips — бюджет только owner (10.5), worker не должен видеть финансы объекта
-  const chips = [];
-  if (currentRole === 'owner') {
-    chips.push({ label: `${budgetPct}%`, sub: 'бюджет', color: bColor });
-  }
-  chips.push(
-    { label: stageLabel ? (stageLabel.length > 14 ? stageLabel.slice(0, 13) + '…' : stageLabel) : '—', sub: 'этап', color: 'var(--text-light)' },
-    { label: obj['Статус'] || '—', sub: 'статус', color: statusColor },
-  );
-  const chipsHtml = chips.map(c =>
-    `<div class="obj-stat-chip"><span class="obj-chip-val" style="color:${c.color}">${c.label}</span><span class="obj-chip-sub">${c.sub}</span></div>`
-  ).join('');
+  // 25.07: убран дублированный budget-chip (уже показан в hero pill для owner) и
+  // status-chip (уже показан как цветная точка в hero pill) -- карточка показывала
+  // бюджет/статус по 2-3 раза одновременно. Остаётся только этап -- единственное, что
+  // не дублируется больше нигде на карточке.
+  const chipsHtml = `<div class="obj-stat-chip"><span class="obj-chip-val" style="color:var(--text-light)">${stageLabel ? (stageLabel.length > 14 ? stageLabel.slice(0, 13) + '…' : stageLabel) : '—'}</span><span class="obj-chip-sub">этап</span></div>`;
 
   const stagesEditIcon = currentRole === 'owner' ? '<span class="stage-edit-icon">✏️</span>' : '';
 
   return `
-  <div class="card obj-card-v2" data-id="${oid}">
+  <div class="card obj-card-v2" data-id="${oid}" data-status="${esc(obj['Статус'] || '')}">
     <div class="obj-card-hero" style="${imgStyle}">
       <div class="obj-hero-icon">${hero.icon}</div>
       <div class="obj-hero-live-pill">${statusDot}${currentRole === 'owner' ? budgetPct + '%' : (obj['Статус'] || '')}</div>
@@ -86,21 +79,11 @@ function renderObjectCard(obj) {
       <div class="obj-card-address obj-address-link" onclick="event.stopPropagation();openExternalLink('https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(obj['Адрес'] || '')}')"><svg class="obj-address-pin" viewBox="0 0 24 24" width="14" height="14" fill="none"><path d="M12 2C7.58 2 4 5.58 4 10c0 5.25 7 12 8 12s8-6.75 8-12c0-4.42-3.58-8-8-8z" fill="currentColor"/><circle cx="12" cy="10" r="2.5" fill="var(--bg-card)"/></svg>${esc(obj['Адрес']) || ''}</div>
       <div class="obj-chips-row">${chipsHtml}</div>
     </div>
-    <div class="status-switch" data-current="${obj['Статус'] || ''}">
-      ${['В работе', 'Пауза', 'Завершён'].map(s =>
-        `<div class="status-opt${s === obj['Статус'] ? ' active' : ''}" data-status="${s}">${s}</div>`
-      ).join('')}
-    </div>
     <div class="card-stage stage-clickable" data-object-id="${oid}" data-object-name="${esc(obj['Объект']) || ''}">
       ${isWaiting ? `<span class="stage-wait"><span>Ожидает:</span><b>${stageLabel}</b></span>` : `<span>Текущий этап: <b>${stageLabel}</b></span>`}
       ${stagesEditIcon}
     </div>
     <div class="obj-mangel-link" onclick="event.stopPropagation();window._pendingMangelObjectFilter='${oid}';switchView('mangel')">🚩 Дефекты объекта</div>
-    <div class="tasks-label collapsed"><span class="chevron">▾</span>Документы <span class="tasks-count"></span></div>
-    <div class="tasks-body collapsed"><div class="tasks-body-inner">
-      <div class="tasks-list"><div style="padding:0.3rem 0;color:var(--text-light);font-size:0.85rem">Загрузка...</div></div>
-      <div class="add-task">+ Добавить задачу</div>
-    </div></div>
     ${currentRole === 'owner' ? `
     <div class="metrics">
       <div class="metric">
@@ -248,7 +231,7 @@ function attachObjectsHandlers() {
   document.querySelectorAll('#objects-cards .stage-clickable').forEach(el => {
     el.addEventListener('click', (e) => {
       e.stopPropagation(); // не даём всплыть до card-level клика ниже -- открылось бы дважды/на неверный таб
-      openObjectDetail(el.dataset.objectId, el.dataset.objectName, 'stages');
+      openObjectDetail(el.dataset.objectId, el.dataset.objectName, 'stages', el.closest('.card')?.dataset.status);
     });
   });
 
@@ -260,72 +243,10 @@ function attachObjectsHandlers() {
     card.addEventListener('click', (e) => {
       if (e.target.closest('.status-switch, .take-btn, .checkbox, .add-task, .tasks-label, .obj-people-add, .obj-address-link, .obj-mangel-link, .stage-clickable, .stage-edit-icon')) return;
       if (card.dataset.wasDragged === '1') { card.dataset.wasDragged = ''; return; }
-      openObjectDetail(card.dataset.id, card.querySelector('.obj-card-title')?.textContent || '', 'chat');
+      openObjectDetail(card.dataset.id, card.querySelector('.obj-card-title')?.textContent || '', 'chat', card.dataset.status);
     });
   });
 
-  document.querySelectorAll('#objects-cards .tasks-label').forEach(label => {
-    const card = label.closest('.card');
-    const objectId = card.dataset.id;
-    const body = label.nextElementSibling;
-    const listEl = body.querySelector('.tasks-list');
-    label.addEventListener('click', () => {
-      const willOpen = label.classList.contains('collapsed');
-      label.classList.toggle('collapsed');
-      body.classList.toggle('collapsed');
-      if (willOpen && !body.dataset.loaded) {
-        body.dataset.loaded = '1';
-        loadTasks(objectId, listEl, null);
-      }
-    });
-  });
-
-  document.querySelectorAll('#objects-cards .add-task').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const card = btn.closest('.card');
-      const objectId = card.dataset.id;
-      const text = prompt('Текст задачи:');
-      if (!text || !text.trim()) return;
-      try {
-        await api(`/api/objects/${objectId}/tasks`, { method: 'POST', body: JSON.stringify({ text: text.trim() }) });
-        const listEl = card.querySelector('.tasks-list');
-        const countEl = card.querySelector('.tasks-count');
-        listEl.closest('.tasks-body').dataset.loaded = '1';
-        await loadTasks(objectId, listEl, countEl);
-      } catch (e) {
-        showToast('Ошибка: ' + e.message, 'error');
-      }
-    });
-  });
-
-  document.querySelectorAll('#objects-cards .status-switch').forEach(switchEl => {
-    if (currentRole !== 'owner') {
-      switchEl.classList.add('readonly');
-      return;
-    }
-    switchEl.querySelectorAll('.status-opt').forEach(opt => {
-      opt.addEventListener('click', async () => {
-        const next = opt.dataset.status;
-        const prev = switchEl.dataset.current;
-        if (next === prev) return;
-        const card = switchEl.closest('.card');
-        const objectId = card.dataset.id;
-
-        // Мгновенное визуальное переключение — не ждём ответ сервера.
-        switchEl.dataset.current = next;
-        switchEl.querySelectorAll('.status-opt').forEach(o => o.classList.toggle('active', o.dataset.status === next));
-        hapticImpact('light');
-
-        try {
-          await api(`/api/objects/${objectId}/status`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
-        } catch (e) {
-          switchEl.dataset.current = prev;
-          switchEl.querySelectorAll('.status-opt').forEach(o => o.classList.toggle('active', o.dataset.status === prev));
-          showToast('Ошибка: ' + e.message, 'error');
-        }
-      });
-    });
-  });
 }
 
 function openNewObjectView() {
@@ -609,11 +530,13 @@ function initObjectsView() {
 // loadedViews в switchView() app.html) -- не грузим все 6 источников данных разом.
 let _objDetailCurrentId = null;
 let _objDetailCurrentName = '';
+let _objDetailCurrentStatus = '';
 const _objDetailLoadedTabs = new Set();
 
-function openObjectDetail(objectId, objectName, initialTab) {
+function openObjectDetail(objectId, objectName, initialTab, objectStatus) {
   _objDetailCurrentId = objectId;
   _objDetailCurrentName = objectName || objectId;
+  _objDetailCurrentStatus = objectStatus || '';
   _objDetailLoadedTabs.clear();
   document.getElementById('objects-list-view').style.display = 'none';
   const view = document.getElementById('view-object-detail');

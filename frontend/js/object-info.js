@@ -4,7 +4,20 @@
 
 async function renderObjectInfoTab(objectId) {
   const panel = document.getElementById('obj-detail-panel-info');
+  // 25.07: статус-редактор перенесён сюда из превью-карточки списка объектов --
+  // тот дублировал статус в трёх местах на одной карточке (hero pill + chip + этот
+  // switch), owner-only редактирование в списке было решено переместить в detail.
+  const statusEditorHtml = currentRole === 'owner' ? `
+    <div class="obj-info-section">
+      <div class="obj-info-section-title">Статус объекта</div>
+      <div class="status-switch" id="obj-detail-status-switch" data-current="${esc(_objDetailCurrentStatus)}">
+        ${['В работе', 'Пауза', 'Завершён'].map(s =>
+          `<div class="status-opt${s === _objDetailCurrentStatus ? ' active' : ''}" data-status="${s}">${s}</div>`
+        ).join('')}
+      </div>
+    </div>` : '';
   panel.innerHTML = `
+    ${statusEditorHtml}
     <div class="obj-info-section">
       <div class="obj-info-section-title">Работы по объекту</div>
       <div id="obj-info-items-list" class="obj-info-items-list"></div>
@@ -21,6 +34,28 @@ async function renderObjectInfoTab(objectId) {
       <button id="obj-info-doc-add" class="obj-info-add-doc-btn" type="button">+ Прикрепить файл</button>
     </div>
   `;
+
+  const statusSwitch = document.getElementById('obj-detail-status-switch');
+  if (statusSwitch) {
+    statusSwitch.querySelectorAll('.status-opt').forEach(opt => {
+      opt.addEventListener('click', async () => {
+        const next = opt.dataset.status;
+        const prev = statusSwitch.dataset.current;
+        if (next === prev) return;
+        statusSwitch.dataset.current = next;
+        statusSwitch.querySelectorAll('.status-opt').forEach(o => o.classList.toggle('active', o.dataset.status === next));
+        hapticImpact('light');
+        try {
+          await api(`/api/objects/${objectId}/status`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
+          _objDetailCurrentStatus = next;
+        } catch (e) {
+          statusSwitch.dataset.current = prev;
+          statusSwitch.querySelectorAll('.status-opt').forEach(o => o.classList.toggle('active', o.dataset.status === prev));
+          showToast('Ошибка: ' + e.message, 'error');
+        }
+      });
+    });
+  }
 
   document.getElementById('obj-info-item-add').addEventListener('click', () => _addObjInfoItem(objectId));
   document.getElementById('obj-info-doc-add').addEventListener('click', () => document.getElementById('obj-info-doc-file').click());
