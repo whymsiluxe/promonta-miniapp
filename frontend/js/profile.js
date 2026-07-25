@@ -312,7 +312,7 @@ async function _loadProfileStats() {
 
   document.getElementById('profile-name').textContent = stats.name || stats.user_id;
   const roleBadge = document.getElementById('profile-role-badge');
-  roleBadge.textContent = stats.role === 'owner' ? '👑 Владелец' : '👷 Работник';
+  roleBadge.textContent = stats.role === 'owner' ? 'Владелец' : 'Работник';
 
   if (stats.has_avatar) _loadAvatar(stats.user_id);
   else {

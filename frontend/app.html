@@ -77,7 +77,10 @@ body.keyboard-open .bottom-nav { opacity: 0; transform: translateX(-50%) transla
 .nav-item.active .nav-icon-svg { stroke-width: 2.3; background: var(--accent); color: var(--primary-dark); }
 
 .nav-item { position: relative; }
-.nav-owner-crown { position: absolute; top: 2px; right: calc(50% - 20px); font-size: 0.72rem; line-height: 1; z-index: 2; }
+/* 25.07: план явно требовал убрать crown-emoji (👑) -- заменён на маленькую
+   forest-цветную точку-индикатор в углу иконки, тот же смысл (owner отличим от worker
+   на nav), без emoji-символа. */
+.nav-owner-badge { position: absolute; top: 4px; right: calc(50% - 18px); width: 8px; height: 8px; border-radius: 50%; background: var(--c-brass, var(--accent)); border: 1.5px solid var(--bg-app); z-index: 2; }
 .nav-badge {
   position: absolute;
   top: 6px;
@@ -3420,7 +3423,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 9h18M8 2v4M16 2v4" stroke-linecap="round"/></svg>
   </div>
   <div class="nav-item" data-view="profile">
-    <span class="nav-owner-crown" title="Владелец">👑</span>
+    <span class="nav-owner-badge" title="Владелец"></span>
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c1.5-4 5-6 7.5-6s6 2 7.5 6" stroke-linecap="round"/></svg>
   </div>
 </div>
