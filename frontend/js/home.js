@@ -35,6 +35,8 @@ async function initHomeView() {
       </div>
     </div>
 
+    <div id="home-radio-player-mount"></div>
+
     <div id="home-messages-wide" class="quick-primary-item home-messages-wide" onclick="switchView('chat')">
       <div class="quick-primary-icon-wrap qp-icon qp-icon-chat"><div class="qp-icon-sphere"></div><div class="qp-icon-bubble"></div></div>
       <div class="quick-primary-text">
@@ -83,6 +85,7 @@ async function initHomeView() {
 
   _loadHomeData();
   initFeedTabs(); // суб-табы Инфо/Фото/Новости под dashboard (feed.js)
+  if (typeof renderHomeRadioPlayer === 'function') renderHomeRadioPlayer();
 }
 
 async function _loadHomeData() {
@@ -541,6 +544,7 @@ function _renderAlerts(alerts) {
 async function initWorkerHomeView(slot) {
   slot.innerHTML = `
     <div id="worker-shift-cta" class="worker-shift-cta" style="display:none"></div>
+    <div id="home-radio-player-mount"></div>
     <div class="worker-tile-grid">
       <div class="worker-tile" id="worker-tile-messages" onclick="switchView('chat')">
         <span class="worker-tile-badge" id="worker-tile-messages-badge" style="display:none">0</span>
@@ -589,6 +593,7 @@ async function initWorkerHomeView(slot) {
   _loadWorkerTileCounts();
   _loadWorkerShiftCta();
   initFeedTabs();
+  if (typeof renderHomeRadioPlayer === 'function') renderHomeRadioPlayer();
 }
 
 // 23.07: Start/Pause/Finish смены жил только внутри конкретного объекта (отчёт: "worker должен
