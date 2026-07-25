@@ -10,8 +10,8 @@ function renderTaskCard(task) {
   const statusColor = task.status === 'открыто' ? 'var(--warning)' : task.status === 'в работе' ? 'var(--accent)' : 'var(--text-light)';
   const nextStatus = task.status === 'открыто' ? 'в работе' : task.status === 'в работе' ? 'закрыто' : null;
   return `
-  <div class="mangel-card" data-task-id="${task.id}">
-    <div class="mangel-card-desc"><b>${esc(task.title)}</b>${task.description ? `<div style="margin-top:0.3rem;font-size:0.85rem;color:var(--text-light)">${esc(task.description)}</div>` : ''}</div>
+  <div class="mangel-card" data-task-id="${task.id}" style="${task.priority === 'срочно' ? 'border-left:3px solid var(--red);' : ''}">
+    <div class="mangel-card-desc">${task.priority === 'срочно' ? '🔴 ' : ''}<b>${esc(task.title)}</b>${task.description ? `<div style="margin-top:0.3rem;font-size:0.85rem;color:var(--text-light)">${esc(task.description)}</div>` : ''}</div>
     <div class="mangel-card-meta">
       <span>${esc(task.from_name || task.from_user_id)}</span>
       ${task.object_id ? `<span>${esc(task.object_id)}</span>` : ''}
@@ -82,18 +82,25 @@ async function _populateTasksObjectSelect() {
   }
 }
 
+let _taskPriority = 'обычная';
+
 function _closeTasksForm() {
   document.getElementById('tasks-form').style.display = 'none';
   document.getElementById('tasks-title-input').value = '';
   document.getElementById('tasks-object-select').value = '';
+  _taskPriority = 'обычная';
+  document.querySelectorAll('#tasks-form .doc-type-opt').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.priority === 'обычная');
+  });
 }
 
 async function submitTask() {
   const title = document.getElementById('tasks-title-input').value.trim();
   if (!title) { showToast('Укажите, что нужно'); return; }
   const objectId = document.getElementById('tasks-object-select').value;
+  if (!objectId) { showToast('Выберите объект'); return; }
   try {
-    await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title, object_id: objectId }) });
+    await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title, object_id: objectId, priority: _taskPriority }) });
     hapticImpact('light');
     _closeTasksForm();
     await loadTasks();
@@ -113,6 +120,13 @@ function initTasksView() {
     });
     document.getElementById('tasks-cancel-btn').addEventListener('click', _closeTasksForm);
     document.getElementById('tasks-submit-btn').addEventListener('click', submitTask);
+    document.querySelectorAll('#tasks-form .doc-type-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _taskPriority = btn.dataset.priority;
+        document.querySelectorAll('#tasks-form .doc-type-opt').forEach(b => b.classList.toggle('active', b === btn));
+        hapticImpact('light');
+      });
+    });
     attachVoiceInputButton(document.getElementById('tasks-voice-btn'), transcript => {
       const input = document.getElementById('tasks-title-input');
       input.value = input.value ? `${input.value} ${transcript}` : transcript;

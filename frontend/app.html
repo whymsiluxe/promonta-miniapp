@@ -3123,7 +3123,11 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
         <textarea id="tasks-title-input" class="mangel-textarea" placeholder="Что нужно? (например: перфоратор, 2 мешка цемента, каска)" rows="4"></textarea>
         <button type="button" id="tasks-voice-btn" class="voice-input-btn">🎤</button>
       </div>
-      <select id="tasks-object-select" class="mangel-select"><option value="">Объект (необязательно)…</option></select>
+      <select id="tasks-object-select" class="mangel-select"><option value="">Выбери объект…</option></select>
+      <div class="doc-type-switch" style="margin:0.5rem 0;">
+        <button type="button" class="doc-type-opt active" data-priority="обычная" style="flex:1;">Обычная</button>
+        <button type="button" class="doc-type-opt" data-priority="срочно" style="flex:1;">🔴 Срочно</button>
+      </div>
       <div class="mangel-form-actions">
         <button class="submit-btn" id="tasks-cancel-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);">Отмена</button>
         <button class="submit-btn" id="tasks-submit-btn" type="button">Отправить</button>

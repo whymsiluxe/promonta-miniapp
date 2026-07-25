@@ -1192,7 +1192,7 @@ class TaskBody(BaseModel):
 
 
 @app.post("/api/objects/{object_id}/tasks")
-def create_task(object_id: str, body: TaskBody, user: dict = Depends(get_current_user)):
+def create_task(object_id: str, body: TaskBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     import objekte_lib as o
     if not body.text.strip():
         raise HTTPException(400, "Текст не может быть пустым")
@@ -2787,10 +2787,14 @@ def _save_tasks(items: list):
     _atomic_write_json(TASKS_FILE, items)
 
 
+TASK_PRIORITIES = ('обычная', 'срочно')
+
+
 class TaskCreateBody(BaseModel):
     title: str
     description: str = ''
     object_id: str = ''
+    priority: str = 'обычная'
 
 
 class TaskStatusBody(BaseModel):
@@ -2807,7 +2811,7 @@ def list_tasks(object_id: str = '', user: dict = Depends(get_current_user), role
         items = [t for t in items if str(t.get('from_user_id')) == str(user['id'])]
     if object_id:
         items = [t for t in items if t.get('object_id') == object_id]
-    return {"tasks": sorted(items, key=lambda t: t.get('created_at', 0), reverse=True)}
+    return {"tasks": sorted(items, key=lambda t: (t.get('priority') != 'срочно', -t.get('created_at', 0)))}
 
 
 @app.post("/api/tasks")
@@ -2816,6 +2820,11 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
         raise HTTPException(403, "Потребности создают работники")
     if not body.title.strip():
         raise HTTPException(400, "Название обязательно")
+    if not body.object_id.strip():
+        raise HTTPException(400, "Объект обязателен")
+    priority = body.priority.strip() or 'обычная'
+    if priority not in TASK_PRIORITIES:
+        raise HTTPException(400, "Недопустимый приоритет")
     roles = _load_roles()
     owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
     profile = _get_worker_profile(user['id'])
@@ -2829,6 +2838,7 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
         'object_id': body.object_id.strip(),
         'title': body.title.strip()[:200],
         'description': body.description.strip()[:1000],
+        'priority': priority,
         'status': 'открыто',
         'created_at': int(time.time()),
         'closed_at': None,
@@ -2837,7 +2847,8 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
     _save_tasks(items)
     if owner_id:
         try:
-            send_telegram_message(int(owner_id), f"📋 Новая потребность от {task['from_name']}: {task['title']}")
+            urgent_prefix = "🔴 СРОЧНО! " if priority == 'срочно' else "📋 "
+            send_telegram_message(int(owner_id), f"{urgent_prefix}Новая потребность от {task['from_name']}: {task['title']}")
         except Exception:
             pass
     return task
