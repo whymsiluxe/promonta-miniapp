@@ -937,7 +937,49 @@ def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_r
         })
 
     filtered = [a for a in alerts if a['role_filter'] == role]
+
+    # 25.07: "прочитано" для derived-алертов (бюджет/инструмент/назначение) -- раньше
+    # счётчик на Home всегда показывал реальное активное количество, юзер жаловался
+    # "не сбрасывается после просмотра". Persisted critical alerts уже имеют свой
+    # ack-механизм (acknowledged_at) выше -- не трогаем их отдельным dismiss-слоем.
+    # Dismiss истекает через 24ч: если проблема (перегруженный бюджет и т.п.) всё ещё
+    # активна на следующий день, алерт напоминает о себе снова -- не даёт навсегда
+    # забыть про нерешённую проблему, просто не мозолит глаза сразу после просмотра.
+    dismissals = _load_alert_dismissals().get(str(user['id']), {})
+    now = int(time.time())
+    filtered = [a for a in filtered if now - dismissals.get(a['id'], 0) > ALERT_DISMISS_TTL]
+
     return {"alerts": filtered, "count": len(filtered)}
+
+
+ALERT_DISMISSALS_FILE = '/home/promonta/agent/miniapp/alert_dismissals.json'
+ALERT_DISMISS_TTL = 24 * 3600
+
+
+def _load_alert_dismissals() -> dict:
+    if not os.path.exists(ALERT_DISMISSALS_FILE):
+        return {}
+    return json.load(open(ALERT_DISMISSALS_FILE))
+
+
+def _save_alert_dismissals(data: dict):
+    _atomic_write_json(ALERT_DISMISSALS_FILE, data)
+
+
+class AlertDismissBody(BaseModel):
+    alert_ids: list[str]
+
+
+@app.post("/api/alerts/dismiss")
+def dismiss_alerts(body: AlertDismissBody, user: dict = Depends(get_current_user)):
+    data = _load_alert_dismissals()
+    my_id = str(user['id'])
+    entry = data.setdefault(my_id, {})
+    now = int(time.time())
+    for aid in body.alert_ids:
+        entry[aid] = now
+    _save_alert_dismissals(data)
+    return {"ok": True}
 
 
 @app.get("/api/tools")
@@ -2043,9 +2085,13 @@ def get_unread_count(user: dict = Depends(get_current_user)):
 
 
 @app.get("/api/chat/unread_by_thread")
-def get_unread_by_thread(user: dict = Depends(get_current_user)):
+def get_unread_by_thread(user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     """10.14/10.29: разбивка непрочитанных по тредам для badge на каждой строке списка,
-    per-thread last_read — открытие одного треда не сбрасывает счётчик у остальных."""
+    per-thread last_read — открытие одного треда не сбрасывает счётчик у остальных.
+    25.07: расширено на thread_key-треды (obj:/mangel:/task:) -- раньше badge считался
+    только для group/DM веток, вкладки Объекты/Дефекты/Потребности в списке чатов не
+    показывали unread вообще (не забыт badge в разметке -- сам подсчёт не доходил
+    до этих сообщений, т.к. цикл ниже фильтровал только по to_user_id)."""
     with _chat_lock:
         messages = _load_chat()
         reads = _load_reads()
@@ -2054,10 +2100,18 @@ def get_unread_by_thread(user: dict = Depends(get_current_user)):
     for m in messages:
         if str(m.get('user_id')) == me:
             continue
-        to_uid = m.get('to_user_id')
-        if to_uid and str(to_uid) != me:
-            continue  # чужой DM
-        thread_key = 'group' if not to_uid else str(m['user_id'])
+        tkey = m.get('thread_key')
+        if tkey:
+            try:
+                _check_thread_access(tkey, me, role)
+            except HTTPException:
+                continue
+            thread_key = tkey
+        else:
+            to_uid = m.get('to_user_id')
+            if to_uid and str(to_uid) != me:
+                continue  # чужой DM
+            thread_key = 'group' if not to_uid else str(m['user_id'])
         if m.get('ts', 0) <= _thread_last_read(reads, me, thread_key):
             continue
         by_thread[thread_key] = by_thread.get(thread_key, 0) + 1
@@ -2065,14 +2119,14 @@ def get_unread_by_thread(user: dict = Depends(get_current_user)):
 
 
 @app.post("/api/chat/read")
-def mark_chat_read(with_: str = '', user: dict = Depends(get_current_user)):
-    thread_key = 'group' if not with_ else with_
+def mark_chat_read(with_: str = '', thread_key: str = '', user: dict = Depends(get_current_user)):
+    key = thread_key or ('group' if not with_ else with_)
     with _chat_lock:
         reads = _load_reads()
         my_id = str(user['id'])
         if not isinstance(reads.get(my_id), dict):
             reads[my_id] = {}
-        reads[my_id][thread_key] = int(time.time())
+        reads[my_id][key] = int(time.time())
         _save_reads(reads)
     return {"ok": True}
 

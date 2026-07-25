@@ -443,6 +443,7 @@ async function embedObjectChat(objectId, objectName) {
   document.getElementById('chat-close-thread-btn').style.display = 'none';
   _chatLastTs = 0;
   await _loadChatMessages(true);
+  markChatRead(null, `obj:${objectId}`);
 }
 
 function unembedObjectChat() {

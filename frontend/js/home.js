@@ -475,6 +475,15 @@ function _closeAlertsView() {
   const modal = document.getElementById('alerts-modal');
   if (modal) modal.remove();
   _alertsViewOpen = false;
+  // 25.07: закрытие модалки = "прочитал" -- derived-алерты (бюджет/инструмент/назначение)
+  // не имеют ack как persisted critical alerts, отмечаем dismiss явно, счётчик на Home
+  // перезагружаем сразу, не жду следующий обычный poll.
+  const ids = (window._allAlerts || []).filter(a => !a.critical_alert_id).map(a => a.id);
+  if (ids.length) {
+    api('/api/alerts/dismiss', { method: 'POST', body: JSON.stringify({ alert_ids: ids }) })
+      .then(() => _loadHomeAlerts())
+      .catch(() => {});
+  }
 }
 
 function _filterAlerts(tabEl, filter) {

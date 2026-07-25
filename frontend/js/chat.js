@@ -289,10 +289,10 @@ function startUnreadChatPolling() {
   _chatUnreadTimer = setInterval(_pollUnreadChat, CHAT_UNREAD_POLL_MS);
 }
 
-async function markChatRead(threadUserId) {
-  if (!threadUserId) _renderUnreadBadge(0);
+async function markChatRead(threadUserId, threadKey) {
+  if (!threadUserId && !threadKey) _renderUnreadBadge(0);
   try {
-    const qs = threadUserId ? `?with_=${threadUserId}` : '';
+    const qs = threadKey ? `?thread_key=${encodeURIComponent(threadKey)}` : (threadUserId ? `?with_=${threadUserId}` : '');
     await api(`/api/chat/read${qs}`, { method: 'POST' });
   } catch (e) {}
 }
@@ -411,6 +411,7 @@ function renderChatThreadList() {
         </div>
         <div class="chat-thread-meta">
           ${_threadTimeLabel(t.last_ts) ? `<span class="chat-thread-time">${_threadTimeLabel(t.last_ts)}</span>` : ''}
+          ${_threadBadge(_chatUnreadByThread[t.thread_key] || 0)}
         </div>
       </div>`).join('') || '<div class="chat-empty">Чатов пока нет</div>';
   }
@@ -458,6 +459,7 @@ function openObjectOrMangelChat(threadKey, title, returnToView) {
   document.getElementById('chat-close-thread-btn').style.display = 'none'; // закрытие тредов не поддержано для obj:/mangel:
   _chatLastTs = 0;
   _loadChatMessages(true);
+  markChatRead(null, threadKey); // 25.07: obj:/mangel:/task: треды раньше никогда не отмечались прочитанными
 }
 
 async function _refreshChatThreadCloseState() {
