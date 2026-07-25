@@ -87,7 +87,10 @@ def validate_init_data(init_data: str) -> dict:
 
     auth_date = parsed.get('auth_date')
     try:
-        if not auth_date or time.time() - int(auth_date) > INIT_DATA_MAX_AGE:
+        if not auth_date:
+            raise HTTPException(401, "initData: expired")
+        age = time.time() - int(auth_date)
+        if age > INIT_DATA_MAX_AGE or age < -60:
             raise HTTPException(401, "initData: expired")
     except ValueError:
         raise HTTPException(401, "initData: malformed auth_date")
@@ -132,7 +135,15 @@ def _atomic_write_json(path: str, data, ensure_ascii: bool = False):
 def _load_roles() -> dict:
     if not os.path.exists(ROLES_FILE):
         return {}
-    return json.load(open(ROLES_FILE))
+    try:
+        with open(ROLES_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        # Corrupt roles.json (диск full / kill -9 посреди записи) не должен ронять
+        # whitelist-проверку для каждого запроса -- деградируем к пустому whitelist
+        # (все получат 403, а не 500), это по крайней мере видимо и безопасно.
+        print(f'ERROR: roles.json corrupt, falling back to empty whitelist: {ROLES_FILE}')
+        return {}
 
 
 def _save_roles(roles: dict):
@@ -324,6 +335,22 @@ _INVISIBLE_FILLER_CHARS = (
     'ᅟᅠㅤﾠ'  # Hangul choseong/jungseong filler + halfwidth filler —
                                  # популярный трюк для "невидимого" имени в Telegram
 )
+
+
+def _gps_suspect(lat: str, lon: str) -> bool:
+    """Грубая эвристика, не блокирует check-in (GPS на стройке часто глючит --
+    подвалы, между зданиями), только помечает координаты как подозрительные для owner:
+    (0,0) -- Null Island, классический fallback GPS-модуля при полном отсутствии сигнала;
+    либо явно вне разумного диапазона Германии (широта ~47-55, долгота ~5-16)."""
+    try:
+        f_lat, f_lon = float(lat), float(lon)
+    except (ValueError, TypeError):
+        return True
+    if f_lat == 0 and f_lon == 0:
+        return True
+    if not (47 <= f_lat <= 55.5 and 5 <= f_lon <= 16):
+        return True
+    return False
 
 
 def _sanitize_display_name(raw: str | None, fallback: str) -> str:
@@ -3078,10 +3105,12 @@ async def checkin_start(
         "start_photos": photo_paths,
         "start_lat": lat,
         "start_lon": lon,
+        "start_gps_suspect": _gps_suspect(lat, lon),
         "finish_at": None,
         "finish_photos": [],
         "finish_lat": None,
         "finish_lon": None,
+        "finish_gps_suspect": None,
         "pause_started_at": None,
         "pause_accumulated_seconds": 0,
     }
@@ -3198,6 +3227,7 @@ async def checkin_finish(
         session['finish_photos'] = photo_paths
         session['finish_lat'] = lat
         session['finish_lon'] = lon
+        session['finish_gps_suspect'] = _gps_suspect(lat, lon)
         # 10.31: опрос конца дня — всё опционально, worker не обязан заполнять,
         # если для следующего дня ничего готовить не нужно.
         session['done_summary'] = done_summary.strip()[:1000] or None
