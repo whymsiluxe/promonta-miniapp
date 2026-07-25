@@ -424,8 +424,9 @@ async function _loadProfileStats() {
       </div>`;
   } else {
     speedCard.style.display = 'block';
-    speedCard.innerHTML = `<div style="font-size:0.85rem;color:var(--text-light)">
-      ⚡ Работа по фото: пока нет данных — сделайте первый check-in смены с фото на объекте.</div>`;
+    speedCard.innerHTML = `<div style="font-size:0.85rem;color:var(--text-light);display:flex;align-items:center;gap:0.4rem">
+      <svg viewBox="0 0 24 24" width="16" height="16" style="flex-shrink:0"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      Работа по фото: пока нет данных — сделайте первый check-in смены с фото на объекте.</div>`;
   }
 
   // История объектов
