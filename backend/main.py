@@ -3222,6 +3222,9 @@ async def checkin_finish(
             raise HTTPException(400, "Смена уже завершена")
         object_id, date_str = session['object_id'], session['date']
 
+    if len(files) < 2:
+        raise HTTPException(400, "Прикрепите минимум 2 фото выполненной работы")
+
     # Сохранение фото (I/O, await) — вне лока, как и в checkin_start. Раньше await стоял
     # внутри with _checkin_lock: — второй параллельный check-in-запрос (частый сценарий,
     # два работника жмут "Финиш" в конце смены одновременно) блокировал event loop навсегда.

@@ -207,7 +207,7 @@ function _openCheckinPreviewModal() {
   const title = document.getElementById('checkin-preview-title');
   const survey = document.getElementById('checkin-finish-survey');
   const isFinish = _checkinPendingAction === 'finish';
-  title.textContent = isFinish ? 'Фото окончания смены' : 'Фото начала смены';
+  title.textContent = isFinish ? 'Фото окончания смены (минимум 2)' : 'Фото начала смены';
   survey.style.display = isFinish ? 'block' : 'none';
   if (isFinish) {
     // 24.07: default теперь реально накопленное время паузы (кнопка Пауза/Продолжить
@@ -247,7 +247,8 @@ function _renderCheckinPreview() {
       _renderCheckinPreview();
     });
   });
-  confirmBtn.disabled = _checkinPreviewFiles.length < 1;
+  const minRequired = _checkinPendingAction === 'finish' ? 2 : 1;
+  confirmBtn.disabled = _checkinPreviewFiles.length < minRequired;
   confirmBtn.textContent = _checkinPreviewFiles.length
     ? `Подтвердить (${_checkinPreviewFiles.length} фото)` : 'Подтвердить';
 }
@@ -284,6 +285,10 @@ async function _confirmCheckinPreview() {
     if (!doneEl.value.trim() || !nextEl.value.trim()) {
       showToast('Заполни "Что сделано за день" и "Что нужно подготовить на завтра" — обязательные поля', 'error');
       (!doneEl.value.trim() ? doneEl : nextEl).focus();
+      return;
+    }
+    if (_checkinPreviewFiles.length < 2) {
+      showToast('Прикрепи минимум 2 фото выполненной работы', 'error');
       return;
     }
   }
