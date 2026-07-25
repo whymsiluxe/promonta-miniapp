@@ -311,7 +311,14 @@ async function _appendCheckinShortcut(panel, objectId) {
     btn.textContent = '▶ Начать смену';
   }
   btn.addEventListener('click', () => {
-    _stagesCurrentObjectId = objectId;
+    // 25.07: БАГ был тут -- всегда брали objectId текущего ЭКРАНА, а не объект, на
+    // котором смена реально открыта (activeObjectId, уже вычислен выше через
+    // _findActiveWorkerCheckinObjectId, который читает /api/checkin и знает правду).
+    // Если юзер начал смену на объекте А (например через FAB), а зашёл завершать
+    // с экрана объекта Б -- _getActiveCheckinSession(Б) не находил сессию, finish
+    // уходил с неверным/пустым session.id, смена оставалась "идёт" на бэкенде,
+    // хотя фото уже успевали куда-то загрузиться отдельным запросом.
+    _stagesCurrentObjectId = activeObjectId || objectId;
     _openCheckinStatusScreen();
   });
 }
