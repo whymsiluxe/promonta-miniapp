@@ -46,7 +46,7 @@ async function loadTasks() {
     list.querySelectorAll('[data-task-open-chat]').forEach(btn => {
       btn.addEventListener('click', () => {
         if (typeof openObjectOrMangelChat === 'function') {
-          openObjectOrMangelChat(`task:${btn.dataset.taskOpenChat}`, `Потребность: ${btn.dataset.taskTitle}`, 'mangel');
+          openObjectOrMangelChat(`task:${btn.dataset.taskOpenChat}`, `Потребность: ${btn.dataset.taskTitle}`, 'tasks');
         }
       });
     });

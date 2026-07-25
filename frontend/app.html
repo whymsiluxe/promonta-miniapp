@@ -3583,6 +3583,12 @@ function switchView(viewName, opts = {}) {
   const navItem = document.querySelector(`.nav-item[data-view="${viewName}"]`);
   if (navItem) navItem.classList.add('active');
 
+  // 25.07: радио-виджет закреплён только на Home по явному запросу -- раньше он был
+  // глобальным position:fixed узлом в <body> (radio.js создаёт его вне любого .view),
+  // поэтому был виден плавающим поверх ВСЕХ вкладок, включая объекты/чат/профиль.
+  const radioFab = document.getElementById('radio-fab');
+  if (radioFab) radioFab.style.display = viewName === 'home' ? '' : 'none';
+
   const isFullView = viewName === 'chat' || viewName === 'ai';
   // 24.07: nav-bar больше НЕ скрывается в чате — юзер явно попросил видеть его на всех
   // вкладках, включая чат. isFullView остаётся (ниже) только для клавиатурного/скролл-фикса
