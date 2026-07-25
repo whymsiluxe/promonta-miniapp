@@ -1228,7 +1228,28 @@ def _save_object_info(data: dict):
 
 def _object_info_entry(object_id: str) -> dict:
     data = _load_object_info()
-    return data.get(object_id, {"items": [], "documents": []})
+    return data.get(object_id, {"items": [], "documents": [], "description": ""})
+
+
+# 25.07: Инфо-таб реструктурирован (6 плоских табов -> 2), владелец попросил
+# добавить нормальный блок "Описание объекта" -- переиспользуем тот же per-object
+# JSON store, что уже хранит items/documents, не заводим отдельный файл.
+@app.get("/api/objects/{object_id}/description")
+def get_object_description(object_id: str, user: dict = Depends(get_current_user)):
+    return {"description": _object_info_entry(object_id).get("description", "")}
+
+
+class ObjectDescriptionBody(BaseModel):
+    description: str
+
+
+@app.patch("/api/objects/{object_id}/description")
+def update_object_description(object_id: str, body: ObjectDescriptionBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    data = _load_object_info()
+    entry = data.setdefault(object_id, {"items": [], "documents": [], "description": ""})
+    entry["description"] = body.description.strip()[:2000]
+    _save_object_info(data)
+    return {"description": entry["description"]}
 
 
 @app.get("/api/objects/{object_id}/info-items")

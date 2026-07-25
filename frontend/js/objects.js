@@ -642,26 +642,15 @@ function _initObjDetailTab(tab) {
     return;
   }
   if (tab === 'info') {
+    // 25.07 v3: Инфо рендерит всю сводку (статус/описание/работы/этапы/дефекты/документы)
+    // одним вызовом. Потребности -- отдельный object-scoped таб (см. ниже), не часть Инфо.
     renderObjectInfoTab(_objDetailCurrentId);
-    return;
-  }
-  if (tab === 'tasks') {
-    renderObjectTasksTab(_objDetailCurrentId);
     return;
   }
   if (tab === 'needs') {
     renderObjectNeedsTab(_objDetailCurrentId);
     return;
   }
-  if (tab === 'defects') {
-    renderObjectDefectsTab(_objDetailCurrentId);
-    return;
-  }
-  if (tab === 'stages') {
-    renderObjectStagesTab(_objDetailCurrentId);
-    return;
-  }
-  // one at a time -- placeholder keeps the shell testable/deployable on its own first.
   panel.innerHTML = `<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>`;
 }
 
@@ -670,7 +659,7 @@ function _initObjDetailTab(tab) {
 // зонами со своим горизонтальным/вертикальным взаимодействием (сама строка табов уже
 // скроллится тапом -- не нужно вдобавок дёргать её свайпом; чат-композер/сообщения,
 // roadmap move-кнопки -- те же exclusion-соображения что у глобального swipe-nav.js).
-const OBJ_DETAIL_TAB_ORDER = ['chat', 'info', 'tasks', 'needs', 'defects', 'stages'];
+const OBJ_DETAIL_TAB_ORDER = ['chat', 'info', 'needs'];
 let _objTabSwipeStartX = 0;
 let _objTabSwipeStartY = 0;
 let _objTabSwipeExcluded = false;

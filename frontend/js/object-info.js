@@ -2,11 +2,14 @@
 // Work-items (текст+кол-во) + документы (upload/просмотр). Данные per-object,
 // backend: /api/objects/{id}/info-items, /api/objects/{id}/documents.
 
+// 25.07 v3: полная реструктуризация Инфо-таба -- владелец явно попросил свести
+// 6 плоских табов (Чат/Инфо/Задачи/Потребности/Дефекты/Этапы) до 2 (Чат/Инфо),
+// а Инфо превратить в рабочую сводку объекта: статус -> описание -> работы
+// (Объёмы|Задачи toggle) -> этапы -> дефекты (сводка) -> документы (сводка).
+// Пустые состояния -- компактная строка с кнопкой действия, не большая надпись
+// "пока нет данных" (owner explicitly called this out as looking unfinished).
 async function renderObjectInfoTab(objectId) {
   const panel = document.getElementById('obj-detail-panel-info');
-  // 25.07: статус-редактор перенесён сюда из превью-карточки списка объектов --
-  // тот дублировал статус в трёх местах на одной карточке (hero pill + chip + этот
-  // switch), owner-only редактирование в списке было решено переместить в detail.
   const statusEditorHtml = currentRole === 'owner' ? `
     <div class="obj-info-section">
       <div class="obj-info-section-title">Статус объекта</div>
@@ -16,22 +19,41 @@ async function renderObjectInfoTab(objectId) {
         ).join('')}
       </div>
     </div>` : '';
+
   panel.innerHTML = `
     ${statusEditorHtml}
     <div class="obj-info-section">
-      <div class="obj-info-section-title">Работы по объекту</div>
-      <div id="obj-info-items-list" class="obj-info-items-list"></div>
-      <div class="obj-info-add-row">
-        <input type="text" id="obj-info-item-text" class="obj-info-input" placeholder="Например: Штукатурка">
-        <input type="text" id="obj-info-item-qty" class="obj-info-input obj-info-input-qty" placeholder="100м²">
-        <button id="obj-info-item-add" class="obj-info-add-btn" type="button">+</button>
-      </div>
+      <div class="obj-info-section-title">Описание</div>
+      <div id="obj-info-description-view"></div>
     </div>
     <div class="obj-info-section">
-      <div class="obj-info-section-title">Документы</div>
-      <div id="obj-info-docs-list" class="obj-info-docs-list"></div>
-      <input type="file" id="obj-info-doc-file" accept="image/*,.pdf" style="display:none;">
-      <button id="obj-info-doc-add" class="obj-info-add-doc-btn" type="button">+ Прикрепить файл</button>
+      <div class="obj-info-section-title-row">
+        <span class="obj-info-section-title" style="margin-bottom:0;">Работы</span>
+        <div class="doc-type-switch obj-info-subtabs" id="obj-works-subtabs">
+          <div class="doc-type-opt active" data-works-tab="volumes">Объёмы</div>
+          <div class="doc-type-opt" data-works-tab="tasks">Задачи</div>
+        </div>
+      </div>
+      <div id="obj-works-panel-volumes"></div>
+      <div id="obj-works-panel-tasks" style="display:none;"></div>
+    </div>
+    <div class="obj-info-section">
+      <div class="obj-info-section-title">Этапы</div>
+      <div id="obj-info-stages-summary"></div>
+    </div>
+    <div class="obj-info-section">
+      <div class="obj-info-section-title-row">
+        <span class="obj-info-section-title" style="margin-bottom:0;">Дефекты</span>
+        <span id="obj-info-defects-count" class="obj-info-count-badge"></span>
+      </div>
+      <div id="obj-info-defects-summary"></div>
+    </div>
+    <div class="obj-info-section">
+      <div class="obj-info-section-title-row">
+        <span class="obj-info-section-title" style="margin-bottom:0;">Документы</span>
+        <span id="obj-info-docs-count" class="obj-info-count-badge"></span>
+      </div>
+      <div id="obj-info-docs-summary"></div>
     </div>
   `;
 
@@ -57,13 +79,173 @@ async function renderObjectInfoTab(objectId) {
     });
   }
 
-  document.getElementById('obj-info-item-add').addEventListener('click', () => _addObjInfoItem(objectId));
-  document.getElementById('obj-info-doc-add').addEventListener('click', () => document.getElementById('obj-info-doc-file').click());
+  document.getElementById('obj-works-subtabs').querySelectorAll('.doc-type-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      const tab = opt.dataset.worksTab;
+      document.getElementById('obj-works-subtabs').querySelectorAll('.doc-type-opt').forEach(o => o.classList.toggle('active', o === opt));
+      document.getElementById('obj-works-panel-volumes').style.display = tab === 'volumes' ? 'block' : 'none';
+      document.getElementById('obj-works-panel-tasks').style.display = tab === 'tasks' ? 'block' : 'none';
+    });
+  });
+
+  await Promise.all([
+    _renderObjDescriptionSection(objectId),
+    _renderObjWorksVolumesSection(objectId),
+    _renderObjWorksTasksSection(objectId),
+    _renderObjStagesSummary(objectId),
+    _renderObjDefectsSummary(objectId),
+    _renderObjDocsSummary(objectId),
+  ]);
+}
+
+// ── Описание объекта ──
+async function _renderObjDescriptionSection(objectId) {
+  const wrap = document.getElementById('obj-info-description-view');
+  if (!wrap) return;
+  let description = '';
+  try {
+    const res = await api(`/api/objects/${objectId}/description`);
+    description = res.description || '';
+  } catch (e) { /* тихо -- секция просто покажет пустое состояние */ }
+
+  if (!description && currentRole !== 'owner') {
+    wrap.innerHTML = '';
+    return;
+  }
+  if (!description) {
+    wrap.innerHTML = `<div class="obj-info-empty-row"><span>Описание не добавлено</span><button class="obj-info-empty-action" id="obj-desc-add-btn" type="button">+ Добавить описание</button></div>`;
+    document.getElementById('obj-desc-add-btn').addEventListener('click', () => _openObjDescriptionEditor(objectId, ''));
+    return;
+  }
+  wrap.innerHTML = `<div class="obj-info-description-text" id="obj-desc-text">${esc(description).replace(/\n/g, '<br>')}</div>`;
+  if (currentRole === 'owner') {
+    wrap.innerHTML += `<button class="obj-info-empty-action" id="obj-desc-edit-btn" type="button" style="margin-top:0.5rem;">Изменить</button>`;
+    document.getElementById('obj-desc-edit-btn').addEventListener('click', () => _openObjDescriptionEditor(objectId, description));
+  }
+}
+
+function _openObjDescriptionEditor(objectId, current) {
+  const text = prompt('Описание объекта:', current);
+  if (text === null) return;
+  api(`/api/objects/${objectId}/description`, { method: 'PATCH', body: JSON.stringify({ description: text }) })
+    .then(() => { hapticImpact('light'); _renderObjDescriptionSection(objectId); })
+    .catch(e => showToast('Ошибка: ' + e.message, 'error'));
+}
+
+// ── Работы -> Объёмы ── (переиспользует существующий /api/objects/{id}/info-items store)
+async function _renderObjWorksVolumesSection(objectId) {
+  const wrap = document.getElementById('obj-works-panel-volumes');
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <div id="obj-info-items-list" class="obj-info-items-list"></div>
+    ${currentRole === 'owner' ? `
+    <div class="obj-info-add-row">
+      <input type="text" id="obj-info-item-text" class="obj-info-input" placeholder="Например: Штукатурка">
+      <input type="text" id="obj-info-item-qty" class="obj-info-input obj-info-input-qty" placeholder="100м²">
+      <button id="obj-info-item-add" class="obj-info-add-btn" type="button">+</button>
+    </div>` : ''}
+  `;
+  document.getElementById('obj-info-item-add')?.addEventListener('click', () => _addObjInfoItem(objectId));
+  await _loadObjInfoItems(objectId);
+}
+
+// ── Работы -> Задачи ── (переиспользует существующий рендер задач)
+async function _renderObjWorksTasksSection(objectId) {
+  const wrap = document.getElementById('obj-works-panel-tasks');
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <div id="obj-tasks-list" class="obj-info-items-list"></div>
+    ${currentRole === 'owner' ? `
+    <div class="obj-info-add-row">
+      <input type="text" id="obj-tasks-new-text" class="obj-info-input" placeholder="Новая задача">
+      <button id="obj-tasks-add-btn" class="obj-info-add-btn" type="button">+</button>
+    </div>` : ''}
+  `;
+  const listEl = document.getElementById('obj-tasks-list');
+  await loadTasks(objectId, listEl, null);
+  const addBtn = document.getElementById('obj-tasks-add-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', async () => {
+      const textEl = document.getElementById('obj-tasks-new-text');
+      const text = textEl.value.trim();
+      if (!text) return;
+      try {
+        await api(`/api/objects/${objectId}/tasks`, { method: 'POST', body: JSON.stringify({ text }) });
+        textEl.value = '';
+        hapticImpact('light');
+        await loadTasks(objectId, listEl, null);
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  }
+}
+
+// ── Этапы (компактная сводка, полный roadmap живёт по клику -- переиспользует
+// renderObjectStagesTab-логику, просто рендерит в новый контейнер) ──
+async function _renderObjStagesSummary(objectId) {
+  const wrap = document.getElementById('obj-info-stages-summary');
+  if (!wrap) return;
+  wrap.innerHTML = `<div id="obj-stages-roadmap" class="obj-stages-roadmap"></div>`;
+  await _loadObjStages(objectId);
+  if (currentRole !== 'owner' && typeof _openCheckinStatusScreen === 'function') {
+    _appendCheckinShortcut(wrap, objectId);
+  }
+}
+
+// ── Дефекты (компактная сводка) ──
+async function _renderObjDefectsSummary(objectId) {
+  const wrap = document.getElementById('obj-info-defects-summary');
+  const countEl = document.getElementById('obj-info-defects-count');
+  if (!wrap) return;
+  try {
+    const { tickets } = await api(`/api/mangel?object_id=${encodeURIComponent(objectId)}`);
+    const open = tickets.filter(t => t.status !== 'закрыт');
+    if (countEl) countEl.textContent = open.length ? `${open.length} открытых` : '';
+    if (!tickets.length) {
+      wrap.innerHTML = `<div class="obj-info-empty-row"><span>Дефектов нет</span><button class="obj-info-empty-action" id="obj-defect-add-btn" type="button">+ Создать</button></div>`;
+    } else {
+      const preview = open.slice(0, 3);
+      wrap.innerHTML = preview.map(t => `
+        <div class="obj-info-item-row" data-ticket-id="${t.id}" style="cursor:pointer;">
+          <span class="obj-info-item-text">${esc(t.title || t.description || '')}</span>
+          <span class="obj-info-item-qty">${esc(t.status || '')}</span>
+        </div>`).join('')
+        + `<div class="obj-info-actions-row">
+             <button class="obj-info-empty-action" id="obj-defects-all-btn" type="button">Все дефекты</button>
+             <button class="obj-info-empty-action" id="obj-defect-add-btn" type="button">+ Добавить дефект</button>
+           </div>`;
+      wrap.querySelectorAll('[data-ticket-id]').forEach(row => {
+        row.addEventListener('click', () => openMangelTicketModal(row.dataset.ticketId));
+      });
+    }
+    document.getElementById('obj-defects-all-btn')?.addEventListener('click', () => {
+      window._pendingMangelObjectFilter = objectId;
+      switchView('mangel');
+    });
+    document.getElementById('obj-defect-add-btn')?.addEventListener('click', () => {
+      // Переиспользуем существующую кнопку создания дефекта на экране Дефекты --
+      // programmatic click вместо дублирования её open-form логики здесь.
+      window._pendingMangelObjectFilter = objectId;
+      switchView('mangel');
+      setTimeout(() => document.getElementById('mangel-new-btn')?.click(), 150);
+    });
+  } catch (e) {
+    wrap.innerHTML = `<div class="obj-info-empty-row"><span>Ошибка: ${esc(e.message)}</span></div>`;
+  }
+}
+
+// ── Документы (компактная сводка) ──
+async function _renderObjDocsSummary(objectId) {
+  const wrap = document.getElementById('obj-info-docs-summary');
+  const countEl = document.getElementById('obj-info-docs-count');
+  if (!wrap) return;
+  wrap.innerHTML = `<div id="obj-info-docs-list" class="obj-info-docs-list"></div>
+    <input type="file" id="obj-info-doc-file" accept="image/*,.pdf" style="display:none;">`;
   document.getElementById('obj-info-doc-file').addEventListener('change', (e) => {
     if (e.target.files[0]) _uploadObjInfoDoc(objectId, e.target.files[0]);
   });
-
-  await Promise.all([_loadObjInfoItems(objectId), _loadObjInfoDocs(objectId)]);
+  await _loadObjInfoDocs(objectId, countEl);
 }
 
 async function _loadObjInfoItems(objectId) {
@@ -72,7 +254,7 @@ async function _loadObjInfoItems(objectId) {
   try {
     const { items } = await api(`/api/objects/${objectId}/info-items`);
     if (!items.length) {
-      list.innerHTML = `<div class="obj-info-empty">Пока нет добавленных работ</div>`;
+      list.innerHTML = `<div class="obj-info-empty-row"><span>Работы 0</span></div>`;
       return;
     }
     list.innerHTML = items.map(i => `
@@ -112,13 +294,15 @@ function _objInfoDocIcon(contentType) {
   return `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 2v6h6"/></svg>`;
 }
 
-async function _loadObjInfoDocs(objectId) {
+async function _loadObjInfoDocs(objectId, countEl) {
   const list = document.getElementById('obj-info-docs-list');
   if (!list) return;
   try {
     const { documents } = await api(`/api/objects/${objectId}/documents`);
+    if (countEl) countEl.textContent = documents.length || '';
     if (!documents.length) {
-      list.innerHTML = `<div class="obj-info-empty">Нет прикреплённых файлов</div>`;
+      list.innerHTML = `<div class="obj-info-empty-row"><span>Документы 0</span><button class="obj-info-empty-action" id="obj-doc-add-empty-btn" type="button">+ Прикрепить</button></div>`;
+      document.getElementById('obj-doc-add-empty-btn')?.addEventListener('click', () => document.getElementById('obj-info-doc-file').click());
       return;
     }
     list.innerHTML = documents.map(d => `
@@ -126,12 +310,13 @@ async function _loadObjInfoDocs(objectId) {
         <span class="obj-info-doc-icon">${_objInfoDocIcon(d.content_type)}</span>
         <span class="obj-info-doc-name">${esc(d.name)}</span>
       </div>
-    `).join('');
+    `).join('') + `<button class="obj-info-empty-action" id="obj-doc-add-more-btn" type="button" style="margin-top:0.4rem;">+ Прикрепить</button>`;
     list.querySelectorAll('.obj-info-doc-row').forEach(row => {
       row.addEventListener('click', () => _openObjInfoDocViewer(objectId, row.dataset.docFile, row.dataset.docType, row.dataset.docName));
     });
+    document.getElementById('obj-doc-add-more-btn')?.addEventListener('click', () => document.getElementById('obj-info-doc-file').click());
   } catch (e) {
-    list.innerHTML = `<div class="obj-info-empty">Ошибка: ${esc(e.message)}</div>`;
+    list.innerHTML = `<div class="obj-info-empty-row"><span>Ошибка: ${esc(e.message)}</span></div>`;
   }
 }
 
@@ -188,42 +373,11 @@ function _closeObjInfoDocViewer() {
   if (viewer) viewer.style.display = 'none';
 }
 
-// ═══════════ Задачи объекта — Step 4 ═══════════
-// Owner -> worker, переиспользует loadTasks/attachTaskHandlers/renderTaskRow (objects.js),
-// уже принимают произвольные listEl/countEl -- сюда встраиваются как есть, без дублирования.
-async function renderObjectTasksTab(objectId) {
-  const panel = document.getElementById('obj-detail-panel-tasks');
-  panel.innerHTML = `
-    <div id="obj-tasks-list" class="obj-info-items-list"></div>
-    ${currentRole === 'owner' ? `
-    <div class="obj-info-add-row">
-      <input type="text" id="obj-tasks-new-text" class="obj-info-input" placeholder="Новая задача">
-      <button id="obj-tasks-add-btn" class="obj-info-add-btn" type="button">+</button>
-    </div>` : ''}
-  `;
-  const listEl = document.getElementById('obj-tasks-list');
-  await loadTasks(objectId, listEl, null);
-
-  const addBtn = document.getElementById('obj-tasks-add-btn');
-  if (addBtn) {
-    addBtn.addEventListener('click', async () => {
-      const textEl = document.getElementById('obj-tasks-new-text');
-      const text = textEl.value.trim();
-      if (!text) return;
-      try {
-        await api(`/api/objects/${objectId}/tasks`, { method: 'POST', body: JSON.stringify({ text }) });
-        textEl.value = '';
-        hapticImpact('light');
-        await loadTasks(objectId, listEl, null);
-      } catch (e) {
-        showToast('Ошибка: ' + e.message, 'error');
-      }
-    });
-  }
-}
-
-// ═══════════ Потребности объекта — Step 4 ═══════════
-// Worker -> owner, глобальный /api/tasks с новым object_id-фильтром (backend Step 4).
+// 25.07 v3: Задачи объекта и Дефекты (список) теперь рендерятся внутри Инфо
+// (см. _renderObjWorksTasksSection/_renderObjDefectsSummary выше). Потребности
+// остаются отдельным object-scoped табом (owner передумал после первого прохода --
+// хотел сначала убрать в Инфо, затем явно попросил вернуть как полноценный
+// top-level таб наравне с Чат/Инфо, доступный и owner и worker).
 function _renderNeedRow(n) {
   return `
   <div class="obj-info-item-row">
@@ -268,42 +422,12 @@ async function _loadObjNeeds(objectId) {
   try {
     const { tasks } = await api(`/api/tasks?object_id=${encodeURIComponent(objectId)}`);
     if (!tasks.length) {
-      list.innerHTML = `<div class="obj-info-empty">Потребностей нет</div>`;
+      list.innerHTML = `<div class="obj-info-empty-row"><span>Потребностей нет</span></div>`;
       return;
     }
     list.innerHTML = tasks.map(_renderNeedRow).join('');
   } catch (e) {
-    list.innerHTML = `<div class="obj-info-empty">Ошибка: ${esc(e.message)}</div>`;
-  }
-}
-
-// ═══════════ Дефекты объекта — Step 5 ═══════════
-// Постоянный object_id-фильтр вместо одноразового window._pendingMangelObjectFilter
-// (тот флаг остаётся как есть для общей Дефекты-вкладки -- не трогаем). Список карточек,
-// не полный kanban с drag-and-drop (тот завязан на глобальные #mangel-col-* ID, не
-// параметризован под произвольный контейнер) -- переиспользуем только карточку и модалку.
-async function renderObjectDefectsTab(objectId) {
-  const panel = document.getElementById('obj-detail-panel-defects');
-  panel.innerHTML = `<div id="obj-defects-list" class="obj-info-items-list"></div>`;
-  await _loadObjDefects(objectId);
-}
-
-async function _loadObjDefects(objectId) {
-  const list = document.getElementById('obj-defects-list');
-  if (!list) return;
-  try {
-    const { tickets } = await api(`/api/mangel?object_id=${encodeURIComponent(objectId)}`);
-    if (!tickets.length) {
-      list.innerHTML = `<div class="obj-info-empty">Дефектов нет</div>`;
-      return;
-    }
-    list.innerHTML = tickets.map(renderMangelTicketCard).join('');
-    document.querySelectorAll('#obj-defects-list [data-auth-bg]').forEach(el => authBgImage(el, el.dataset.authBg));
-    list.querySelectorAll('.mangel-card').forEach(card => {
-      card.addEventListener('click', () => openMangelTicketModal(card.dataset.ticketId));
-    });
-  } catch (e) {
-    list.innerHTML = `<div class="obj-info-empty">Ошибка: ${esc(e.message)}</div>`;
+    list.innerHTML = `<div class="obj-info-empty-row"><span>Ошибка: ${esc(e.message)}</span></div>`;
   }
 }
 
@@ -316,16 +440,6 @@ async function _loadObjDefects(objectId) {
 // этапе (backend worker_complete_stage сам это перепроверяет, фронт не единственная защита).
 const OBJ_STAGE_STATUS_LABEL = { 'предстоит': 'Предстоит', 'в процессе': 'В процессе', 'готово': 'Готово' };
 
-async function renderObjectStagesTab(objectId) {
-  const panel = document.getElementById('obj-detail-panel-stages');
-  panel.innerHTML = `<div id="obj-stages-roadmap" class="obj-stages-roadmap"></div>`;
-  await _loadObjStages(objectId);
-  // Checkin shortcut для работника — владелец смены не отмечает, FAB есть у всех,
-  // но вход со страницы этапов интуитивен: тут видно текущий этап и хочется начать смену.
-  if (currentRole !== 'owner' && typeof _openCheckinStatusScreen === 'function') {
-    _appendCheckinShortcut(panel, objectId);
-  }
-}
 
 async function _appendCheckinShortcut(panel, objectId) {
   const wrap = document.createElement('div');

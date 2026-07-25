@@ -1009,6 +1009,18 @@ header h1 {
 .obj-info-doc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .obj-info-add-doc-btn { width: 100%; padding: 0.7rem; border-radius: var(--radius-sm); border: 1px dashed var(--border-color); background: none; color: var(--text-light); font-size: 0.9rem; cursor: pointer; }
 .obj-info-empty { padding: 1rem 0.5rem; text-align: center; color: var(--text-light); font-size: 0.85rem; }
+/* 25.07 v3: Инфо-таб реструктурирован -- пустые состояния теперь компактная строка
+   с кнопкой-действием, не большая надпись "пока нет данных" (owner: "делает интерфейс
+   похожим на незаконченный прототип"). */
+.obj-info-empty-row { display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0.8rem; background: var(--bg-card); border-radius: var(--radius-sm); color: var(--text-light); font-size: 0.88rem; }
+.obj-info-empty-action { flex-shrink: 0; background: none; border: none; color: var(--c-accent, var(--accent)); font-size: 0.85rem; font-weight: 600; cursor: pointer; padding: 0.3rem 0.4rem; }
+.obj-info-actions-row { display: flex; gap: 0.6rem; margin-top: 0.3rem; }
+.obj-info-actions-row .obj-info-empty-action { flex: 1; text-align: center; background: var(--bg-card); border-radius: var(--radius-sm); padding: 0.55rem; }
+.obj-info-section-title-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem; }
+.obj-info-count-badge { font-size: 0.8rem; color: var(--text-light); font-weight: 500; }
+.obj-info-description-text { padding: 0.7rem 0.8rem; background: var(--bg-card); border-radius: var(--radius-sm); font-size: 0.9rem; color: var(--text-main); line-height: 1.5; white-space: pre-wrap; }
+.obj-info-subtabs { margin: 0; }
+.obj-info-subtabs .doc-type-opt { padding: 0.35rem 0.7rem; font-size: 0.82rem; }
 
 #obj-info-doc-viewer { display: none; position: fixed; inset: 0; z-index: 400; background: var(--bg-app); flex-direction: column; }
 .obj-doc-viewer-header { display: flex; align-items: center; gap: 0.5rem; padding: calc(0.6rem + var(--tg-safe-top, 0px)) 0.75rem 0.6rem; flex-shrink: 0; }
@@ -2981,20 +2993,18 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
       <button class="back-btn" id="obj-detail-back">←</button>
       <h1 id="obj-detail-title">Объект</h1>
     </div>
+    <!-- 25.07 v3: 6 плоских табов -> 3 (Чат/Инфо/Потребности), одинаково для обеих ролей.
+         Задачи/Дефекты/Этапы теперь секции ВНУТРИ Инфо (не отдельные top-level экраны),
+         Потребности остаётся отдельным object-scoped табом по явному требованию владельца
+         (worker->owner заявки, отдельная семантика от Работ/Задач). -->
     <div class="doc-type-switch chat-filter-tabs" id="obj-detail-tabs">
       <div class="doc-type-opt active" data-obj-tab="chat">Чат</div>
       <div class="doc-type-opt" data-obj-tab="info">Инфо</div>
-      <div class="doc-type-opt" data-obj-tab="tasks">Задачи</div>
       <div class="doc-type-opt" data-obj-tab="needs">Потребности</div>
-      <div class="doc-type-opt" data-obj-tab="defects">Дефекты</div>
-      <div class="doc-type-opt" data-obj-tab="stages">Этапы</div>
     </div>
     <div id="obj-detail-panel-chat" class="obj-detail-panel" style="display:block;"></div>
     <div id="obj-detail-panel-info" class="obj-detail-panel" style="display:none;"></div>
-    <div id="obj-detail-panel-tasks" class="obj-detail-panel" style="display:none;"></div>
     <div id="obj-detail-panel-needs" class="obj-detail-panel" style="display:none;"></div>
-    <div id="obj-detail-panel-defects" class="obj-detail-panel" style="display:none;"></div>
-    <div id="obj-detail-panel-stages" class="obj-detail-panel" style="display:none;"></div>
   </div>
 
   <div id="stages-view">
