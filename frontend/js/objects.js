@@ -683,6 +683,26 @@ function _initObjDetailTab(tab) {
   panel.innerHTML = `<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>`;
 }
 
+// 25.07: свайп-переключение между 6 табами объекта (тот же UX, что юзер уже одобрил
+// в подвкладках Чата) -- жест ловится на весь #view-object-detail, но глушится над
+// зонами со своим горизонтальным/вертикальным взаимодействием (сама строка табов уже
+// скроллится тапом -- не нужно вдобавок дёргать её свайпом; чат-композер/сообщения,
+// roadmap move-кнопки -- те же exclusion-соображения что у глобального swipe-nav.js).
+const OBJ_DETAIL_TAB_ORDER = ['chat', 'info', 'tasks', 'needs', 'defects', 'stages'];
+let _objTabSwipeStartX = 0;
+let _objTabSwipeStartY = 0;
+let _objTabSwipeExcluded = false;
+const OBJ_TAB_SWIPE_THRESHOLD = 50;
+
+function _isObjTabSwipeExcluded(target) {
+  return !!target.closest?.('#obj-detail-tabs, .chat-messages, .chat-input-bar, .obj-stage-move-col, .obj-info-doc-viewer, #obj-info-doc-viewer, input, textarea');
+}
+
+function _currentObjDetailTab() {
+  const active = document.querySelector('#obj-detail-tabs .doc-type-opt.active');
+  return active ? active.dataset.objTab : 'chat';
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const backBtn = document.getElementById('obj-detail-back');
   if (backBtn) backBtn.addEventListener('click', closeObjectDetail);
@@ -690,4 +710,27 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('#obj-detail-tabs .doc-type-opt').forEach(opt => {
     opt.addEventListener('click', () => _objDetailTabClick(opt.dataset.objTab));
   });
+
+  const detailView = document.getElementById('view-object-detail');
+  if (detailView) {
+    detailView.addEventListener('touchstart', (e) => {
+      _objTabSwipeStartX = e.changedTouches[0].screenX;
+      _objTabSwipeStartY = e.changedTouches[0].screenY;
+      _objTabSwipeExcluded = _isObjTabSwipeExcluded(e.target);
+    }, { passive: true });
+
+    detailView.addEventListener('touchend', (e) => {
+      if (_objTabSwipeExcluded) return;
+      const diffX = e.changedTouches[0].screenX - _objTabSwipeStartX;
+      const diffY = e.changedTouches[0].screenY - _objTabSwipeStartY;
+      if (Math.abs(diffX) < OBJ_TAB_SWIPE_THRESHOLD) return;
+      if (Math.abs(diffX) < Math.abs(diffY)) return; // вертикальный скролл контента -- не наш жест
+
+      const curIdx = OBJ_DETAIL_TAB_ORDER.indexOf(_currentObjDetailTab());
+      const nextIdx = diffX < 0 ? curIdx + 1 : curIdx - 1;
+      if (nextIdx < 0 || nextIdx >= OBJ_DETAIL_TAB_ORDER.length) return;
+      hapticImpact('light');
+      _objDetailTabClick(OBJ_DETAIL_TAB_ORDER[nextIdx]);
+    }, { passive: true });
+  }
 });
