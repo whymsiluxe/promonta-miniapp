@@ -1763,9 +1763,23 @@ body.view-locked {
 
 .chat-msg-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.4rem;
   margin-bottom: 2px;
+}
+
+.chat-msg-avatar {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .chat-name {

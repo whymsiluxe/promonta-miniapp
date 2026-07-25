@@ -77,12 +77,15 @@ function _renderChatMessages(messages) {
     // own/other -- раньше имя показывалось только у чужих сообщений, время отдельной
     // строкой снизу у всех. Header скрыт целиком через CSS на сгруппированных сообщениях
     // (.chat-bubble-grouped .chat-msg-header{display:none}), не дублируем условие тут.
+    const avatarHue = _chatAvatarHue(msg.user_id);
+    const avatarInitial = (msg.name || '?')[0].toUpperCase();
+    const avatarHtml = `<span class="chat-msg-avatar" style="background:hsl(${avatarHue} 45% 42%)" ${!isOwn ? `onclick="openUserCard('${msg.user_id}')"` : ''}>${avatarInitial}</span>`;
     const nameHtml = isOwn
       ? `<span class="chat-name">Вы</span>`
       : `<span class="chat-name" onclick="openUserCard('${msg.user_id}')">${_escChat(msg.name)}</span>`;
     return `${divider}
     <div class="chat-bubble ${isOwn ? 'chat-bubble-own' : 'chat-bubble-other'}${isGrouped ? ' chat-bubble-grouped' : ''}" data-msg-id="${msg.id}" data-uid="${msg.user_id}">
-      <div class="chat-msg-header">${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span></div>
+      <div class="chat-msg-header">${avatarHtml}${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span></div>
       ${msg.attachment ? _renderChatAttachment(msg) : ''}
       ${msg.text ? `<div class="chat-text">${_escChat(msg.text)}</div>` : ''}
     </div>`;
