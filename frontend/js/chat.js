@@ -73,12 +73,18 @@ function _renderChatMessages(messages) {
     const isGrouped = !divider && msg.user_id === lastUid && lastTs !== null && (msg.ts - lastTs) < GROUP_WINDOW_SECONDS;
     lastUid = msg.user_id;
     lastTs = msg.ts;
+    // 25.07: имя+время в одну строку над сообщением (референс Connecteam), для ОБОИХ
+    // own/other -- раньше имя показывалось только у чужих сообщений, время отдельной
+    // строкой снизу у всех. Header скрыт целиком через CSS на сгруппированных сообщениях
+    // (.chat-bubble-grouped .chat-msg-header{display:none}), не дублируем условие тут.
+    const nameHtml = isOwn
+      ? `<span class="chat-name">Вы</span>`
+      : `<span class="chat-name" onclick="openUserCard('${msg.user_id}')">${_escChat(msg.name)}</span>`;
     return `${divider}
     <div class="chat-bubble ${isOwn ? 'chat-bubble-own' : 'chat-bubble-other'}${isGrouped ? ' chat-bubble-grouped' : ''}" data-msg-id="${msg.id}" data-uid="${msg.user_id}">
-      ${!isOwn && !isGrouped ? `<div class="chat-name" style="cursor:pointer" onclick="openUserCard('${msg.user_id}')">${_escChat(msg.name)}</div>` : ''}
+      <div class="chat-msg-header">${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span></div>
       ${msg.attachment ? _renderChatAttachment(msg) : ''}
       ${msg.text ? `<div class="chat-text">${_escChat(msg.text)}</div>` : ''}
-      <div class="chat-time">${_fmtChatTime(msg.ts)}</div>
     </div>`;
   }).join('');
 

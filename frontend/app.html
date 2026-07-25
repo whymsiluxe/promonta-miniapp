@@ -1741,46 +1741,51 @@ body.view-locked {
   font-size: 0.78rem;
 }
 
+/* 25.07: рестайл под референс Connecteam -- плоский текст без bubble-фона, имя+время
+   в одну строку над текстом (было: имя отдельной строкой сверху, время отдельной снизу,
+   весь блок на цветном/белом "пузыре" с закруглениями). Полноширинный ряд вместо
+   max-width:80% выровненного по краю -- ближе к тому как реально выглядит referenced
+   screenshot (не messenger-bubble chat, more like a feed/thread). */
 .chat-bubble {
-  max-width: 80%;
-  width: fit-content;
-  padding: 0.55rem 0.8rem;
-  border-radius: var(--radius-lg);
+  width: 100%;
+  padding: 0.3rem 0.2rem;
   word-break: break-word;
   overflow-wrap: break-word;
   box-sizing: border-box;
 }
 
-.chat-bubble-own {
-  align-self: flex-end;
-  background: var(--primary);
-  color: white;
-  border-bottom-right-radius: 4px;
+.chat-bubble-own, .chat-bubble-other {
+  align-self: stretch;
+  background: none;
+  border: none;
+  color: var(--text-main);
 }
 
-.chat-bubble-other {
-  align-self: flex-start;
-  background: var(--bg-white);
-  border: 1px solid var(--border-color);
-  border-bottom-left-radius: 4px;
+.chat-msg-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-bottom: 2px;
 }
 
 .chat-name {
-  font-size: 0.68rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-light);
-  margin-bottom: 2px;
+  color: var(--text-main);
+  cursor: pointer;
 }
+
+.chat-bubble-own .chat-msg-header .chat-name { color: var(--c-accent, var(--primary)); }
 
 /* 24.07: группировка последовательных сообщений одного отправителя (Connecteam-стиль
    из брифа) — второе+ сообщение подряд от того же юзера в пределах короткого окна
    времени садится вплотную к предыдущему (не gap:0.5rem контейнера), без повторного
    имени/аватара. JS (_renderChatMessages) решает когда добавлять этот класс. */
-.chat-bubble-grouped { margin-top: -0.35rem; }
+.chat-bubble-grouped { margin-top: -0.15rem; }
+.chat-bubble-grouped .chat-msg-header { display: none; }
 
-.chat-text { font-size: 1rem; line-height: 1.45; white-space: pre-wrap; }
-.chat-time { font-size: 0.62rem; color: var(--text-light); margin-top: 3px; text-align: right; }
-.chat-bubble-own .chat-time { color: rgba(255,255,255,0.65); }
+.chat-text { font-size: 0.95rem; line-height: 1.45; white-space: pre-wrap; }
+.chat-time { font-size: 0.72rem; color: var(--text-light); }
 .chat-empty, .ai-empty { padding: 3rem 1.5rem; text-align: center; color: var(--text-light); font-size: 0.9rem; line-height: 1.6; }
 
 /* AI bubbles */
