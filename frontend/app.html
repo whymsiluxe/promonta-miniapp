@@ -2027,9 +2027,11 @@ body.view-locked {
 .obj-hero-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-60%); font-size: 2.8rem; opacity: 0.7; pointer-events: none; }
 .obj-hero-live-pill { position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(0,0,0,0.65); backdrop-filter: blur(8px); border-radius: 20px; padding: 0.2rem 0.6rem; font-size: 0.75rem; font-weight: 700; color: var(--text-main); white-space: nowrap; }
 .obj-hero-people { position: absolute; bottom: 0.5rem; left: 0.5rem; display: flex; align-items: center; }
-.obj-people-dot { width: 28px; height: 28px; border-radius: 50%; background: var(--bg-card); border: 2px solid var(--bg-app); display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; color: var(--text-main); flex-shrink: 0; }
+/* 25.07: было 28px -- владелец пожаловался "сам кружок мелкий" (карточка объекта/бюджет
+   раздел). Увеличено до 36px, тач-таргет всё ещё компактный при 5 аватарах подряд в ряду. */
+.obj-people-dot { width: 36px; height: 36px; border-radius: 50%; background: var(--bg-card); border: 2px solid var(--bg-app); display: flex; align-items: center; justify-content: center; font-size: 0.78rem; font-weight: 700; color: var(--text-main); flex-shrink: 0; }
 .obj-people-more { background: var(--border-color); color: var(--text-light); margin-left: -8px; }
-.obj-people-add { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-app); display: flex; align-items: center; justify-content: center; font-size: 1rem; color: #000; cursor: pointer; margin-left: 4px; flex-shrink: 0; font-weight: 700; }
+.obj-people-add { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-app); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; color: #000; cursor: pointer; margin-left: 4px; flex-shrink: 0; font-weight: 700; }
 .obj-card-body { padding: 0.65rem 0.75rem 0.5rem; }
 .obj-card-title { font-family: var(--font-heading); font-weight: 800; font-size: 1.1rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .obj-card-address { font-size: 0.9rem; color: var(--text-light); margin-top: 0.15rem; display: flex; align-items: center; gap: 0.3rem; }
@@ -2122,7 +2124,10 @@ body.view-locked {
   color: var(--accent); border-radius: 999px; font-size: 0.75rem; font-weight: 600;
 }
 .profile-week-card { margin: 0 0.75rem 0.75rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 0.85rem; }
-.profile-week-total { color: var(--accent); font-weight: 700; }
+/* 25.07: не задавал свой font-size вообще -- наследовал browser default (~16px) рядом
+   с .kpi-num на Home (1.8rem/~29px), тот самый "разный размер шрифта" разрыв, на который
+   пожаловался владелец. Выравниваем под ту же шкалу, что Home KPI. */
+.profile-week-total { font-family: var(--font-heading); font-size: 1.5rem; color: var(--accent); font-weight: 700; }
 .profile-week-rings { display: flex; justify-content: space-between; gap: 0.25rem; }
 .profile-day-ring { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
 .profile-day-ring .ring-label { font-size: 0.62rem; }
@@ -2193,7 +2198,7 @@ body.view-locked {
 .profile-team-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.9rem; }
 .profile-team-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-team-row:last-child { border-bottom: none; }
-.profile-team-avatar { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.8rem; font-weight: 700; cursor: pointer; }
+.profile-team-avatar { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
 .profile-team-revoke-btn, .profile-team-grant-btn { background: none; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.25rem 0.6rem; font-size: 0.75rem; color: var(--text-light); cursor: pointer; }
 .profile-team-grant-btn { border-color: var(--accent); color: var(--accent); }
 .profile-object-name { font-weight: 700; font-size: 1.05rem; }
