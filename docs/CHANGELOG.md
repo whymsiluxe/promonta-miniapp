@@ -44,6 +44,19 @@ None of today's ~20 commits were tested on a physical device/real Telegram clien
 - Tools screen still 404s from Google Sheets — the OAuth token was never re-consented for that specific spreadsheet after the last token reissue (same root cause as the earlier Objekte fix). Needs the owner to walk through Google's consent screen again; deferred at their request ("не срочно").
 - A checkin session opened 2026-07-22 on OBJ-001 (user 872079437) is still unclosed server-side — left untouched, not this session's data to close without confirmation.
 
+## 2026-07-25 (audit fixes — Grok/MiniMax external review)
+
+### Fixed
+- **Swagger/OpenAPI exposed** (`backend/main.py`): `FastAPI(...)` now sets `docs_url=None, redoc_url=None, openapi_url=None` — `/docs`, `/redoc`, `/openapi.json` were reachable on the backend port (127.0.0.1:8001/docs returned 200 before the fix, 404 after), exposing the full route/schema map. Public `app.promonta.fun/docs` was a false alarm on investigation — Caddy's SPA `try_files` fallback served `app.html` there regardless, not real Swagger UI — but the backend-level fix closes the actual exposure and is correct defense-in-depth regardless.
+- **Dead legacy files servable directly**: `angebot-tab.html`, `projects-tab.html`, `tools-tab.html` (unreferenced by `app.html`/any JS, last touched 2026-07-08, predate current auth model) were served as-is by Caddy on `/var/www/miniapp/` before falling through to the SPA. Archived to `frontend/.archived-legacy/` in repo, moved to a timestamped backup dir on the live frontend host — confirmed all three paths now 200-fallback to the SPA shell instead of serving their own content.
+
+### Added
+- **CSP + security headers** (`/etc/caddy/Caddyfile`, not repo-tracked): `Content-Security-Policy`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`. `script-src`/`style-src` keep `'unsafe-inline'` (app.html has one inline `<script>` block + 18 `onclick=` attributes — removing needs a separate frontend refactor, not bundled here). `X-Frame-Options` deliberately omitted — would conflict with Telegram's WebView iframe embedding; `frame-ancestors` in the CSP already scopes that correctly. Google Fonts domains added to `style-src`/`font-src` after live-testing caught the initial policy blocking them. Verified via Playwright against the live page: zero CSP violations in console.
+- **`scripts/deploy.sh`**: repo→VPS sync (backend `main.py` + frontend `frontend/`) with `py_compile` pre-check, timestamped backups both sides, optional `--restart` flag for the backend service (off by default). Replaces the ad-hoc manual SSH+cp+backup sequence used throughout this session's prior work.
+
+### Deferred (explicit owner decision)
+- **Rate limiting on upload/checkin endpoints** — only `/api/ai-chat` has a rate limit today (20/hr). Checkin-photo AI-analysis endpoints and general uploads have none. Owner's call: all current users are trusted (own workers), not urgent — skipped for now, revisit if abuse/cost-spam ever becomes a real incident.
+
 ## 2026-07-24 (evening — autonomous session)
 
 ### Fixed
