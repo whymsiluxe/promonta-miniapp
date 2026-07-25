@@ -1238,8 +1238,13 @@ header h1 {
 
 .photo-comments-modal {
   /* 23.07: было z-index 500 — ниже #radio-fab (1200), та же bubble-over-modal проблема.
-     Фон был bg-app(теперь тёмный) — pc-comment-text внутри цвета text-main(тёмный), сменил на bg-card. */
+     Фон был bg-app(теперь тёмный) — pc-comment-text внутри цвета text-main(тёмный), сменил на bg-card.
+     25.07: height явно через --tg-vp-height (тот же механизм что #view-chat.active) --
+     раньше полагались на голый inset:0 + браузерный resize, который в Telegram fullscreen
+     НЕ сжимает fixed-контейнер при появлении клавиатуры (тот же класс бага, что был в чате
+     до фикса) -- композер уезжал под клавиатуру / схлопывался до нечитаемой ширины. */
   position: fixed; inset: 0; z-index: 5000; display: flex; flex-direction: column;
+  height: var(--tg-vp-height, 100dvh);
   background: var(--bg-card);
 }
 .photo-comments-modal .pc-header {
@@ -3221,7 +3226,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
   </div>
   <div id="pc-list" class="pc-list"></div>
   <div class="pc-input-row">
-    <input type="text" id="pc-comment-input" placeholder="Комментарий…" class="mangel-select" style="flex:1;">
+    <textarea id="pc-comment-input" placeholder="Комментарий…" class="mangel-select" rows="1" style="flex:1;resize:none;"></textarea>
     <button class="submit-btn" id="pc-comment-send-btn" type="button" style="padding:0.5rem 1rem;">➤</button>
   </div>
 </div>
