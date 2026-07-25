@@ -1551,6 +1551,32 @@ body.chat-dialog-open .bottom-nav { display: none; }
 }
 .chat-back-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
 
+/* ── NavigationHeader (25.07, Phase 0.5) -- 3D ivory back-кнопка по спеку плана ──
+   .nav-back-btn расширяет .chat-back-btn (JS добавляет класс + chevron SVG, не заменяет) --
+   тёплый ivory-градиент, мягкий свет сверху / тень снизу, forest chevron-иконка,
+   press-state: scale(0.96) + inset-тень + chevron сдвигается на -3px, 140ms transition. */
+.nav-back-btn {
+  background: linear-gradient(155deg, var(--bg-card-raised) 0%, var(--bg-card) 100%) !important;
+  border: 1px solid rgba(185,150,135,0.25) !important;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.6) inset,
+    0 2px 5px -2px rgba(185,150,135,0.45),
+    0 6px 12px -6px rgba(185,150,135,0.35);
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.nav-back-btn .nav-back-chevron {
+  color: var(--c-accent, var(--accent));
+  transition: transform 140ms ease;
+}
+.nav-back-btn:active {
+  background: linear-gradient(155deg, var(--bg-card) 0%, var(--bg-card-raised) 100%) !important;
+  transform: scale(0.96);
+  box-shadow:
+    0 1px 3px rgba(0,0,0,0.15) inset,
+    0 1px 2px -1px rgba(185,150,135,0.3);
+}
+.nav-back-btn:active .nav-back-chevron { transform: translateX(-3px); }
+
 #view-chat header, #view-ai header { flex-shrink: 0; }
 
 /* 24.07: заголовок треда (назад + название + замок закрытия) — три элемента в одном
@@ -3458,6 +3484,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <script src="js/theme.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/ui/navigation-manager.js"></script>
+<script src="js/ui/navigation-header.js"></script>
 <script src="js/objects.js"></script>
 <script src="js/object-info.js"></script>
 <script src="js/tools.js"></script>
