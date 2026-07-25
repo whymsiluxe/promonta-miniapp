@@ -1271,9 +1271,14 @@ header h1 {
 .photo-comments-modal .pc-comment-del { margin-left: auto; background: none; border: none; color: var(--text-light); font-size: 0.75rem; cursor: pointer; padding: 0.1rem 0.3rem; }
 .photo-comments-modal .pc-comment-text { color: var(--text-main); }
 .photo-comments-modal .pc-input-row {
-  flex-shrink: 0; display: flex; gap: 0.5rem; padding: 0.6rem 0.75rem;
+  flex-shrink: 0; display: flex; align-items: flex-end; gap: 0.5rem; padding: 0.6rem 0.75rem;
   border-top: 1px solid var(--border-color);
 }
+/* 25.07: textarea flex:1 без min-width:0 проигрывал flex-борьбу за пространство кнопке
+   .submit-btn (та задаёт width:100% как intrinsic-size claim в базовом классе) -- textarea
+   схлопывалась до content-minimum (~40px), кнопка растягивалась почти на всю ширину ряда. */
+.photo-comments-modal .pc-input-row #pc-comment-input { min-width: 0; }
+.photo-comments-modal .pc-input-row #pc-comment-send-btn { width: 48px; min-height: 44px; flex-shrink: 0; }
 
 .section {
   background: var(--bg-white);
