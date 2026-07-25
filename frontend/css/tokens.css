@@ -76,8 +76,11 @@
   --bg-light: var(--bg-app);
   --secondary: var(--text-light);
 
-  --font-heading: 'Manrope', sans-serif;
-  --font-body: 'Montserrat', sans-serif;
+  /* 25.07: единый UI-шрифт -- Montserrat убран (два семейства одновременно давали
+     непоследовательное ощущение, owner explicitly flagged). --font-body раньше
+     указывал на Montserrat, теперь на тот же Manrope, что и заголовки. */
+  --font-heading: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
   --spacing-xs: 0.5rem;
   --spacing-sm: 1rem;
   --spacing-md: 2rem;
