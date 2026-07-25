@@ -2983,7 +2983,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
       <button class="submit-btn checkin-btn" id="checkin-start-btn" type="button">▶ Старт смены</button>
       <button class="submit-btn checkin-btn" id="checkin-pause-toggle-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);display:none;">⏸ Пауза</button>
       <button class="submit-btn checkin-btn" id="checkin-finish-btn" type="button" style="background:var(--red);" disabled>■ Финиш смены</button>
-      <button class="checkin-manual-link" id="checkin-analyze-btn" type="button" style="display:none;">✨ AI-анализ смены</button>
+      <button class="checkin-manual-link" id="checkin-analyze-btn" type="button" style="display:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:0.2rem;"><path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2z" fill="currentColor"/><path d="M19 15l0.7 2.3L22 18l-2.3 0.7L19 21l-0.7-2.3L16 18l2.3-0.7L19 15z" fill="currentColor"/></svg> AI-анализ смены</button>
       <button class="checkin-manual-link" id="checkin-manual-link-btn" type="button">Внести время вручную</button>
     </div>
     <div id="checkin-analysis-result" class="checkin-analysis" style="display:none;"></div>
@@ -3012,7 +3012,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
       </div>
     </div>
 
-    <button class="submit-btn" id="object-chat-btn" type="button" style="margin:1.25rem 0.75rem 0.5rem;width:calc(100% - 1.5rem);background:var(--bg-card-raised);color:var(--text-main);">💬 Чат объекта</button>
+    <button class="submit-btn" id="object-chat-btn" type="button" style="margin:1.25rem 0.75rem 0.5rem;width:calc(100% - 1.5rem);background:var(--bg-card-raised);color:var(--text-main);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><path d="M4 4h16v12H8l-4 4V4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg> Чат объекта</button>
   </div>
 </div>
 
@@ -3099,7 +3099,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 
   <div id="feed-photos-content" style="display:none;">
     <div style="padding:0 0.75rem 0.75rem;">
-      <button class="submit-btn" id="feed-add-photo-btn" type="button">📷 Добавить фото</button>
+      <button class="submit-btn" id="feed-add-photo-btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="2"/></svg> Добавить фото</button>
       <input type="file" id="feed-photo-input-camera" accept="image/*" capture="environment" style="display:none;">
       <input type="file" id="feed-photo-input-gallery" accept="image/*" multiple style="display:none;">
     </div>
@@ -3136,7 +3136,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <div id="tasks-form" class="mangel-form" style="display:none;">
       <div class="voice-input-row">
         <textarea id="tasks-title-input" class="mangel-textarea" placeholder="Что нужно? (например: перфоратор, 2 мешка цемента, каска)" rows="4"></textarea>
-        <button type="button" id="tasks-voice-btn" class="voice-input-btn">🎤</button>
+        <button type="button" id="tasks-voice-btn" class="voice-input-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 11a7 7 0 0014 0M12 18v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       </div>
       <select id="tasks-object-select" class="mangel-select"><option value="">Выбери объект…</option></select>
       <div class="doc-type-switch" style="margin:0.5rem 0;">
@@ -3165,10 +3165,10 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
       <select id="mangel-worker-select" class="mangel-select" style="display:none;"><option value="">Назначить работника (необязательно)…</option></select>
       <div class="voice-input-row">
         <textarea id="mangel-description" class="mangel-textarea" placeholder="Описание дефекта…" rows="3"></textarea>
-        <button type="button" id="mangel-voice-btn" class="voice-input-btn">🎤</button>
+        <button type="button" id="mangel-voice-btn" class="voice-input-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 11a7 7 0 0014 0M12 18v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       </div>
       <label class="submit-btn mangel-photo-label">
-        📷 Добавить фото
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="2"/></svg> Добавить фото
         <input type="file" id="mangel-photo-input" accept="image/*" capture="environment" style="display:none;">
       </label>
       <div id="mangel-photo-preview" class="mangel-photo-preview" style="display:none;"></div>
@@ -3221,7 +3221,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     </div>
     <div class="checkin-preview-hint">Сделай 2-4 фото объекта с разных углов</div>
     <div class="checkin-preview-grid" id="checkin-preview-grid"></div>
-    <button class="checkin-preview-add-btn" id="checkin-preview-add-btn" type="button">📷 Добавить фото</button>
+    <button class="checkin-preview-add-btn" id="checkin-preview-add-btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="2"/></svg> Добавить фото</button>
 
     <div id="checkin-finish-survey" class="mangel-form" style="display:none;">
       <div class="checkin-survey-field">
@@ -3254,8 +3254,8 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
      capture=environment (камера), юзер дважды жаловался что нельзя выбрать готовое фото. -->
 <div id="feed-photo-source-sheet" style="display:none; position:fixed; inset:0; z-index:1700; background:rgba(0,0,0,0.5); align-items:flex-end;" onclick="if(event.target===this)_closeFeedPhotoSourceSheet()">
   <div style="width:100%; background:var(--bg-card); border-radius:20px 20px 0 0; padding:1rem 1rem calc(1rem + env(safe-area-inset-bottom));">
-    <button class="submit-btn" type="button" style="margin-bottom:0.5rem;" onclick="_closeFeedPhotoSourceSheet(); document.getElementById('feed-photo-input-camera').click();">📷 Сделать фото</button>
-    <button class="submit-btn" type="button" style="margin-bottom:0.5rem;" onclick="_closeFeedPhotoSourceSheet(); document.getElementById('feed-photo-input-gallery').click();">🖼 Выбрать из галереи</button>
+    <button class="submit-btn" type="button" style="margin-bottom:0.5rem;" onclick="_closeFeedPhotoSourceSheet(); document.getElementById('feed-photo-input-camera').click();"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="2"/></svg> Сделать фото</button>
+    <button class="submit-btn" type="button" style="margin-bottom:0.5rem;" onclick="_closeFeedPhotoSourceSheet(); document.getElementById('feed-photo-input-gallery').click();"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><rect x="3" y="4" width="18" height="15" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="9.5" r="1.5" fill="currentColor"/><path d="M21 15l-5-5-4 4-3-3-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Выбрать из галереи</button>
     <button class="submit-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);" onclick="_closeFeedPhotoSourceSheet()">Отмена</button>
   </div>
 </div>
