@@ -31,6 +31,59 @@ function _objHeroGradient(obj) {
   return { photo: 'default', icon: '🏢' };
 }
 
+// 25.07 v2: полная пересборка карточки объекта по референсу (composition:
+// hero photo -> weather island (top-center) + worker avatars (bottom-left) +
+// status pill (bottom-right) -> title -> clickable address -> start date ->
+// stage summary strip). Реализовано как одна функция (не отдельный JS-модуль
+// с DTO-слоем -- при no-build-step vanilla JS архитектуре этого проекта
+// создание отдельного adapter/component файла ради одной функции добавило
+// бы больше сложности чем пользы; данные уже приходят из GET /api/objects
+// без Google Sheets raw column names, просто читаются напрямую).
+const OBJ_STATUS_META = {
+  'В работе': { color: 'var(--c-accent, var(--accent))', label: 'В работе' },
+  'Пауза': { color: 'var(--c-brass, var(--accent-gold))', label: 'Пауза' },
+  'Завершён': { color: 'var(--text-light)', label: 'Завершён' },
+};
+
+function _objStatusMeta(status) {
+  return OBJ_STATUS_META[status] || { color: 'var(--text-light)', label: status || '—' };
+}
+
+function _objStartDateLabel(obj) {
+  const raw = obj['Дата старта'];
+  if (!raw) return '';
+  try {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    return 'Начало: ' + d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
+  } catch (e) { return ''; }
+}
+
+// Погода объекта -- переиспользуем уже загружаемый общий weather-фид (не
+// делаем per-card API запрос, N+1 было бы дорого на списке из 10+ объектов).
+// _objWeatherByName заполняется один раз при первой загрузке списка объектов.
+let _objWeatherByName = null;
+async function _ensureObjWeatherLoaded() {
+  if (_objWeatherByName) return;
+  _objWeatherByName = {};
+  try {
+    const res = await api('/api/feed/weather');
+    (res.entries || res.feed || res.items || []).forEach(e => {
+      if (e.object) _objWeatherByName[e.object] = e;
+    });
+  } catch (e) { /* погода необязательна -- карточка работает и без неё */ }
+}
+
+function _objWeatherIslandHtml(obj) {
+  const entry = _objWeatherByName && _objWeatherByName[obj['Объект']];
+  const today = entry && entry.wave && entry.wave[0];
+  if (!today) return '';
+  const tmax = Math.round(today.tmax);
+  const code = today.hourly && today.hourly[3] ? today.hourly[3].weather_code : 0;
+  const cond = code >= 61 ? 'Дождь' : code >= 45 ? 'Туман' : code >= 2 ? 'Облачно' : 'Ясно';
+  return `<div class="obj-weather-island"><b>${tmax}°C</b><span>${cond}</span></div>`;
+}
+
 function renderObjectCard(obj) {
   const budgetPct = Math.round(parseFloat(obj['потрачено в % от бюджета']) || 0);
   const stage = obj['Текущий этап'] || '';
@@ -38,52 +91,59 @@ function renderObjectCard(obj) {
   const stageLabel = isWaiting ? stage.replace(/^ожидает\s*/i, '') : stage;
   const oid = obj['ID объекта'];
   const bColor = budgetPct >= 90 ? 'var(--red)' : budgetPct >= 60 ? 'var(--warning)' : 'var(--accent)';
+  const statusMeta = _objStatusMeta(obj['Статус']);
 
   const hero = _objHeroGradient(obj);
   const imgStyle = obj.image_path
     ? `background:url('/media/${obj.image_path}') center/cover no-repeat`
     : `background:url('/media/objects/${hero.photo}.jpg') center/cover no-repeat`;
 
-  // People dots (assigned users) — поверх фото внизу-слева
+  // Worker avatars -- overlap-композиция снизу-слева (первый крупнее), макс 3 + "+N".
   const assignedUsers = obj.assigned_users || [];
-  const peopleDots = assignedUsers.slice(0, 5).map((u, i) => {
+  const visibleUsers = assignedUsers.slice(0, 3);
+  const peopleDots = visibleUsers.map((u, i) => {
     const initials = (u.name || '?').split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
-    return `<div class="obj-people-dot" style="margin-left:${i > 0 ? '-8px' : '0'};z-index:${5 - i}" title="${esc(u.name)}" onclick="event.stopPropagation();openUserCard('${u.user_id}')">${esc(initials)}</div>`;
+    const size = i === 0 ? 56 : 46;
+    return `<div class="obj-people-dot${i === 0 ? ' obj-people-dot-first' : ''}" style="width:${size}px;height:${size}px;margin-left:${i > 0 ? '-14px' : '0'};z-index:${5 - i}" title="${esc(u.name)}" onclick="event.stopPropagation();openUserCard('${u.user_id}')">${esc(initials)}</div>`;
   }).join('');
-  const extraDots = assignedUsers.length > 5
-    ? `<div class="obj-people-dot obj-people-more">+${assignedUsers.length - 5}</div>` : '';
+  // "+N" открывает Object Detail (полный список команды -- отдельный team-sheet
+  // не строим, это редкий edge case при 4+ работниках на одном объекте).
+  const extraDots = assignedUsers.length > 3
+    ? `<div class="obj-people-dot obj-people-more" style="margin-left:-14px;" onclick="event.stopPropagation();openObjectDetail('${oid}','${(obj['Объект']||'').replace(/'/g,"\\'")}','chat')">+${assignedUsers.length - 3}</div>` : '';
+  const addBtn = currentRole === 'owner'
+    ? `<div class="obj-people-add" onclick="event.stopPropagation();openBubbleAssign('${oid}','${(stage||'').replace(/'/g,"\\'")}',this)" title="Назначить"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="2.5" stroke-linecap="round"/></svg></div>` : '';
 
-  // Status pill overlay
-  const statusColor = obj['Статус'] === 'Завершён' ? 'var(--accent)' : obj['Статус'] === 'Пауза' ? 'var(--warning)' : bColor;
-  const statusDot = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${statusColor};margin-right:4px;vertical-align:middle"></span>`;
+  const startDateLabel = _objStartDateLabel(obj);
+  const mapsUrl = obj['Адрес'] ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(obj['Адрес'])}` : '';
 
-  // 25.07: убран дублированный budget-chip (уже показан в hero pill для owner) и
-  // status-chip (уже показан как цветная точка в hero pill) -- карточка показывала
-  // бюджет/статус по 2-3 раза одновременно. Остаётся только этап -- единственное, что
-  // не дублируется больше нигде на карточке.
-  const chipsHtml = `<div class="obj-stat-chip"><span class="obj-chip-val" style="color:var(--text-light)">${stageLabel ? (stageLabel.length > 14 ? stageLabel.slice(0, 13) + '…' : stageLabel) : '—'}</span><span class="obj-chip-sub">этап</span></div>`;
-
-  const stagesEditIcon = currentRole === 'owner' ? '<span class="stage-edit-icon">✏️</span>' : '';
+  // Stage summary strip -- из списка объектов доступен только текущий этап строкой
+  // (не полный timeline с DONE/ACTIVE/NEXT статусами -- это потребовало бы отдельного
+  // /api/objects/{id}/stages запроса на каждую карточку, N+1 на списке). Показываем то,
+  // что реально есть без лишних round-trip'ов; полный roadmap -- в Object Detail -> Этапы.
+  const stagesStripHtml = stageLabel
+    ? `<div class="obj-stage-strip stage-clickable" data-object-id="${oid}" data-object-name="${esc(obj['Объект']) || ''}">
+         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg>
+         <span>${isWaiting ? 'Ожидает: ' : ''}${esc(stageLabel)}</span>
+       </div>`
+    : `<div class="obj-stage-strip stage-clickable" data-object-id="${oid}" data-object-name="${esc(obj['Объект']) || ''}"><span style="color:var(--text-light)">Этапы не добавлены</span></div>`;
 
   return `
   <div class="card obj-card-v2" data-id="${oid}" data-status="${esc(obj['Статус'] || '')}">
     <div class="obj-card-hero" style="${imgStyle}">
-      <div class="obj-hero-icon">${hero.icon}</div>
-      <div class="obj-hero-live-pill">${statusDot}${currentRole === 'owner' ? budgetPct + '%' : (obj['Статус'] || '')}</div>
-      <div class="obj-hero-people">${peopleDots}${extraDots}
-        ${currentRole === 'owner' ? `<div class="obj-people-add" onclick="event.stopPropagation();openBubbleAssign('${oid}','${(stage||'').replace(/'/g,"\\'")}',this)" title="Назначить">＋</div>` : ''}
-      </div>
+      ${_objWeatherIslandHtml(obj)}
+      <div class="obj-hero-people">${peopleDots}${extraDots}${addBtn}</div>
+      <div class="obj-hero-status-pill" style="--pill-accent:${statusMeta.color}">${statusMeta.label}</div>
     </div>
     <div class="obj-card-body">
       <div class="obj-card-title">${esc(obj['Объект']) || ''}</div>
-      <div class="obj-card-address obj-address-link" onclick="event.stopPropagation();openExternalLink('https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(obj['Адрес'] || '')}')"><svg class="obj-address-pin" viewBox="0 0 24 24" width="14" height="14" fill="none"><path d="M12 2C7.58 2 4 5.58 4 10c0 5.25 7 12 8 12s8-6.75 8-12c0-4.42-3.58-8-8-8z" fill="currentColor"/><circle cx="12" cy="10" r="2.5" fill="var(--bg-card)"/></svg>${esc(obj['Адрес']) || ''}</div>
-      <div class="obj-chips-row">${chipsHtml}</div>
+      <div class="obj-card-address obj-address-link" onclick="event.stopPropagation();${mapsUrl ? `openExternalLink('${mapsUrl}')` : ''}">
+        <svg class="obj-address-pin" viewBox="0 0 24 24" width="14" height="14" fill="none"><path d="M12 2C7.58 2 4 5.58 4 10c0 5.25 7 12 8 12s8-6.75 8-12c0-4.42-3.58-8-8-8z" fill="currentColor"/><circle cx="12" cy="10" r="2.5" fill="var(--bg-card)"/></svg>
+        ${esc(obj['Адрес']) || 'Адрес не указан'}
+      </div>
+      ${startDateLabel ? `<div class="obj-card-startdate">${esc(startDateLabel)}</div>` : ''}
     </div>
-    <div class="card-stage stage-clickable" data-object-id="${oid}" data-object-name="${esc(obj['Объект']) || ''}">
-      ${isWaiting ? `<span class="stage-wait"><span>Ожидает:</span><b>${stageLabel}</b></span>` : `<span>Текущий этап: <b>${stageLabel}</b></span>`}
-      ${stagesEditIcon}
-    </div>
-    <div class="obj-mangel-link" onclick="event.stopPropagation();window._pendingMangelObjectFilter='${oid}';switchView('mangel')">🚩 Дефекты объекта</div>
+    ${stagesStripHtml}
+    <div class="obj-mangel-link" onclick="event.stopPropagation();window._pendingMangelObjectFilter='${oid}';switchView('mangel')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:0.2rem;"><path d="M12 9v4M12 17h.01M10.3 3.9L2.7 18a1.8 1.8 0 001.6 2.7h15.4a1.8 1.8 0 001.6-2.7L13.7 3.9a1.8 1.8 0 00-3.4 0z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Дефекты объекта</div>
     ${currentRole === 'owner' ? `
     <div class="metrics">
       <div class="metric">

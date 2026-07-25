@@ -2021,26 +2021,59 @@ body.view-locked {
 .obj-filter-row { display: flex; gap: 0.4rem; }
 .obj-filter-select { flex: 1 1 0; min-width: 0; padding: 0.4rem 0.3rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.74rem; font-family: var(--font-body); }
 
-/* ═══════════ OBJECT CARD V2 — Obertauern (Фаза 2e) ═══════════ */
-.obj-card-v2 { padding: 0; overflow: hidden; }
-.obj-card-hero { position: relative; height: 120px; display: flex; align-items: flex-end; }
-.obj-hero-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-60%); font-size: 2.8rem; opacity: 0.7; pointer-events: none; }
-.obj-hero-live-pill { position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(0,0,0,0.65); backdrop-filter: blur(8px); border-radius: 20px; padding: 0.2rem 0.6rem; font-size: 0.75rem; font-weight: 700; color: var(--text-main); white-space: nowrap; }
-.obj-hero-people { position: absolute; bottom: 0.5rem; left: 0.5rem; display: flex; align-items: center; }
-/* 25.07: было 28px -- владелец пожаловался "сам кружок мелкий" (карточка объекта/бюджет
-   раздел). Увеличено до 36px, тач-таргет всё ещё компактный при 5 аватарах подряд в ряду. */
-.obj-people-dot { width: 36px; height: 36px; border-radius: 50%; background: var(--bg-card); border: 2px solid var(--bg-app); display: flex; align-items: center; justify-content: center; font-size: 0.78rem; font-weight: 700; color: var(--text-main); flex-shrink: 0; }
-.obj-people-more { background: var(--border-color); color: var(--text-light); margin-left: -8px; }
-.obj-people-add { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-app); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; color: #000; cursor: pointer; margin-left: 4px; flex-shrink: 0; font-weight: 700; }
-.obj-card-body { padding: 0.65rem 0.75rem 0.5rem; }
-.obj-card-title { font-family: var(--font-heading); font-weight: 800; font-size: 1.1rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.obj-card-address { font-size: 0.9rem; color: var(--text-light); margin-top: 0.15rem; display: flex; align-items: center; gap: 0.3rem; }
-.obj-address-link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
-.obj-address-pin { color: var(--red); flex-shrink: 0; }
-.obj-chips-row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.5rem; }
-.obj-stat-chip { display: flex; flex-direction: column; align-items: center; background: var(--bg-card-raised); border-radius: 8px; padding: 0.25rem 0.5rem; min-width: 52px; }
-.obj-chip-val { font-size: 0.8rem; font-weight: 700; }
-.obj-chip-sub { font-size: 0.64rem; color: var(--text-light); margin-top: 0.05rem; }
+/* ═══════════ OBJECT CARD V3 — Referenz-Komposition (25.07 v3) ═══════════
+   Композиция по референсу горнолыжного курорта: фото сверху с 3 overlay-элементами
+   (weather island top-center, worker avatars bottom-left overlap, status pill
+   bottom-right), затем title/address/start-date по центру, затем stage strip
+   отдельной pill-полосой внизу. Заменяет более раннюю V2 (Obertauern) версию,
+   которая дублировала budget/status/stage по 2-3 раза одновременно. */
+.obj-card-v2 { padding: 0; overflow: hidden; border-radius: var(--radius-lg, 20px); }
+.obj-card-hero { position: relative; height: 200px; display: flex; align-items: flex-end; }
+.obj-hero-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-60%); font-size: 2.8rem; opacity: 0.5; pointer-events: none; }
+
+.obj-weather-island {
+  position: absolute; top: 0.7rem; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: baseline; gap: 0.35rem;
+  background: rgba(20,22,18,0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(245,241,232,0.14); border-radius: 14px; padding: 0.35rem 0.7rem;
+  color: #F5F1E8; white-space: nowrap;
+}
+.obj-weather-island b { font-size: 1rem; font-weight: 700; }
+.obj-weather-island span { font-size: 0.72rem; opacity: 0.85; }
+
+.obj-hero-people { position: absolute; bottom: 0.7rem; left: 0.7rem; display: flex; align-items: center; }
+.obj-people-dot {
+  border-radius: 50%; background: var(--c-forest, var(--bg-card)); color: #F5F1E8;
+  border: 2.5px solid rgba(245,241,232,0.85); display: flex; align-items: center; justify-content: center;
+  font-weight: 700; flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.obj-people-dot-first { z-index: 6; }
+.obj-people-more { background: rgba(20,22,18,0.75); color: #F5F1E8; }
+.obj-people-add {
+  width: 36px; height: 36px; border-radius: 50%; background: var(--c-brass, var(--accent));
+  border: 2.5px solid rgba(245,241,232,0.85); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; margin-left: -14px; flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+
+.obj-hero-status-pill {
+  position: absolute; bottom: 0.7rem; right: 0.7rem;
+  background: rgba(20,22,18,0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(245,241,232,0.14); border-radius: 999px; padding: 0.4rem 0.8rem;
+  font-size: 0.78rem; font-weight: 700; color: var(--pill-accent, #F5F1E8); white-space: nowrap;
+}
+
+.obj-card-body { padding: 0.9rem 1rem 0.4rem; text-align: center; }
+.obj-card-title { font-family: var(--font-heading); font-weight: 700; font-size: 1.3rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; }
+.obj-card-address { font-size: 0.88rem; color: var(--text-light); margin-top: 0.3rem; display: flex; align-items: center; justify-content: center; gap: 0.3rem; }
+.obj-address-link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; min-height: 44px; align-items: center; }
+.obj-address-pin { color: var(--c-brass, var(--red)); flex-shrink: 0; }
+.obj-card-startdate { font-size: 0.8rem; color: var(--text-light); margin-top: 0.15rem; }
+
+.obj-stage-strip {
+  display: flex; align-items: center; gap: 0.4rem; justify-content: center;
+  margin: 0.8rem 0.75rem 0.75rem; background: var(--bg-card-raised); border-radius: var(--radius-md, 16px);
+  padding: 0.65rem 0.9rem; color: var(--c-accent, var(--accent)); font-size: 0.88rem; font-weight: 600;
+}
 
 /* ═══════════ BUBBLE ASSIGN PANEL (Фаза 2d) ═══════════ */
 #bubble-panel { position: fixed; inset: 0; z-index: 8000; background: rgba(0,0,0,0.88); display: flex; flex-direction: column; }
