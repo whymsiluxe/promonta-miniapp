@@ -435,8 +435,10 @@ async function embedObjectChat(objectId, objectName) {
   }
 
   // Переиспользуем chat.js внутреннее состояние напрямую -- не switchView('chat'),
-  // не openObjectOrMangelChat (та тянет за собой chat-dialog-open/nav-hide/fullscreen
-  // header, ничего из этого тут не нужно -- nav и header объекта остаются на месте).
+  // не openObjectOrMangelChat (та тянет за собой fullscreen header объекта, не нужный
+  // тут). nav-hide (chat-dialog-open) добавлен отдельно (25.07) -- composer иначе делил
+  // экран с bottom-nav, юзер явно попросил единообразие с обычным полноэкранным чатом.
+  document.body.classList.add('chat-dialog-open');
   _chatActiveThread = null;
   _chatActiveThreadKey = `obj:${objectId}`;
   _chatReturnToView = null;
@@ -447,6 +449,7 @@ async function embedObjectChat(objectId, objectName) {
 }
 
 function unembedObjectChat() {
+  document.body.classList.remove('chat-dialog-open');
   const panel = document.getElementById('obj-detail-panel-chat');
   const chatView = document.getElementById('chat-thread-detail-view');
   if (!panel || !chatView || !_objChatHomeParent) return;
