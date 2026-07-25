@@ -2807,7 +2807,11 @@ TASK_STATUSES = ('открыто', 'в работе', 'закрыто')
 @app.get("/api/tasks")
 def list_tasks(object_id: str = '', user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     items = _load_tasks()
-    if role != 'owner':
+    # 25.07: object_id передан -- worker смотрит вкладку Потребности ВНУТРИ конкретного
+    # объекта, там нужна командная видимость (как в чате объекта), не только свои заявки.
+    # Без object_id -- это глобальный экран Потребности, там worker видит только свои
+    # (иначе он видит чужие материальные запросы по всем объектам сразу, что не нужно).
+    if role != 'owner' and not object_id:
         items = [t for t in items if str(t.get('from_user_id')) == str(user['id'])]
     if object_id:
         items = [t for t in items if t.get('object_id') == object_id]
