@@ -44,6 +44,26 @@ None of today's ~20 commits were tested on a physical device/real Telegram clien
 - Tools screen still 404s from Google Sheets — the OAuth token was never re-consented for that specific spreadsheet after the last token reissue (same root cause as the earlier Objekte fix). Needs the owner to walk through Google's consent screen again; deferred at their request ("не срочно").
 - A checkin session opened 2026-07-22 on OBJ-001 (user 872079437) is still unclosed server-side — left untouched, not this session's data to close without confirmation.
 
+## 2026-07-25 (Telegram UI/navigation fixes — verified ChatGPT audit subset)
+
+External ChatGPT audit (62 sections) was cross-checked against real code via 3 parallel read-only agents + a Fable second-opinion review before any fix — only CONFIRMED findings were acted on, FALSE claims (mixed fonts, inconsistent h1 sizes) were dropped. Full findings + explicitly-deferred scope in `~/.claude/plans/cozy-honking-leaf.md` (Mac-side).
+
+### Fixed
+- **Radio widget collided with Telegram's system zone on Home**: `.radio-fab-btn`'s 82px override (enlarged earlier for glove-tap usability) kept the same top-offset as the 52px base rule — the extra circle depth pushed into Telegram's chevron/menu area. Shifted right/top offset instead of shrinking the tap target.
+- **Back from photo comments landed on Profile instead of the photo feed**: `NavigationManager.overlayStack`/`registerOverlay()` existed since Phase 0.5 but had zero callers — `openPhotoComments`/`closePhotoComments` toggled `display` directly, outside navigation entirely. Telegram's native BackButton had no idea the modal was open and popped the real screen stack. Registered the modal as a proper overlay; split close logic into an internal path (called by `NavigationManager.back()`, modal already popped) and the manual-close path (explicitly unregisters itself).
+- **Photo-comments composer collapsed to a ~40px sliver**: `#pc-comment-input` had `flex:1` with no `min-width:0`; sibling send button used the shared `.submit-btn` class (`width:100%`) with no `flex-shrink` — the button's intrinsic-width claim won the flex fight. Scoped fix inside `.pc-input-row` only, doesn't touch `.submit-btn` globally.
+- **Photo-comments carousel showed 1/2 + dots + arrows but didn't swipe**: only click listeners existed on prev/next buttons, zero touch handlers. Added threshold-based (40px) touch swipe on `#pc-photo-wrap`, routes through the same functions the arrows already used.
+- **Object-scoped Needs tab always showed "Потребностей нет"**: `GET /api/tasks` filtered by `from_user_id` for non-owner roles *before* applying the `object_id` filter, so a worker only ever saw their own requests for that object. Owner-confirmed intended behavior: object-scoped view should have team visibility (like the object chat); the global Потребности screen keeps the own-requests-only restriction.
+- **Object-chat embedded composer didn't hide bottom-nav**: `embedObjectChat()` deliberately skipped `chat-dialog-open` (comment described it as intentional). Owner confirmed it should match the standalone chat instead — now sets/unsets the same class the standalone chat already uses.
+- **Object card showed budget/status/stage duplicated 2-3× simultaneously**: hero pill + inline `.status-switch` editor + stat chips all displayed the same fields. Removed the redundant chips and the dead "Документы" accordion (actually rendered Tasks data, duplicating the real Tasks tab). Moved the status editor (В работе/Пауза/Завершён, owner-only) into the object detail Инфо tab instead of deleting the capability — card now passes its status via `data-status` so the editor has data without an extra API call.
+- **Inconsistent type scale across screens**: `.profile-week-total` had no explicit `font-size` at all (inherited browser default ~16px next to a 1.26rem section title) — now 1.5rem/700 matching the Home KPI scale. Avatar circles (`.obj-people-dot`, `.obj-people-add`, `.profile-team-avatar`) unified from 28-30px to 36px.
+
+### Deferred (explicit scope decisions, tracked in the plan file)
+- Emoji → SVG icon sweep (confirmed real, 61+ call sites across 18 files) — large mechanical pass, not bundled here.
+- Decorative-widget shadow/neumorphism cleanup (weather orb, tool icons) — confirmed localized, cosmetic, not blocking.
+- Tasks "+"-button in object detail — UNVERIFIED without live device/console repro; owner-only gate is correct per this session's earlier `require_owner` fix, but visual "does nothing" report not yet root-caused live.
+- Full 106-route backend permission matrix, backend modular restructure, offline queue, AI subprocess hardening, upload magic-byte validation, CSV injection guard, Google Sheets outbox — all explicitly out of scope, disproportionate to this project's scale (single owner, ~10 workers, no CI).
+
 ## 2026-07-25 (audit fixes — Grok/MiniMax external review)
 
 ### Fixed
