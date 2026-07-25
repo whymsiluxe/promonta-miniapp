@@ -1960,8 +1960,8 @@ body.view-locked {
 /* ═══════════ Objects toolbar: search + filters + sort (23.07) ═══════════ */
 .obj-toolbar { padding: 0 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .obj-search-input { width: 100%; box-sizing: border-box; padding: 0.6rem 0.9rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9rem; font-family: var(--font-body); }
-.obj-filter-row { display: flex; gap: 0.5rem; overflow-x: auto; }
-.obj-filter-select { flex: 0 0 auto; padding: 0.45rem 0.6rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.8rem; font-family: var(--font-body); }
+.obj-filter-row { display: flex; gap: 0.4rem; }
+.obj-filter-select { flex: 1 1 0; min-width: 0; padding: 0.4rem 0.3rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.74rem; font-family: var(--font-body); }
 
 /* ═══════════ OBJECT CARD V2 — Obertauern (Фаза 2e) ═══════════ */
 .obj-card-v2 { padding: 0; overflow: hidden; }
@@ -2816,15 +2816,15 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <div class="obj-toolbar">
       <input type="search" id="obj-search" class="obj-search-input" placeholder="Поиск по названию или адресу…">
       <div class="obj-filter-row">
-        <select id="obj-filter-city" class="obj-filter-select"><option value="">Все города</option></select>
+        <select id="obj-filter-city" class="obj-filter-select"><option value="">Город</option></select>
         <select id="obj-filter-status" class="obj-filter-select">
-          <option value="">Все статусы</option>
+          <option value="">Статус</option>
           <option value="В работе">В работе</option>
           <option value="Пауза">Пауза</option>
           <option value="Завершён">Завершён</option>
         </select>
         <select id="obj-sort" class="obj-filter-select">
-          <option value="order">Мой порядок</option>
+          <option value="order">Фильтр по</option>
           <option value="progress-desc">Прогресс ↓</option>
           <option value="progress-asc">Прогресс ↑</option>
           <option value="budget-desc">Бюджет ↓</option>
