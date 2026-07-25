@@ -143,7 +143,6 @@ function renderObjectCard(obj) {
       ${startDateLabel ? `<div class="obj-card-startdate">${esc(startDateLabel)}</div>` : ''}
     </div>
     ${stagesStripHtml}
-    <div class="obj-mangel-link" onclick="event.stopPropagation();window._pendingMangelObjectFilter='${oid}';switchView('mangel')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:0.2rem;"><path d="M12 9v4M12 17h.01M10.3 3.9L2.7 18a1.8 1.8 0 001.6 2.7h15.4a1.8 1.8 0 001.6-2.7L13.7 3.9a1.8 1.8 0 00-3.4 0z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Дефекты объекта</div>
     ${currentRole === 'owner' ? `
     <div class="metrics">
       <div class="metric">
