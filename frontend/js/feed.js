@@ -765,13 +765,39 @@ async function _sendPhotoComment() {
   }
 }
 
+function _pcGoPrev() {
+  if (_pcPhotoIndex > 0) { _pcRenderPhotoAt(_pcPhotoIndex - 1); hapticImpact('light'); }
+}
+function _pcGoNext() {
+  if (_pcPhotoIndex < _pcFileCount - 1) { _pcRenderPhotoAt(_pcPhotoIndex + 1); hapticImpact('light'); }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pc-back-btn')?.addEventListener('click', closePhotoComments);
   document.getElementById('pc-comment-send-btn')?.addEventListener('click', _sendPhotoComment);
-  document.getElementById('pc-photo-prev')?.addEventListener('click', () => {
-    if (_pcPhotoIndex > 0) { _pcRenderPhotoAt(_pcPhotoIndex - 1); hapticImpact('light'); }
-  });
-  document.getElementById('pc-photo-next')?.addEventListener('click', () => {
-    if (_pcPhotoIndex < _pcFileCount - 1) { _pcRenderPhotoAt(_pcPhotoIndex + 1); hapticImpact('light'); }
-  });
+  document.getElementById('pc-photo-prev')?.addEventListener('click', _pcGoPrev);
+  document.getElementById('pc-photo-next')?.addEventListener('click', _pcGoNext);
+
+  // 25.07: карусель показывала счётчик/точки/стрелки как настоящая карусель, но пальцем
+  // не свайпалась вообще -- только click по стрелкам. Threshold-свайп поверх той же
+  // _pcRenderPhotoAt/_pcGoPrev/_pcGoNext логики, стрелки остаются рабочим fallback.
+  const pcWrap = document.getElementById('pc-photo-wrap');
+  if (pcWrap) {
+    let pcTouchStartX = 0, pcTouchStartY = 0, pcSwiping = false;
+    const SWIPE_THRESHOLD = 40;
+    pcWrap.addEventListener('touchstart', (e) => {
+      if (_pcFileCount <= 1) return;
+      pcTouchStartX = e.touches[0].clientX;
+      pcTouchStartY = e.touches[0].clientY;
+      pcSwiping = true;
+    }, { passive: true });
+    pcWrap.addEventListener('touchend', (e) => {
+      if (!pcSwiping) return;
+      pcSwiping = false;
+      const dx = e.changedTouches[0].clientX - pcTouchStartX;
+      const dy = e.changedTouches[0].clientY - pcTouchStartY;
+      if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy)) return; // вертикальный жест или слишком короткий -- не наш
+      if (dx < 0) _pcGoNext(); else _pcGoPrev();
+    }, { passive: true });
+  }
 });
