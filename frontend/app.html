@@ -2151,9 +2151,10 @@ body.view-locked {
 .profile-speed-text { flex: 1; }
 .profile-object-row { padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
 .profile-object-row:last-child { border-bottom: none; }
-.profile-team-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.9rem; }
-.profile-team-row > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-team-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.9rem; }
+.profile-team-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-team-row:last-child { border-bottom: none; }
+.profile-team-avatar { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.8rem; font-weight: 700; cursor: pointer; }
 .profile-team-revoke-btn, .profile-team-grant-btn { background: none; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.25rem 0.6rem; font-size: 0.75rem; color: var(--text-light); cursor: pointer; }
 .profile-team-grant-btn { border-color: var(--accent); color: var(--accent); }
 .profile-object-name { font-weight: 700; font-size: 1.05rem; }

@@ -169,6 +169,77 @@ function _returnBubbleToArena(dragEl) {
   dragEl.style.zIndex = '';
 }
 
+// ═══════════ Назначить на объект -- entry point из профиля работника (25.07) ═══════════
+// Обратный поток к drag-and-drop: тут уже известен работник, выбирается объект (select,
+// не drag-зона -- на этом экране нет карты объектов чтобы перетаскивать). Переиспользует
+// тот же confirm-flow/тот же POST /api/objects/{id}/assign, что и bubble-drag путь.
+async function openAssignFromProfile(userId, userName) {
+  let objects = [];
+  try {
+    const data = await api('/api/objects');
+    objects = (data.objects || []).filter(o => (o['Статус'] || '') !== 'Завершён');
+  } catch (e) {
+    showToast('Не удалось загрузить объекты: ' + e.message, 'error');
+    return;
+  }
+  if (!objects.length) {
+    showToast('Нет доступных объектов', 'error');
+    return;
+  }
+
+  const popup = document.createElement('div');
+  popup.id = 'bubble-confirm-popup';
+  popup.innerHTML = `
+    <div class="bubble-confirm-inner">
+      <div class="bubble-confirm-title">Назначить ${esc(userName)} на объект</div>
+      <label class="bubble-confirm-label">Объект</label>
+      <select id="assign-profile-object" class="bubble-confirm-select">
+        ${objects.map(o => `<option value="${esc(o['ID объекта'])}">${esc(o['Объект'])}</option>`).join('')}
+      </select>
+      <label class="bubble-confirm-label">Вид работ</label>
+      <select id="bubble-confirm-stage" class="bubble-confirm-select">
+        ${BUBBLE_STAGE_OPTIONS.map(s => `<option value="${s}">${s}</option>`).join('')}
+      </select>
+      <label class="bubble-confirm-label">Период (необязательно)</label>
+      <div class="bubble-confirm-dates">
+        <input type="date" id="bubble-confirm-from" class="bubble-confirm-date">
+        <span>—</span>
+        <input type="date" id="bubble-confirm-to" class="bubble-confirm-date">
+      </div>
+      <div class="bubble-confirm-actions">
+        <button class="bubble-confirm-cancel" id="bubble-confirm-cancel-btn">Отмена</button>
+        <button class="bubble-confirm-ok" id="assign-profile-ok-btn">Назначить</button>
+      </div>
+    </div>`;
+  document.body.appendChild(popup);
+  _bubbleConfirmPopup = popup;
+
+  document.getElementById('bubble-confirm-cancel-btn').addEventListener('click', _closeBubbleConfirmPopup);
+  document.getElementById('assign-profile-ok-btn').addEventListener('click', async () => {
+    const objectId = document.getElementById('assign-profile-object').value;
+    const stageId = document.getElementById('bubble-confirm-stage').value;
+    const dateFrom = document.getElementById('bubble-confirm-from').value;
+    const dateTo = document.getElementById('bubble-confirm-to').value;
+    const okBtn = document.getElementById('assign-profile-ok-btn');
+    okBtn.disabled = true;
+    okBtn.textContent = 'Назначаю…';
+    try {
+      await api(`/api/objects/${objectId}/assign`, {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId, stage_id: stageId, date_from: dateFrom, date_to: dateTo })
+      });
+      hapticImpact('medium');
+      showToast('Назначено', 'success');
+      _closeBubbleConfirmPopup();
+    } catch (err) {
+      showToast('Ошибка назначения: ' + err.message, 'error');
+      okBtn.disabled = false;
+      okBtn.textContent = 'Назначить';
+    }
+  });
+}
+
+
 async function _confirmBubbleAssign() {
   const dragEl = _bubbleConfirmDragEl;
   if (!dragEl || !_bubbleObjectId) return;

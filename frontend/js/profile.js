@@ -173,14 +173,20 @@ async function _loadProfileTeam() {
   if (!listEl) return;
   try {
     const data = await api('/api/roles');
+    // 25.07: цветные avatar-инициалы (тот же _chatAvatarHue() детерминированный hue,
+    // уже использован в списке чатов) -- список команды раньше был голым текстом,
+    // одобренный референс ("TEAM" список) показывал круглые цветные аватарки слева.
+    const teamAvatar = (uid, name) => `<span class="profile-team-avatar" style="background:hsl(${_chatAvatarHue(uid)} 45% 42%)" onclick="openUserCard('${esc(uid)}')">${(name || '?')[0].toUpperCase()}</span>`;
     const rows = (data.roles || []).map(r => `
       <div class="profile-team-row">
-        <span>${esc(r.name)} <span style="color:var(--text-light);font-size:0.75rem">(${r.role === 'owner' ? 'владелец' : 'работник'})</span></span>
+        ${teamAvatar(r.user_id, r.name)}
+        <span class="profile-team-name">${esc(r.name)} <span style="color:var(--text-light);font-size:0.75rem">(${r.role === 'owner' ? 'владелец' : 'работник'})</span></span>
         ${r.role !== 'owner' ? `<button class="profile-team-revoke-btn" data-uid="${esc(r.user_id)}">Убрать</button>` : ''}
       </div>`).join('');
     const pendingRows = (data.pending || []).map(p => `
       <div class="profile-team-row">
-        <span>${esc(p.name)} <span style="color:var(--warning);font-size:0.75rem">(ожидает доступа)</span></span>
+        ${teamAvatar(p.user_id, p.name)}
+        <span class="profile-team-name">${esc(p.name)} <span style="color:var(--warning);font-size:0.75rem">(ожидает доступа)</span></span>
         <button class="profile-team-grant-btn" data-uid="${esc(p.user_id)}">Дать доступ</button>
       </div>`).join('');
     listEl.innerHTML = (rows || '') + (pendingRows || '') || 'Пока никого нет.';
@@ -470,10 +476,20 @@ async function _renderWorkerPicker() {
       <select id="profile-worker-select" class="mangel-select" style="margin:0 0 0.75rem">
         <option value="">Мой профиль</option>
         ${workers.map(w => `<option value="${esc(w.user_id)}">${esc(w.name)} (${esc(w.role)})</option>`).join('')}
-      </select>`;
-    document.getElementById('profile-worker-select').addEventListener('change', e => {
+      </select>
+      <button class="submit-btn profile-inline-btn" id="profile-assign-object-btn" type="button" style="display:none;margin-bottom:0.75rem">📌 Назначить на объект</button>`;
+    const select = document.getElementById('profile-worker-select');
+    const assignBtn = document.getElementById('profile-assign-object-btn');
+    select.value = _profileStatsUserId || '';
+    assignBtn.style.display = _profileStatsUserId ? 'block' : 'none';
+    select.addEventListener('change', e => {
       _profileStatsUserId = e.target.value;
+      assignBtn.style.display = _profileStatsUserId ? 'block' : 'none';
       _loadProfileStats();
+    });
+    assignBtn.addEventListener('click', () => {
+      const worker = workers.find(w => String(w.user_id) === String(_profileStatsUserId));
+      if (worker && typeof openAssignFromProfile === 'function') openAssignFromProfile(worker.user_id, worker.name);
     });
   } catch (e) {}
 }
