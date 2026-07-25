@@ -23,7 +23,7 @@ BOT_TOKEN = os.environ['BOT_TOKEN']
 ROLES_FILE = '/home/promonta/agent/miniapp/roles.json'
 INIT_DATA_MAX_AGE = 3600  # секунд — Telegram initData считается протухшим через час
 
-app = FastAPI(title="Promonta Mini App")
+app = FastAPI(title="Promonta Mini App", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://web.telegram.org"],
