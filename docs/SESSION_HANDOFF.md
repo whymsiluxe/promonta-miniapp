@@ -1,58 +1,29 @@
 # Session handoff
 
-**Date**: 2026-07-24, вечер (автономная сессия).
+**Date**: 2026-07-25 (Mac session, длинная).
 **Branch**: `main`
-**Last commit**: `df63d4a` "fix: unembed chat on switchView + checkin shortcut in Stages tab" — pushed.
+**Last commit**: `11637dc` "feat: NavigationHeader -- unified 3D back button" — pushed.
 
-## Что сделано в этой сессии
+## Что сделано
 
-### Большой план "Object Details screen (6 tabs)" — все 6 шагов реализованы в предыдущих сессиях:
-- Step 1 `6eabb83` — shell + навигация
-- Step 2 v2 `2b3c1a0` — встроенный чат (embed DOM, не fullscreen)
-- Step 3 `009a361` — Инфо-таб (work-items + документы)
-- Step 4 `14a4625` — Задачи/Потребности
-- Step 5 `d63b7c1` — Дефекты
-- Step 6 `e3bf0e6` — Этапы-роадмап (up/down reorder, worker "Готово")
+Полный список — `docs/CHANGELOG.md`, секция "2026-07-25 (Mac session)". Кратко: закрыт весь остаток плана "Object Details screen (6 tabs)" (embed-чат переделан с fullscreen на встроенный по явному требованию юзера), закрыт весь UI/UX-редизайн план (Dashboard, Профиль, свайп-баги по всему приложению, emoji-sweep, NavigationHeader), подтверждено что Security/Reliability P1-план уже был реализован раньше (не переделывался).
 
-### Этой сессией (df63d4a):
+## Что НЕ проверено
 
-**Fix 1: Chat embed stranded bug** (`frontend/app.html` — `switchView()`)
-- Проблема: если пользователь уходил с obj-detail через bottom nav (не кнопку "назад") пока Chat-таб активен, `#chat-thread-detail-view` оставался внутри `#obj-detail-panel-chat` вместо `#view-chat`. Обычный чат был сломан до следующего нажатия "назад" в obj-detail.
-- Фикс: `unembedObjectChat()` вызывается в начале `switchView()` безусловно — no-op когда не встроен.
+Ни один из ~20 коммитов этой сессии не тестировался на реальном устройстве/Telegram-клиенте — только код-ревью, `node --check`/`py_compile`, парсинг inline-скриптов. **Первое, с чего начинать следующую сессию.**
 
-**Fix 2: Checkin в Стадии-таб** (`frontend/js/object-info.js`)
-- Проблема: `openStagesView()` (старый) вызывал `initCheckinControls()` и показывал checkin-bar. Новый 6-таб экран открывается кликом по карточке, `renderObjectStagesTab()` показывал только roadmap — кнопок Старт/Финиш не было.
-- Фикс: `_appendCheckinShortcut()` добавляет кнопку "Начать/Завершить смену" в нижнюю часть Stages-панели для workers. Кнопка вызывает `_openCheckinStatusScreen()` из worker-checkin-fab.js — тот же modal flow что у FAB, без дублирования DOM.
-- Owners: шорткат не показывается.
+Приоритет проверки:
+1. Встроенный чат в Object Details (самая рискованная правка — физический DOM move)
+2. Checkin из Этапы-таба (объект-id баг был найден и исправлен, но живьём не проверен)
+3. Свайп-фиксы (Объекты/Инструменты/Профиль/Погода — не должны больше улетать на другую вкладку)
+4. Фото-комментарии клавиатура-фикс
 
-## Что НЕ задеплоено
+## Открытые хвосты
 
-**ВАЖНО**: frontend изменения (`app.html`, `js/object-info.js`) закоммичены и запушены в git, но **НЕ скопированы в `/var/www/miniapp/`** — нет write-доступа из user `promonta`. Нужен root.
+- **Google OAuth для Инструментов** — 404 от Sheets API, токен не авторизован для этого конкретного листа. Владелец отложил ("не срочно").
+- **Зависшая checkin-сессия 22.07** (OBJ-001, user 872079437) — не трогал, не спросил повторно.
+- Ветка `fix/security-reliability-p1` — можно удалить, её содержимое уже давно на `main`.
 
-Для деплоя от root:
-```bash
-cp /home/promonta/agent/miniapp-repo/frontend/app.html /var/www/miniapp/app.html
-cp /home/promonta/agent/miniapp-repo/frontend/js/object-info.js /var/www/miniapp/js/object-info.js
-```
+## Права доступа на сервере (важно для следующей сессии)
 
-## Что НЕ проверено на реальном устройстве
-
-- Step 2 v2 (embed chat) — коммит `2b3c1a0` — физическое перемещение DOM-узла. Не тестировалось.
-- Все 5 пунктов из первоначального handoff (клавиатура, switch-таб, close/reopen, нормальный чат).
-- Fix 1 и Fix 2 из этой сессии — code review, не live test.
-
-## Следующие задачи по приоритету
-
-1. **Задеплоить фронтенд** (cp из repo в /var/www/miniapp, нужен root)
-2. **Backlog** (из плана cozy-honking-leaf.md на Mac):
-   - Рестайл пузырей сообщений: имя+время в одну строку, без bubble-фона (Connecteam-стиль) — CSS/render в `chat.js`
-   - Вкладка "Команда" в профиле owner'а — список работников с avatar-инициалами (переиспользовать `_chatAvatarHue()`)
-   - "Назначить на объект" из профиля работника — вызывает bubble-assign flow
-3. **Phase 0 редизайна** (только если 1-2 закрыты): z-index bug у assign popup — известная причина
-
-## Предупреждения
-
-- `/var/www/miniapp/` принадлежит root, `promonta` туда не пишет без sudo (sudo требует пароль — недоступен).
-- `objekte_lib.py` живёт вне репо: `/home/promonta/agent/objekte_lib.py` — не коммитить.
-- Не редактировать `/var/www/miniapp/` напрямую без синхронизации обратно в repo.
-- git credentials: `~/.git-credentials` (HTTPS), push работает от promonta.
+`/home/promonta/agent/miniapp-repo` была захвачена root целиком в какой-то момент (вероятно предыдущий автономный/Fable-запуск) — починено (`chown -R promonta:promonta`), git-креды скопированы под `promonta` (`~/.git-credentials`), теперь можно коммитить/пушить без root. Полная карта прав (кто чем владеет, когда нужен root) — `~/.claude/server-structure.md` на Mac, читать перед следующей правкой на сервере.

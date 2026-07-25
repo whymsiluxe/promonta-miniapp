@@ -1,7 +1,7 @@
 # Project state
 
-**Last updated**: 2026-07-24.
-**Branch**: `main` (GitHub default). **Active feature branch**: `fix/security-reliability-p1` (pushed, not merged — see below).
+**Last updated**: 2026-07-25.
+**Branch**: `main` (GitHub default). `fix/security-reliability-p1` was superseded — its content shipped directly on `main` in earlier sessions (commits `d698a28`/`a564b6c`), confirmed 2026-07-25; that branch can be deleted, nothing left to merge from it.
 **Repo**: https://github.com/whymsiluxe/promonta-miniapp — private (was made public 2026-07-23 for one-time ChatGPT read-only audit, reverted to private after this branch was pushed — see CHANGELOG).
 **Working tree**: clean, `main` up to date with `origin/main`.
 
