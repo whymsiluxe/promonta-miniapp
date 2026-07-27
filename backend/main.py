@@ -2926,8 +2926,29 @@ class MangelCommentBody(BaseModel):
     text: str
 
 
+def require_mangel_access(ticket_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """Резолвит object_id тикета, применяет ту же проверку что require_object_access.
+    ticket_id path-параметр матчится FastAPI автоматически."""
+    try:
+        ticket = ml.get_ticket(ticket_id)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    if not can_access_object(user, role, ticket.get('object_id', '')):
+        raise HTTPException(403, "Нет доступа к этому дефекту")
+
+
 @app.get("/api/mangel")
-def get_mangel_list(object_id: str = '', user: dict = Depends(get_current_user)):
+def get_mangel_list(object_id: str = '', user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    if object_id and not can_access_object(user, role, object_id):
+        raise HTTPException(403, "Нет доступа к этому объекту")
+    if not object_id and role != 'owner':
+        # worker без object_id в query получил бы дефекты ВСЕХ объектов — сузить
+        # до тех, что видит ml.list_tickets(None), отфильтровав по своим assignments.
+        assignments = _load_assignments()
+        allowed_ids = {oid for oid, lst in assignments.items()
+                       if any(str(a.get('user_id')) == str(user['id']) for a in lst)}
+        tickets = [t for t in ml.list_tickets(None) if t.get('object_id') in allowed_ids]
+        return {"tickets": tickets, "total": len(tickets)}
     tickets = ml.list_tickets(object_id or None)
     return {"tickets": tickets, "total": len(tickets)}
 
@@ -2938,7 +2959,7 @@ def get_mangel_counts(user: dict = Depends(get_current_user)):
 
 
 @app.get("/api/mangel/{ticket_id}")
-def get_mangel_ticket(ticket_id: str, user: dict = Depends(get_current_user)):
+def get_mangel_ticket(ticket_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_mangel_access)):
     try:
         return ml.get_ticket(ticket_id)
     except KeyError as e:
@@ -2954,6 +2975,8 @@ async def create_mangel_ticket(
     user: dict = Depends(get_current_user),
     role: str = Depends(get_role),
 ):
+    if not can_access_object(user, role, object_id.strip()[:100]):
+        raise HTTPException(403, "Нет доступа к этому объекту")
     if not description.strip():
         raise HTTPException(400, "Описание обязательно")
 
@@ -2997,12 +3020,16 @@ async def create_mangel_ticket(
 
 
 @app.get("/api/mangel/photos/{fname}/file")
-def get_mangel_photo_file(fname: str, user: dict = Depends(get_current_user)):
+def get_mangel_photo_file(fname: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     # Mängel-фото хранятся в той же feed_photos/, но без записи в feed_photos.json —
     # отдаём по basename имени файла (не по id, как feed), с защитой от path traversal.
     safe_name = os.path.basename(fname)
     if safe_name != fname or not safe_name.startswith('mangel_'):
         raise HTTPException(404, "Файл отсутствует")
+    if role != 'owner':
+        owning_ticket = next((t for t in ml.list_tickets(None) if safe_name in t.get('photo_paths', [])), None)
+        if not owning_ticket or not can_access_object(user, role, owning_ticket.get('object_id', '')):
+            raise HTTPException(403, "Нет доступа к этому файлу")
     path = os.path.join(PHOTO_DIR, safe_name)
     if not os.path.exists(path):
         raise HTTPException(404, "Файл отсутствует")
@@ -3032,7 +3059,7 @@ def update_mangel_status(ticket_id: str, body: MangelStatusBody, user: dict = De
 
 
 @app.post("/api/mangel/{ticket_id}/comments")
-def add_mangel_comment(ticket_id: str, body: MangelCommentBody, user: dict = Depends(get_current_user)):
+def add_mangel_comment(ticket_id: str, body: MangelCommentBody, user: dict = Depends(get_current_user), _: None = Depends(require_mangel_access)):
     if not body.text.strip():
         raise HTTPException(400, "Текст комментария обязателен")
     try:
@@ -3043,7 +3070,7 @@ def add_mangel_comment(ticket_id: str, body: MangelCommentBody, user: dict = Dep
 
 
 @app.get("/api/mangel/{ticket_id}/comments")
-def get_mangel_comments(ticket_id: str, user: dict = Depends(get_current_user)):
+def get_mangel_comments(ticket_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_mangel_access)):
     try:
         ticket = ml.get_ticket(ticket_id)
         return {"comments": ticket.get('comments', [])}
