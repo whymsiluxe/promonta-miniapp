@@ -9,9 +9,18 @@ PHASE B part 2 — Needs/Defects/Tasks workflows + chat data logic. Часть �
 ## PHASE B (continued) — Needs, Defects, Tasks, Chat data logic
 
 ### B7. Потребности (Needs) — отдельный workflow, не текст в чате
-Статус: **CONFIRMED — сейчас просто "Потребностей нет" заглушка** (per ТЗ2 §31).
+Статус: **FALSE — план ошибался, +расширено (commits 3c67448 backend, e54ff4d frontend, 2026-07-27).** Проверка кода: полный CRUD уже существовал (`GET/POST/PATCH /api/tasks` + complete endpoint), не заглушка. Priority, per-object/global visibility split, Telegram-уведомления owner — всё уже работало.
 
-Worker: категория (материал/инструмент/СИЗ/доступ/другое), текст/голос, фото, отправка. Owner: статусы NEW/ACKNOWLEDGED/IN_PROGRESS/ORDERED/DELIVERED/DECLINED/CANCELLED, действия принять/заказать/выдано/закрыть/отклонить/написать worker. Empty states по ролям (см. ТЗ2 §31 конкретные тексты). Не смешивать WorkItem ≠ Need ≠ Defect — не использовать generic "task" для всех трёх.
+Реальный gap: category (материал/инструмент/СИЗ/доступ/другое) — добавлен (`TASK_CATEGORIES`, Latin keys). Статусы — было 3 (открыто/в работе/закрыто), расширено до 7 (добавлены принято/заказано/выдано/отклонено поверх старых, backward-compatible). Frontend: category picker в форме создания (переиспользует `.fw-cat-btn` из finish-wizard). Voice input для title — уже был реализован (`attachVoiceInputButton`), не трогал.
+
+**Не сделано**: AI-extraction preview (voice → AI parse → editable fields → confirm) — сейчас voice просто дописывает raw transcript в title textarea, нет отдельного AI-структурирования полей. Owner actions (принять/заказать/выдано/отклонить как UI-кнопки, не только PATCH status) — backend статусы готовы, frontend UI для этих действий не построен в этом проходе.
+
+### B8. Дефекты (Mängel) — отдельный workflow
+Статус: **Частично FIXED (mangel_lib.py статусы, 2026-07-27, ПРЯМАЯ PROD-ПРАВКА).** Assignment (`assigned_worker_id`) уже существовал. Статусы были 3 (`gemeldet`/`in Bearbeitung`/`behoben`), расширены до 5 (`needs_review`/`rejected` добавлены, старые не переименованы).
+
+**Важно про способ доставки**: `mangel_lib.py` живёт в `/home/promonta/agent/` — **вне git-репозитория** (`miniapp-repo`), общий shared-модуль между staging и prod, нет промежуточного git-коммита для него в принципе. Залито напрямую в prod-путь с бэкапом (`mangel_lib.py.bak-pre-status-expand-20260727-230559`), owner дал явное разрешение на прямую заливку + restart `promonta-miniapp.service` (Python кеширует импорты, без restart новые статусы не подхватились бы). Отличается от всей остальной работы этой сессии, которая шла только в git-репо staging без деплоя.
+
+**Не сделано**: owner UI actions (назначить ответственного через UI — assignment API уже есть, но нет kanban/status-change buttons на фронте для новых статусов), "запросить фото после исправления" workflow — не реализовано.
 
 Голосовое создание Need: voice → AI extraction → preview editable fields (title/type/object/quantity/unit/urgency/description) → explicit confirm → create. Никогда не автосоздавать без подтверждения.
 
