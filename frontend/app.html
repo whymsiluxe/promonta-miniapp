@@ -105,9 +105,15 @@ body.keyboard-open .bottom-nav { opacity: 0; transform: translateX(-50%) transla
 
 /* ── Общая шапка ── */
 header {
-  padding: calc(0.75rem + var(--tg-safe-top, env(safe-area-inset-top, 0px)) + 12px) calc(1rem + var(--tg-safe-right, 0px)) 1rem calc(1rem + var(--tg-safe-left, 0px));
-  display: flex;
-  justify-content: space-between;
+  padding: calc(0.35rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 1rem calc(1rem + var(--tg-safe-left, 0px));
+  /* 27.07 v2: grid вместо flex+space-between -- с flex, если слева есть back-button
+     а справа ничего (или наоборот), h1 центрировался МЕЖДУ соседями, не по центру
+     экрана (видно на "Чат" -- title сдвинут вправо, т.к. слева "<" съедает место).
+     Grid с равными по ширине боковыми колонками (auto-sized под контент, но обе
+     min-width совпадают за счёт symmetry) гарантирует центр титула = центр header
+     независимо от того, есть ли элементы по бокам. */
+  display: grid;
+  grid-template-columns: minmax(44px, auto) 1fr minmax(44px, auto);
   align-items: center;
   position: sticky;
   top: 0;
@@ -132,7 +138,9 @@ header h1 {
      h1 на всё доступное пространство header'а (которое уже padding-compensated под
      --tg-safe-left/right), text-align центрирует текст внутри этого пространства --
      работает одинаково, есть ли соседние back/fab кнопки или их нет. */
-  flex: 1;
+  /* 27.07 v2: grid-column явно фиксирует h1 в средней колонке -- при grid auto-placement
+     без этого h1 без соседей занял бы первую колонку (сдвиг влево), не центр. */
+  grid-column: 2;
   text-align: center;
   min-width: 0;
   overflow: hidden;
@@ -3868,12 +3876,27 @@ function _applyTelegramSafeArea() {
   const csa = wa.contentSafeAreaInset || {};
   const sa = wa.safeAreaInset || {};
   let top = Math.max(csa.top || 0, sa.top || 0);
-  // requestFullscreen() вызывается синхронно в initApp, но wa.isFullscreen приходит
-  // асинхронно через событие — на это окно (до ~300мс) top оставался 0 и контент
-  // на миг залезал под системные кнопки Telegram. _fullscreenRequested ставится
-  // сразу при вызове requestFullscreen(), не ждёт подтверждения от клиента.
-  if ((wa.isFullscreen || window._fullscreenRequested) && top < 44) top = 44;
-  top += TG_SAFE_EXTRA_PX;
+  // 27.07 v3: убран хардкод "top=44 если fullscreen" -- он ЗАНИЖАЛ реальный inset,
+  // если Telegram фактически отдавал больше 44px (Dynamic Island + Close/menu row
+  // в fullscreen может быть заметно больше 44). Это и объясняло жалобу "стрелка
+  // ушла ПОД саму кнопку Close" -- мы искусственно срезали top до заниженного числа
+  // вместо того чтобы доверять честному csa.top/sa.top. Fallback только если Telegram
+  // вообще не прислал inset (оба 0) - тогда 44 хоть какая-то защита от полного нуля.
+  if ((wa.isFullscreen || window._fullscreenRequested) && top === 0) top = 44;
+  // DEBUG (временно, для диагностики на реальном устройстве -- нет доступа к devtools
+  // в Telegram на телефоне, поэтому visible on-screen overlay, не только console.log):
+  try {
+    window._tgSafeAreaDebug = { csa, sa, isFullscreen: wa.isFullscreen, fullscreenRequested: window._fullscreenRequested, computedTop: top, platform: wa.platform, version: wa.version };
+    console.log('[safe-area debug]', JSON.stringify(window._tgSafeAreaDebug));
+    let dbg = document.getElementById('_tg-safearea-debug-overlay');
+    if (!dbg) {
+      dbg = document.createElement('div');
+      dbg.id = '_tg-safearea-debug-overlay';
+      dbg.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:rgba(255,0,0,0.9);color:#fff;font-size:10px;font-family:monospace;padding:2px 4px;white-space:pre-wrap;pointer-events:none;';
+      document.body.appendChild(dbg);
+    }
+    dbg.textContent = `csa.top=${csa.top} sa.top=${sa.top} computedTop=${top} isFullscreen=${wa.isFullscreen} platform=${wa.platform} v=${wa.version}`;
+  } catch (e) {}
   document.documentElement.style.setProperty('--tg-safe-top', top + 'px');
 
   // 27.07: правая/левая стороны раньше не компенсировались вообще -- top-right элементы
