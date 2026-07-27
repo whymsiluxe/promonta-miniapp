@@ -3057,19 +3057,28 @@ def _save_tasks(items: list):
 
 TASK_PRIORITIES = ('обычная', 'срочно')
 
+# 27.07 (B7): категория запроса -- material/tool/ppe/access/other, отдельно от
+# priority. Ключи латиницей (стабильный API contract), label для UI -- по месту рендера.
+TASK_CATEGORIES = ('materials', 'tool', 'ppe', 'access', 'other')
+
 
 class TaskCreateBody(BaseModel):
     title: str
     description: str = ''
     object_id: str = ''
     priority: str = 'обычная'
+    category: str = 'other'
 
 
 class TaskStatusBody(BaseModel):
     status: str
 
 
-TASK_STATUSES = ('открыто', 'в работе', 'закрыто')
+# 27.07 (B7): расширено с 3 до полного набора из плана (NEW/ACKNOWLEDGED/IN_PROGRESS/
+# ORDERED/DELIVERED/DECLINED/CANCELLED) -- старые значения ('открыто','в работе','закрыто')
+# сохранены как есть для обратной совместимости с уже существующими записями в tasks.json,
+# новые статусы добавлены поверх, не переименовывая старые.
+TASK_STATUSES = ('открыто', 'в работе', 'закрыто', 'принято', 'заказано', 'выдано', 'отклонено')
 
 
 @app.get("/api/tasks")
@@ -3097,6 +3106,9 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
     priority = body.priority.strip() or 'обычная'
     if priority not in TASK_PRIORITIES:
         raise HTTPException(400, "Недопустимый приоритет")
+    category = body.category.strip() or 'other'
+    if category not in TASK_CATEGORIES:
+        raise HTTPException(400, "Недопустимая категория")
     roles = _load_roles()
     owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
     profile = _get_worker_profile(user['id'])
@@ -3111,6 +3123,7 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
         'title': body.title.strip()[:200],
         'description': body.description.strip()[:1000],
         'priority': priority,
+        'category': category,
         'status': 'открыто',
         'created_at': int(time.time()),
         'closed_at': None,
