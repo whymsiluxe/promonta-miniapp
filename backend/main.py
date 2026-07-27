@@ -2276,6 +2276,66 @@ def _transcribe_voice(path: str) -> str:
     return ' '.join(s.text.strip() for s in segments).strip()
 
 
+TRANSCRIBE_MAX_BYTES = 8 * 1024 * 1024
+TRANSCRIBE_AUDIO_DIR = '/home/promonta/agent/miniapp/transcribe_audio'
+os.makedirs(TRANSCRIBE_AUDIO_DIR, exist_ok=True)
+
+
+@app.post("/api/transcribe")
+async def transcribe_voice_endpoint(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    """Голосовой ввод вне чата -- finish-shift wizard (что сделано/доп-работы/
+    потребности), создание дефекта/потребности. Аудио хранится (не temp+delete) --
+    транскрипция бывает кривой, юзер должен иметь возможность переслушать
+    оригинал, не только доверять тексту. Хранится per-user подпапкой, отдаётся
+    только владельцу файла или owner (см. GET /api/transcribe/{file_id}/audio)."""
+    data = await file.read()
+    if len(data) > TRANSCRIBE_MAX_BYTES:
+        raise HTTPException(400, "Голосовое слишком большое (макс. 8 МБ)")
+    if not data:
+        raise HTTPException(400, "Пустой файл")
+
+    uid = str(user['id'])
+    user_dir = os.path.join(TRANSCRIBE_AUDIO_DIR, uid)
+    os.makedirs(user_dir, exist_ok=True)
+    ext = os.path.splitext(file.filename or '')[1] or '.ogg'
+    file_id = uuid.uuid4().hex
+    fpath = os.path.join(user_dir, f'{file_id}{ext}')
+    with open(fpath, 'wb') as f:
+        f.write(data)
+
+    try:
+        raw_transcript = _transcribe_voice(fpath)
+    except Exception as e:
+        raise HTTPException(502, f"Не удалось распознать голосовое: {str(e)[:200]}")
+
+    if not raw_transcript:
+        raise HTTPException(422, "Не удалось разобрать речь в записи — попробуй ещё раз")
+
+    return {
+        "raw_transcript": raw_transcript,
+        "status": "ok",
+        "file_id": file_id,
+        "audio_url": f"/api/transcribe/{file_id}/audio",
+    }
+
+
+@app.get("/api/transcribe/{file_id}/audio")
+def get_transcribe_audio(file_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    safe_file_id = os.path.basename(file_id)
+    if safe_file_id != file_id:
+        raise HTTPException(404, "Файл не найден")
+    uid = str(user['id'])
+    search_dirs = [uid] if role != 'owner' else os.listdir(TRANSCRIBE_AUDIO_DIR) if os.path.isdir(TRANSCRIBE_AUDIO_DIR) else []
+    for d in search_dirs:
+        user_dir = os.path.join(TRANSCRIBE_AUDIO_DIR, os.path.basename(d))
+        if not os.path.isdir(user_dir):
+            continue
+        for fname in os.listdir(user_dir):
+            if fname.startswith(safe_file_id):
+                return FileResponse(os.path.join(user_dir, fname))
+    raise HTTPException(404, "Файл не найден")
+
+
 @app.post("/api/chat/messages/voice")
 async def post_chat_voice(thread_key: str = Form(''), to_user_id: str = Form(''), file: UploadFile = File(...),
                            user: dict = Depends(get_current_user), role: str = Depends(get_role)):
