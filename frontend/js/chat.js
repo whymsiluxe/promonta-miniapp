@@ -5,6 +5,8 @@
 const CHAT_POLL_MS = 8000;
 let _chatPollTimer = null;
 let _chatLastTs = 0;
+let _chatLastCount = 0; // 27.07 (B10, точечный фикс): maxTs-only пропускал delete/reorder,
+                          // если последнее сообщение не менялось -- length меняется даже тогда.
 let _chatMyId = null;
 let _chatIsOwner = false;
 let _chatActiveThread = null; // null = группа, иначе user_id собеседника (DM)
@@ -45,14 +47,18 @@ function _renderChatMessages(messages) {
   if (!messages || messages.length === 0) {
     container.innerHTML = '<div class="chat-empty">Сообщений пока нет. Напишите первым!</div>';
     _chatLastTs = 0;
+    _chatLastCount = 0;
     return;
   }
 
   const maxTs = Math.max(...messages.map(m => m.ts));
-  if (maxTs <= _chatLastTs) return;
+  // length меняется при delete/reaction-как-новом-сообщении даже если maxTs не вырос
+  // (например удалили не последнее сообщение) -- ловим это без полного cursor redesign.
+  if (maxTs <= _chatLastTs && messages.length === _chatLastCount) return;
 
   const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
   _chatLastTs = maxTs;
+  _chatLastCount = messages.length;
 
   // 24.07: группировка последовательных сообщений одного отправителя (Connecteam-стиль) —
   // второе+ сообщение подряд от того же юзера в пределах 120 сек не повторяет имя, садится
@@ -216,6 +222,7 @@ async function _sendChatAttachment(file) {
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
     _chatLastTs = 0;
+    _chatLastCount = 0;
     await _loadChatMessages(true);
     hapticImpact('light');
   } catch (e) {
@@ -246,6 +253,7 @@ async function _sendChatMessage() {
     input.value = '';
     input.style.height = 'auto';
     _chatLastTs = 0;
+    _chatLastCount = 0;
     await _loadChatMessages(true);
     _loadMyChatThreads(); // 24.07: обновляет last_ts/last_preview в списке тредов, иначе
                            // дата/превью там оставались устаревшими до следующего захода
@@ -450,6 +458,7 @@ function openChatThread(threadUserId, title) {
   document.body.classList.add('chat-dialog-open');
   _hideBottomNavInline();
   _chatLastTs = 0;
+  _chatLastCount = 0;
   _loadChatMessages(true);
   _refreshChatThreadCloseState();
   markChatRead(threadUserId); // per-thread — сбрасываем badge только этого треда (10.29)
@@ -467,6 +476,7 @@ function openObjectOrMangelChat(threadKey, title, returnToView) {
   _hideBottomNavInline();
   document.getElementById('chat-close-thread-btn').style.display = 'none'; // закрытие тредов не поддержано для obj:/mangel:
   _chatLastTs = 0;
+  _chatLastCount = 0;
   _loadChatMessages(true);
   markChatRead(null, threadKey); // 25.07: obj:/mangel:/task: треды раньше никогда не отмечались прочитанными
 }
@@ -706,6 +716,7 @@ async function _sendVoiceMessage(blob) {
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
     _chatLastTs = 0;
+    _chatLastCount = 0;
     await _loadChatMessages(true);
     hapticImpact('medium');
   } catch (e) {
