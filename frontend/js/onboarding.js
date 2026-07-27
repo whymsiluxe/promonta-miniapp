@@ -69,9 +69,9 @@ function _obRenderGroupSlide(group, idx) {
       <h2 class="onboarding-slide-title">${group.title}</h2>
       <div class="onboarding-skills">
         ${group.items.map(s => `
-          <label class="skill-chip${_obSelected.has(s) ? ' checked' : ''}" data-skill="${s.replace(/"/g, '&quot;')}">
-            <input type="checkbox" value="${s}" ${_obSelected.has(s) ? 'checked' : ''}>
-            <span>${s}</span>
+          <label class="skill-chip${_obSelected.has(s) ? ' checked' : ''}" data-skill="${esc(s)}">
+            <input type="checkbox" value="${esc(s)}" ${_obSelected.has(s) ? 'checked' : ''}>
+            <span>${esc(s)}</span>
           </label>
         `).join('')}
       </div>

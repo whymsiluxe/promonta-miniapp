@@ -135,9 +135,9 @@ async function _openWorkerObjectPicker() {
       </div>
       <div class="worker-picker-list">
         ${objects.map(o => `
-          <div class="worker-picker-item" data-oid="${o['ID объекта']}">
-            <span class="worker-picker-item-name">${o['Объект'] || o['ID объекта']}</span>
-            <span class="worker-picker-item-stage">${o['Текущий этап'] || ''}</span>
+          <div class="worker-picker-item" data-oid="${esc(o['ID объекта'])}">
+            <span class="worker-picker-item-name">${esc(o['Объект'] || o['ID объекта'])}</span>
+            <span class="worker-picker-item-stage">${esc(o['Текущий этап'] || '')}</span>
           </div>
         `).join('')}
       </div>
