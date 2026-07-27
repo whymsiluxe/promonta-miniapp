@@ -83,14 +83,19 @@ async function _populateTasksObjectSelect() {
 }
 
 let _taskPriority = 'обычная';
+let _taskCategory = 'materials'; // 27.07 (B7): категория запроса, см. backend TASK_CATEGORIES
 
 function _closeTasksForm() {
   document.getElementById('tasks-form').style.display = 'none';
   document.getElementById('tasks-title-input').value = '';
   document.getElementById('tasks-object-select').value = '';
   _taskPriority = 'обычная';
+  _taskCategory = 'materials';
   document.querySelectorAll('#tasks-form .doc-type-opt').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.priority === 'обычная');
+  });
+  document.querySelectorAll('#tasks-category-row .fw-cat-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.category === 'materials');
   });
 }
 
@@ -100,7 +105,7 @@ async function submitTask() {
   const objectId = document.getElementById('tasks-object-select').value;
   if (!objectId) { showToast('Выберите объект'); return; }
   try {
-    await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title, object_id: objectId, priority: _taskPriority }) });
+    await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title, object_id: objectId, priority: _taskPriority, category: _taskCategory }) });
     hapticImpact('light');
     _closeTasksForm();
     await loadTasks();
@@ -124,6 +129,13 @@ function initTasksView() {
       btn.addEventListener('click', () => {
         _taskPriority = btn.dataset.priority;
         document.querySelectorAll('#tasks-form .doc-type-opt').forEach(b => b.classList.toggle('active', b === btn));
+        hapticImpact('light');
+      });
+    });
+    document.querySelectorAll('#tasks-category-row .fw-cat-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _taskCategory = btn.dataset.category;
+        document.querySelectorAll('#tasks-category-row .fw-cat-btn').forEach(b => b.classList.toggle('active', b === btn));
         hapticImpact('light');
       });
     });

@@ -2916,6 +2916,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .fw-empty-li { color: var(--text-light); list-style: none; }
 .fw-cat-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
 .fw-cat-btn { background: var(--bg-card-raised); border: none; border-radius: 999px; padding: 0.4rem 0.9rem; font-size: 0.85rem; color: var(--text-main); }
+.fw-cat-btn.active { background: var(--accent); color: #fff; }
 .fw-checkbox-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; margin-top: 0.5rem; color: var(--text-main); }
 .fw-geo-status { padding: 1rem; background: var(--bg-card); border-radius: 10px; text-align: center; }
 .fw-geo-status.fw-geo-ok { color: var(--accent); }
@@ -3271,6 +3272,13 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
         <button type="button" id="tasks-voice-btn" class="voice-input-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 11a7 7 0 0014 0M12 18v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       </div>
       <select id="tasks-object-select" class="mangel-select"><option value="">Выбери объект…</option></select>
+      <div class="fw-cat-row" id="tasks-category-row" style="margin:0.5rem 0;">
+        <button type="button" class="fw-cat-btn active" data-category="materials">Материалы</button>
+        <button type="button" class="fw-cat-btn" data-category="tool">Инструмент</button>
+        <button type="button" class="fw-cat-btn" data-category="ppe">СИЗ</button>
+        <button type="button" class="fw-cat-btn" data-category="access">Доступ</button>
+        <button type="button" class="fw-cat-btn" data-category="other">Другое</button>
+      </div>
       <div class="doc-type-switch" style="margin:0.5rem 0;">
         <button type="button" class="doc-type-opt active" data-priority="обычная" style="flex:1;">Обычная</button>
         <button type="button" class="doc-type-opt" data-priority="срочно" style="flex:1;">🔴 Срочно</button>
