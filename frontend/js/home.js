@@ -240,7 +240,7 @@ function _renderWeatherCard() {
   const tmin = today.tmin !== undefined ? Math.round(today.tmin) : '—';
 
   const objectTabs = _weatherFeed.map((f, i) => `
-    <div class="wx-object-tab${i === _weatherActiveIdx ? ' active' : ''}" data-idx="${i}">${f.object || 'Объект'}</div>
+    <div class="wx-object-tab${i === _weatherActiveIdx ? ' active' : ''}" data-idx="${i}">${esc(f.object || 'Объект')}</div>
   `).join('');
 
   const stripDays = wave.slice(0, 4).map((w, i) => {
@@ -358,7 +358,7 @@ function _ringCard(progressPct, progressColor, name, shortName, objectId, budget
   return `
     <div class="home-ring-item" data-object-id="${esc(objectId)}" data-object-name="${esc(name)}" title="${esc(name)}">
       <div class="home-ring-sub">${_ringSvg(progressPct, progressColor)}<div class="home-ring-pct" style="color:${progressColor}">${progressPct}%</div></div>
-      <div class="home-ring-label">${shortName}</div>
+      <div class="home-ring-label">${esc(shortName)}</div>
       ${budgetChip}
     </div>`;
 }
@@ -509,14 +509,14 @@ function _renderAlerts(alerts) {
     const timeStr = a.at ? new Date(a.at).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
     const clickable = a.id && a.id.startsWith('abw-pending-');
     return `
-      <div class="alert-item${clickable ? ' alert-item-clickable' : ''}" ${clickable ? `data-abw-id="${a.id.replace('abw-pending-', '')}"` : ''}>
+      <div class="alert-item${clickable ? ' alert-item-clickable' : ''}" ${clickable ? `data-abw-id="${esc(a.id.replace('abw-pending-', ''))}"` : ''}>
         <div class="alert-item-border" style="background:${color}"></div>
         <div class="alert-item-icon" style="background:${color}22;color:${color}">
           ${a.type === 'red' ? '🔴' : a.type === 'yellow' ? '🟡' : '🟢'}
         </div>
         <div class="alert-item-body">
-          <div class="alert-item-title">${a.title}</div>
-          <div class="alert-item-sub">${a.subtitle || ''}</div>
+          <div class="alert-item-title">${esc(a.title)}</div>
+          <div class="alert-item-sub">${esc(a.subtitle || '')}</div>
         </div>
         ${timeStr ? `<div class="alert-item-time">${timeStr}</div>` : ''}
         ${clickable ? `<span class="alert-item-arrow">›</span>` : ''}
