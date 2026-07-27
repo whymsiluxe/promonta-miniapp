@@ -1124,7 +1124,10 @@ header h1 {
   justify-content: center;
   width: 44px;
   height: 44px;
-  margin-left: -10px;
+  /* 27.07: убран margin-left:-10px -- старый visual-align hack, теперь header
+     grid-колонка (minmax(44px,auto) + --tg-safe-left padding) уже даёт корректную
+     позицию; отрицательный margin сдвигал кнопку ЗА пределы safe-зоны, под Telegram
+     Close-кнопку (owner report: back-стрелка на Календаре/Чате залезала под Close). */
   background: none;
   border: none;
   border-radius: 999px;
@@ -1582,7 +1585,8 @@ body.chat-dialog-open .bottom-nav { display: none; }
   justify-content: center;
   width: 44px;
   height: 44px;
-  margin-left: -10px;
+  /* 27.07: убран margin-left:-10px -- см. комментарий у .form-header .back-btn,
+     тот же root cause того же owner-репортнутого бага. */
   background: none;
   border: none;
   border-radius: 999px;
