@@ -15,6 +15,7 @@ from urllib.parse import parse_qsl
 from fastapi import FastAPI, Header, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 import base64
+import magic
 from pydantic import BaseModel
 
 sys.path.insert(0, '/home/promonta/agent')
@@ -146,6 +147,34 @@ def _safe_load_json(path: str, default):
     except json.JSONDecodeError:
         print(f'ERROR: {path} corrupt JSON, falling back to default: {default!r}')
         return default
+
+
+_ALLOWED_IMAGE_MIME_EXT = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+}
+
+
+def sniff_image(raw: bytes) -> str | None:
+    """Content-Type из клиента (file.content_type) -- заголовок, который клиент
+    присылает сам, ничего не проверяя по факту (spoofable: переименовать .exe в
+    .jpg с Content-Type: image/jpeg проходило раньше без вопросов). Смотрит
+    реальные magic bytes через libmagic, возвращает канонический MIME из
+    allowlist или None, если это не один из 4 разрешённых форматов изображений
+    -- вызывающий код решает как реагировать (обычно HTTPException 400)."""
+    detected = magic.from_buffer(raw, mime=True)
+    return detected if detected in _ALLOWED_IMAGE_MIME_EXT else None
+
+
+def sniff_image_or_pdf(raw: bytes) -> str | None:
+    """Как sniff_image(), плюс PDF -- для endpoints, что принимают либо
+    изображение, либо документ (object documents, AI attachments)."""
+    detected = magic.from_buffer(raw, mime=True)
+    if detected in _ALLOWED_IMAGE_MIME_EXT or detected == 'application/pdf':
+        return detected
+    return None
 
 
 def _load_roles() -> dict:
@@ -481,13 +510,13 @@ os.makedirs(AVATAR_DIR, exist_ok=True)
 
 @app.post("/api/profile/me/avatar")
 async def upload_my_avatar(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    content_type = file.content_type or ''
-    if not content_type.startswith('image/'):
-        raise HTTPException(400, "Файл должен быть изображением")
     raw = await file.read()
     if len(raw) > AVATAR_MAX_BYTES:
         raise HTTPException(400, "Аватар слишком большой (макс. 4 МБ)")
-    ext = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}.get(content_type, 'jpg')
+    detected = sniff_image(raw)
+    if not detected:
+        raise HTTPException(400, "Файл должен быть изображением")
+    ext = _ALLOWED_IMAGE_MIME_EXT[detected]
     uid = str(user['id'])
     # держим ровно один файл на юзера — старое расширение убираем
     for fname in os.listdir(AVATAR_DIR):
@@ -1313,14 +1342,14 @@ def get_object_documents(object_id: str, user: dict = Depends(get_current_user),
 
 @app.post("/api/objects/{object_id}/documents")
 async def upload_object_document(object_id: str, file: UploadFile = File(...), user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    content_type = file.content_type or ''
-    allowed = content_type.startswith('image/') or content_type == 'application/pdf'
-    if not allowed:
-        raise HTTPException(400, "Разрешены только изображения и PDF")
     data_bytes = await file.read()
     if len(data_bytes) > 8 * 1024 * 1024:
         raise HTTPException(400, "Файл слишком большой (макс. 8 МБ)")
-    ext = os.path.splitext(file.filename or '')[1] or '.bin'
+    detected = sniff_image_or_pdf(data_bytes)
+    if not detected:
+        raise HTTPException(400, "Разрешены только изображения и PDF")
+    content_type = detected
+    ext = ('.pdf' if detected == 'application/pdf' else '.' + _ALLOWED_IMAGE_MIME_EXT[detected])
     fname = f'{uuid.uuid4().hex}{ext}'
     with open(os.path.join(OBJECT_DOC_DIR, fname), 'wb') as f:
         f.write(data_bytes)
@@ -1806,13 +1835,13 @@ async def upload_feed_photo(
     photo_id = uuid.uuid4().hex
     saved_files = []
     for f in files:
-        content_type = f.content_type or ''
-        if not content_type.startswith('image/'):
-            raise HTTPException(400, "Все файлы должны быть изображениями")
         raw = await f.read()
         if len(raw) > PHOTO_MAX_BYTES:
             raise HTTPException(400, "Фото слишком большое (макс. 8 МБ на файл)")
-        ext = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif'}.get(content_type, 'jpg')
+        detected = sniff_image(raw)
+        if not detected:
+            raise HTTPException(400, "Все файлы должны быть изображениями")
+        ext = _ALLOWED_IMAGE_MIME_EXT[detected]
         fname = f"{photo_id}_{len(saved_files)}.{ext}"
         with open(os.path.join(PHOTO_DIR, fname), 'wb') as out:
             out.write(raw)
@@ -2651,19 +2680,18 @@ async def ai_chat_upload(file: UploadFile = File(...), user: dict = Depends(get_
     if len(raw) > AI_UPLOAD_MAX_BYTES:
         raise HTTPException(400, "Файл слишком большой (макс. 8 МБ)")
 
-    content_type = file.content_type or ''
     filename = file.filename or 'file'
+    detected = sniff_image_or_pdf(raw)
 
-    if content_type.startswith('image/'):
+    if detected in _ALLOWED_IMAGE_MIME_EXT:
         b64 = base64.b64encode(raw).decode('ascii')
-        media_type = content_type if content_type in ('image/jpeg', 'image/png', 'image/gif', 'image/webp') else 'image/jpeg'
         return {
             "kind": "image",
             "filename": filename,
-            "block": {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+            "block": {"type": "image", "source": {"type": "base64", "media_type": detected, "data": b64}},
         }
 
-    if content_type == 'application/pdf' or filename.lower().endswith('.pdf'):
+    if detected == 'application/pdf':
         try:
             import pypdf
             import io
@@ -2949,13 +2977,13 @@ async def create_mangel_ticket(
 
     photo_paths: list = []
     if file and file.filename:
-        content_type = file.content_type or ''
-        if not content_type.startswith('image/'):
-            raise HTTPException(400, "Файл должен быть изображением")
         raw = await file.read()
         if len(raw) > 8 * 1024 * 1024:
             raise HTTPException(400, "Фото слишком большое (макс. 8 МБ)")
-        ext = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}.get(content_type, 'jpg')
+        detected = sniff_image(raw)
+        if not detected:
+            raise HTTPException(400, "Файл должен быть изображением")
+        ext = _ALLOWED_IMAGE_MIME_EXT[detected]
         photo_id = __import__('uuid').uuid4().hex
         fname = f"mangel_{photo_id}.{ext}"
         with open(os.path.join(MANGEL_PHOTO_DIR, fname), 'wb') as f_out:
@@ -3099,13 +3127,13 @@ async def _save_checkin_photos(files: list, object_id: str, date_str: str) -> li
     os.makedirs(day_dir, exist_ok=True)
     saved = []
     for file in files:
-        content_type = file.content_type or ''
-        if not content_type.startswith('image/'):
-            continue
         raw = await file.read()
         if len(raw) > CHECKIN_MAX_BYTES:
             continue
-        ext = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}.get(content_type, 'jpg')
+        detected = sniff_image(raw)
+        if not detected:
+            continue
+        ext = _ALLOWED_IMAGE_MIME_EXT[detected]
         fname = f"{uuid.uuid4().hex}.{ext}"
         with open(os.path.join(day_dir, fname), 'wb') as f:
             f.write(raw)
@@ -3757,13 +3785,13 @@ def resolve_critical_alert(alert_id: str, resolution: str = Form(...), note: str
         alert_dir = os.path.join(CRITICAL_ALERT_PHOTO_DIR, alert_id)
         os.makedirs(alert_dir, exist_ok=True)
         for f in files:
-            content_type = f.content_type or ''
-            if not content_type.startswith('image/'):
-                raise HTTPException(400, "Файл должен быть изображением")
             data = f.file.read()
             if len(data) > 8 * 1024 * 1024:
                 raise HTTPException(400, "Файл слишком большой (макс. 8 МБ)")
-            ext = os.path.splitext(f.filename or '')[1] or '.jpg'
+            detected = sniff_image(data)
+            if not detected:
+                raise HTTPException(400, "Файл должен быть изображением")
+            ext = '.' + _ALLOWED_IMAGE_MIME_EXT[detected]
             fname = f"{uuid.uuid4().hex}{ext}"
             with open(os.path.join(alert_dir, fname), 'wb') as out:
                 out.write(data)
