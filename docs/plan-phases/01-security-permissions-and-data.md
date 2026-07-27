@@ -75,7 +75,13 @@ Finish endpoint должен брать `object_id` из активной сме
 - Decompression bomb protection, allowlist formats, safe internal filename (original name only as metadata), запрет HTML/SVG если не нужны.
 
 ### A8. AI subprocess security
-Проверить: запускается ли Claude CLI с `--dangerously-skip-permissions`, cwd, environment, доступ к secrets/коду, может ли user prompt влиять на tools, concurrency/timeout/orphan process, cost limit. Целевое состояние: обычный AI chat НЕ имеет shell/filesystem access, allowlist env vars, timeout, concurrency limit. Разделить: обычный AI chat ≠ агент с доступом к файлам.
+Статус: **CONFIRMED + INTENTIONAL, partially fixed (commit b87cdca).** `_call_claude_cli` (main.py ~2588) реально вызывает `claude -p --dangerously-skip-permissions --model {model} {prompt}` с `cwd='/home/promonta/agent'` и `env={**os.environ}` (полный доступ). Endpoint `/api/ai-chat` — **owner-only** (`role != 'owner'` check уже есть), rate-limited 20/час.
+
+**Owner подтвердил явно (2026-07-27): это намеренно.** Owner хочет, чтобы этот AI-ассистент видел тот же полный контекст, что и Claude Code сам — полноценный агент, не sandboxed chat-bot. `--dangerously-skip-permissions`/cwd/env **НЕ трогать** — это НЕ security-gap, это осознанный дизайн. Не "исправлять" это в будущих проходах.
+
+Что реально было gap и исправлено: не было concurrency guard — rate limit ограничивает частоту (20/час), но не параллельность, два быстрых запроса могли заспавнить два параллельных 120-сек subprocess. Добавлен `_claude_cli_lock` (threading.Lock, 1s acquire timeout, 429 при конфликте).
+
+**Worker AI-чат не существует вообще** (тот же `role != 'owner'` полностью блокирует worker на `/api/ai-chat`). Owner отдельно попросил: worker'ам нужен **отдельный** узкий чат ("рабочие вопросы типа как сделать то или это"), без доступа к чувствительным данным фирмы, скорее всего GLM-only (не Claude CLI agent). Это НЕ security-fix, это новая product-фича — **не строить в рамках Фазы 01 (Security)**, вернуться к этому в PHASE B (Product flows) или отдельным заданием, когда владелец явно попросит.
 
 ### A9. Resource-level permissions (шире owner/worker)
 Определить по каждому endpoint: unauthenticated / authenticated / owner / assigned worker / unassigned worker / creator / responsible worker / revoked user. Единый permission service (расширяет A1): `require_owner()`, `require_object_access()`, `require_object_assignment()`, `require_thread_access()`, `require_document_access()`, `require_defect_access()`, `require_shift_access()`. Проверить: нельзя удалить/понизить последнего owner, revoked user не остаётся active worker, role change логируется.
