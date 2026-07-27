@@ -22,11 +22,11 @@ function renderAngebotPositions() {
       ${angebotPositions.length > 1 ? `<button class="remove-pos" data-remove="${i}">×</button>` : ''}
       <div class="field">
         <label>Название работы</label>
-        <input type="text" data-field="titel" data-idx="${i}" value="${p.titel}" placeholder="напр. Trockenbau Wandverkleidung">
+        <input type="text" data-field="titel" data-idx="${i}" value="${esc(p.titel)}" placeholder="напр. Trockenbau Wandverkleidung">
       </div>
       <div class="field">
         <label>Описание (опционально)</label>
-        <input type="text" data-field="beschreibung" data-idx="${i}" value="${p.beschreibung}" placeholder="Детали работы">
+        <input type="text" data-field="beschreibung" data-idx="${i}" value="${esc(p.beschreibung)}" placeholder="Детали работы">
       </div>
       <div class="row-2">
         <div class="field">

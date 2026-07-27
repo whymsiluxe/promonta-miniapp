@@ -16,11 +16,11 @@ function renderRechnungPositions() {
       ${rechnungPositions.length > 1 ? `<button class="remove-pos" data-remove="${i}">×</button>` : ''}
       <div class="field">
         <label>Название работы</label>
-        <input type="text" data-field="titel" data-idx="${i}" value="${p.titel}" placeholder="напр. Beräumung">
+        <input type="text" data-field="titel" data-idx="${i}" value="${esc(p.titel)}" placeholder="напр. Beräumung">
       </div>
       <div class="field">
         <label>Описание (опционально)</label>
-        <input type="text" data-field="beschreibung" data-idx="${i}" value="${p.beschreibung}" placeholder="напр. Leistungszeitraum: 12.05 – 30.05">
+        <input type="text" data-field="beschreibung" data-idx="${i}" value="${esc(p.beschreibung)}" placeholder="напр. Leistungszeitraum: 12.05 – 30.05">
       </div>
       <div class="row-2">
         <div class="field">
