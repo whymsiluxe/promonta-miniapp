@@ -68,9 +68,10 @@ Finish endpoint должен брать `object_id` из активной сме
 - Path traversal: проверить все `os.path.join`/`Path(...)`/`open(...)`/`FileResponse`/`os.remove`/`shutil.*`, особенно с `object_id`/`user_id`/`thread_key`/`filename`/`document_id`/`defect_id`/`attachment_id`/`date`. Тестовые значения: `../`, `../../`, `%2e%2e/`, `..%2f`, abs path, unicode separators, длинные ID, dot-only. Создать `validate_object_id()`, `validate_entity_id()`, `safe_storage_path()`, `ensure_path_within_base()`, `sanitize_original_filename()`.
 
 ### A7. Uploads
-- Magic bytes: **CONFIRMED — не реализовано** (`grep magic\|imghdr\|filetype` пусто). Только `content_type` header (spoofable, 25 вхождений). Добавить content-sniffing.
+- Magic bytes: **FIXED (commit 0a52f6c).** `sniff_image()`/`sniff_image_or_pdf()` добавлены (используют `python-magic`, уже стоял на VPS но не был в requirements.txt — добавлен туда). Применены ко всем 8 местам, где раньше проверялся только client-supplied `content_type`: avatar upload, object documents (image+PDF), AI chat upload (image+PDF, owner-only), mangel ticket photo, `_save_checkin_photos` (start+finish), critical-alert resolution photo, feed photo upload. Extension теперь выбирается из detected MIME, не client content_type.
+- **Известный нерешённый нюанс** (не чинить отдельно, зафиксировано намеренно): в `_save_checkin_photos` bad-file молча `continue`-ится (как было раньше), но `len(files) < 2` guard в `checkin_finish` считает **входящие** файлы до magic-check, не **сохранённые** после него — если оба присланных файла провалят magic-check, `finish_photos` может остаться пустым несмотря на пройденную проверку "минимум 2". Существовавшая логическая дыра, просто теперь более вероятна из-за строгой проверки. Если будет жалоба на пустые finish_photos — здесь копать первым делом.
 - Size/count limits: chat=8MB confirmed, остальные unverified (TODO.md REC-10, не дублировать).
-- Extension normalization, dangerous-type rejection — не проверено.
+- Extension normalization, dangerous-type rejection — magic-bytes closes dangerous-type (не image/pdf = reject), extension теперь derived от detected MIME (нормализовано автоматически).
 - Decompression bomb protection, allowlist formats, safe internal filename (original name only as metadata), запрет HTML/SVG если не нужны.
 
 ### A8. AI subprocess security
