@@ -2569,10 +2569,12 @@ def _set_ai_model(model: str):
         json.dump({'model': model}, f)
 
 
-def _check_ai_rate(user_id: int):
+def _check_ai_rate(user_id: int, rate_file: str = None, limit: int = None):
+    rate_file = rate_file or AI_RATE_FILE
+    limit = limit if limit is not None else AI_RATE_LIMIT
     data = {}
-    if os.path.exists(AI_RATE_FILE):
-        with open(AI_RATE_FILE, encoding='utf-8') as f:
+    if os.path.exists(rate_file):
+        with open(rate_file, encoding='utf-8') as f:
             data = json.load(f)
 
     uid = str(user_id)
@@ -2582,17 +2584,17 @@ def _check_ai_rate(user_id: int):
     if now - ud["window_start"] >= AI_RATE_WINDOW:
         ud = {"count": 0, "window_start": now}
 
-    if ud["count"] >= AI_RATE_LIMIT:
+    if ud["count"] >= limit:
         remaining = int(AI_RATE_WINDOW - (now - ud["window_start"]))
-        raise HTTPException(429, f"Лимит {AI_RATE_LIMIT} запросов/час исчерпан. Сброс через {remaining // 60} мин {remaining % 60} сек")
+        raise HTTPException(429, f"Лимит {limit} запросов/час исчерпан. Сброс через {remaining // 60} мин {remaining % 60} сек")
 
     ud["count"] += 1
     data[uid] = ud
-    with open(AI_RATE_FILE, 'w', encoding='utf-8') as f:
+    with open(rate_file, 'w', encoding='utf-8') as f:
         json.dump(data, f)
 
 
-def _call_glm(messages: list) -> str:
+def _call_glm(messages: list, system: str = None) -> str:
     glm_key = os.environ.get('GLM_KEY', '')
     if not glm_key:
         raise HTTPException(503, "GLM API не настроен (нет GLM_KEY)")
@@ -2600,7 +2602,7 @@ def _call_glm(messages: list) -> str:
     payload = {
         "model": "glm-4.5-flash",
         "max_tokens": 1024,
-        "system": AI_SYSTEM_PROMPT,
+        "system": system if system is not None else AI_SYSTEM_PROMPT,
         "messages": messages,
     }
 
@@ -2743,6 +2745,54 @@ def ai_chat(body: AiChatBody, user: dict = Depends(get_current_user), role: str 
 
     _check_ai_rate(user['id'])
     reply = _call_ai(body.messages)
+    return {"reply": reply}
+
+
+# ---------- AI Chat для worker (узкий, без бизнес-контекста) ----------
+# Отдельно от owner-чата: GLM-only (не Claude CLI agent с полным доступом),
+# system prompt не содержит имя фирмы/клиентов/финансов -- только общие
+# строительные вопросы ("как штукатурить Q2", "как смешать грунтовку").
+# Owner explicit decision (2026-07-27): worker не должен видеть чувствительные
+# данные фирмы через AI, в отличие от owner-чата, который специально видит
+# весь контекст.
+WORKER_AI_RATE_FILE = '/home/promonta/agent/miniapp/worker_ai_chat_rate.json'
+WORKER_AI_RATE_LIMIT = 15
+
+WORKER_AI_SYSTEM_PROMPT = (
+    "Ты помощник для строителей. Отвечай только на общие вопросы о строительных "
+    "работах: технологии (Trockenbau, Malerarbeiten, Spachtel, Fliesen, Bodenbelag, "
+    "WDVS/Fassade), материалы, инструменты, безопасность труда, нормативы. "
+    "НЕ обсуждай: конкретные объекты, клиентов, бюджеты, финансы фирмы, зарплаты, "
+    "внутренние данные компании -- у тебя нет доступа к этой информации и её не "
+    "существует в этом разговоре. Если спросят про конкретный объект/клиента/деньги -- "
+    "скажи, что это нужно уточнить у владельца. Отвечай кратко и по делу, на русском."
+)
+
+
+class WorkerAiChatBody(BaseModel):
+    messages: list
+
+
+@app.post("/api/ai-chat/worker")
+def worker_ai_chat(body: WorkerAiChatBody, user: dict = Depends(get_current_user)):
+    """Доступен всем authenticated (owner тоже может, но это worker-facing UI —
+    не ограничиваем по роли, просто этот endpoint сам по себе узкий и безопасный
+    для любого юзера, в отличие от /api/ai-chat который owner-only из-за
+    Claude CLI agent access."""
+    if not body.messages:
+        raise HTTPException(400, "Нет сообщений")
+
+    for msg in body.messages:
+        if not isinstance(msg, dict) or msg.get('role') not in ('user', 'assistant'):
+            raise HTTPException(400, "Неверный формат сообщений: {role, content} required")
+        content = msg.get('content')
+        if not isinstance(content, str):
+            raise HTTPException(400, "content должен быть строкой (без фото/вложений в этом чате)")
+        if len(content) > 4000:
+            raise HTTPException(400, "Сообщение слишком длинное")
+
+    _check_ai_rate(user['id'], rate_file=WORKER_AI_RATE_FILE, limit=WORKER_AI_RATE_LIMIT)
+    reply = _call_glm(body.messages, system=WORKER_AI_SYSTEM_PROMPT)
     return {"reply": reply}
 
 
