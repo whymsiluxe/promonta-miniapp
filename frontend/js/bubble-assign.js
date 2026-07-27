@@ -64,7 +64,7 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
   panel.innerHTML = `
     <div class="bubble-panel-header">
       <span class="bubble-panel-title">Назначить на этап</span>
-      <span class="bubble-panel-stage">${stageName || ''}</span>
+      <span class="bubble-panel-stage">${esc(stageName || '')}</span>
       <button class="bubble-panel-close" onclick="_closeBubblePanel()">✕</button>
     </div>
     <div class="bubble-panel-hint">Перетащите работника на зону этапа</div>
@@ -80,12 +80,12 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
         const opacity = matched ? '1' : '0.55';
         const glow = matched ? 'box-shadow:0 0 12px 3px var(--accent);border:2px solid var(--accent);' : 'border:2px solid var(--border-color);';
         return `<div class="bubble"
-          data-uid="${w.user_id}" data-name="${w.name}"
+          data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}"
           style="width:${size}px;height:${size}px;opacity:${opacity};${glow}
             animation:bubbleFloat ${dur}s ease-in-out ${delay}s infinite alternate;
             left:${10 + ((i * 73) % 75)}%;top:${15 + ((i * 41) % 60)}%;"
-          title="${w.name}">
-          <span class="bubble-avatar">${_makeAvatarText(w.name)}</span>
+          title="${esc(w.name)}">
+          <span class="bubble-avatar">${esc(_makeAvatarText(w.name))}</span>
           ${matched ? '<span class="bubble-glow-ring"></span>' : ''}
         </div>`;
       }).join('')}
@@ -128,10 +128,10 @@ function _openBubbleConfirmPopup(dragEl) {
   popup.id = 'bubble-confirm-popup';
   popup.innerHTML = `
     <div class="bubble-confirm-inner">
-      <div class="bubble-confirm-title">Назначить ${dragEl.dataset.name}</div>
+      <div class="bubble-confirm-title">Назначить ${esc(dragEl.dataset.name)}</div>
       <label class="bubble-confirm-label">Вид работ</label>
       <select id="bubble-confirm-stage" class="bubble-confirm-select">
-        ${BUBBLE_STAGE_OPTIONS.map(s => `<option value="${s}" ${s === currentStage ? 'selected' : ''}>${s}</option>`).join('')}
+        ${BUBBLE_STAGE_OPTIONS.map(s => `<option value="${esc(s)}" ${s === currentStage ? 'selected' : ''}>${esc(s)}</option>`).join('')}
       </select>
       <label class="bubble-confirm-label">Период (необязательно)</label>
       <div class="bubble-confirm-dates">
@@ -198,7 +198,7 @@ async function openAssignFromProfile(userId, userName) {
       </select>
       <label class="bubble-confirm-label">Вид работ</label>
       <select id="bubble-confirm-stage" class="bubble-confirm-select">
-        ${BUBBLE_STAGE_OPTIONS.map(s => `<option value="${s}">${s}</option>`).join('')}
+        ${BUBBLE_STAGE_OPTIONS.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}
       </select>
       <label class="bubble-confirm-label">Период (необязательно)</label>
       <div class="bubble-confirm-dates">
