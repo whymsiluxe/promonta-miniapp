@@ -965,6 +965,75 @@ def unassign_user(object_id: str, user_id: str, user: dict = Depends(get_current
     return {"status": "ok"}
 
 
+# ---------- Owner dashboard: смены сегодня (B5, 27.07) ----------
+@app.get("/api/dashboard/shifts-today")
+def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    """Кто сейчас работает / кто назначен но не начал / все смены за сегодня --
+    для owner dashboard. owner-only: агрегирует GPS/личные данные всех работников,
+    та же чувствительность что у GET /api/checkin (уже owner-gated для чужих сессий)."""
+    today = datetime.now().strftime('%Y-%m-%d')
+    sessions = _load_checkin_meta()
+    today_sessions = [s for s in sessions if s.get('date') == today]
+
+    profiles = _load_worker_profiles()
+    rows = _cached_get_used_range('Объекты')
+    object_names = {}
+    if rows:
+        header, data = rows[0], rows[1:]
+        for r in data:
+            obj = dict(zip(header, r))
+            object_names[str(obj.get('ID объекта', ''))] = obj.get('Объект', '')
+
+    def _worker_name(uid):
+        return _sanitize_display_name(profiles.get(str(uid), {}).get('name'), str(uid))
+
+    working_now = []
+    finished_today = []
+    for s in today_sessions:
+        entry = {
+            "user_id": str(s['user_id']),
+            "worker_name": _worker_name(s['user_id']),
+            "object_id": s['object_id'],
+            "object_name": object_names.get(s['object_id'], s['object_id']),
+            "start_at": s.get('start_at'),
+        }
+        if s.get('finish_at') is None:
+            working_now.append(entry)
+        else:
+            entry['finish_at'] = s.get('finish_at')
+            finished_today.append(entry)
+
+    working_uids = {e['user_id'] for e in working_now}
+    finished_uids = {e['user_id'] for e in finished_today}
+
+    # "Назначен сегодня, но не начал" -- assignment date_from/date_to охватывает today,
+    # и юзер ни разу не появился в today_sessions (ни работает, ни уже закончил).
+    assignments = _load_assignments()
+    not_started = []
+    seen_uids = set()
+    for oid, lst in assignments.items():
+        for a in lst:
+            uid = str(a.get('user_id', ''))
+            if not uid or uid in working_uids or uid in finished_uids or uid in seen_uids:
+                continue
+            date_from, date_to = a.get('date_from', ''), a.get('date_to', '')
+            if date_from and date_to and date_from <= today <= date_to:
+                seen_uids.add(uid)
+                not_started.append({
+                    "user_id": uid,
+                    "worker_name": _worker_name(uid),
+                    "object_id": oid,
+                    "object_name": object_names.get(oid, oid),
+                })
+
+    return {
+        "date": today,
+        "working_now": working_now,
+        "not_started": not_started,
+        "finished_today": finished_today,
+    }
+
+
 # ---------- Alerts inbox — role-aware агрегация (Фаза 2g, восстановлено после инцидента Фазы 3) ----------
 @app.get("/api/alerts")
 def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_role)):
