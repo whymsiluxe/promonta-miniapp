@@ -2,6 +2,7 @@
 // Активная check-in сессия хранится в localStorage per-object, чтобы пережить переключение вкладок.
 
 let _checkinPauseMinutes = 0;
+let _checkinSelectedStageName = null; // выбранный этап при старте смены (опционально, см. stage picker)
 let _checkinSurveyPauseMinutes = 30; // единый Zeiterfassung-язык форм (batch 12) — тот же stepper что в ручном вводе
 let _checkinPendingAction = null; // 'start' | 'finish' — какое действие ждёт выбора фото
 
@@ -312,8 +313,10 @@ async function _confirmCheckinPreview() {
   if (!_checkinIdempotencyKey) _checkinIdempotencyKey = crypto.randomUUID();
   try {
     if (_checkinPendingAction === 'start') {
-      const session = await _uploadCheckinPhotos('/api/checkin/start', _checkinPreviewFiles, null, _checkinIdempotencyKey);
+      const startFields = _checkinSelectedStageName ? { stage_name: _checkinSelectedStageName } : null;
+      const session = await _uploadCheckinPhotos('/api/checkin/start', _checkinPreviewFiles, startFields, _checkinIdempotencyKey);
       _setActiveCheckinSession(_stagesCurrentObjectId, { id: session.id, finished: false });
+      _checkinSelectedStageName = null;
       hapticImpact('light');
     } else if (_checkinPendingAction === 'finish') {
       const session = _getActiveCheckinSession(_stagesCurrentObjectId);

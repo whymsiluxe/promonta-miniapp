@@ -121,7 +121,7 @@ async function _openWorkerObjectPicker() {
   }
 
   if (objects.length === 1) {
-    _startWorkerCheckin(objects[0]['ID объекта']);
+    _openStagePickerThenStart(objects[0]['ID объекта']);
     return;
   }
 
@@ -147,14 +147,61 @@ async function _openWorkerObjectPicker() {
   modal.querySelectorAll('.worker-picker-item').forEach(item => {
     item.addEventListener('click', () => {
       modal.remove();
-      _startWorkerCheckin(item.dataset.oid);
+      _openStagePickerThenStart(item.dataset.oid);
     });
   });
 }
 
-function _startWorkerCheckin(objectId) {
+// 27.07: перед стартом смены worker явно указывает, над каким этапом объекта
+// работает сегодня (опционально -- если этапов нет или запрос не удался, просто
+// стартуем без stage_name, не блокируем смену из-за второстепенного поля).
+async function _openStagePickerThenStart(objectId) {
+  let stages = [];
+  try {
+    const data = await api(`/api/objects/${objectId}/stages`);
+    stages = data.stages || [];
+  } catch (e) { /* тихо -- отсутствие этапов не должно блокировать старт смены */ }
+
+  if (!stages.length) {
+    _startWorkerCheckin(objectId, null);
+    return;
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'worker-stage-picker-modal';
+  modal.innerHTML = `
+    <div class="worker-picker-inner">
+      <div class="worker-picker-header">
+        <span class="worker-picker-title">Какой этап сегодня?</span>
+        <button class="worker-picker-close" data-stage-skip type="button">Пропустить</button>
+      </div>
+      <div class="worker-picker-list">
+        ${stages.map(s => `
+          <div class="worker-picker-item" data-stage-name="${esc(s['Название этапа'] || '')}">
+            <span class="worker-picker-item-name">${esc(s['Название этапа'] || '')}</span>
+            <span class="worker-picker-item-stage">${esc(s['Статус'] || '')}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('[data-stage-skip]').addEventListener('click', () => {
+    modal.remove();
+    _startWorkerCheckin(objectId, null);
+  });
+  modal.querySelectorAll('.worker-picker-item').forEach(item => {
+    item.addEventListener('click', () => {
+      modal.remove();
+      _startWorkerCheckin(objectId, item.dataset.stageName);
+    });
+  });
+}
+
+function _startWorkerCheckin(objectId, stageName) {
   _stagesCurrentObjectId = objectId;
   _checkinPendingAction = 'start';
+  _checkinSelectedStageName = stageName || null;
   document.getElementById('checkin-photo-input').click();
 }
 
