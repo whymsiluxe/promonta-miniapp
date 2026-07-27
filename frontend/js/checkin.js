@@ -144,16 +144,18 @@ async function runCheckinAnalysis() {
       api(`/api/checkin/${session.id}/analyze-defects`, { method: 'POST' }),
     ]);
 
+    const escMultiline = (s) => esc(String(s == null ? '' : s)).replace(/\n/g, '<br>');
+
     let html = '';
     if (progress.status === 'fulfilled') {
-      html += `<div class="checkin-analysis-block"><div class="checkin-analysis-label">Прогресс работ</div>${progress.value.analysis}</div>`;
+      html += `<div class="checkin-analysis-block"><div class="checkin-analysis-label">Прогресс работ</div>${escMultiline(progress.value.analysis)}</div>`;
     }
     if (materials.status === 'fulfilled') {
-      html += `<div class="checkin-analysis-block"><div class="checkin-analysis-label">Расход материала (оценка)</div>${materials.value.analysis}</div>`;
+      html += `<div class="checkin-analysis-block"><div class="checkin-analysis-label">Расход материала (оценка)</div>${escMultiline(materials.value.analysis)}</div>`;
     }
     if (defects.status === 'fulfilled') {
       const d = defects.value;
-      html += `<div class="checkin-analysis-block"><div class="checkin-analysis-label">Проверка дефектов</div>${d.analysis}${d.ticket_created ? ' <b>→ создан тикет в Дефекты</b>' : ''}</div>`;
+      html += `<div class="checkin-analysis-block"><div class="checkin-analysis-label">Проверка дефектов</div>${escMultiline(d.analysis)}${d.ticket_created ? ' <b>→ создан тикет в Дефекты</b>' : ''}</div>`;
     }
     resultEl.innerHTML = html || '<div style="color:var(--red)">Не удалось получить анализ</div>';
     hapticImpact('light');
