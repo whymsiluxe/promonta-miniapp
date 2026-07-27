@@ -223,6 +223,24 @@ def require_owner(role: str = Depends(get_role)):
         raise HTTPException(403, "owner only")
 
 
+def can_access_object(user: dict, role: str, object_id: str) -> bool:
+    """owner видит/управляет всем; worker -- только объекты, на которые назначен
+    (object_assignments.json). Единая точка правды для object-scoped routes --
+    раньше большинство из них проверяли только get_current_user (авторизован ли
+    вообще), не было ли это чужим объектом."""
+    if role == 'owner':
+        return True
+    assignments = _load_assignments()
+    return any(str(a.get('user_id')) == str(user['id']) for a in assignments.get(str(object_id), []))
+
+
+def require_object_access(object_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """FastAPI матчит `object_id` по имени пути -- подключать как обычный Depends
+    в любом route, где путь содержит {object_id}."""
+    if not can_access_object(user, role, object_id):
+        raise HTTPException(403, "Нет доступа к этому объекту")
+
+
 class RoleSetBody(BaseModel):
     user_id: str
     role: str  # 'owner' | 'worker'
@@ -1182,7 +1200,7 @@ def create_angebot(body: AngebotBody, user: dict = Depends(get_current_user), _:
 
 # ---------- Aufgaben (tasks) ----------
 @app.get("/api/objects/{object_id}/tasks")
-def get_tasks(object_id: str, user: dict = Depends(get_current_user)):
+def get_tasks(object_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     import objekte_lib as o
     return {"tasks": o.list_tasks(object_id)}
 
@@ -1235,7 +1253,7 @@ def _object_info_entry(object_id: str) -> dict:
 # добавить нормальный блок "Описание объекта" -- переиспользуем тот же per-object
 # JSON store, что уже хранит items/documents, не заводим отдельный файл.
 @app.get("/api/objects/{object_id}/description")
-def get_object_description(object_id: str, user: dict = Depends(get_current_user)):
+def get_object_description(object_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     return {"description": _object_info_entry(object_id).get("description", "")}
 
 
@@ -1253,7 +1271,7 @@ def update_object_description(object_id: str, body: ObjectDescriptionBody, user:
 
 
 @app.get("/api/objects/{object_id}/info-items")
-def get_object_info_items(object_id: str, user: dict = Depends(get_current_user)):
+def get_object_info_items(object_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     return {"items": _object_info_entry(object_id).get("items", [])}
 
 
@@ -1263,7 +1281,7 @@ class InfoItemBody(BaseModel):
 
 
 @app.post("/api/objects/{object_id}/info-items")
-def create_object_info_item(object_id: str, body: InfoItemBody, user: dict = Depends(get_current_user)):
+def create_object_info_item(object_id: str, body: InfoItemBody, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     if not body.text.strip():
         raise HTTPException(400, "Текст не может быть пустым")
     item = {
@@ -1295,12 +1313,12 @@ def delete_object_info_item(object_id: str, item_id: str, user: dict = Depends(g
 
 
 @app.get("/api/objects/{object_id}/documents")
-def get_object_documents(object_id: str, user: dict = Depends(get_current_user)):
+def get_object_documents(object_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     return {"documents": _object_info_entry(object_id).get("documents", [])}
 
 
 @app.post("/api/objects/{object_id}/documents")
-async def upload_object_document(object_id: str, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+async def upload_object_document(object_id: str, file: UploadFile = File(...), user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     content_type = file.content_type or ''
     allowed = content_type.startswith('image/') or content_type == 'application/pdf'
     if not allowed:
@@ -1346,7 +1364,7 @@ def delete_object_document(object_id: str, doc_id: str, user: dict = Depends(get
 
 
 @app.get("/api/objects/{object_id}/documents/{fname}/file")
-def get_object_document_file(object_id: str, fname: str, user: dict = Depends(get_current_user)):
+def get_object_document_file(object_id: str, fname: str, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     entry = _object_info_entry(object_id)
     doc = next((d for d in entry.get("documents", []) if d["file"] == fname), None)
     if not doc:
@@ -2723,7 +2741,7 @@ def _cached_all_stages(object_id: str) -> list:
 
 
 @app.get("/api/objects/{object_id}/stages")
-def get_stages(object_id: str, user: dict = Depends(get_current_user)):
+def get_stages(object_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     return {"stages": _cached_all_stages(object_id)}
 
 
@@ -2783,7 +2801,7 @@ def swap_stage(object_id: str, row_num: int, body: StageSwapBody, user: dict = D
 
 
 @app.post("/api/objects/{object_id}/stages/{row_num}/complete")
-def worker_complete_stage(object_id: str, row_num: int, user: dict = Depends(get_current_user)):
+def worker_complete_stage(object_id: str, row_num: int, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     import objekte_lib as o
     from datetime import date
     try:
