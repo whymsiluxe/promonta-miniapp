@@ -20,8 +20,16 @@ async function renderObjectInfoTab(objectId) {
       </div>
     </div>` : '';
 
+  const teamShiftsHtml = currentRole === 'owner' ? `
+    <div class="obj-info-section">
+      <div class="obj-info-section-title">Команда и смены</div>
+      <div id="obj-info-team"></div>
+      <div id="obj-info-shifts-today"></div>
+    </div>` : '';
+
   panel.innerHTML = `
     ${statusEditorHtml}
+    ${teamShiftsHtml}
     <div class="obj-info-section">
       <div class="obj-info-section-title">Описание</div>
       <div id="obj-info-description-view"></div>
@@ -88,14 +96,62 @@ async function renderObjectInfoTab(objectId) {
     });
   });
 
-  await Promise.all([
+  const promises = [
     _renderObjDescriptionSection(objectId),
     _renderObjWorksVolumesSection(objectId),
     _renderObjWorksTasksSection(objectId),
     _renderObjStagesSummary(objectId),
     _renderObjDefectsSummary(objectId),
     _renderObjDocsSummary(objectId),
-  ]);
+  ];
+  if (currentRole === 'owner') promises.push(_renderObjTeamAndShifts(objectId));
+  await Promise.all(promises);
+}
+
+// ── Команда и смены (owner-only, B6, 27.07) ──
+// Собирает назначенных workers + сегодняшние смены прямо в детальной карточке
+// объекта -- владелец не должен искать эту информацию отдельно на Home/Objects.
+async function _renderObjTeamAndShifts(objectId) {
+  const teamEl = document.getElementById('obj-info-team');
+  const shiftsEl = document.getElementById('obj-info-shifts-today');
+  if (!teamEl || !shiftsEl) return;
+  try {
+    const [objData, checkinData] = await Promise.all([
+      api('/api/objects'),
+      api(`/api/checkin?object_id=${encodeURIComponent(objectId)}`),
+    ]);
+    const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(objectId));
+    const team = obj?.assigned_users || [];
+    teamEl.innerHTML = team.length
+      ? `<div class="obj-info-team-row">${team.map(u => `
+          <div class="obj-info-team-chip" data-uid="${esc(u.user_id)}" title="${esc(u.name)}">
+            ${esc((u.name || '?').split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase())}
+          </div>`).join('')}</div>`
+      : '<div class="obj-info-empty-row"><span>Никто не назначен</span></div>';
+    teamEl.querySelectorAll('.obj-info-team-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        if (typeof openUserCard === 'function') openUserCard(chip.dataset.uid);
+      });
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const todaySessions = (checkinData.sessions || []).filter(s => s.date === today);
+    if (!todaySessions.length) {
+      shiftsEl.innerHTML = '<div class="obj-info-empty-row"><span>Сегодня смен не было</span></div>';
+    } else {
+      shiftsEl.innerHTML = todaySessions.map(s => {
+        const worker = team.find(u => String(u.user_id) === String(s.user_id));
+        const name = worker ? worker.name : s.user_id;
+        const status = s.finish_at ? 'завершена' : 'идёт';
+        return `<div class="obj-info-item-row">
+          <span class="obj-info-item-text">${esc(name)}</span>
+          <span class="obj-info-item-qty">${esc(status)}</span>
+        </div>`;
+      }).join('');
+    }
+  } catch (e) {
+    teamEl.innerHTML = `<div class="obj-info-empty-row"><span>Ошибка: ${esc(e.message)}</span></div>`;
+  }
 }
 
 // ── Описание объекта ──
