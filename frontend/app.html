@@ -2876,6 +2876,42 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
    крупнее текст — юзер жаловался что "надо с лупой читать". */
 #checkin-preview-modal { position: fixed; inset: 0; z-index: 1600; background: var(--bg-app); display: flex; }
 .checkin-preview-inner { width: 100%; height: 100%; background: var(--bg-app); padding: 1.25rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; overflow-y: auto; box-sizing: border-box; }
+#finish-wizard-modal { position: fixed; inset: 0; z-index: 1650; background: var(--bg-app); display: flex; }
+.fw-inner { width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; }
+.fw-header { display: flex; align-items: center; gap: 0.5rem; padding: 1rem 1rem 0.5rem; flex-shrink: 0; }
+.fw-progress { font-size: 0.75rem; color: var(--text-light); }
+.fw-title { font-size: 1.05rem; font-weight: 700; flex: 1; }
+.fw-close-btn { background: none; border: none; font-size: 1.1rem; color: var(--text-light); padding: 0.3rem; }
+.fw-body { flex: 1; overflow-y: auto; padding: 0.5rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); }
+.fw-hint { font-size: 0.9rem; color: var(--text-light); margin-bottom: 0.75rem; }
+.fw-photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 0.75rem; }
+.fw-photo-thumb { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; }
+.fw-photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.fw-photo-remove { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.6); color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 0.75rem; }
+.fw-add-photo-btn { width: 100%; background: var(--bg-card-raised); border: none; border-radius: 10px; padding: 0.7rem; margin-bottom: 1rem; color: var(--text-main); }
+.fw-next-btn { width: 100%; }
+.fw-nav-row { display: flex; gap: 0.5rem; margin-top: 1rem; }
+.fw-nav-row .fw-next-btn { flex: 1; }
+.fw-back-btn { background: none; border: 1px solid var(--border-color); border-radius: 10px; padding: 0 1rem; color: var(--text-main); }
+.fw-voice-btn { width: 100%; background: var(--bg-card-raised); border: none; border-radius: 10px; padding: 0.6rem; margin-top: 0.5rem; color: var(--text-main); }
+.fw-voice-btn[data-state="recording"] { background: var(--red); color: #fff; }
+.fw-list { margin-bottom: 0.75rem; }
+.fw-list-item { position: relative; background: var(--bg-card); border-radius: 10px; padding: 0.6rem 2rem 0.6rem 0.8rem; margin-bottom: 0.4rem; }
+.fw-list-item-desc { font-size: 0.9rem; }
+.fw-list-item-meta { font-size: 0.75rem; color: var(--text-light); margin-top: 0.2rem; }
+.fw-list-item-remove, .fw-need-remove, .fw-defect-remove { position: absolute; top: 0.5rem; right: 0.5rem; background: none; border: none; color: var(--text-light); }
+.fw-empty { font-size: 0.85rem; color: var(--text-light); }
+.fw-empty-li { color: var(--text-light); list-style: none; }
+.fw-cat-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+.fw-cat-btn { background: var(--bg-card-raised); border: none; border-radius: 999px; padding: 0.4rem 0.9rem; font-size: 0.85rem; color: var(--text-main); }
+.fw-checkbox-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; margin-top: 0.5rem; color: var(--text-main); }
+.fw-geo-status { padding: 1rem; background: var(--bg-card); border-radius: 10px; text-align: center; }
+.fw-geo-status.fw-geo-ok { color: var(--accent); }
+.fw-geo-status.fw-geo-error { color: var(--red); }
+.fw-summary-section { background: var(--bg-card); border-radius: 10px; padding: 0.7rem 0.9rem; margin-bottom: 0.5rem; font-size: 0.9rem; }
+.fw-summary-section ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
+.fw-submit-status { text-align: center; margin-top: 0.75rem; font-size: 0.85rem; }
+.fw-submit-status.fw-submit-error { color: var(--red); }
 .checkin-sync-status { display: none; font-size: 0.95rem; color: var(--text-light); text-align: center; padding: 0.6rem; margin-top: 0.5rem; border-radius: var(--radius-md); background: var(--bg-card-raised); }
 .checkin-sync-status.checkin-sync-error { color: var(--warning); }
 .checkin-preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
@@ -3334,6 +3370,18 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <button class="submit-btn" id="checkin-preview-confirm-btn" type="button" disabled>Подтвердить</button>
   </div>
 </div>
+<!-- 27.07 (B3): пошаговый finish-shift wizard, отдельный от checkin-preview-modal
+     (тот остаётся для start-shift, более простого flow с одним шагом фото). -->
+<div id="finish-wizard-modal" style="display:none;">
+  <div class="fw-inner">
+    <div class="fw-header">
+      <span class="fw-progress" id="finish-wizard-progress">Шаг 1 из 6</span>
+      <span class="fw-title" id="finish-wizard-title">Фото результата</span>
+      <button class="fw-close-btn" id="finish-wizard-close" type="button">✕</button>
+    </div>
+    <div class="fw-body" id="finish-wizard-body"></div>
+  </div>
+</div>
 <!-- 24.07: выбор источника фото для ленты (камера/галерея) — раньше был только
      capture=environment (камера), юзер дважды жаловался что нельзя выбрать готовое фото. -->
 <div id="feed-photo-source-sheet" style="display:none; position:fixed; inset:0; z-index:1700; background:rgba(0,0,0,0.5); align-items:flex-end;" onclick="if(event.target===this)_closeFeedPhotoSourceSheet()">
@@ -3606,6 +3654,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <script src="js/tasks.js"></script>
 <script src="js/my-tasks.js"></script>
 <script src="js/checkin.js"></script>
+<script src="js/finish-wizard.js"></script>
 <script src="js/worker-checkin-fab.js"></script>
 <script src="js/critical-alerts.js"></script>
 <script src="js/abwesenheit.js"></script>

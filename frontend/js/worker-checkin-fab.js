@@ -53,8 +53,12 @@ async function _openCheckinStatusScreen() {
     document.getElementById('checkin-status-finish-btn').addEventListener('click', () => {
       modal.style.display = 'none';
       _stagesCurrentObjectId = activeObjectId;
-      _checkinPendingAction = 'finish';
-      document.getElementById('checkin-photo-input').click();
+      // 27.07 (B3): finish идёт через новый пошаговый wizard.
+      const session = _getActiveCheckinSession(activeObjectId);
+      if (!session) { showToast('Нет активной смены', 'error'); return; }
+      if (typeof openFinishShiftWizard === 'function') {
+        openFinishShiftWizard(session.id, activeObjectId);
+      }
     });
   } else {
     body.innerHTML = `
