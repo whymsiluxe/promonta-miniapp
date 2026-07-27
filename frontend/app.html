@@ -127,6 +127,17 @@ header h1 {
      еле-еле под системным Close). text-main — обычный тёмный текстовый токен, даёт
      нормальный контраст в обеих темах (light Old Money и retuned dark). */
   transition: font-size 0.2s ease;
+  /* 27.07: owner ask — заголовок должен сидеть МЕЖДУ системными Telegram-кнопками
+     (Close/Back слева, menu справа), не просто со сдвигом от них. flex:1 растягивает
+     h1 на всё доступное пространство header'а (которое уже padding-compensated под
+     --tg-safe-left/right), text-align центрирует текст внутри этого пространства --
+     работает одинаково, есть ли соседние back/fab кнопки или их нет. */
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 23.07: sticky header компактное состояние при скролле — .view.header-scrolled добавляет JS
@@ -3472,7 +3483,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 <div class="view" id="view-abwesenheit">
   <header>
     <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
-    <h1>Общий календарь</h1>
+    <h1>Календарь</h1>
   </header>
   <div id="abw-profile-selector-wrap" style="display:none;">
     <select id="abw-profile-select" class="mangel-select" style="margin:0 0.75rem 0.6rem;width:calc(100% - 1.5rem);">

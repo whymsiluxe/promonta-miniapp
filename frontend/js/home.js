@@ -58,7 +58,7 @@ async function initHomeView() {
       <div class="quick-primary-item" onclick="switchView('abwesenheit')">
         <div class="quick-primary-icon-wrap qp-icon qp-icon-calendar"><div class="qp-icon-sphere"></div><div class="qp-icon-grid"><span></span><span></span><span></span><span></span></div></div>
         <div class="quick-primary-text">
-          <div class="quick-primary-title">Общий календарь</div>
+          <div class="quick-primary-title">Календарь</div>
           <div class="quick-primary-sub" id="abwesenheit-quick-sub">Календарь недоступностей</div>
         </div>
       </div>
