@@ -105,7 +105,7 @@ body.keyboard-open .bottom-nav { opacity: 0; transform: translateX(-50%) transla
 
 /* ── Общая шапка ── */
 header {
-  padding: calc(0.75rem + var(--tg-safe-top, env(safe-area-inset-top, 0px)) + 12px) 1rem 1rem;
+  padding: calc(0.75rem + var(--tg-safe-top, env(safe-area-inset-top, 0px)) + 12px) calc(1rem + var(--tg-safe-right, 0px)) 1rem calc(1rem + var(--tg-safe-left, 0px));
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1097,7 +1097,7 @@ header h1 {
   flex-shrink: 0;
 }
 
-.form-header { display: flex; align-items: center; gap: 0.75rem; padding: calc(1.25rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) 1rem 1rem; }
+.form-header { display: flex; align-items: center; gap: 0.75rem; padding: calc(1.25rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 1rem calc(1rem + var(--tg-safe-left, 0px)); }
 
 .form-header .back-btn {
   display: flex;
@@ -1272,7 +1272,7 @@ header h1 {
 }
 .photo-comments-modal .pc-header {
   flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem;
-  padding: calc(0.75rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) 1rem 0.75rem; border-bottom: 1px solid var(--border-color);
+  padding: calc(0.75rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 0.75rem calc(1rem + var(--tg-safe-left, 0px)); border-bottom: 1px solid var(--border-color);
 }
 .photo-comments-modal .pc-photo { width: 100%; max-height: 45vh; object-fit: cover; flex-shrink: 0; display: block; }
 .pc-photo-wrap { position: relative; flex-shrink: 0; }
@@ -2890,7 +2890,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .checkin-preview-inner { width: 100%; height: 100%; background: var(--bg-app); padding: 1.25rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; overflow-y: auto; box-sizing: border-box; }
 #finish-wizard-modal { position: fixed; inset: 0; z-index: 1650; background: var(--bg-app); display: flex; }
 .fw-inner { width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; }
-.fw-header { display: flex; align-items: center; gap: 0.5rem; padding: 1rem 1rem 0.5rem; flex-shrink: 0; }
+.fw-header { display: flex; align-items: center; gap: 0.5rem; padding: calc(1rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 0.5rem calc(1rem + var(--tg-safe-left, 0px)); flex-shrink: 0; }
 .fw-progress { font-size: 0.75rem; color: var(--text-light); }
 .fw-title { font-size: 1.05rem; font-weight: 700; flex: 1; }
 .fw-close-btn { background: none; border: none; font-size: 1.1rem; color: var(--text-light); padding: 0.3rem; }
@@ -3845,6 +3845,12 @@ function hideSplash() {
   setTimeout(() => el.remove(), 550); // после fade-out убираем из DOM, чтобы не мешал pointer-events
 }
 
+// 27.07: owner report — собственные back-стрелки/кнопки приложения физически
+// перекрывались системными кнопками Telegram (Close/Back слева, menu справа) на
+// реальном устройстве, минимального safe-inset было недостаточно. TG_SAFE_EXTRA_PX --
+// дополнительный запас поверх системного inset, не просто равенство ему.
+const TG_SAFE_EXTRA_PX = 10;
+
 function _applyTelegramSafeArea() {
   const wa = window.Telegram?.WebApp;
   if (!wa) return;
@@ -3856,7 +3862,15 @@ function _applyTelegramSafeArea() {
   // на миг залезал под системные кнопки Telegram. _fullscreenRequested ставится
   // сразу при вызове requestFullscreen(), не ждёт подтверждения от клиента.
   if ((wa.isFullscreen || window._fullscreenRequested) && top < 44) top = 44;
+  top += TG_SAFE_EXTRA_PX;
   document.documentElement.style.setProperty('--tg-safe-top', top + 'px');
+
+  // 27.07: правая/левая стороны раньше не компенсировались вообще -- top-right элементы
+  // (кнопка "+", radio, любой floating control) залезали под Telegram menu-кнопку справа.
+  const right = Math.max(csa.right || 0, sa.right || 0) + TG_SAFE_EXTRA_PX;
+  const left = Math.max(csa.left || 0, sa.left || 0) + TG_SAFE_EXTRA_PX;
+  document.documentElement.style.setProperty('--tg-safe-right', right + 'px');
+  document.documentElement.style.setProperty('--tg-safe-left', left + 'px');
 }
 
 // 24.07 v2: window.innerHeight НЕЛЬЗЯ использовать как "полная высота без клавиатуры" —
