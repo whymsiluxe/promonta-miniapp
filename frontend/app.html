@@ -3885,20 +3885,6 @@ function _applyTelegramSafeArea() {
   // вместо того чтобы доверять честному csa.top/sa.top. Fallback только если Telegram
   // вообще не прислал inset (оба 0) - тогда 44 хоть какая-то защита от полного нуля.
   if ((wa.isFullscreen || window._fullscreenRequested) && top === 0) top = 44;
-  // DEBUG (временно, для диагностики на реальном устройстве -- нет доступа к devtools
-  // в Telegram на телефоне, поэтому visible on-screen overlay, не только console.log):
-  try {
-    window._tgSafeAreaDebug = { csa, sa, isFullscreen: wa.isFullscreen, fullscreenRequested: window._fullscreenRequested, computedTop: top, platform: wa.platform, version: wa.version };
-    console.log('[safe-area debug]', JSON.stringify(window._tgSafeAreaDebug));
-    let dbg = document.getElementById('_tg-safearea-debug-overlay');
-    if (!dbg) {
-      dbg = document.createElement('div');
-      dbg.id = '_tg-safearea-debug-overlay';
-      dbg.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:rgba(255,0,0,0.9);color:#fff;font-size:10px;font-family:monospace;padding:2px 4px;white-space:pre-wrap;pointer-events:none;';
-      document.body.appendChild(dbg);
-    }
-    dbg.textContent = `csa.top=${csa.top} sa.top=${sa.top} computedTop=${top} isFullscreen=${wa.isFullscreen} platform=${wa.platform} v=${wa.version}`;
-  } catch (e) {}
   document.documentElement.style.setProperty('--tg-safe-top', top + 'px');
 
   // 27.07: правая/левая стороны раньше не компенсировались вообще -- top-right элементы
