@@ -3042,8 +3042,8 @@ async def create_mangel_ticket(
             ticket.get('status', ''),
             datetime.utcnow().strftime('%Y-%m-%d %H:%M'),
         ])
-    except Exception:
-        pass
+    except Exception as e:
+        print(f'WARNING: mangel-create Sheets mirror failed for ticket {ticket.get("id")}: {e}')
     return ticket
 
 
@@ -3081,8 +3081,8 @@ def update_mangel_status(ticket_id: str, body: MangelStatusBody, user: dict = De
                 if row and row[0] == ticket_id:
                     o.update_range(f'Дефекты!D{i}:D{i}', [[body.status]])
                     break
-    except Exception:
-        pass
+    except Exception as e:
+        print(f'WARNING: mangel-status Sheets mirror failed for ticket {ticket_id}: {e}')
     return result
 
 
