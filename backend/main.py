@@ -585,6 +585,28 @@ def _hours_from_session(s: dict) -> float:
     return 0.0
 
 
+def _extra_works_summary_text(session: dict) -> str:
+    """Сериализует structured extra_works[] в читаемый текст для Sheets/Telegram --
+    оба места раньше показывали одну свободную строку (extra_work: str), теперь
+    wizard пишет структурированный список, но получатели (бухгалтерия в Sheets,
+    owner в Telegram) не должны видеть сырой JSON."""
+    if session.get('extra_work'):
+        return session['extra_work']
+    works = session.get('extra_works') or []
+    if not works:
+        return ''
+    parts = []
+    for w in works:
+        if not isinstance(w, dict):
+            continue
+        desc = str(w.get('description', '')).strip()
+        if not desc:
+            continue
+        zone = str(w.get('zone', '')).strip()
+        parts.append(f"{desc} ({zone})" if zone else desc)
+    return '; '.join(parts)
+
+
 def _write_zeiterfassung_row(session: dict, object_id: str, user_id: str):
     """24.07: учёт времени в Google Sheets (лист Zeiterfassung) — раньше писался
     только в checkin_meta.json на VPS, не был виден владельцу как таблица для
@@ -616,7 +638,7 @@ def _write_zeiterfassung_row(session: dict, object_id: str, user_id: str):
 
         hours = round(_hours_from_session(session), 2)
         done_summary = session.get('done_summary') or session.get('description') or ''
-        extra_work = session.get('extra_work') or ''
+        extra_work = _extra_works_summary_text(session)
 
         o.append_row_safe('Zeiterfassung', [
             object_name, worker_name, date_str, start_time, end_time,
@@ -3409,6 +3431,9 @@ async def checkin_finish(
     lon: str = Form(''),
     done_summary: str = Form(''),
     extra_work: str = Form(''),
+    extra_works: str = Form(''),
+    needs: str = Form(''),
+    defects: str = Form(''),
     next_day_needs: str = Form(''),
     pause_minutes: int = Form(0),
     files: list[UploadFile] = File(default=[]),
@@ -3416,9 +3441,33 @@ async def checkin_finish(
     role: str = Depends(get_role),
     idempotency_key: str = Header(default='', alias='Idempotency-Key'),
 ):
+    """27.07 (B3, finish-shift wizard): extra_works/needs/defects — JSON-массивы
+    структурированных пунктов из wizard-шагов 3-4 (описание/зона/время/согласование
+    для доп-работ; категория+текст для потребностей/дефектов). extra_work (str) --
+    старое одиночное текстовое поле, оставлено для обратной совместимости с
+    checkin_manual и старым фронтендом, если он ещё где-то шлёт этот формат;
+    новый wizard шлёт extra_works, extra_work остаётся пустым. Ни Need ни Mangel
+    не создаются автоматически -- это только сохраняет данные в сессию, реальное
+    создание тикетов делает отдельный подтверждающий вызов с фронтенда после
+    показа сводки юзеру (см. wizard Step 6)."""
     cached = _idempotency_get(idempotency_key)
     if cached is not None:
         return cached
+
+    def _parse_json_list(raw: str, field_name: str) -> list:
+        if not raw.strip():
+            return []
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            raise HTTPException(400, f"{field_name}: некорректный JSON")
+        if not isinstance(parsed, list):
+            raise HTTPException(400, f"{field_name}: ожидался список")
+        return parsed
+
+    extra_works_list = _parse_json_list(extra_works, 'extra_works')
+    needs_list = _parse_json_list(needs, 'needs')
+    defects_list = _parse_json_list(defects, 'defects')
 
     if not lat.strip() or not lon.strip():
         raise HTTPException(400, "Включи геолокацию, чтобы завершить смену")
@@ -3458,6 +3507,9 @@ async def checkin_finish(
         # если для следующего дня ничего готовить не нужно.
         session['done_summary'] = done_summary.strip()[:1000] or None
         session['extra_work'] = extra_work.strip()[:1000] or None
+        session['extra_works'] = extra_works_list or None
+        session['needs'] = needs_list or None
+        session['defects'] = defects_list or None
         session['next_day_needs'] = next_day_needs.strip()[:1000] or None
         # 24.07: если воркер финиширует смену прямо во время активной паузы (забыл нажать
         # "Продолжить") — закрываем её здесь же, не оставляем pause_started_at висеть
@@ -3488,19 +3540,22 @@ async def checkin_finish(
         except Exception as e:
             print(f'WARNING: checkin-finish feed post failed: {e}')
 
-    if extra_work.strip() or next_day_needs.strip():
+    extra_work_summary = _extra_works_summary_text(session)
+    if extra_work_summary or next_day_needs.strip():
         # Owner получает пуш только если worker реально что-то указал — не спамим
         # при пустом опроснике. 24.07: extra_work (доп-работы вне плана) теперь тоже
         # шлётся — раньше уходила только в Zeiterfassung sheet, owner мог её пропустить
         # без захода в таблицу. Нужно для billing: если заказчик попросил доп-работу на
         # месте, а её не заметили — компании не доплатят, хотя воркеру платят за время.
+        # 27.07: extra_work_summary теперь может прийти из structured extra_works[]
+        # (wizard), не только из старого одиночного текстового поля.
         roles = _load_roles()
         owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
         if owner_id:
-            if extra_work.strip():
+            if extra_work_summary:
                 try:
                     send_telegram_message(int(owner_id),
-                        f"⚠️ Доп-работы вне плана ({object_id}): {extra_work.strip()[:300]}")
+                        f"⚠️ Доп-работы вне плана ({object_id}): {extra_work_summary[:300]}")
                 except Exception:
                     pass
             if next_day_needs.strip():
