@@ -37,9 +37,15 @@ Worker: фото, локация, текст/голос, срочность, о�
 **Не сделано** (вне скоупа root-cause фикса): assignee/due_date поля в task card (backend их не поддерживает, см. B5 due_date gap), bottom sheet UI для создания (сейчас inline input), idempotency key на create (нет double-tap защиты на этом конкретном create).
 
 ### B10. Чаты по контекстам (data logic часть — UI часть в PHASE E)
-Контексты: общий/личный worker-owner/объект/задача/дефект/critical alert. UI всегда показывает где пишешь ("Чат объекта: ..."). Починить: attachments сохраняют thread_key, unread по object/task/mangel не считается как group, mark_read проверяет доступ, download attachment проверяет доступ к thread, `get_my_chat_threads` возвращает корректные previews. Добавить отправку геолокации в чат (только участникам чата).
+Статус: **Большая часть уже была в порядке (проверено в Фазе 01), точечный фикс на реальный gap (commit ef32c69, 2026-07-27).**
 
-Не использовать только max timestamp как индикатор изменения thread — monotonic cursor: `message_id`/`thread_version`/`updated cursor`/`next_cursor`. Polling: один timer, cleanup при уходе с экрана, backoff, AbortController, не дублируется при повторном открытии.
+Уже FIXED до этой сессии (перепроверено, не gap): attachments/thread_key, `_check_thread_access` consistently применён (my_threads/messages/unread_by_thread/attachment/messages POST-DELETE), mark_read/download attachment проверяют доступ, `get_my_chat_threads` возвращает корректные previews. Polling: единый `_chatUnreadTimer` с `clearInterval` перед новым `setInterval` — не дублируется.
+
+**Реальный gap, точечно исправлено**: `_renderChatMessages` использовал ТОЛЬКО `Math.max(...ts)` как индикатор "надо ли перерендерить" — если сообщение удалено с другого устройства/сессии и это не было последним сообщением, `maxTs` не менялся, polling-клиент молча продолжал показывать удалённое сообщение. Добавлен `_chatLastCount` рядом с `_chatLastTs`, re-render триггерится если изменилось любое из двух. Все 7 существующих `_chatLastTs = 0` resets (thread switches) спарены с `_chatLastCount = 0`.
+
+**Owner explicit decision**: полный monotonic cursor (`message_id`/`thread_version`, backend response shape меняется во всех 11 chat endpoints) — сознательно НЕ делать сейчас отдельным патчем, риск сломать рабочий чат без промежуточного тестирования. Отложено до PHASE 07 (Chat Hub rebuild) — там всё равно redesign всего chat data flow, cursor логично встроить туда, не патчить дважды. Известный оставшийся edge case (не покрыт точечным фиксом): два одновременных edit с неизменными count и max-ts — не притворяюсь что это решено.
+
+**Не сделано**: геолокация-в-чат — уже отложено owner'ом в B2 (Фаза 02), тот же статус здесь.
 
 ---
 
