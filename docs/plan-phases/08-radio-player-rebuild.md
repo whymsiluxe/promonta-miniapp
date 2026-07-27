@@ -1,0 +1,39 @@
+# Promonta Mini App — Audit Master Plan (Phase file)
+
+PHASE G — Radio Player full rebuild. Часть единого плана из 10 файлов в `docs/plan-phases/`. Источники: 6 owner ТЗ от 2026-07-27, слиты вручную по темам.
+Порядок выполнения согласован: Security P0 (01-02) первым, затем Product flows (03-04), Telegram UI/Navigation (05), Design System (06), Chat Hub (07), Object Card (08), Radio (09), Architecture/Tests/Docs (10).
+Каждый пункт верифицируется по реальному коду перед стартом, не по документации. Правила: маленькие коммиты, py_compile+node --check после блока, не ломать routes, не деплоить без разрешения, DSGVO вне скоупа, Bubble Assignment сохранить.
+
+---
+
+## PHASE G — Radio Player rebuild
+
+Источник: ТЗ5 (полностью).
+
+Референс: фиолетовый плеер (album art + Previous/Play-Pause/Next + progress 2:28/5:33 + bottom glow) — адаптировать под Old Money (forest/brass glow, не фиолетовый/RGB).
+
+### G1. Удалить старую radio orb полностью
+Найдено в: `frontend/js/home.js`, `frontend/js/swipe-nav.js`, `frontend/app.html`. Убрать: chrome floating bubble 82×82, fixed top-right, emoji, тяжёлую тень, floating-меню, старые конфликтующие CSS-правила (52px vs 82px разные размеры — известный факт из прошлой сессии). Не оставлять скрытый старый UI параллельно новому — проверить явно после рефакторинга.
+
+### G2. HomeRadioPlayer (карточка на Home, обычный flow, не fixed)
+Высота ~230-290px, radius 28-32, atmospheric background image (архитектура/интерьер/камень/дерево — не случайные stock-фото людей, не copyrighted artwork), gradient overlay (верх легче, низ плотнее forest/charcoal + мягкое forest/brass glow — НЕ фиолетовый/синий/кислотный). Название станции (16-18px/700) + описание/трек (14-15px/500, max 2 строки). Controls: Previous/Play-Pause(56-64px, самая заметная)/Next(48×48min), SVG only, aria-label, haptic, loading/disabled states. Progress bar ИЛИ `LIVE` indicator — автовыбор TRACK vs LIVE mode, **не показывать fake duration/progress если backend не даёт реальных данных**.
+
+Состояния: IDLE/LOADING/BUFFERING/PLAYING/PAUSED/ERROR/OFFLINE — конкретные тексты см. ТЗ5 §8.
+
+### G3. RadioController — единый источник состояния
+Управляет HTMLAudioElement, station, station list, track metadata, play/pause/stop/next/previous, loading/buffering/error/reconnect, LIVE/TRACK mode. **Не создавать новый Audio element при каждом render, не дублировать listeners при повторном открытии Home.**
+
+Проверить факт перед стартом: сколько сейчас реально станций поддерживает backend (owner просил switcher станций в одном из предыдущих ТЗ — не строить multi-station UI, если источник single-stream).
+
+### G4. RadioMiniPlayer
+48-56px высота, над bottom nav, только пока играет/на паузе после запуска и не закрыт explicitly. Скрыт: на Home (там уже большой player), при открытой клавиатуре, в photo viewer, в fullscreen media, поверх modal/bottom sheet, если остановлено/закрыто. Учитывает `contentSafeAreaInset.{left,right,bottom}` + реальную высоту bottom-nav (не magic offset типа `top:90px`).
+
+### G5. Не делать (жёсткий список из ТЗ5 §14)
+Чёрная orb, emoji, фиолетовый/RGB neon, giant album card fullscreen, autoplay со звуком, автозапуск при открытии приложения, fake progress/duration/metadata, несколько Audio elements, inline onclick/style, fixed top-right, меню поверх Telegram UI, tiny controls, hover-зависимость. Радио стартует только по явному действию юзера.
+
+Файлы: `frontend/js/components/radio-player.js`, `frontend/js/core/radio-controller.js`, `frontend/css/components/radio-player.css`.
+
+Тесты: unit (initial state, play/pause/next/previous, buffering, error, retry, stop, listener cleanup, single Audio element) + Playwright E2E (18 шагов ТЗ5 §16) + screenshots (idle/playing/buffering/error/mini-player/narrow iPhone/Android/increased text size).
+
+---
+
