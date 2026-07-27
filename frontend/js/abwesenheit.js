@@ -121,12 +121,12 @@ function renderAbwesenheitList() {
     return `
     <div class="abw-request-card" data-entry-id="${e.id}">
       <div class="abw-request-top">
-        <div class="abw-request-avatar">${(e.name || '?')[0].toUpperCase()}</div>
+        <div class="abw-request-avatar">${esc((e.name || '?')[0].toUpperCase())}</div>
         <div class="abw-request-who">
-          <div class="abw-request-name">${e.name || e.user_id}</div>
-          <div class="abw-request-status" style="color:${ABW_STATUS_COLOR[status]}">${ABW_STATUS_LABEL[status]}</div>
+          <div class="abw-request-name">${esc(e.name || e.user_id)}</div>
+          <div class="abw-request-status" style="color:${ABW_STATUS_COLOR[status]}">${esc(ABW_STATUS_LABEL[status] || status)}</div>
         </div>
-        ${showChatIcon ? `<button class="abw-request-chat-btn" onclick="_openAbwesenheitChat('${e.user_id}','${(e.name || e.user_id).replace(/'/g, "\\'")}')" title="Написать в чат">💬</button>` : ''}
+        ${showChatIcon ? `<button class="abw-request-chat-btn abw-open-chat-btn" data-user-id="${esc(e.user_id)}" data-user-name="${esc(e.name || e.user_id)}" title="Написать в чат">💬</button>` : ''}
       </div>
 
       <div class="abw-request-body">
@@ -135,8 +135,8 @@ function renderAbwesenheitList() {
           ${fmtDateRangeHuman(e.date_from, e.date_to)}${e.open_ended ? '<span class="abw-request-openbadge">открыто</span>' : ''}
         </div>
         ${timeStr ? `<div class="abw-request-time"><span class="abw-request-range-icon"><svg viewBox="0 0 24 24" width="13" height="13"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 7v5l3 3"/></svg></span>${timeStr}</div>` : ''}
-        <div class="abw-request-reason">${ABW_REASON_LABEL[e.reason] || e.reason}</div>
-        ${e.note ? `<div class="abw-request-note">${e.note}</div>` : ''}
+        <div class="abw-request-reason">${esc(ABW_REASON_LABEL[e.reason] || e.reason)}</div>
+        ${e.note ? `<div class="abw-request-note">${esc(e.note)}</div>` : ''}
       </div>
 
       ${canDecide ? `
@@ -150,6 +150,10 @@ function renderAbwesenheitList() {
         </div>` : ''}
     </div>`;
   }).join('');
+
+  listEl.querySelectorAll('.abw-open-chat-btn').forEach(btn => {
+    btn.addEventListener('click', () => _openAbwesenheitChat(btn.dataset.userId, btn.dataset.userName));
+  });
 }
 
 function _openAbwesenheitChat(userId, name) {
