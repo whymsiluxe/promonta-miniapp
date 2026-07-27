@@ -132,18 +132,24 @@ def _atomic_write_json(path: str, data, ensure_ascii: bool = False):
         os.replace(tmp_path, path)
 
 
-def _load_roles() -> dict:
-    if not os.path.exists(ROLES_FILE):
-        return {}
+def _safe_load_json(path: str, default):
+    """Единая точка для всех _load_* сторов -- corrupt JSON (диск full / kill -9
+    посреди записи, до _atomic_write_json или на старых файлах без него) не должен
+    ронять запрос 500-кой, деградируем к default с явным логом. Раньше только
+    roles.json имел эту защиту, 17 других _load_* падали с необработанным
+    JSONDecodeError на первом же corrupt-файле."""
+    if not os.path.exists(path):
+        return default
     try:
-        with open(ROLES_FILE, encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             return json.load(f)
     except json.JSONDecodeError:
-        # Corrupt roles.json (диск full / kill -9 посреди записи) не должен ронять
-        # whitelist-проверку для каждого запроса -- деградируем к пустому whitelist
-        # (все получат 403, а не 500), это по крайней мере видимо и безопасно.
-        print(f'ERROR: roles.json corrupt, falling back to empty whitelist: {ROLES_FILE}')
-        return {}
+        print(f'ERROR: {path} corrupt JSON, falling back to default: {default!r}')
+        return default
+
+
+def _load_roles() -> dict:
+    return _safe_load_json(ROLES_FILE, {})
 
 
 def _save_roles(roles: dict):
@@ -157,9 +163,7 @@ NOTIFIED_USERS_TTL = 7 * 86400  # 7 дней — потом можно напо�
 
 
 def _load_notified_users() -> dict:
-    if not os.path.exists(NOTIFIED_USERS_FILE):
-        return {}
-    raw = json.load(open(NOTIFIED_USERS_FILE))
+    raw = _safe_load_json(NOTIFIED_USERS_FILE, {})
     if isinstance(raw, list):
         # миграция со старого формата (список без timestamp) — считаем уведомлёнными сейчас
         now = time.time()
@@ -335,9 +339,7 @@ SKILL_OPTIONS = [
 
 
 def _load_worker_profiles() -> dict:
-    if not os.path.exists(WORKER_PROFILES_FILE):
-        return {}
-    return json.load(open(WORKER_PROFILES_FILE, encoding='utf-8'))
+    return _safe_load_json(WORKER_PROFILES_FILE, {})
 
 
 def _save_worker_profiles(profiles: dict):
@@ -732,9 +734,7 @@ OBJECT_IMAGES_FILE = '/home/promonta/agent/miniapp/object_images.json'
 
 
 def _load_assignments() -> dict:
-    if not os.path.exists(OBJECT_ASSIGNMENTS_FILE):
-        return {}
-    return json.load(open(OBJECT_ASSIGNMENTS_FILE, encoding='utf-8'))
+    return _safe_load_json(OBJECT_ASSIGNMENTS_FILE, {})
 
 
 def _save_assignments(assignments: dict):
@@ -742,9 +742,7 @@ def _save_assignments(assignments: dict):
 
 
 def _load_object_images() -> dict:
-    if not os.path.exists(OBJECT_IMAGES_FILE):
-        return {}
-    return json.load(open(OBJECT_IMAGES_FILE, encoding='utf-8'))
+    return _safe_load_json(OBJECT_IMAGES_FILE, {})
 
 
 _sheets_cache: dict = {}
@@ -1002,9 +1000,7 @@ ALERT_DISMISS_TTL = 24 * 3600
 
 
 def _load_alert_dismissals() -> dict:
-    if not os.path.exists(ALERT_DISMISSALS_FILE):
-        return {}
-    return json.load(open(ALERT_DISMISSALS_FILE))
+    return _safe_load_json(ALERT_DISMISSALS_FILE, {})
 
 
 def _save_alert_dismissals(data: dict):
@@ -1235,9 +1231,7 @@ os.makedirs(OBJECT_DOC_DIR, exist_ok=True)
 
 
 def _load_object_info() -> dict:
-    if not os.path.exists(OBJECT_INFO_FILE):
-        return {}
-    return json.load(open(OBJECT_INFO_FILE))
+    return _safe_load_json(OBJECT_INFO_FILE, {})
 
 
 def _save_object_info(data: dict):
@@ -1507,10 +1501,7 @@ def _weather_entry_key(entry: dict) -> str:
 
 
 def _load_weather_reactions() -> dict:
-    if not os.path.exists(WEATHER_REACTIONS_FILE):
-        return {}
-    with open(WEATHER_REACTIONS_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(WEATHER_REACTIONS_FILE, {})
 
 
 def _save_weather_reactions(data: dict):
@@ -1560,10 +1551,7 @@ NEWS_READS_FILE = '/home/promonta/agent/miniapp/news_reads.json'
 
 
 def _load_news_reactions() -> dict:
-    if not os.path.exists(NEWS_REACTIONS_FILE):
-        return {}
-    with open(NEWS_REACTIONS_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(NEWS_REACTIONS_FILE, {})
 
 
 def _save_news_reactions(data: dict):
@@ -1571,10 +1559,7 @@ def _save_news_reactions(data: dict):
 
 
 def _load_news_reads() -> dict:
-    if not os.path.exists(NEWS_READS_FILE):
-        return {}
-    with open(NEWS_READS_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(NEWS_READS_FILE, {})
 
 
 def _save_news_reads(data: dict):
@@ -1584,10 +1569,7 @@ def _save_news_reads(data: dict):
 BIRTHDAY_ALERTS_FILE = '/home/promonta/agent/miniapp/birthday_alerts.json' 
 
 def _load_birthday_alerts() -> list:
-    if not os.path.exists(BIRTHDAY_ALERTS_FILE):
-        return []
-    with open(BIRTHDAY_ALERTS_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(BIRTHDAY_ALERTS_FILE, [])
 
 
 def _save_birthday_alerts(items: list):
@@ -1720,10 +1702,7 @@ os.makedirs(PHOTO_DIR, exist_ok=True)
 
 
 def _load_photo_meta() -> list:
-    if not os.path.exists(PHOTO_META_FILE):
-        return []
-    with open(PHOTO_META_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(PHOTO_META_FILE, [])
 
 
 def _save_photo_meta(items: list):
@@ -1942,10 +1921,7 @@ _chat_lock = __import__('threading').Lock()
 
 
 def _load_chat() -> list:
-    if not os.path.exists(CHAT_FILE):
-        return []
-    with open(CHAT_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(CHAT_FILE, [])
 
 
 def _save_chat(messages: list):
@@ -1965,10 +1941,7 @@ CHAT_READS_FILE = '/home/promonta/agent/miniapp/chat_reads.json'
 
 
 def _load_reads() -> dict:
-    if not os.path.exists(CHAT_READS_FILE):
-        return {}
-    with open(CHAT_READS_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(CHAT_READS_FILE, {})
 
 
 def _save_reads(reads: dict):
@@ -1979,10 +1952,7 @@ CHAT_THREAD_META_FILE = '/home/promonta/agent/miniapp/chat_thread_meta.json'
 
 
 def _load_chat_thread_meta() -> dict:
-    if not os.path.exists(CHAT_THREAD_META_FILE):
-        return {}
-    with open(CHAT_THREAD_META_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(CHAT_THREAD_META_FILE, {})
 
 
 def _save_chat_thread_meta(meta: dict):
@@ -2816,10 +2786,7 @@ TASKS_FILE = '/home/promonta/agent/miniapp/tasks.json'
 
 
 def _load_tasks() -> list:
-    if not os.path.exists(TASKS_FILE):
-        return []
-    with open(TASKS_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(TASKS_FILE, [])
 
 
 def _save_tasks(items: list):
@@ -3119,10 +3086,7 @@ os.makedirs(CHECKIN_PHOTO_BASE, exist_ok=True)
 
 
 def _load_checkin_meta() -> list:
-    if not os.path.exists(CHECKIN_META_FILE):
-        return []
-    with open(CHECKIN_META_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(CHECKIN_META_FILE, [])
 
 
 def _save_checkin_meta(items: list):
@@ -3679,10 +3643,7 @@ os.makedirs(CRITICAL_ALERT_PHOTO_DIR, exist_ok=True)
 
 
 def _load_critical_alerts() -> list:
-    if not os.path.exists(CRITICAL_ALERTS_FILE):
-        return []
-    with open(CRITICAL_ALERTS_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(CRITICAL_ALERTS_FILE, [])
 
 
 def _save_critical_alerts(items: list):
@@ -3875,10 +3836,7 @@ ABWESENHEIT_REASONS = ('Krankheit', 'Urlaub', 'Sonstiges')
 
 
 def _load_abwesenheit() -> list:
-    if not os.path.exists(ABWESENHEIT_FILE):
-        return []
-    with open(ABWESENHEIT_FILE, encoding='utf-8') as f:
-        return json.load(f)
+    return _safe_load_json(ABWESENHEIT_FILE, [])
 
 
 def _save_abwesenheit(items: list):
