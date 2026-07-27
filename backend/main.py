@@ -316,6 +316,10 @@ def set_role(body: RoleSetBody, user: dict = Depends(get_current_user), _: None 
     if body.role not in ('owner', 'worker'):
         raise HTTPException(400, "role должен быть owner или worker")
     roles = _load_roles()
+    if body.role == 'worker' and roles.get(str(body.user_id)) == 'owner':
+        remaining_owners = sum(1 for r in roles.values() if r == 'owner') - 1
+        if remaining_owners < 1:
+            raise HTTPException(400, "Нельзя понизить последнего owner — фирма останется без владельца в приложении")
     roles[str(body.user_id)] = body.role
     _save_roles(roles)
     try:
@@ -330,6 +334,10 @@ def revoke_role(target_user_id: str, user: dict = Depends(get_current_user), _: 
     if target_user_id == str(user['id']):
         raise HTTPException(400, "Нельзя удалить свою же роль")
     roles = _load_roles()
+    if roles.get(target_user_id) == 'owner':
+        remaining_owners = sum(1 for r in roles.values() if r == 'owner') - 1
+        if remaining_owners < 1:
+            raise HTTPException(400, "Нельзя удалить последнего owner — фирма останется без владельца в приложении")
     roles.pop(target_user_id, None)
     _save_roles(roles)
     return {"status": "ok"}
