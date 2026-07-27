@@ -16,6 +16,16 @@ Service: `promonta-miniapp.service` (systemd) — backend. Caddy serves frontend
 5. After every frontend JS change: `node --check <file>`.
 6. Commit to the git repo (`main`) with a clear message explaining what changed and why, using `git commit -F <message-file>` (heredocs with embedded quotes break over SSH — always write the message to a file first).
 7. **Also deploy to prod** — this session (unlike earlier ones) has been deploying continuously so the owner can verify fixes live on his phone. Copy the changed file(s) to their prod path, restart `promonta-miniapp.service` only for backend changes, and back up the file being overwritten first (`cp target target.bak-pre-<label>-$(date +%Y%m%d-%H%M%S)`).
+
+   **Important permission note (found 28.07.2026, see memory `project_miniapp_server_permissions`)**: the `promonta` user (which is what you're running as in this autonomous mode) cannot write to `/var/www/miniapp/` directly and cannot restart the systemd service directly -- both require root. A narrow passwordless sudo rule was set up specifically for this:
+   ```
+   sudo -n /bin/cp <source> /var/www/miniapp/<dest>
+   sudo -n /bin/chown root:root /var/www/miniapp/<dest>
+   sudo -n /bin/systemctl restart promonta-miniapp.service
+   ```
+   These three sudo invocations are the ONLY root actions available to you -- don't attempt `sudo -u promonta` wrapping (you're already promonta) or try other sudo commands, they will hang waiting for a password that will never come (`-n` makes it fail fast instead if the rule doesn't cover it -- if a cp/chown/restart call errors with sudo asking for a password, the path or command didn't match the sudoers rule exactly, check for typos before assuming something else is wrong).
+   For the backend main.py: after `python3 -m py_compile`, `cp backend/main.py /home/promonta/agent/miniapp/main.py` (this path IS writable by promonta directly, no sudo needed) then `sudo -n /bin/systemctl restart promonta-miniapp.service`.
+   For frontend files: `sudo -n /bin/cp frontend/app.html /var/www/miniapp/app.html` (or the relevant js/ file) then `sudo -n /bin/chown root:root /var/www/miniapp/<file>` -- no service restart needed for frontend-only changes, Caddy serves the static file directly.
 8. After finishing a phase's checklist items, edit that phase's file in `docs/plan-phases/` to mark each item's status (FIXED / CONFIRMED-not-a-gap / deferred-with-reason), matching the style already used in files 01-04. Commit that doc update separately from the code commit.
 
 ## Critical rules (violating these has caused real damage this session already)
