@@ -90,7 +90,7 @@ Finish endpoint должен брать `object_id` из активной сме
 Одна active shift на user; finish только для active shift; idempotency scope `user + operation + key`; photos принадлежат shift; object существует; worker имеет доступ; время в UTC, UI показывает Europe/Berlin. Concurrency test: много параллельных start requests → ровно одна active shift. State machine: DRAFT → STARTING → ACTIVE → FINISHING → COMPLETED (+ CORRECTION_REQUIRED, CANCELLED).
 
 ### A11. CSV/formula injection
-Значения начинающиеся с `=`, `+`, `-`, `@` не должны исполняться как spreadsheet formula при экспорте. Использовать стандартный `csv` module, не ручную сборку строк.
+Статус: **FIXED (commit b6410d4).** Единственный CSV-генератор в проекте — `export_stundenzettel` (main.py ~3434). Подтверждён реальный gap: `object_id` в строке CSV шёл напрямую из `checkin_start`'s Form-параметра (только `.strip()[:100]`, без sanitize) — worker теоретически мог отравить экспорт formula-payload'ом типа `=cmd|'/c calc'!A1`. Добавлен `_csv_safe()` (префикс апострофом для `=`/`+`/`-`/`@`), применён к `date`/`object_id`. Ручная f-string сборка (`join(';')`, без quoting) заменена на `csv.writer(delimiter=';')`. Реальные object_id (`OBJ-xxx`, буква первая) и date (`YYYY-MM-DD`, цифра первая) не задеты — только нейтрализует теоретический payload, не меняет вывод для нормальных данных.
 
 ### A12. Google Sheets sync failures
 Найти `try: sync() except Exception: pass` паттерны — silent failure недопустим для owner-важных операций. Owner должен видеть sync error, даже если полноценный outbox пока не строится.
