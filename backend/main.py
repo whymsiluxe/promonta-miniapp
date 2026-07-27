@@ -3859,7 +3859,15 @@ def resolve_critical_alert(alert_id: str, resolution: str = Form(...), note: str
 
 @app.get("/api/critical-alerts/{alert_id}/photo/{filename}")
 def get_critical_alert_photo(alert_id: str, filename: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    path = os.path.join(CRITICAL_ALERT_PHOTO_DIR, alert_id, filename)
+    # path traversal: alert_id/filename идут из URL напрямую в os.path.join без
+    # проверки против known-хранимых значений (в отличие от object documents/chat
+    # attachments, которые матчат fname против JSON-store перед сборкой пути) --
+    # basename() режет любой ../ компонент до склейки.
+    safe_alert_id = os.path.basename(alert_id)
+    safe_filename = os.path.basename(filename)
+    if safe_alert_id != alert_id or safe_filename != filename:
+        raise HTTPException(404, "Фото не найдено")
+    path = os.path.join(CRITICAL_ALERT_PHOTO_DIR, safe_alert_id, safe_filename)
     if not os.path.exists(path):
         raise HTTPException(404, "Фото не найдено")
     if role != 'owner':
