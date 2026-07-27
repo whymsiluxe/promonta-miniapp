@@ -1992,6 +1992,16 @@ body.view-locked {
 .weather-island-text { font-size: 0.83rem; color: var(--text-main); flex: 1; }
 /* Кольца объектов */
 .home-rings-section { padding: 0 0.75rem 0.75rem; }
+.home-shifts-section { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); margin: 0 0.75rem 0.75rem; padding: 0.75rem; }
+.home-shift-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
+.home-shift-row:last-child { border-bottom: none; }
+.home-shift-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.home-shift-dot-active { background: var(--accent); }
+.home-shift-dot-idle { background: var(--text-light); }
+.home-shift-info { flex: 1; min-width: 0; }
+.home-shift-name { font-size: 0.9rem; font-weight: 600; }
+.home-shift-object { font-size: 0.8rem; color: var(--text-light); }
+.home-shift-chat-btn { background: var(--bg-card-raised); border: none; border-radius: 8px; padding: 0.35rem 0.6rem; font-size: 0.78rem; color: var(--text-main); flex-shrink: 0; }
 .home-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
 .home-section-title { font-family: var(--font-heading); font-size: 1.26rem; font-weight: 700; color: var(--text-main); text-transform: uppercase; letter-spacing: 0.05em; }
 .home-section-action { font-size: 0.82rem; color: var(--accent); cursor: pointer; }

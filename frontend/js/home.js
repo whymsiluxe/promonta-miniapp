@@ -35,6 +35,14 @@ async function initHomeView() {
       </div>
     </div>
 
+    <div id="home-shifts-today-section" class="home-shifts-section" style="display:none;">
+      <div class="home-section-header">
+        <span class="home-section-title">Смены сегодня</span>
+      </div>
+      <div id="home-shifts-working-now"></div>
+      <div id="home-shifts-not-started"></div>
+    </div>
+
     <div id="home-radio-player-mount"></div>
 
     <div id="home-messages-wide" class="quick-primary-item home-messages-wide" onclick="switchView('chat')">
@@ -94,6 +102,68 @@ async function _loadHomeData() {
   _loadHomeAlerts();
   _loadHomeAbwesenheitSummary();
   _loadHomeChatSummary();
+  if (currentRole === 'owner') _loadHomeShiftsToday();
+}
+
+// 27.07 (B5): "Кто сейчас работает" + "Кто не начал смену" -- owner не должен
+// искать проблему вручную, dashboard сам показывает где нужно внимание.
+async function _loadHomeShiftsToday() {
+  const section = document.getElementById('home-shifts-today-section');
+  const workingEl = document.getElementById('home-shifts-working-now');
+  const notStartedEl = document.getElementById('home-shifts-not-started');
+  if (!section) return;
+  try {
+    const data = await api('/api/dashboard/shifts-today');
+    const working = data.working_now || [];
+    const notStarted = data.not_started || [];
+    if (!working.length && !notStarted.length) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = 'block';
+
+    workingEl.innerHTML = working.map(w => {
+      const mins = w.start_at ? Math.round((Date.now() / 1000 - w.start_at) / 60) : 0;
+      const durationLabel = mins >= 60 ? `${Math.floor(mins / 60)} ч ${mins % 60} мин` : `${mins} мин`;
+      return `
+      <div class="home-shift-row home-shift-row-working" data-uid="${esc(w.user_id)}" data-oid="${esc(w.object_id)}">
+        <div class="home-shift-dot home-shift-dot-active"></div>
+        <div class="home-shift-info">
+          <div class="home-shift-name">${esc(w.worker_name)}</div>
+          <div class="home-shift-object">${esc(w.object_name)} · ${durationLabel}</div>
+        </div>
+        <button class="home-shift-chat-btn" data-shift-chat="${esc(w.user_id)}" data-shift-name="${esc(w.worker_name)}" type="button">💬</button>
+      </div>`;
+    }).join('');
+
+    notStartedEl.innerHTML = notStarted.map(w => `
+      <div class="home-shift-row home-shift-row-notstarted" data-uid="${esc(w.user_id)}" data-oid="${esc(w.object_id)}">
+        <div class="home-shift-dot home-shift-dot-idle"></div>
+        <div class="home-shift-info">
+          <div class="home-shift-name">${esc(w.worker_name)}</div>
+          <div class="home-shift-object">${esc(w.object_name)} · не начал смену</div>
+        </div>
+        <button class="home-shift-chat-btn" data-shift-chat="${esc(w.user_id)}" data-shift-name="${esc(w.worker_name)}" type="button">Напомнить</button>
+      </div>`).join('');
+
+    section.querySelectorAll('[data-shift-chat]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        switchView('chat');
+        setTimeout(() => {
+          if (typeof openChatThread === 'function') openChatThread(btn.dataset.shiftChat, btn.dataset.shiftName);
+        }, 250);
+      });
+    });
+    section.querySelectorAll('.home-shift-row').forEach(row => {
+      row.addEventListener('click', () => {
+        switchView('objects');
+        if (typeof openStagesView === 'function') openStagesView(row.dataset.oid, '');
+      });
+    });
+  } catch (e) {
+    section.style.display = 'none';
+  }
 }
 
 // 10.11: Abwesenheit-плашка на Home — сводка вместо мелкой строки в Profile→Ещё.
