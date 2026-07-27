@@ -2585,8 +2585,17 @@ def _messages_to_prompt(messages: list) -> str:
     return '\n\n'.join(parts)
 
 
+_claude_cli_lock = __import__('threading').Lock()
+
+
 def _call_claude_cli(messages: list, model: str) -> str:
+    """owner-only agent chat -- полный контекст/permissions осознанно (владелец хочет,
+    чтобы этот ассистент видел всё, что видит Claude Code сам). Lock -- не security-
+    ограничение, а просто защита от нескольких параллельных 120-секундных subprocess
+    (rate limit 20/час уже ограничивает частоту, но не одновременность)."""
     prompt = _messages_to_prompt(messages)
+    if not _claude_cli_lock.acquire(timeout=1):
+        raise HTTPException(429, "Уже выполняется другой запрос к Claude — подожди и повтори")
     try:
         r = subprocess.run(
             [CLAUDE_BIN, '-p', '--dangerously-skip-permissions', '--model', model, prompt],
@@ -2597,6 +2606,8 @@ def _call_claude_cli(messages: list, model: str) -> str:
         raise HTTPException(504, f"Claude ({model}) не ответил за 120 сек")
     except Exception as e:
         raise HTTPException(502, f"Claude CLI недоступен: {str(e)[:200]}")
+    finally:
+        _claude_cli_lock.release()
 
     if r.returncode != 0:
         raise HTTPException(502, f"Claude CLI ошибка: {(r.stderr or '')[:300]}")
