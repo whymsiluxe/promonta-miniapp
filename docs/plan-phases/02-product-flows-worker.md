@@ -19,9 +19,15 @@ PHASE B part 1 — Worker shift flows (start/active/finish wizard/voice/dashboar
 **Осознанно НЕ сделано**: quick action "Фото" — `checkin-photo-input` жёстко завязан на `_checkinPendingAction` ('start'|'finish'), нет режима "просто прикрепить фото посреди смены", backend endpoint для этого не существует — не стал строить полу-рабочую кнопку. **Geo-в-чат** — owner explicit decision отложить, новая фича без backend поддержки, вне скоупа этого прохода.
 
 ### B3. Finish shift — пошаговый wizard
-Step 1 Фото (мин. 2, см. A3) → Step 2 Что сделано (текст + голос + AI-транскрипт, редактируемый, не auto-send) → Step 3 Доп. работы (Нет/Добавить, голос, AI может структурировать в пункты, каждый editable: описание/зона/время/нужно ли согласование) → Step 4 Потребности/проблемы (категории: материалы/инструмент/СИЗ/доступ/дефект/другое, не создавать Need/Mangel автоматически без подтверждения) → Step 5 Геолокация финиша (обязательна, см. A2) → Step 6 Сводка + отправка.
+Статус: **FIXED, полностью (commits 4376123 backend + 8bbf03d frontend, 2026-07-27).** Owner решение: делать весь wizard сразу по плану (не поэтапно), structured extra_works хранить сразу (не текстом).
 
-Backend finish endpoint принимает структурированные поля: `work_summary`, `extra_works[]`, `needs[]`, `defects[]`, `blockers`, `finish_photos[]`, `finish_location`. Проверяет: активная смена есть, object_id из смены не с клиента (A4), доступ, мин. 2 фото (A3), finish location (A2). Атомарная запись.
+Backend: `checkin_finish` принимает `extra_works`/`needs`/`defects` как JSON-encoded списки (опциональные Form-поля, старый `extra_work: str` работает как раньше для обратной совместимости с `checkin_manual`/старыми клиентами). Ни один список не создаёт Need/Mangel тикеты автоматически — только сохраняется в session, реальное создание — отдельный подтверждённый вызов с фронтенда после успешного finish. `_extra_works_summary_text()` сериализует список в текст для Zeiterfassung Sheets/Telegram push (не показывает сырой JSON бухгалтерии/owner).
+
+Frontend: новый `frontend/js/finish-wizard.js` (отдельно от checkin.js), новый `#finish-wizard-modal` (не переиспользует `checkin-preview-modal` — тот остался для start-shift). 6 шагов реализованы по плану: фото (мин 2) → что сделано (текст+voice через `/api/transcribe` из B4) → доп.работы (structured list, каждый пункт с описанием/зоной/временем/чекбоксом согласования, свой voice-button) → потребности (категории materials/tool/ppe/access/other) + дефекты (оба list, ничего не создаётся до подтверждения) → гео финиша (обязательна, retry на отказ) → сводка + submit (finish → затем по одному POST /api/tasks на каждый Need и POST /api/mangel на каждый Defect, best-effort — сбой создания тикета не откатывает уже успешный finish).
+
+Оба входа в finish (checkin.js `checkin-finish-btn`, worker-checkin-fab.js `checkin-status-finish-btn`) переключены на `openFinishShiftWizard()`, старый photo-picker flow для finish больше не используется (start остался нетронут).
+
+**Не сделано в этом проходе**: AI-структуризация voice-транскрипта доп-работ в несколько пунктов автоматически (voice сейчас просто дописывает текст в текущее редактируемое поле, worker добавляет по одному пункту вручную) — план упоминал это как желательное, не обязательное. Фото-вложения к Need/Defect, созданным через wizard — не реализовано (spec подразумевал, wizard создаёт их только текстом).
 
 ### B4. Voice input + AI transcription
 Статус: **Backend FIXED (commit 823a08d), frontend NOT STARTED.**
