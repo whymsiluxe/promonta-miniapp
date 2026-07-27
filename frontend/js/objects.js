@@ -163,7 +163,7 @@ function renderTaskRow(t) {
   </div>`;
 }
 
-async function loadTasks(objectId, listEl, countEl) {
+async function loadObjectWorkTasks(objectId, listEl, countEl) {
   try {
     const data = await api(`/api/objects/${objectId}/tasks`);
     if (!data.tasks.length) {
@@ -187,7 +187,7 @@ function attachTaskHandlers(listEl, objectId) {
         await api(`/api/tasks/${taskId}/complete`, { method: 'PATCH' });
         const card = listEl.closest('.card');
         const countEl = card.querySelector('.tasks-count');
-        await loadTasks(objectId, listEl, countEl);
+        await loadObjectWorkTasks(objectId, listEl, countEl);
       } catch (e) {
         showToast('Ошибка: ' + e.message, 'error');
         box.classList.remove('disabled');

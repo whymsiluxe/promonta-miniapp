@@ -218,7 +218,7 @@ async function _renderObjWorksTasksSection(objectId) {
     </div>` : ''}
   `;
   const listEl = document.getElementById('obj-tasks-list');
-  await loadTasks(objectId, listEl, null);
+  await loadObjectWorkTasks(objectId, listEl, null);
   const addBtn = document.getElementById('obj-tasks-add-btn');
   if (addBtn) {
     addBtn.addEventListener('click', async () => {
@@ -229,7 +229,7 @@ async function _renderObjWorksTasksSection(objectId) {
         await api(`/api/objects/${objectId}/tasks`, { method: 'POST', body: JSON.stringify({ text }) });
         textEl.value = '';
         hapticImpact('light');
-        await loadTasks(objectId, listEl, null);
+        await loadObjectWorkTasks(objectId, listEl, null);
       } catch (e) {
         showToast('Ошибка: ' + e.message, 'error');
       }
