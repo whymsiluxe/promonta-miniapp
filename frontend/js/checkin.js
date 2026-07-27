@@ -72,6 +72,7 @@ async function refreshCheckinButtons() {
     if (open) {
       session = {
         id: open.id, finished: false,
+        startAt: open.start_at || null,
         pauseStartedAt: open.pause_started_at || null,
         pauseAccumulatedSeconds: open.pause_accumulated_seconds || 0,
       };
@@ -110,6 +111,99 @@ async function refreshCheckinButtons() {
     analyzeBtn.style.display = 'none';
     if (pauseBtn) pauseBtn.style.display = 'none';
   }
+
+  _updateActiveShiftPanel(session && !session.finished ? session : null, objectId);
+}
+
+// 27.07 (B2): панель "Активная смена" -- таймер + GPS-статус + быстрые действия.
+// Живёт внутри stages-view (не отдельный полноэкранный view), появляется только
+// когда для этого объекта есть открытая сессия. Один interval на всё приложение
+// (не per-render) -- refreshCheckinButtons может вызываться многократно при
+// повторных открытиях экрана, дублировать таймер нельзя.
+let _activeShiftTimerInterval = null;
+let _activeShiftStartAt = null;
+let _activeShiftPauseStartedAt = null;
+let _activeShiftPauseAccumulated = 0;
+
+function _stopActiveShiftTimer() {
+  if (_activeShiftTimerInterval) {
+    clearInterval(_activeShiftTimerInterval);
+    _activeShiftTimerInterval = null;
+  }
+}
+
+function _formatShiftDuration(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+    : `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
+function _tickActiveShiftTimer() {
+  const timerEl = document.getElementById('active-shift-timer');
+  if (!timerEl || !_activeShiftStartAt) return;
+  const now = Math.floor(Date.now() / 1000);
+  let pauseSeconds = _activeShiftPauseAccumulated;
+  if (_activeShiftPauseStartedAt) pauseSeconds += now - _activeShiftPauseStartedAt;
+  timerEl.textContent = _formatShiftDuration(now - _activeShiftStartAt - pauseSeconds);
+}
+
+function _updateActiveShiftPanel(activeSession, objectId) {
+  const panel = document.getElementById('active-shift-panel');
+  if (!panel) return;
+
+  if (!activeSession || !activeSession.startAt) {
+    panel.style.display = 'none';
+    _stopActiveShiftTimer();
+    return;
+  }
+
+  panel.style.display = 'block';
+  _activeShiftStartAt = activeSession.startAt;
+  _activeShiftPauseStartedAt = activeSession.pauseStartedAt || null;
+  _activeShiftPauseAccumulated = activeSession.pauseAccumulatedSeconds || 0;
+  _tickActiveShiftTimer();
+  if (!_activeShiftTimerInterval) {
+    _activeShiftTimerInterval = setInterval(_tickActiveShiftTimer, 1000);
+  }
+
+  const gpsEl = document.getElementById('active-shift-gps-status');
+  if (gpsEl) {
+    if (navigator.geolocation) {
+      gpsEl.textContent = '📍 GPS ок';
+      gpsEl.style.color = '';
+    } else {
+      gpsEl.textContent = '⚠️ GPS недоступен';
+      gpsEl.style.color = 'var(--red)';
+    }
+  }
+
+  _wireActiveShiftQuickActions(objectId);
+}
+
+let _activeShiftQuickActionsWired = false;
+
+function _wireActiveShiftQuickActions(objectId) {
+  // Wired once, objectId читается из _stagesCurrentObjectId в момент клика
+  // (не захватывается в замыкании) -- панель переиспользуется между объектами,
+  // юзер может открыть другой объект не перезагружая страницу.
+  if (_activeShiftQuickActionsWired) return;
+  _activeShiftQuickActionsWired = true;
+
+  document.getElementById('active-shift-qa-chat')?.addEventListener('click', () => {
+    document.getElementById('object-chat-btn')?.click();
+  });
+  document.getElementById('active-shift-qa-need')?.addEventListener('click', () => {
+    if (typeof switchView === 'function') switchView('my-tasks');
+  });
+  document.getElementById('active-shift-qa-defect')?.addEventListener('click', () => {
+    window._pendingMangelObjectFilter = _stagesCurrentObjectId;
+    if (typeof switchView === 'function') switchView('mangel');
+    setTimeout(() => document.getElementById('mangel-new-btn')?.click(), 150);
+  });
 }
 
 async function _toggleCheckinPause() {
