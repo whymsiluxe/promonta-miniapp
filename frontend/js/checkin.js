@@ -169,6 +169,9 @@ async function runCheckinAnalysis() {
 
 async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey) {
   const geo = await _getGeolocation();
+  if (!geo.lat || !geo.lon) {
+    throw new Error('Включи геолокацию, чтобы начать/завершить смену');
+  }
   const formData = new FormData();
   formData.append('object_id', _stagesCurrentObjectId);
   formData.append('lat', geo.lat);
@@ -337,8 +340,15 @@ async function _confirmCheckinPreview() {
     _closeCheckinPreviewModal();
   } catch (e) {
     // Файлы и idempotency-key НЕ сбрасываются — повторный тап "Подтвердить" безопасен (дедуп на сервере),
-    // не нужно переснимать фото заново при плохой связи.
-    _setCheckinSyncStatus('Не удалось отправить — данные сохранены, нажми "Подтвердить" ещё раз', true);
+    // не нужно переснимать фото заново при плохой связи. Geo-ошибка — отдельный случай:
+    // повтор не поможет, пока юзер физически не включит геолокацию (не временный network-сбой).
+    const isGeoError = /геолокац/i.test(e.message || '');
+    _setCheckinSyncStatus(
+      isGeoError
+        ? 'Включи геолокацию в настройках и нажми "Подтвердить" ещё раз'
+        : 'Не удалось отправить — данные сохранены, нажми "Подтвердить" ещё раз',
+      true
+    );
     showToast('Ошибка check-in: ' + e.message, 'error');
     confirmBtn.disabled = false;
     confirmBtn.textContent = `Подтвердить (${_checkinPreviewFiles.length} фото)`;

@@ -3119,6 +3119,8 @@ async def checkin_start(
 
     if not object_id.strip():
         raise HTTPException(400, "object_id обязателен")
+    if not lat.strip() or not lon.strip():
+        raise HTTPException(400, "Включи геолокацию, чтобы начать смену")
     date_str = datetime.now().strftime('%Y-%m-%d')
 
     with _checkin_lock:
@@ -3235,6 +3237,9 @@ async def checkin_finish(
     cached = _idempotency_get(idempotency_key)
     if cached is not None:
         return cached
+
+    if not lat.strip() or not lon.strip():
+        raise HTTPException(400, "Включи геолокацию, чтобы завершить смену")
 
     with _checkin_lock:
         items = _load_checkin_meta()
