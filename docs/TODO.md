@@ -89,3 +89,62 @@ Being worked in dedicated branches (`feat/ui-batch-1`, etc.), one screen/feature
 - [ ] Backend: CSP headers — needs Caddy config change, touches `docs/DEPLOYMENT.md`
 - [ ] `tg.initData` HMAC validation — **already implemented and verified correct** in `main.py` (see `docs/SECURITY.md`), the owner's list re-requesting this is already satisfied, not a gap
 - [ ] "Don't store sensitive data in localStorage, only `tg.CloudStorage`" — worth an audit of current `localStorage` usage across `js/*.js` before assuming a violation exists; not yet checked in this pass
+
+========================
+## Batch 2026-07-27 — Security/XSS + JSON storage + Architecture (owner list, verified against code before starting)
+
+Source: owner-provided list. Verified against `main` (`git log main...origin/fix/security-reliability-p1` empty — that branch already merged, PROJECT_STATE.md's "not merged" note is stale, fix separately). Each item marked with real status found in code, not assumed.
+
+### XSS / escaping — apply to: AI analysis in checkin, stage names/status/object names, picker object/stage names, profile object history/skills, any data from Google Sheets, any user data, any AI data
+
+Rules: use `esc()`. CSS class via whitelist. Inline `onclick` with user data → `data-*` + event listeners.
+
+- [ ] **checkin.js `_openAiAnalysis`-type render, line ~158**: `resultEl.innerHTML = html` — `html` comes from AI backend response, NOT run through `esc()` before insert. Error path (line 161) IS escaped (`esc(e.message)`), success path is not. **Confirmed gap, start here.**
+- [ ] `esc()` exists (`shared.js:55`), used 131x across the app — but `innerHTML` appears in 20 files (abwesenheit/ai/angebot/bubble-assign/chat/checkin/critical-alerts/feed/home/mangel/my-tasks/object-info/objects/onboarding/profile/rechnung/tasks/tools/worker-checkin-fab + shared.js itself). Need per-file audit: which interpolate unescaped Sheets/AI/user data into template literals before `.innerHTML =`. Not yet scoped file-by-file.
+- [ ] Stage names/status/object names (from Google Sheets) — verify all render paths use `esc()`, not just checkin.
+- [ ] Picker object/stage names — same, verify picker components escape.
+- [ ] Profile object history/skills — verify escape.
+- [ ] CSS class whitelist — **not implemented anywhere** (`grep whitelist` only hits unrelated roles.json whitelist comments). Needs a real allowlist function for any dynamically-built class strings.
+- [ ] Inline `onclick="..."` with interpolated data — still present: `app.html` (18), `home.js` (23), `feed.js` (8), `objects.js` (4), `abwesenheit.js` (4), `profile.js` (2), `chat.js` (2), `bubble-assign.js`/`tools.js`/`worker-checkin-fab.js` (1 each). Migrate to `data-*` + `addEventListener`, prioritize files with highest count first (home.js, feed.js).
+
+### JSON storage
+
+- [x] **`_atomic_write_json` exists** (`main.py:124`), all runtime JSON writes route through it — no direct `open(path, "w")` found for JSON in `main.py`. Already done, no action needed.
+- [ ] **JSONDecodeError handling** — only 2 occurrences in 4027-line `main.py`. Needs audit: every `json.load`/`json.loads` on a runtime file should catch `JSONDecodeError` and fall back safely (roles.json already does this per comment at line 145 — check which other files don't).
+- [x] **Locks for concurrent writes** — already present: `AUDIT_LOCK`, `_json_locks` (generic per-path lock dict), `_photo_lock`, `_chat_lock`, `_checkin_lock`. Covers the 15-site deadlock fix mentioned in PROJECT_STATE.md's `fix/security-reliability-p1` (already merged). No action needed unless new JSON files were added since without locks — check any files touched after 2026-07-24.
+
+### Uploads
+
+- [ ] **Magic bytes check** — NOT implemented (`grep -n 'magic\|imghdr\|filetype'` empty). Only `content_type` header is checked (client-supplied, spoofable). Needs real content-sniffing (`imghdr` stdlib deprecated in 3.13, prefer `python-magic` or manual byte-signature check).
+- [ ] Size/count limits — chat upload confirmed 8MB (per SESSION_HANDOFF), others unverified per TODO.md REC-10 (already tracked there, don't duplicate).
+- [ ] Extension normalization — not checked yet.
+- [ ] Reject dangerous types (svg/html/exe disguised as image) — not checked yet, depends on magic-bytes work above.
+- [ ] **Finish shift minimum 2 photos** — NOT found as an explicit `len(photos) >= 2` check in `checkin_finish` (main.py:3221) or `_save_checkin_photos` (main.py:49). Currently only checks `len(raw) > CHECKIN_MAX_BYTES` per file, no minimum-count enforcement found. **Confirmed gap.**
+- [ ] **Finish/start geolocation required** — `_gps_suspect()` exists (main.py:340) to flag suspicious coordinates, but no confirmed check that lat/lon are non-optional/required at all in `checkin_start`/`checkin_finish`. Needs explicit verification (read full function bodies) before claiming either way — didn't fully trace signature optionality in this pass.
+
+### Architecture
+
+`backend/main.py` is 4027 lines, `frontend/app.html` is 4000 lines. Both **fully monolithic**, no split started.
+
+- [ ] Backend split (incremental, no route/name breakage): `auth.py`, `permissions.py`, `storage.py`, `schemas.py`, then routers: `objects.py`, `checkin.py`, `chat.py`, `tasks.py`, `mangel.py`, `profile.py`, `documents.py`, `ai.py`.
+- [ ] Frontend split: telegram viewport/init logic, api client, navigation lifecycle, reusable modal, reusable voice input, finish-shift wizard, worker home, owner dashboard — out of `app.html` into modules (frontend already has per-feature `js/*.js` files but `app.html` itself still carries a lot inline — needs actual line-count audit of what's still inline in app.html vs already externalized).
+- [ ] Don't break existing route names/API paths during split — hard constraint.
+
+### Docs & tests
+
+- [ ] Update: README.md (not found in repo root during this pass — verify exists), `docs/PROJECT_STATE.md` (has a stale "not merged" claim re: `fix/security-reliability-p1`, needs correction), `docs/TODO.md` (this file), `docs/API.md`, `docs/ROLES_AND_PERMISSIONS.md`, `docs/SECURITY.md`, `docs/UI_UX.md` — all exist in `docs/`, need content review against current merged state.
+- [ ] Add minimal automated checks (currently **zero test infrastructure**, confirmed — matches TODO.md REC-6/PROJECT_STATE.md "No local dev environment, no automated tests, no CI/CD"):
+  - backend auth
+  - worker cannot access unassigned object
+  - finish shift requires 2 photos (currently not enforced — see above, write test AFTER the enforcement is built, not before)
+  - finish shift requires location (same — verify enforcement first)
+  - chat attachment keeps thread_key
+  - `/api/transcribe` exists — actual endpoint is voice message transcription (`_transcribe_voice` main.py:2234, wired into `/api/chat/messages/voice` per SESSION_HANDOFF) — no literal `/api/transcribe` path found, test should target the real path, not the literal name from this list.
+  - XSS-sensitive render functions escape values
+- [ ] Add `scripts/smoke.sh` or equivalent — none exists.
+
+### Product philosophy (reference, not actionable items — guide design decisions during the above)
+
+Worker app: fast checkin, voice report, photo, defects. Owner app: who's working/not started, overdue, materials, defects, alerts, fast decisions. No decoration without function. Compact, mobile, one-hand, big buttons for workers, dense info for owner.
+
+Acceptance targets (verify once enforcement work above lands): worker finishes shift 30-60s; finish shift blocked without ≥2 photos + finish geo; start shift blocked without start geo; voice fills report/extra-work/needs/defects; owner sees who's working/not started on dashboard; overdue tasks hit alerts; all object info collected in one object card/page; API role+object-safe; chats don't mix contexts.
