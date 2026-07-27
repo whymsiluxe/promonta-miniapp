@@ -492,6 +492,10 @@ async function _loadObjStages(objectId) {
 function _renderStageRoadmapNode(s, idx, total, isCurrent) {
   const status = s['Статус'] || 'предстоит';
   const dotClass = status === 'готово' ? 'done' : status === 'в процессе' ? 'active' : '';
+  // CSS class -- whitelist, не просто esc(): статус из Sheets, произвольный текст
+  // не должен становиться частью class list (та же логика что renderStageRow в objects.js).
+  const statusSlug = /^[a-zA-Zа-яА-Я0-9\-]+$/.test(status.replace(/\s/g, '-'))
+    ? status.replace(/\s/g, '-') : 'unknown';
   const canMoveUp = currentRole === 'owner' && idx > 0;
   const canMoveDown = currentRole === 'owner' && idx < total - 1;
   const canWorkerComplete = currentRole !== 'owner' && isCurrent;
@@ -503,7 +507,7 @@ function _renderStageRoadmapNode(s, idx, total, isCurrent) {
     </div>
     <div class="obj-stage-body">
       <div class="obj-stage-name">${esc(s['Название этапа'] || '')}</div>
-      <div class="obj-stage-status-label obj-stage-status-${status.replace(/\s/g, '-')}">${OBJ_STAGE_STATUS_LABEL[status] || status}</div>
+      <div class="obj-stage-status-label obj-stage-status-${statusSlug}">${esc(OBJ_STAGE_STATUS_LABEL[status] || status)}</div>
       ${canWorkerComplete ? `<button class="obj-stage-complete-btn" data-row="${s['_row']}" type="button">Готово</button>` : ''}
     </div>
     ${currentRole === 'owner' ? `
