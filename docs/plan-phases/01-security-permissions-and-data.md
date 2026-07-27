@@ -52,12 +52,14 @@ Finish endpoint должен брать `object_id` из активной сме
 ### A5. XSS / escaping
 Правила: `esc()` everywhere user/AI/Sheets data рендерится; CSS class — whitelist; inline `onclick` с пользовательскими данными → `data-*` + listeners.
 
-Уже проверено (TODO.md batch 2026-07-27, не повторять):
-- `esc()` существует (`shared.js:55`), 131 использование.
-- **FIXED (commit 87332ad)**: `checkin.js` AI-анализ (`resultEl.innerHTML = html`, было progress/materials/defects `.analysis` без esc) — добавлен `escMultiline()` helper (esc + newline→br), применён ко всем трём. Error path уже был экранирован, теперь и success path тоже.
-- 20 файлов с `innerHTML`, нужен файл-за-файлом аудит (не сделан, checkin.js — единственный проверенный).
-- CSS class whitelist — не существует нигде.
-- Inline `onclick` с данными — ещё в: `app.html`(18), `home.js`(23), `feed.js`(8), `objects.js`(4), `abwesenheit.js`(4), `profile.js`(2), `chat.js`(2), `bubble-assign.js`/`tools.js`/`worker-checkin-fab.js`(1 each). Мигрировать по одному файлу.
+Статус: **FIXED — все 20 файлов с innerHTML проверены file-by-file (2026-07-27).** Коммиты: 87332ad, a8e25c1, 360e98f, 60821fa, 938f324, c4058b0, ac2dd4f, ed1ab0b, 6f48257.
+
+`esc()` существует (`shared.js:55`), теперь используется consistently. Повторяющийся паттерн gap'а по всему проекту: `SOME_LABEL[status] || status` fallback (когда значение не matched в известном lookup-объекте, возвращается сырой Sheets-статус) рендерился без esc() почти везде — нашёл и исправил в объектах (stage status), tasks (task status), object-info (stage status roadmap). Второй частый паттерн: inline `onclick="...('${x.replace(/'/g,"\\'")}'...)"` — только quote-escape для JS-строки, не HTML-escape — заменено на `data-*` + `addEventListener` в objects.js/abwesenheit.js.
+
+Файл-за-файлом результат:
+- **Исправлено** (реальные gaps): checkin.js (AI-анализ), home.js (ring card label, alerts title/subtitle, weather object tabs), objects.js (status pill fallback + inline onclick → data-*), tasks.js (status label fallback), tools.js (status/object label + data-атрибуты), critical-alerts.js (alert title/subtitle — тот же источник данных что home.js alerts, независимый gap), profile.js (skill_options в редакторе навыков), feed.js (weather risk text в caption), abwesenheit.js (name×2, status/reason label fallback, **note — единственное по-настоящему free-text поле среди всех находок**, inline onclick → data-*), object-info.js (stage roadmap status label + CSS class whitelist), bubble-assign.js (worker names, stage name, BUBBLE_STAGE_OPTIONS ×2 вхождения — **Bubble Assignment, который план явно просил проверить**), onboarding.js (skill options в quiz), worker-checkin-fab.js (object picker name/stage), angebot.js + rechnung.js (position title/description в `value` атрибутах — owner-entered, не Sheets, но тот же риск).
+- **Проверено, уже корректно, не трогал**: chat.js (`_check_thread_access`-паттерн + `_escChat` везде), mangel.js (`esc()` уже стоит), ai.js (`_formatAiText` эскейпит ДО markdown-форматирования — правильный порядок), my-tasks.js (уже esc()'d), shared.js (уже esc()'d, эталонный файл где `esc()` определён).
+- CSS class whitelist: реализовано точечно (не отдельная переиспользуемая функция) в двух местах где status → CSS class (objects.js, object-info.js) — regex `/^[a-zA-Zа-яА-Я0-9\-]+$/` с fallback на `unknown`.
 
 Дополнительные конкретные места из владельческого списка: AI analysis в checkin (см. выше), stage names/status/object names, picker object/stage names, profile object history/skills, любые данные из Google Sheets, любые данные от user, любые данные от AI.
 
