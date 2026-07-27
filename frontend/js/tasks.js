@@ -15,7 +15,7 @@ function renderTaskCard(task) {
     <div class="mangel-card-meta">
       <span>${esc(task.from_name || task.from_user_id)}</span>
       ${task.object_id ? `<span>${esc(task.object_id)}</span>` : ''}
-      <span style="color:${statusColor}">${TASK_STATUS_LABEL[task.status] || task.status}</span>
+      <span style="color:${statusColor}">${esc(TASK_STATUS_LABEL[task.status] || task.status)}</span>
     </div>
     ${isOwner && nextStatus ? `<button class="submit-btn" data-task-advance="${task.id}" data-next-status="${nextStatus}" style="margin-top:0.5rem;padding:0.4rem 0.8rem;font-size:0.8rem;">${nextStatus === 'закрыто' ? 'Закрыть' : 'Взять в работу'}</button>` : ''}
     <button class="chat-extract-task-btn" data-task-open-chat="${task.id}" data-task-title="${esc(task.title)}" type="button" style="margin-top:0.5rem;">💬 Чат по потребности</button>

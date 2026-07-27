@@ -136,7 +136,7 @@ function renderFeedCard(entry, idx, isActive) {
   const caption = entry.forecast.map(day => `
     <div class="wx-caption-day">
       <span class="wx-caption-daylabel">${fmtForecastDay(day.date, day.day_offset)}</span>
-      ${day.risks.map(r => `<div class="wx-caption-risk">${pickWeatherIcon(r)} ${r}</div>`).join('')}
+      ${day.risks.map(r => `<div class="wx-caption-risk">${pickWeatherIcon(r)} ${esc(r)}</div>`).join('')}
     </div>`).join('');
 
   return `

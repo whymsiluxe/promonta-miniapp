@@ -46,8 +46,8 @@ function _criticalAlertAckHtml(alert) {
   return `
     <div class="critical-alert-inner">
       <div class="critical-alert-icon">🔴</div>
-      <div class="critical-alert-title">${alert.title}</div>
-      ${alert.subtitle ? `<div class="critical-alert-subtitle">${alert.subtitle}</div>` : ''}
+      <div class="critical-alert-title">${esc(alert.title)}</div>
+      ${alert.subtitle ? `<div class="critical-alert-subtitle">${esc(alert.subtitle)}</div>` : ''}
       <textarea id="ca-comment-input" class="critical-alert-comment" placeholder="Комментарий (опционально)…" rows="3"></textarea>
       <button class="critical-alert-btn critical-alert-btn-primary" id="ca-ack-btn">Принял</button>
     </div>`;
@@ -58,7 +58,7 @@ function _criticalAlertResolutionHtml(alert) {
     <div class="critical-alert-inner">
       <div class="critical-alert-icon">⏰</div>
       <div class="critical-alert-title">Вопрос решён?</div>
-      <div class="critical-alert-subtitle">${alert.title}</div>
+      <div class="critical-alert-subtitle">${esc(alert.title)}</div>
       <div class="critical-alert-actions-row">
         <button class="critical-alert-btn critical-alert-btn-yes" id="ca-resolve-yes">Да</button>
         <button class="critical-alert-btn critical-alert-btn-no" id="ca-resolve-no">Нет</button>

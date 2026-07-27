@@ -526,7 +526,7 @@ async function _toggleSkillsEdit() {
     const mySkills = new Set(me.skills || []);
     editEl.innerHTML = (me.skill_options || []).map(opt => `
       <label class="profile-skill-check">
-        <input type="checkbox" value="${opt}" ${mySkills.has(opt) ? 'checked' : ''}> ${opt}
+        <input type="checkbox" value="${esc(opt)}" ${mySkills.has(opt) ? 'checked' : ''}> ${esc(opt)}
       </label>`).join('');
     editEl.style.display = 'block';
     chips.style.display = 'none';

@@ -92,8 +92,8 @@ function renderToolCard(tool) {
   // Stat chips: серийный номер · статус · объект
   const chips = [
     { label: `№${tool.id}`, sub: 'серийный', color: 'var(--text-light)' },
-    { label: STATUS_LABEL[tool.status] || tool.status, sub: 'статус', color: statusColor },
-    { label: tool.object ? (tool.object.length > 12 ? tool.object.slice(0,11)+'…' : tool.object) : '—', sub: 'объект', color: 'var(--text-light)' },
+    { label: esc(STATUS_LABEL[tool.status] || tool.status), sub: 'статус', color: statusColor },
+    { label: esc(tool.object ? (tool.object.length > 12 ? tool.object.slice(0,11)+'…' : tool.object) : '—'), sub: 'объект', color: 'var(--text-light)' },
   ];
   const chipsHtml = chips.map(c =>
     `<div class="obj-stat-chip"><span class="obj-chip-val" style="color:${c.color}">${c.label}</span><span class="obj-chip-sub">${c.sub}</span></div>`
@@ -107,7 +107,7 @@ function renderToolCard(tool) {
   }
 
   return `
-  <div class="card tool-card obj-card-v2" data-id="${tool.id}" data-status="${tool.status}" data-search="${(String(tool.id) + ' ' + tool.name + ' ' + tool.category).toLowerCase()}">
+  <div class="card tool-card obj-card-v2" data-id="${esc(tool.id)}" data-status="${esc(tool.status)}" data-search="${esc((String(tool.id) + ' ' + tool.name + ' ' + tool.category).toLowerCase())}">
     <div class="obj-card-hero" style="${heroStyle}">
       ${icon3d}
       <div class="obj-hero-live-pill" style="background:${statusColor}22;color:${statusColor};border:1px solid ${statusColor}44">
