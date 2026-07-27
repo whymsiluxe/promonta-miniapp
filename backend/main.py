@@ -2,6 +2,7 @@
 """Promonta Mini App — FastAPI backend. Фаза 2 плана: скелет + initData-auth + roles.
 Запуск: uvicorn main:app --host 127.0.0.1 --port 8001
 """
+import csv
 import hashlib
 import hmac
 import json
@@ -175,6 +176,19 @@ def sniff_image_or_pdf(raw: bytes) -> str | None:
     if detected in _ALLOWED_IMAGE_MIME_EXT or detected == 'application/pdf':
         return detected
     return None
+
+
+def _csv_safe(value) -> str:
+    """CSV formula injection: Excel/LibreOffice выполняет ячейку, начинающуюся с
+    =, +, -, @ как формулу при открытии. object_id в stundenzettel идёт от
+    checkin_start (Form-параметр, только .strip()[:100], без sanitize) -- worker
+    теоретически мог стартовать смену с object_id вроде `=cmd|'/c calc'!A1` и
+    отравить CSV, который потом открывает owner. Префикс апострофом -- стандартный
+    экранирующий приём, Excel показывает апостроф не отображая, LibreOffice тоже."""
+    s = str(value)
+    if s and s[0] in ('=', '+', '-', '@'):
+        return "'" + s
+    return s
 
 
 def _load_roles() -> dict:
@@ -3448,7 +3462,10 @@ def export_stundenzettel(user_id: str = '', year: int = 0, month: int = 0,
     sessions = [s for s in _load_checkin_meta()
                 if str(s.get('user_id')) == target_id and s.get('date', '').startswith(month_prefix)]
 
-    rows = ['Дата;Объект;Начало;Конец;Пауза (мин);Часы;Тип']
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=';', lineterminator='\n')
+    writer.writerow(['Дата', 'Объект', 'Начало', 'Конец', 'Пауза (мин)', 'Часы', 'Тип'])
     for s in sorted(sessions, key=lambda x: x.get('date', '')):
         kind = 'Ручной ввод' if s.get('manual_entry') else 'Фото-чекин'
         if s.get('manual_entry'):
@@ -3458,12 +3475,12 @@ def export_stundenzettel(user_id: str = '', year: int = 0, month: int = 0,
             finish = datetime.fromtimestamp(s['finish_at']).strftime('%H:%M') if s.get('finish_at') else 'не завершено'
         hours = round(_hours_from_session(s), 2)
         pause = int(s.get('pause_minutes') or 0)
-        rows.append(f"{s.get('date','')};{s.get('object_id','')};{start};{finish};{pause};{hours};{kind}")
+        writer.writerow([_csv_safe(s.get('date', '')), _csv_safe(s.get('object_id', '')), start, finish, pause, hours, kind])
 
     total_hours = round(sum(_hours_from_session(s) for s in sessions), 2)
-    rows.append(f';;;;;{total_hours};ИТОГО')
+    writer.writerow(['', '', '', '', '', total_hours, 'ИТОГО'])
 
-    csv_content = '\n'.join(rows)
+    csv_content = buf.getvalue()
     filename = f'Stundenzettel_{target_id}_{month_prefix}.csv'
     from fastapi.responses import Response
     return Response(
