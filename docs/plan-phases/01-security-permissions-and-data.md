@@ -19,7 +19,11 @@ PHASE A — Security P0 (permissions, geo, photos, XSS, JSON, uploads, AI, check
 - `require_mangel_access(user, mangel)`
 - `require_thread_access(user, thread_key)`
 
-Статус: **CONFIRMED — ни один helper не существует.** Проверено `grep -n 'def can_access_object\|def require_object_access\|def require_object_assignment\|def require_task_access\|def require_mangel_access\|def require_thread_access'` — пусто. Только `get_current_user` (main.py:204) и `get_role` (main.py:216) существуют.
+Статус: **FIXED (2026-07-27, commits ba537ca, 162e4b6).** `can_access_object()`/`require_object_access()` добавлены (main.py, сразу после `require_owner`). Применены к 9 object-routes (tasks GET, description GET, info-items GET+POST, documents GET+POST+file, stages GET, stage-complete POST) — раньше проверяли только `get_current_user`, любой worker мог читать/писать чужой объект. `require_mangel_access()` добавлен отдельно (резолвит ticket→object_id), применён к 6 mangel routes (get ticket, comments GET+POST, list с фильтрацией по assignments для worker, create с access-check, photo file по сканированию owning ticket). Owner-only mutations (create_task/delete_document/stage create-update-delete-swap/status) уже имели `require_owner`, не трогал.
+
+Chat уже был защищён (`_check_thread_access` во всех местах) — проверено, gap не найден, ничего не менял. Checkin history (stundenzettel/list/photo) уже был self-or-owner — проверено, gap не найден, ничего не менял.
+
+Не покрыто этим проходом: второй `create_task` (main.py ~2861, `TaskCreateBody`, другая сущность без object_id в пути) — вне скоупа, не проверял что это вообще такое.
 
 Правила доступа:
 - owner видит/управляет всем.
@@ -37,12 +41,10 @@ Known existing gap (уже зафиксирован в ROLES_AND_PERMISSIONS.md/
 - Finish shift: GPS обязателен, `finish_location` сохраняется. Нет геолокации → смена не завершается, понятная ошибка.
 - Owner видит `start_location`/`finish_location` в истории смены.
 
-Статус: **UNVERIFIED**, требует явной проверки. `_gps_suspect()` (main.py:340) существует для валидации подозрительных координат, но не подтверждено, что сами координаты required (не Optional) в сигнатурах `checkin_start` (main.py:3108) / `checkin_finish` (main.py:3221). Проверить перед фиксом.
+Статус: **FIXED (2026-07-27, commit 8b838d0).** Подтверждено: `lat`/`lon` были `Form('')` без server-side проверки, `_getGeolocation()` тихо резолвилась в `{lat:'',lon:''}` при отказе/таймауте. Добавлено: backend 400 если lat/lon пустые (start+finish), frontend throw до fetch (не тратит аплоад фото зря) + отдельный UX-текст для geo-ошибки vs network-ошибки в retry-подсказке. `checkin_manual` (owner ручной ввод задним числом) намеренно не тронут — другой эндпоинт, без GPS по дизайну.
 
 ### A3. Finish shift — минимум 2 фото обязательны
-Статус: **CONFIRMED GAP.** `_save_checkin_photos` (main.py:49) проверяет только `len(raw) > CHECKIN_MAX_BYTES` per file — нет проверки `len(photos) >= 2`. Добавить explicit проверку в `checkin_finish`.
-
-Frontend: нельзя перейти дальше шага фото в finish-wizard, если фото < 2. UX-текст: "Сделай минимум 2 фото с разных ракурсов. Лучше 3-5 фото." Превью, удаление/пересъёмка.
+Статус: **ALREADY FIXED, не gap — план ошибался.** Перепроверено 2026-07-27: `checkin_finish` (main.py ~3249) уже содержит `if len(files) < 2: raise HTTPException(400, "Прикрепите минимум 2 фото...")`, и frontend `_confirmCheckinPreview` (checkin.js) уже проверяет `_checkinPreviewFiles.length < 2` до отправки с понятным toast. Первоначальный grep в плане не долистал достаточно строк файла — не повторять эту проверку, это уже сделано и работает.
 
 ### A4. Не доверять object_id с клиента при finish
 Finish endpoint должен брать `object_id` из активной смены (server-side), не из тела запроса от клиента — иначе можно закрыть смену "от имени" чужого объекта.
@@ -52,8 +54,8 @@ Finish endpoint должен брать `object_id` из активной сме
 
 Уже проверено (TODO.md batch 2026-07-27, не повторять):
 - `esc()` существует (`shared.js:55`), 131 использование.
-- **Confirmed real gap**: `checkin.js:158` — `resultEl.innerHTML = html` (AI-анализ) НЕ эскейпится. Error path (:161) экранирован, success path — нет. Чинить первым в этом under-раздел.
-- 20 файлов с `innerHTML`, нужен файл-за-файлом аудит (не сделан).
+- **FIXED (commit 87332ad)**: `checkin.js` AI-анализ (`resultEl.innerHTML = html`, было progress/materials/defects `.analysis` без esc) — добавлен `escMultiline()` helper (esc + newline→br), применён ко всем трём. Error path уже был экранирован, теперь и success path тоже.
+- 20 файлов с `innerHTML`, нужен файл-за-файлом аудит (не сделан, checkin.js — единственный проверенный).
 - CSS class whitelist — не существует нигде.
 - Inline `onclick` с данными — ещё в: `app.html`(18), `home.js`(23), `feed.js`(8), `objects.js`(4), `abwesenheit.js`(4), `profile.js`(2), `chat.js`(2), `bubble-assign.js`/`tools.js`/`worker-checkin-fab.js`(1 each). Мигрировать по одному файлу.
 
@@ -61,7 +63,7 @@ Finish endpoint должен брать `object_id` из активной сме
 
 ### A6. JSON storage
 - `_atomic_write_json` (main.py:124) — **уже используется everywhere**, no direct `open(path,"w")` для JSON. FIXED, no action.
-- JSONDecodeError handling — только 2 места в 4027-строчном файле. Нужен аудит каждого `json.load`/`json.loads` на runtime-файлах, добавить try/except с safe fallback (по образцу `roles.json`, main.py:145).
+- JSONDecodeError handling — **FIXED (commit 062e88d)**. Добавлен `_safe_load_json(path, default)` рядом с `_atomic_write_json`, все 19 `_load_*` функций переведены на него (roles/notified_users/worker_profiles/assignments/object_images/alert_dismissals/object_info/weather_reactions/news_reactions/news_reads/birthday_alerts/photo_meta/chat/chat_reads/chat_thread_meta/tasks/checkin_meta/critical_alerts/abwesenheit). Corrupt JSON теперь логируется и деградирует к default вместо unhandled 500. `_load_notified_users` list→dict миграция сохранена поверх safe load.
 - Locks для конкурентных записей — **уже есть**: `AUDIT_LOCK`, generic `_json_locks` dict, `_photo_lock`, `_chat_lock`, `_checkin_lock`. FIXED (покрывает 15-site deadlock из ранее смёрженной `fix/security-reliability-p1`).
 - Path traversal: проверить все `os.path.join`/`Path(...)`/`open(...)`/`FileResponse`/`os.remove`/`shutil.*`, особенно с `object_id`/`user_id`/`thread_key`/`filename`/`document_id`/`defect_id`/`attachment_id`/`date`. Тестовые значения: `../`, `../../`, `%2e%2e/`, `..%2f`, abs path, unicode separators, длинные ID, dot-only. Создать `validate_object_id()`, `validate_entity_id()`, `safe_storage_path()`, `ensure_path_within_base()`, `sanitize_original_filename()`.
 
