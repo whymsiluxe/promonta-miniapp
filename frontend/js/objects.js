@@ -109,9 +109,9 @@ function renderObjectCard(obj) {
   // "+N" открывает Object Detail (полный список команды -- отдельный team-sheet
   // не строим, это редкий edge case при 4+ работниках на одном объекте).
   const extraDots = assignedUsers.length > 3
-    ? `<div class="obj-people-dot obj-people-more" style="margin-left:-14px;" onclick="event.stopPropagation();openObjectDetail('${oid}','${(obj['Объект']||'').replace(/'/g,"\\'")}','chat')">+${assignedUsers.length - 3}</div>` : '';
+    ? `<div class="obj-people-dot obj-people-more obj-extra-dots-btn" data-object-id="${esc(oid)}" data-object-name="${esc(obj['Объект']||'')}" style="margin-left:-14px;">+${assignedUsers.length - 3}</div>` : '';
   const addBtn = currentRole === 'owner'
-    ? `<div class="obj-people-add" onclick="event.stopPropagation();openBubbleAssign('${oid}','${(stage||'').replace(/'/g,"\\'")}',this)" title="Назначить"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="2.5" stroke-linecap="round"/></svg></div>` : '';
+    ? `<div class="obj-people-add obj-add-worker-btn" data-object-id="${esc(oid)}" data-stage="${esc(stage||'')}" title="Назначить"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="2.5" stroke-linecap="round"/></svg></div>` : '';
 
   const startDateLabel = _objStartDateLabel(obj);
   const mapsUrl = obj['Адрес'] ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(obj['Адрес'])}` : '';
@@ -132,7 +132,7 @@ function renderObjectCard(obj) {
     <div class="obj-card-hero" style="${imgStyle}">
       ${_objWeatherIslandHtml(obj)}
       <div class="obj-hero-people">${peopleDots}${extraDots}${addBtn}</div>
-      <div class="obj-hero-status-pill" style="--pill-accent:${statusMeta.color}">${statusMeta.label}</div>
+      <div class="obj-hero-status-pill" style="--pill-accent:${statusMeta.color}">${esc(statusMeta.label)}</div>
     </div>
     <div class="obj-card-body">
       <div class="obj-card-title">${esc(obj['Объект']) || ''}</div>
@@ -294,13 +294,27 @@ function attachObjectsHandlers() {
     });
   });
 
+  document.querySelectorAll('#objects-cards .obj-extra-dots-btn').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openObjectDetail(el.dataset.objectId, el.dataset.objectName, 'chat');
+    });
+  });
+
+  document.querySelectorAll('#objects-cards .obj-add-worker-btn').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openBubbleAssign(el.dataset.objectId, el.dataset.stage, el);
+    });
+  });
+
   // 24.07: клик по всей карточке объекта -> новый 6-таб экран (было доступно только
   // через узкую строку "Текущий этап"). Исключаем интерактивные элементы внутри карточки
   // (тот же exclusion-list что у drag touchstart выше) + сам drag/long-press не должен
   // триггерить открытие -- card.dataset.wasDragged ставится в endObjectDrag().
   document.querySelectorAll('#objects-cards .card').forEach(card => {
     card.addEventListener('click', (e) => {
-      if (e.target.closest('.status-switch, .take-btn, .checkbox, .add-task, .tasks-label, .obj-people-add, .obj-address-link, .obj-mangel-link, .stage-clickable, .stage-edit-icon')) return;
+      if (e.target.closest('.status-switch, .take-btn, .checkbox, .add-task, .tasks-label, .obj-people-add, .obj-people-more, .obj-address-link, .obj-mangel-link, .stage-clickable, .stage-edit-icon')) return;
       if (card.dataset.wasDragged === '1') { card.dataset.wasDragged = ''; return; }
       openObjectDetail(card.dataset.id, card.querySelector('.obj-card-title')?.textContent || '', 'chat', card.dataset.status);
     });
@@ -464,11 +478,16 @@ let _stagesCurrentObjectId = null;
 function renderStageRow(stage) {
   const status = stage['Статус'] || 'предстоит';
   const isOwner = currentRole === 'owner';
+  // CSS class -- whitelist, не просто esc(): статус из Sheets, произвольный текст
+  // не должен становиться частью class list. Только буквы/цифры/дефис проходят,
+  // всё остальное схлопывается в один безопасный fallback-класс.
+  const statusSlug = /^[a-zA-Zа-яА-Я0-9\-]+$/.test(status.replace(/\s/g, '-'))
+    ? status.replace(/\s/g, '-') : 'unknown';
   return `
-  <div class="stage-row" data-num="${stage['№ этапа']}">
-    <div class="stage-row-name">${stage['Название этапа']}</div>
-    <div class="stage-row-status stage-status-${status.replace(/\s/g, '-')}${isOwner ? '' : ' stage-row-status-readonly'}" data-status="${status}">${STAGE_STATUS_LABEL[status] || status}</div>
-    ${isOwner ? `<button class="stage-row-delete" data-num="${stage['№ этапа']}">×</button>` : ''}
+  <div class="stage-row" data-num="${esc(stage['№ этапа'])}">
+    <div class="stage-row-name">${esc(stage['Название этапа'])}</div>
+    <div class="stage-row-status stage-status-${statusSlug}${isOwner ? '' : ' stage-row-status-readonly'}" data-status="${esc(status)}">${esc(STAGE_STATUS_LABEL[status] || status)}</div>
+    ${isOwner ? `<button class="stage-row-delete" data-num="${esc(stage['№ этапа'])}">×</button>` : ''}
   </div>`;
 }
 
