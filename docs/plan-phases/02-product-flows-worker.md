@@ -39,7 +39,11 @@ Frontend: новый `frontend/js/finish-wizard.js` (отдельно от check
 **Не сделано в этом проходе** (backend-only per B4 scope): frontend reusable voice-input component (idle/recording/recorded/transcribing/ready/error states + record/stop/cancel/re-record/use-text buttons), wiring в finish-shift шаги 2-4/создание дефекта/потребности. `cleaned_text`/AI-структуризация текста в пункты — тоже не реализовано, только `raw_transcript`. Это отдельная frontend-задача, требует brainstorm UI перед стартом (см. B1-B3 — тот же subject, owner попросил brainstorm экранов сначала).
 
 ### B5. Dashboard владельца — добавить блоки (не переписывать с нуля)
-Кто сейчас работает (worker/объект/start time/duration/чат). Кто не начал смену (worker/объект/этап/напомнить). Alerts (critical/просроченные задачи/новые дефекты/потребности). Просроченные задачи → alerts с переходом. Смены сегодня (начаты/завершены/активные/с проблемами).
+Статус: **FIXED, частично (commits 216712b backend + aba7483 frontend, 2026-07-27).** Подтверждено чтением `initHomeView()`: до этого owner dashboard был только KPI-числами (объекты/рабочие/потребности/алерты) + сообщения + object rings + погода — блоков "кто работает"/"кто не начал" не было вообще.
+
+Сделано: `GET /api/dashboard/shifts-today` (owner-only) — working_now/not_started/finished_today, computed из `checkin_meta.json` + `object_assignments.json` (date_from/date_to охват сегодняшней даты). Frontend: `#home-shifts-today-section` на owner Home — worker/объект/duration/чат-кнопка для работающих, worker/объект/"напомнить" для не начавших, весь блок скрыт если оба списка пусты, каждая строка кликабельна (открывает object stages), чат-кнопка открывает direct thread.
+
+**Не сделано, честно задокументированный data-gap**: "просроченные задачи → alerts" — проверил `tasks.json` (Needs) schema, **due_date поля не существует вообще**, только опциональный `priority`. Overdue невозможно вычислить без даты дедлайна — не стал показывать фейковый/выдуманный indicator. Если due_date когда-нибудь добавят в Needs — этот endpoint нужно расширить `overdue_needs` списком.
 
 ### B6. Object card для owner — центр управления
 Внутри карточки/страницы объекта собрать: общая инфо, адрес, статус, назначенные workers, этапы, сегодняшние смены, история смен, фото до/после, задачи+просроченные, потребности, дефекты, документы, чат объекта, бюджет (owner-only), история действий. Для worker — урезанная версия (адрес/что делать/этапы/документы/чат/свои needs-defects). См. также PHASE F (карточка-превью в списке) и Object Detail IA (PHASE C).
