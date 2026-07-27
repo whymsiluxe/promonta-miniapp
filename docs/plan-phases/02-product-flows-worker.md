@@ -22,9 +22,13 @@ Step 1 Фото (мин. 2, см. A3) → Step 2 Что сделано (текс
 Backend finish endpoint принимает структурированные поля: `work_summary`, `extra_works[]`, `needs[]`, `defects[]`, `blockers`, `finish_photos[]`, `finish_location`. Проверяет: активная смена есть, object_id из смены не с клиента (A4), доступ, мин. 2 фото (A3), finish location (A2). Атомарная запись.
 
 ### B4. Voice input + AI transcription
-Backend: `POST /api/transcribe` — **CONFIRMED: путь `/api/transcribe` буквально не существует.** Реальный эндпоинт — `/api/chat/messages/voice`, использует `_transcribe_voice()` (main.py:2234, faster-whisper). Frontend, судя по ТЗ, ожидает `/api/transcribe` отдельно для finish-shift/needs/defects контекстов вне чата — нужно решить: добавить реальный `/api/transcribe` endpoint (content-type/size validation, вызывает существующую `_transcribe_voice` логику) или переиспользовать voice-chat механизм. Response: `raw_transcript`, `cleaned_text` (если AI cleanup), `confidence/status`.
+Статус: **Backend FIXED (commit 823a08d), frontend NOT STARTED.**
 
-Frontend: reusable voice input component (idle/recording/recorded/transcribing/ready/error states, record/stop/cancel/re-record/use-text buttons) — использовать в finish-shift шагах 2-4, создании дефекта/потребности, чате. AI не отправляет текст без подтверждения — всегда editable.
+`POST /api/transcribe` создан (owner explicit decision: отдельный endpoint, не переиспользовать chat-voice). Переиспользует существующую `_transcribe_voice()`. Response: `{raw_transcript, status, file_id, audio_url}`.
+
+**Owner explicit correction во время разработки**: изначальный план предполагал temp-file (транскрибировать → удалить), но owner сказал хранить аудио постоянно — "транскрибация может быть хуёвой", юзер должен мочь переслушать оригинал, не только доверять тексту. Реализовано: аудио хранится в `transcribe_audio/{user_id}/{file_id}.ext`, отдельный `GET /api/transcribe/{file_id}/audio` для playback (worker — только свои записи, owner — любые, `file_id` basename-sanitized).
+
+**Не сделано в этом проходе** (backend-only per B4 scope): frontend reusable voice-input component (idle/recording/recorded/transcribing/ready/error states + record/stop/cancel/re-record/use-text buttons), wiring в finish-shift шаги 2-4/создание дефекта/потребности. `cleaned_text`/AI-структуризация текста в пункты — тоже не реализовано, только `raw_transcript`. Это отдельная frontend-задача, требует brainstorm UI перед стартом (см. B1-B3 — тот же subject, owner попросил brainstorm экранов сначала).
 
 ### B5. Dashboard владельца — добавить блоки (не переписывать с нуля)
 Кто сейчас работает (worker/объект/start time/duration/чат). Кто не начал смену (worker/объект/этап/напомнить). Alerts (critical/просроченные задачи/новые дефекты/потребности). Просроченные задачи → alerts с переходом. Смены сегодня (начаты/завершены/активные/с проблемами).
