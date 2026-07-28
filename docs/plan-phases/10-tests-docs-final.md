@@ -49,3 +49,7 @@ Worker: "Пришёл на объект, начал смену, сделал р�
 8. PHASE H (Architecture/Tests/Docs) — частично идёт параллельно всем фазам (тесты пишутся вместе с фичей, не в конце).
 
 Каждая фаза — отдельные коммиты, маленькие логические блоки, `py_compile`+`node --check` после каждого, обновление этого файла статусами по мере выполнения.
+
+---
+
+**Статус (28.07, интерактивная сессия): CLOSED (narrow scope).** Полный объём фазы (Playwright E2E на нескольких viewport, visual regression baselines, endpoint audit таблица на ~100 роутов, 14 audit-файлов) сознательно отложен по решению owner — многодневная задача без прямой пользы для работы приложения прямо сейчас. Сделан узкий, явно запрошенный owner'ом кусок: `tests/test_owner_kt_requirements.py`, 10 тестов (plain stdlib unittest, тот же паттерн что `tests/test_chat_backend.py`), покрывающих object access scoping, start/finish shift geo-требования, существование `/api/transcribe`, chat thread_key access check. Все 10 проходят против реального `backend/main.py`.

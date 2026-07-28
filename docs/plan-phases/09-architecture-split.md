@@ -25,3 +25,6 @@ PHASE H part 1 — Backend/frontend architecture split, API client, UI states, o
 ### Offline queue (минимум для start/finish shift, message, Need, Defect, photos)
 IndexedDB не только localStorage. States: LOCAL/QUEUED/SENDING/SENT/FAILED/CONFLICT. Persistent idempotency key, manual+auto retry с backoff, visible status, success только после backend confirmation. Не обязательно всё сразу — один working slice архитектуры достаточно на первый проход.
 
+---
+
+**Статус (28.07, интерактивная сессия): SKIPPED (owner decision).** Полный архитектурный рефакторинг (backend/main.py 4000+ строк на модули, frontend/app.html аналогично, единый API-клиент, IndexedDB offline-очередь) — многодневная задача с реальным риском сломать рабочее прод-приложение, без прямой пользы для текущей работы. Owner подтвердил пропустить, вернуться позже при необходимости.

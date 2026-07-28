@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-07-28 (interactive session — Phases 05-10 finish, live device bugfixes, feature additions)
+
+38 commits (`9874208`..`640dad3`), all deployed to prod incrementally with backups before each write, backend restarted where `main.py` changed, verified with `py_compile`/`node --check` + live health-check after each backend restart. Autonomous VPS timer (`autonomous-miniapp.timer`) stopped and disabled — all further work moved to this interactive session per owner request.
+
+### Phases closed
+- **Phase 07 (Object Card)**: was already ~90% done from earlier sessions. Real gap found — no way to upload a real object photo at all (every card showed stock fallback). Added `/api/objects/{id}/image` upload (owner-only) + delete endpoints, `object_images.json` now stores an array (up to 8 photos), card renders a swipeable/tappable carousel with dots when 2+ photos exist.
+- **Phase 10 (Tests, narrow slice)**: added `tests/test_owner_kt_requirements.py` — 10 passing stdlib unittest cases covering the specific items the owner listed explicitly in the original brief (object access scoping, start/finish shift geo requirements, `/api/transcribe` route existence, chat thread_key access check). Full Playwright/visual-regression/endpoint-audit scope from the phase file explicitly deferred — no user-facing value without the app running, owner agreed to skip for now.
+- **Phase 09 (Architecture split)**: explicitly skipped per owner decision — multi-day refactor risk with no direct feature value, revisit later if needed.
+
+### Fixed — real bugs found by reading code, not by guessing
+- finish-wizard never resynced the Home `worker-shift-cta` card after finishing a shift (only the older checkin.js flow did) — Home kept showing "Смена идёт" after the shift was actually closed.
+- finish-wizard hardcoded pause time to 30 minutes regardless of actual accumulated pause, and never displayed it in the summary.
+- Embedded object chat (`#obj-detail-panel-chat.obj-chat-active`) visually "floated"/overlapped its header and tabs during scroll: the whole `#view-object-detail` scrolls as normal body/document flow, but the fixed-position chat panel's top offset only recalculated via `ResizeObserver` (size change), never on scroll (position change). Fixed by reusing the existing `view-locked` body-scroll-lock mechanism (same one root Chat/AI tabs use) plus explicit scrollY save/restore, since `position:fixed` on `body` does not preserve scroll position on its own.
+- `CHAT_MAX` (200-message cap) and the 7-day retention purge were both silently discarding chat history forever on every save — found while implementing thread deletion with an explicit "history must be preserved" requirement. Both now archive overflow/expired messages to `chat_messages_archive.json` instead of dropping them.
+- Object stage-strip on the card led to a dead click — `openObjectDetail(..., 'stages', ...)` targeted a tab (`obj-detail-panel-stages`) that never existed; Этапы was only a sub-section inside Инфо. Added a real dedicated tab.
+- `Потребности` tab inside Object Detail was a read-only list with no way to act on a request or contact the other party — added status-advance buttons (owner) and a direct-chat shortcut (both roles).
+- `mangel_lib.py`'s `created_by` field was tracked but never surfaced in the UI — now shown as "добавил {name}" on ticket cards.
+- Multiple back-button/header-centering bugs across screens that use `.form-header` (Object Detail, finish-wizard, chat thread, photo comments) where Telegram's native Close button overlapped or misaligned with custom UI — several rounds of on-device correction, final state verified against real screenshots each time rather than assumed correct after the first pass.
+
+### Added (owner-requested features)
+- Radio player: expanded from 4 to 19 real Radio Record streams (verified live via curl before committing), infinite-loop swipeable carousel replacing a static text list, directional slide+fade transition between bottom-nav tabs.
+- Chat read receipts in DM threads — backend already tracked per-thread read timestamps (`reads.json`) but never returned them to the sender; now shown as single/double checkmark.
+- Bubble Assignment: undo action-toast (6s window) using the pre-existing `unassign_user` endpoint that was never wired to the assign-success path; bigger circles (+40% total across two rounds) with worker name labels underneath (previously invisible on touch devices, hover-only tooltip).
+- Any worker can now view/add stages and mangel tickets on any object, not just ones they're assigned to (owner-requested permission widening).
+- Worker calendar got the same profile-selector dropdown owner already had (view teammates' availability), backend `/api/abwesenheit/all` opened to all authenticated roles for viewing (approve/reject stays owner-only).
+- Closed Потребности (needs) now archive to a new "Потребности" tab in the existing Google Sheets spreadsheet before being removed from the working list, instead of just disappearing.
+- Voice note in finish-wizard's "Что сделано" step now saves the actual audio (not just the transcript) — owner can play it back on the object's shift-summary card.
+- Owner can delete a whole chat thread (DM or obj/mangel/task) — disappears for both sides, messages archived server-side first, not just wiped.
+- Calendar tab given a fixed dark theme (same lightened olive-gray palette chat briefly used before being reverted to light per owner preference); bottom-nav given a fixed dark background on all tabs (was translucent blur that looked different depending on what was underneath).
+
+### Notable back-and-forth / self-corrections (worth remembering for next session)
+- Chat's fixed-dark palette was fully reverted to the standard light theme after owner feedback — the nav-bar dark treatment now serves as the intended visual differentiator instead.
+- The chat archive/pin/mute toggle button was removed entirely per explicit owner request ("занимает много места, выглядит убого") — pin/mute stayed, archive-view toggle did not.
+- Back-button offset for `#obj-detail-back` went through 4 iterations (46px → 8px → 28px, plus a left-offset removal) before matching what the owner actually saw on-device — CSS offsets tuned from memory/estimation without live verification are unreliable; screenshots after each attempt were necessary.
+- A Fable subagent was dispatched to investigate the embedded-chat overlap bug but had no SSH access to the VPS where the actual code lives — could not proceed, diagnosed and fixed directly in this session instead. Note for future delegation: subagents spawned from this session do not inherit SSH/VPS access.
+
+### Known open items (not started, tracked for a future session)
+- Bubble Assignment read-only "Просмотр" mode (view-only toggle showing team occupancy without drag/tap) — scoped (toggle inside the same panel header, "this week" as the default availability window) but not implemented.
+- Emoji→SVG icon conversion — blocked on owner supplying a reference image; a prior unilateral attempt got negative feedback, will not guess again.
+- Full Phase 09 (backend/frontend architecture split, unified API client, IndexedDB offline queue) and the remainder of Phase 10 (Playwright E2E across viewports, visual regression baselines, full ~100-route endpoint audit table, `docs/audit/*` files) — both explicitly deferred, not forgotten.
+
+
 ## 2026-07-28 (autonomous session, continued — pin/mute/archive UI)
 
 Commit `ff83a1b`, deployed (including a backend restart — this pass touches `main.py`). Full detail in `docs/plan-phases/06-chat-hub-rebuild.md`.

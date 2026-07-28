@@ -1,11 +1,16 @@
 # Project state
 
-**Last updated**: 2026-07-28 (autonomous session, Phase 06 Chat Hub rebuild in progress — see `docs/HANDOFF_PHASE05_10.md` and `docs/plan-phases/06-chat-hub-rebuild.md`).
+**Last updated**: 2026-07-28 (interactive session — Phases 05-10 finished/scoped, see `docs/CHANGELOG.md` top entry for full detail). Phases 01-08 closed, Phase 09 explicitly skipped (owner decision — multi-day architecture refactor, no direct feature value right now), Phase 10 closed to a narrow tested slice (`tests/test_owner_kt_requirements.py`, 10 passing). Autonomous VPS timer (`autonomous-miniapp.timer`) stopped+disabled this session — all further work happens in interactive sessions, re-enable with `systemctl enable --now autonomous-miniapp.timer` if needed again.
 **Branch**: `main` (GitHub default). `fix/security-reliability-p1` was superseded — its content shipped directly on `main` in earlier sessions (commits `d698a28`/`a564b6c`), confirmed 2026-07-25; that branch can be deleted, nothing left to merge from it.
 **Repo**: https://github.com/whymsiluxe/promonta-miniapp — private (was made public 2026-07-23 for one-time ChatGPT read-only audit, reverted to private after this branch was pushed — see CHANGELOG).
-**Working tree**: clean as of last commit in this session; not pushed to `origin` (this session has no confirmation it has push access/credentials configured the same way prior Mac sessions did — verify before assuming `origin/main` is current).
+**Working tree**: clean, pushed to `origin/main` at the end of this session.
 
-**Note (2026-07-28)**: the sections below this point (Incident log, mid-flight work, known bugs) describe state as of 2026-07-25 and predate a large amount of work done since (owner sent 6 new ТЗ on 2026-07-27, spawning `docs/plan-phases/01-10`; phases 01-04 are done, see those files' status markers and `docs/HANDOFF_PHASE05_10.md` for the authoritative current picture). Not rewritten wholesale this session — flagging so nobody trusts the stale detail below as current without checking `docs/plan-phases/` first.
+**Note (2026-07-28)**: the sections below this point (Incident log, mid-flight work, known bugs) describe state as of 2026-07-25 and predate a large amount of work done since (owner sent 6 new ТЗ on 2026-07-27, spawning `docs/plan-phases/01-10`; phases 01-08 done, 09 skipped, 10 narrow-scoped — see `docs/CHANGELOG.md` top entry for the authoritative current picture). Not rewritten wholesale this session — flagging so nobody trusts the stale detail below as current without checking the changelog first.
+
+**Open items for a future session** (not forgotten, deliberately deferred):
+- Bubble Assignment read-only "Просмотр" mode (view-only toggle in the same panel, showing team occupancy for the current week without allowing drag/tap-assign) — scoped, not implemented.
+- Emoji→SVG icon conversion — blocked on owner supplying a reference image for the icon style; do not attempt unilaterally again (prior attempt got explicit negative feedback).
+- Phase 09 (backend/frontend architecture split, unified API client, IndexedDB offline queue) and the remainder of Phase 10 (Playwright E2E, visual regression baselines, full endpoint audit table, `docs/audit/*`).
 
 ## What this document is
 

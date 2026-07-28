@@ -56,3 +56,7 @@ PHASE G — Radio Player full rebuild. Часть единого плана из
 
 ---
 
+
+---
+
+**Статус (28.07, интерактивная сессия): FIXED.** Радио полностью переработано отдельно от изначального plan-phases scope (owner-driven, не по спеке ТЗ4): расширено с 4 до 19 реальных станций Radio Record (каждый URL проверен curl'ом перед коммитом), старый статичный список станций заменён на infinite-loop swipeable карусель с snap-scroll, добавлено directional slide+fade между bottom-nav табами. Полный список коммитов в `docs/CHANGELOG.md` (запись от 2026-07-28, интерактивная сессия).
