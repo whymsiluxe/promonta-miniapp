@@ -3230,7 +3230,9 @@ def _cached_all_stages(object_id: str) -> list:
 
 
 @app.get("/api/objects/{object_id}/stages")
-def get_stages(object_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
+def get_stages(object_id: str, user: dict = Depends(get_current_user)):
+    # 28.07: owner request -- любой воркер может просматривать этапы любого объекта
+    # (не только назначенных), не требует can_access_object.
     return {"stages": _cached_all_stages(object_id)}
 
 
@@ -3239,7 +3241,9 @@ class NewStageBody(BaseModel):
 
 
 @app.post("/api/objects/{object_id}/stages")
-def create_stage(object_id: str, body: NewStageBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+def create_stage(object_id: str, body: NewStageBody, user: dict = Depends(get_current_user)):
+    # 28.07: owner request -- любой воркер может добавлять этап на любом объекте
+    # (не только owner, не только назначенным на объект)
     import objekte_lib as o
     if not body.name.strip():
         raise HTTPException(400, "Name erforderlich")
@@ -3426,28 +3430,18 @@ class MangelCommentBody(BaseModel):
 
 
 def require_mangel_access(ticket_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    """Резолвит object_id тикета, применяет ту же проверку что require_object_access.
-    ticket_id path-параметр матчится FastAPI автоматически."""
+    """28.07: owner request -- любой воркер видит/комментирует дефект любого объекта,
+    не только назначенный. Резолвит только существование тикета, не access-проверку."""
     try:
-        ticket = ml.get_ticket(ticket_id)
+        ml.get_ticket(ticket_id)
     except KeyError as e:
         raise HTTPException(404, str(e))
-    if not can_access_object(user, role, ticket.get('object_id', '')):
-        raise HTTPException(403, "Нет доступа к этому дефекту")
 
 
 @app.get("/api/mangel")
 def get_mangel_list(object_id: str = '', user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    if object_id and not can_access_object(user, role, object_id):
-        raise HTTPException(403, "Нет доступа к этому объекту")
-    if not object_id and role != 'owner':
-        # worker без object_id в query получил бы дефекты ВСЕХ объектов — сузить
-        # до тех, что видит ml.list_tickets(None), отфильтровав по своим assignments.
-        assignments = _load_assignments()
-        allowed_ids = {oid for oid, lst in assignments.items()
-                       if any(str(a.get('user_id')) == str(user['id']) for a in lst)}
-        tickets = [t for t in ml.list_tickets(None) if t.get('object_id') in allowed_ids]
-        return {"tickets": tickets, "total": len(tickets)}
+    # 28.07: owner request -- любой воркер видит дефекты любого объекта, не только
+    # назначенного. Раньше worker без object_id получал только дефекты своих объектов.
     tickets = ml.list_tickets(object_id or None)
     return {"tickets": tickets, "total": len(tickets)}
 
@@ -3474,8 +3468,7 @@ async def create_mangel_ticket(
     user: dict = Depends(get_current_user),
     role: str = Depends(get_role),
 ):
-    if not can_access_object(user, role, object_id.strip()[:100]):
-        raise HTTPException(403, "Нет доступа к этому объекту")
+    # 28.07: owner request -- любой воркер может добавить дефект на любом объекте.
     if not description.strip():
         raise HTTPException(400, "Описание обязательно")
 

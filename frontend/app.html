@@ -3238,7 +3238,11 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
 /* 24.07: экран фото-фиксации (особенно финиш смены — опрос дня) на весь экран,
    крупнее текст — юзер жаловался что "надо с лупой читать". */
 #checkin-preview-modal { position: fixed; inset: 0; z-index: 1600; background: var(--bg-app); display: flex; }
-.checkin-preview-inner { width: 100%; height: 100%; background: var(--bg-app); padding: 1.25rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; overflow-y: auto; box-sizing: border-box; }
+/* 28.07: owner report -- этот модальный экран (старт смены, checkin-preview-modal)
+   не имел вообще НИКАКОЙ компенсации под Telegram safe-area (в отличие от .form-header/
+   .fw-header, уже починенных) -- заголовок и hint-текст залезали под системные Close/
+   Back/menu кнопки. Тот же --tg-safe-top паттерн, что и везде. */
+.checkin-preview-inner { width: 100%; height: 100%; background: var(--bg-app); padding: calc(1.25rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) calc(1.5rem + env(safe-area-inset-bottom)) calc(1rem + var(--tg-safe-left, 0px)); display: flex; flex-direction: column; overflow-y: auto; box-sizing: border-box; }
 #finish-wizard-modal { position: fixed; inset: 0; z-index: 1650; background: var(--bg-app); display: flex; }
 .fw-inner { width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; }
 /* 28.07: то же grid-центрирование, что у общего <header>/.form-header -- flex:1 на
@@ -3729,7 +3733,7 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
       <span class="checkin-preview-title" id="checkin-preview-title">Фото начала смены</span>
       <button class="checkin-preview-close" id="checkin-preview-close" type="button">✕</button>
     </div>
-    <div class="checkin-preview-hint">Сделай 2-4 фото объекта с разных углов</div>
+    <div class="checkin-preview-hint" id="checkin-preview-hint">Сделай 2-4 фото объекта с разных углов</div>
     <div class="checkin-preview-grid" id="checkin-preview-grid"></div>
     <button class="checkin-preview-add-btn" id="checkin-preview-add-btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="2"/></svg> Добавить фото</button>
 

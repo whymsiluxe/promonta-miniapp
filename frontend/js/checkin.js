@@ -307,7 +307,9 @@ function _openCheckinPreviewModal() {
   const title = document.getElementById('checkin-preview-title');
   const survey = document.getElementById('checkin-finish-survey');
   const isFinish = _checkinPendingAction === 'finish';
-  title.textContent = isFinish ? 'Фото окончания смены (минимум 2)' : 'Фото начала смены';
+  title.textContent = 'Фото'; // 28.07: owner request -- длинный заголовок теснился с Close/back, детали теперь только в hint ниже
+  const hint = document.getElementById('checkin-preview-hint');
+  if (hint) hint.textContent = isFinish ? 'Фото окончания смены — минимум 2, с разных углов' : 'Фото начала смены — сделай 2-4 фото объекта с разных углов';
   survey.style.display = isFinish ? 'block' : 'none';
   if (isFinish) {
     // 24.07: default теперь реально накопленное время паузы (кнопка Пауза/Продолжить
