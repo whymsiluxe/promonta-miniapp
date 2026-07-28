@@ -1199,13 +1199,15 @@ header h1 {
   line-height: 1;
   flex-shrink: 0;
   align-self: start;
-  /* 28.07 v2: margin-top растягивал высоту grid-строки (margin на grid-item увеличивает
-     track), утягивая title вниз вместе с кнопкой -- ровно баг, который owner поймал
-     ("на разной высоте эти две кнопки", title сместился). position:relative;top не
-     участвует в расчёте высоты трека -- сдвигает кнопку визуально, не трогая соседей
-     (H1 остаётся ровно на уровне Telegram Close, как и должно быть). */
+  /* 28.07 v3: Telegram Close -- родной системный элемент, лежит ПОВЕРХ нашего UI --
+     кнопка навигации не может делить с ним ни X, ни Y координату, иначе Close всегда
+     перекрывает её верх. Сдвигаем вправо (выходим из-под Close по горизонтали) И
+     вниз на полную высоту Close (~36px) + 10px отступ, чтобы кнопка была видна целиком,
+     а не наполовину. position:relative -- не растягивает высоту grid-строки (margin
+     растягивал бы, см. v2 комментарий), title остаётся ровно на уровне Close. */
   position: relative;
-  top: 10px;
+  top: 46px;
+  left: 46px;
 }
 .form-header .back-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
 
