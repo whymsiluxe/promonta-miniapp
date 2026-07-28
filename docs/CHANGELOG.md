@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-07-28 (autonomous session, continued — Phase 05 design system)
+
+Full detail and status markers in `docs/plan-phases/05-design-system.md`. Commits `9606f3d`, `752b2f3`.
+
+### Changed
+- Calendar (`#view-abwesenheit`) day-tap now opens the reusable bottom-sheet component (same pattern as the object-creation sheet from the Phase 04 work) instead of an inline `display:block/none` form.
+
+### Added
+- Bubble Assignment: tapping a worker bubble (without dragging) now opens the same assign-confirmation popup a successful drag would — implemented inside the existing pointer event lifecycle with a 6px movement threshold, drag logic itself untouched.
+
+### Verified as already done (design-system plan was largely stale, not re-implemented)
+Read-verified against actual code rather than trusting the plan text: color/spacing/radius tokens (real names differ from the plan's proposed `--color-*` naming but are semantically/visually equivalent — deliberately not renamed, see the phase file for the reasoning), Manrope-only typography (confirmed still true, no Montserrat live), Home/Profile card consistency and worker-vs-owner branching, Calendar title/selector/today-highlighting, Bubble Assignment's skill-matching/XSS-escaping/swipe-conflict concerns. Also corrected an overstated finding: Bubble Assignment "conflict detection" is NOT actually missing — the backend (`assign_user` in `backend/main.py`) already hard-blocks approved-absence and cross-object date overlaps with a 409; only the proactive pre-attempt UI warning is absent, not the underlying data-safety check.
+
+### Known gaps (not fixed, documented as deferred — larger scope than fit safely in this pass)
+- Bubble Assignment optimistic update + undo after a successful assignment.
+- Bubble Assignment explicit "Просмотр" (read-only overview) vs "Распределение" (assign) mode toggle.
+- Bubble Assignment proactive conflict/absence highlighting in the arena before a tap/drag (the assignment itself is still protected server-side either way).
+- Emoji→SVG icon conversion remains blocked on an owner-provided reference image (unchanged since the prior session).
+
 ## 2026-07-28 (autonomous session — Phase 04 remainder, per docs/HANDOFF_PHASE05_10.md)
 
 Full detail and status markers in `docs/plan-phases/04-telegram-ui-navigation.md` ("Remainder items 1-6"). Commits `d305ba7`, `21db273`, `eca02dc`, `ce7e2e4`.
