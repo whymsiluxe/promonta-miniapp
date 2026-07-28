@@ -71,7 +71,14 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
       <span class="bubble-panel-stage">${esc(stageName || '')}</span>
       <button class="bubble-panel-close" onclick="_closeBubblePanel()">✕</button>
     </div>
-    <div class="bubble-panel-hint">Перетащите работника на зону этапа или просто тапните по нему</div>
+    <!-- 28.07: owner request -- read-only "Просмотр" режим, чтобы посмотреть занятость
+       команды не рискуя случайно кого-то назначить тапом/drag. Тот же паттерн переключателя,
+       что уже используют другие doc-type-switch экраны в приложении. -->
+    <div class="bubble-mode-switch" id="bubble-mode-switch">
+      <div class="bubble-mode-opt active" data-bubble-mode="assign">Распределение</div>
+      <div class="bubble-mode-opt" data-bubble-mode="view">Просмотр</div>
+    </div>
+    <div class="bubble-panel-hint" id="bubble-panel-hint">Перетащите работника на зону этапа или просто тапните по нему</div>
     <div id="bubble-drop-zone" class="bubble-drop-zone">
       <div class="bubble-drop-label">⬆ Перетащить сюда</div>
     </div>
@@ -105,11 +112,101 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
   `;
   document.body.appendChild(panel);
   _bubblePanel = panel;
+  _bubbleMode = 'assign';
+  _bubbleWorkers = workers;
 
-  // Attach pointer drag events
+  // Attach pointer drag events -- сохраняем handler-ссылку на элементе, чтобы можно
+  // было снять/вернуть при переключении режима без пересоздания разметки.
   panel.querySelectorAll('.bubble').forEach(el => {
     el.addEventListener('pointerdown', _bubbleDragStart, { passive: false });
   });
+
+  panel.querySelectorAll('#bubble-mode-switch [data-bubble-mode]').forEach(opt => {
+    opt.addEventListener('click', () => _setBubbleMode(opt.dataset.bubbleMode));
+  });
+}
+
+let _bubbleMode = 'assign';
+let _bubbleWorkers = [];
+
+async function _setBubbleMode(mode) {
+  if (_bubbleMode === mode) return;
+  _bubbleMode = mode;
+  const panel = _bubblePanel;
+  if (!panel) return;
+
+  panel.querySelectorAll('#bubble-mode-switch [data-bubble-mode]').forEach(opt => {
+    opt.classList.toggle('active', opt.dataset.bubbleMode === mode);
+  });
+  const hint = document.getElementById('bubble-panel-hint');
+  const dropZone = document.getElementById('bubble-drop-zone');
+
+  if (mode === 'view') {
+    if (hint) hint.textContent = 'Занятость команды на эту неделю — тап/перетаскивание отключены';
+    if (dropZone) dropZone.style.display = 'none';
+    panel.querySelectorAll('.bubble').forEach(el => {
+      el.removeEventListener('pointerdown', _bubbleDragStart);
+      el.style.cursor = 'default';
+      el.style.touchAction = 'auto';
+    });
+    await _loadBubbleOccupancyThisWeek();
+  } else {
+    if (hint) hint.textContent = 'Перетащите работника на зону этапа или просто тапните по нему';
+    if (dropZone) dropZone.style.display = '';
+    panel.querySelectorAll('.bubble').forEach(el => {
+      el.addEventListener('pointerdown', _bubbleDragStart, { passive: false });
+      el.style.cursor = 'grab';
+      el.style.touchAction = 'none';
+      el.classList.remove('bubble-busy', 'bubble-free');
+      el.querySelector('.bubble-occupancy-label')?.remove();
+    });
+  }
+}
+
+// 28.07: занятость на ТЕКУЩУЮ неделю -- проще и достаточно для "посмотреть картину",
+// не привязано к датам этапа (те выбираются только ПОСЛЕ тапа на работника, в
+// confirm-попапе, недоступны на этом экране панели вообще).
+function _currentWeekDates() {
+  const now = new Date();
+  const day = (now.getDay() + 6) % 7; // ISO: понедельник = 0
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - day);
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  }
+  return dates;
+}
+
+async function _loadBubbleOccupancyThisWeek() {
+  const weekDates = _currentWeekDates();
+  const monthsNeeded = new Set(weekDates.map(d => d.slice(0, 7))); // "YYYY-MM", неделя может пересекать границу месяца
+
+  await Promise.all(_bubbleWorkers.map(async w => {
+    const el = _bubblePanel?.querySelector(`.bubble[data-uid="${w.user_id}"]`);
+    if (!el) return;
+    let busyDates = new Set();
+    try {
+      for (const monthKey of monthsNeeded) {
+        const [y, m] = monthKey.split('-').map(Number);
+        const data = await api(`/api/workers/${w.user_id}/calendar?year=${y}&month=${m}`);
+        (data.unavailable_dates || []).forEach(d => busyDates.add(d));
+        (data.assigned_dates || []).forEach(d => busyDates.add(d));
+      }
+    } catch (e) {
+      return; // тихо -- один упавший запрос не должен ломать всю картину занятости
+    }
+    const busyDaysThisWeek = weekDates.filter(d => busyDates.has(d)).length;
+    const isBusy = busyDaysThisWeek > 0;
+    el.classList.toggle('bubble-busy', isBusy);
+    el.classList.toggle('bubble-free', !isBusy);
+    const label = document.createElement('span');
+    label.className = 'bubble-occupancy-label';
+    label.textContent = isBusy ? `занят ${busyDaysThisWeek}/7` : 'свободен';
+    el.appendChild(label);
+  }));
 }
 
 function _closeBubblePanel() {
