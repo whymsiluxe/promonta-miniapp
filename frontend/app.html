@@ -1169,7 +1169,19 @@ header h1 {
   flex-shrink: 0;
 }
 
-.form-header { display: flex; align-items: center; gap: 0.75rem; padding: calc(1.25rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 1rem calc(1rem + var(--tg-safe-left, 0px)); }
+/* 28.07: было flex+gap -- тот же баг, что чинили для общего <header> 27.07 (Grid vs
+   flex+space-between): title центрировался МЕЖДУ соседями (back-btn/close-btn), не
+   между границами экрана. Owner report: "Квартира Вебер сдвинута влево" на экране
+   деталей объекта, который использует .form-header, не общий <header> -- та правка
+   сюда не попадала. Тот же 3-колоночный grid-фикс, теперь и здесь. */
+.form-header {
+  display: grid;
+  grid-template-columns: minmax(44px, auto) 1fr minmax(44px, auto);
+  align-items: center;
+  padding: calc(1.25rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 1rem calc(1rem + var(--tg-safe-left, 0px));
+}
+.form-header .back-btn { grid-column: 1; }
+.form-header .bottom-sheet-close-btn { grid-column: 3; justify-self: end; }
 
 .form-header .back-btn {
   display: flex;
@@ -1177,10 +1189,6 @@ header h1 {
   justify-content: center;
   width: 44px;
   height: 44px;
-  /* 27.07: убран margin-left:-10px -- старый visual-align hack, теперь header
-     grid-колонка (minmax(44px,auto) + --tg-safe-left padding) уже даёт корректную
-     позицию; отрицательный margin сдвигал кнопку ЗА пределы safe-зоны, под Telegram
-     Close-кнопку (owner report: back-стрелка на Календаре/Чате залезала под Close). */
   background: none;
   border: none;
   border-radius: 999px;
@@ -1190,6 +1198,11 @@ header h1 {
   padding: 0;
   line-height: 1;
   flex-shrink: 0;
+  /* 28.07: owner report -- кнопка залезала под Telegram Close (оба в левом верхнем
+     углу). align-items:center в .form-header ставит кнопку по центру своей строки,
+     та же строка что и Close визуально -- сдвигаем чуть ниже, а не весь header. */
+  margin-top: 10px;
+  align-self: start;
 }
 .form-header .back-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
 
@@ -1198,6 +1211,12 @@ header h1 {
   font-size: 1.3rem;
   font-weight: 700;
   color: var(--primary-dark);
+  grid-column: 2;
+  text-align: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .form-section { padding: 0 1rem; display: flex; flex-direction: column; gap: 0.9rem; }
