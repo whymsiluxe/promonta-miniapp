@@ -66,7 +66,7 @@ function _renderChatMessages(messages) {
   // Сигнатура снимка: id (порядок+delete/insert) + сводка реакций каждого сообщения --
   // ловит и удаление не-последнего сообщения, и reaction-only изменение без нового
   // сообщения/смены ts, оба пропускались старой maxTs+length эвристикой.
-  const sig = messages.map(m => `${m.id}:${(m.reactions || []).map(r => `${r.reaction}${r.count}${r.mine ? '1' : '0'}`).join('')}`).join('|');
+  const sig = messages.map(m => `${m.id}:${(m.reactions || []).map(r => `${r.reaction}${r.count}${r.mine ? '1' : '0'}`).join('')}:${m.read_by_recipient ? 'r' : ''}`).join('|');
   if (sig === _chatLastRenderSig) return;
 
   const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
@@ -103,12 +103,21 @@ function _renderChatMessages(messages) {
     const nameHtml = isOwn
       ? `<span class="chat-name">Вы</span>`
       : `<span class="chat-name" onclick="openUserCard('${msg.user_id}')">${_escChat(msg.name)}</span>`;
+    // 28.07: owner request -- статус прочтения в личном чате. read_by_recipient
+    // приходит с бэкенда только для DM (with_ query), только на своих сообщениях --
+    // показываем галочку только на ПОСЛЕДНЕМ своём сообщении в списке (тот же паттерн,
+    // что WhatsApp/Telegram используют, не дублируем статус на каждом сообщении).
+    const isLastMessage = msg === messages[messages.length - 1];
+    const readReceiptHtml = (isOwn && isLastMessage && typeof msg.read_by_recipient === 'boolean')
+      ? `<span class="chat-read-receipt ${msg.read_by_recipient ? 'chat-read-receipt-read' : 'chat-read-receipt-sent'}" title="${msg.read_by_recipient ? 'Прочитано' : 'Отправлено'}">${msg.read_by_recipient ? '✓✓' : '✓'}</span>`
+      : '';
     return `${divider}
     <div class="chat-bubble ${isOwn ? 'chat-bubble-own' : 'chat-bubble-other'}${isGrouped ? ' chat-bubble-grouped' : ''}" data-msg-id="${msg.id}" data-uid="${msg.user_id}">
       <div class="chat-msg-header">${avatarHtml}${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span></div>
       ${msg.attachment ? _renderChatAttachment(msg) : ''}
       ${msg.text ? `<div class="chat-text">${_escChat(msg.text)}</div>` : ''}
       <div class="chat-reactions-slot">${_renderChatReactions(msg)}</div>
+      ${readReceiptHtml}
     </div>`;
   }).join('');
 

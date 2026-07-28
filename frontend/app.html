@@ -2004,6 +2004,9 @@ body.view-locked {
 
 .chat-text { font-size: 0.95rem; line-height: 1.45; white-space: pre-wrap; }
 .chat-time { font-size: 0.72rem; color: var(--text-light); }
+/* 28.07: read receipt (DM only) -- одинарная галочка = отправлено, двойная синяя = прочитано. */
+.chat-read-receipt { display: block; text-align: right; font-size: 0.72rem; margin-top: 0.15rem; color: var(--text-light); }
+.chat-read-receipt-read { color: var(--chat-forest, #2D6A51); }
 .chat-empty, .ai-empty { padding: 3rem 1.5rem; text-align: center; color: var(--text-light); font-size: 0.9rem; line-height: 1.6; }
 
 /* 28.07 (Phase 06): reaction chips под сообщением + long-press context menu

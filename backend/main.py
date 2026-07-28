@@ -2465,6 +2465,19 @@ def get_chat_messages(with_: str = '', thread_key: str = '', user: dict = Depend
     my_id = str(user['id'])
     for m in messages:
         m['reactions'] = _reactions_summary_for_message(reactions, m['id'], my_id)
+
+    # 28.07: owner request -- статус прочтения в личном чате (DM). Собеседник уже
+    # отмечает прочтение через существующий POST /api/chat/read (reads.json), просто
+    # никогда не отдавался обратно отправителю. Только для DM (with_) -- групповой/
+    # obj:/mangel: треды имеют много читателей, "прочитано" там неоднозначно, вне
+    # скоупа этого запроса ("в личный чат").
+    if with_:
+        other_reads = _load_reads().get(with_, {})
+        other_last_read = other_reads.get(my_id, 0) if isinstance(other_reads, dict) else int(other_reads or 0)
+        for m in messages:
+            if str(m.get('user_id')) == my_id:
+                m['read_by_recipient'] = m.get('ts', 0) <= other_last_read
+
     return {"messages": messages}
 
 
