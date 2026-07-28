@@ -72,12 +72,18 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
   if (!workers.length) return;
 
   // Build panel
+  // 29.07 v2: layout rebuild (owner screenshot report -- header под Telegram controls,
+  // круги в хаосе за пределами экрана). Header теперь grid с safe-area padding (CSS),
+  // арена -- стабильный grid вместо случайных absolute left/top в процентах. Drag/tap
+  // JS ниже не изменён -- та механика уже была правильной, ломался только визуальный слой.
   const panel = document.createElement('div');
   panel.id = 'bubble-panel';
   panel.innerHTML = `
     <div class="bubble-panel-header">
-      <span class="bubble-panel-title">Назначить на этап</span>
-      <span class="bubble-panel-stage">${esc(stageName || '')}</span>
+      <div class="bubble-panel-titles">
+        <span class="bubble-panel-title">Назначить на этап</span>
+        <span class="bubble-panel-stage">${esc(stageName || '')}</span>
+      </div>
       <button class="bubble-panel-close" onclick="_closeBubblePanel()">✕</button>
     </div>
     <!-- 28.07: owner request -- read-only "Просмотр" режим, чтобы посмотреть занятость
@@ -87,33 +93,17 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
       <div class="bubble-mode-opt active" data-bubble-mode="assign">Распределение</div>
       <div class="bubble-mode-opt" data-bubble-mode="view">Просмотр</div>
     </div>
-    <div class="bubble-panel-hint" id="bubble-panel-hint">Перетащите работника на зону этапа или просто тапните по нему</div>
+    <div class="bubble-panel-hint" id="bubble-panel-hint">Выберите работника или перетащите его в зону назначения</div>
     <div id="bubble-drop-zone" class="bubble-drop-zone">
-      <div class="bubble-drop-label">⬆ Перетащить сюда</div>
+      <div class="bubble-drop-label">Перетащите работника сюда</div>
     </div>
     <div id="bubble-arena" class="bubble-arena">
-      ${workers.map((w, i) => {
+      ${workers.map((w) => {
         const matched = _isSkillMatch(w.skills || [], stageName);
-        const delay = (i * 0.37).toFixed(2);
-        const dur = (2.2 + Math.abs(((i * 17) % 10) / 10)).toFixed(2);
-        // 28.07: owner request -- кружки были маленькие, увеличены; добавлена подпись
-        // имени под кругом (раньше видно было только на title-tooltip при hover,
-        // на touch-устройстве недоступном вообще).
-        const size = matched ? 101 : 78;
-        const opacity = matched ? '1' : '0.55';
-        const glow = matched ? 'box-shadow:0 0 12px 3px var(--accent);border:2px solid var(--accent);' : 'border:2px solid var(--border-color);';
-        // 28.07 v2: drag двигает именно .bubble напрямую (position:fixed + left/top
-        // в px, см. _bubbleDragMove) -- подпись имени должна ехать вместе с кругом при
-        // перетаскивании, поэтому она ВНУТРИ .bubble (overflow:visible), не в отдельном
-        // родительском wrap, который остался бы на месте пока круг летит к drop-зоне.
-        return `<div class="bubble"
+        return `<div class="bubble ${matched ? 'bubble-matched' : 'bubble-unmatched'}"
           data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}"
-          style="width:${size}px;height:${size}px;opacity:${opacity};${glow}
-            animation:bubbleFloat ${dur}s ease-in-out ${delay}s infinite alternate;
-            left:${10 + ((i * 73) % 75)}%;top:${15 + ((i * 41) % 45)}%;"
           title="${esc(w.name)}">
-          <span class="bubble-avatar">${esc(_makeAvatarText(w.name))}</span>
-          ${matched ? '<span class="bubble-glow-ring"></span>' : ''}
+          <span class="bubble-avatar-wrap"><span class="bubble-avatar">${esc(_makeAvatarText(w.name))}</span></span>
           <span class="bubble-name-label">${esc(w.name.split(' ')[0])}</span>
         </div>`;
       }).join('')}

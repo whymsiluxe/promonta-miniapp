@@ -2580,37 +2580,68 @@ body.view-locked {
 .obj-stage-strip-arrow { flex-shrink: 0; color: var(--text-light); opacity: 0.4; margin: 0 0.4rem; font-size: 0.75rem; }
 
 /* ═══════════ BUBBLE ASSIGN PANEL (Фаза 2d) ═══════════ */
-#bubble-panel { position: fixed; inset: 0; z-index: 8000; background: rgba(0,0,0,0.88); display: flex; flex-direction: column; }
-.bubble-panel-header { display: flex; align-items: center; gap: 0.5rem; padding: 1rem 0.75rem 0.5rem; }
-.bubble-panel-title { font-family: var(--font-heading); font-weight: 700; font-size: 1rem; color: var(--text-main); flex: 1; }
-.bubble-panel-stage { font-size: 0.78rem; color: var(--accent); background: var(--bg-card); border-radius: 12px; padding: 0.2rem 0.5rem; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bubble-panel-close { background: var(--bg-card); border: none; color: var(--text-main); border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; }
-.bubble-panel-hint { text-align: center; font-size: 0.8rem; color: var(--text-light); padding: 0 0.75rem 0.5rem; }
+/* ── Bubble Assignment -- полный layout rebuild (29.07 v2) ──────────────────────
+   Owner screenshot report: title/hint сидели ПОД Telegram system row (header не учитывал
+   safe-area вообще -- единственный fixed:inset:0 экран в проекте без --tg-safe-top),
+   круги работников разлетались за пределы экрана и друг на друга (случайные left/top
+   в процентах: `10+((i*73)%75)%` в bubble-assign.js -- на 2-3 работниках почти гарантированно
+   что-то вылезает за viewport или накладывается). Тап уже был рабочим primary-путём
+   (pointerdown без движения -> confirm popup, см. bubble-assign.js _bubbleDragEnd), просто
+   выглядел второстепенным из-за хаотичного floating-фона. Rebuild: тот же drag/tap JS не
+   переписан (уже правильно работал), стабильная grid-раскладка вместо случайных процентов,
+   header с safe-area как у остальных fullscreen-оверлеев (тот же inset:0 +
+   var(--tg-vp-height) паттерн, что чат/photo-comments-modal). */
+#bubble-panel {
+  position: fixed; inset: 0; z-index: 8000; background: var(--bg-app);
+  height: var(--tg-vp-height, 100dvh);
+  display: flex; flex-direction: column;
+}
+.bubble-panel-header {
+  display: grid; grid-template-columns: 1fr minmax(44px, auto); align-items: start; gap: 0.5rem;
+  padding: calc(0.6rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(0.75rem + var(--tg-safe-right, 0px)) 0.5rem calc(0.75rem + var(--tg-safe-left, 0px));
+  flex-shrink: 0;
+}
+.bubble-panel-titles { grid-column: 1; min-width: 0; }
+.bubble-panel-title { display: block; font-family: var(--font-heading); font-weight: 700; font-size: 1rem; color: var(--text-main); }
+.bubble-panel-stage { display: block; margin-top: 0.15rem; font-size: 0.82rem; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bubble-panel-close { grid-column: 2; justify-self: end; background: var(--bg-card); border: none; color: var(--text-main); border-radius: 50%; width: 40px; height: 40px; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.bubble-panel-hint { text-align: center; font-size: 0.8rem; color: var(--text-light); padding: 0 0.75rem 0.5rem; flex-shrink: 0; }
 /* 28.07: read-only "Просмотр" режим -- переключатель + занятость-подпись под каждым bubble. */
-.bubble-mode-switch { display: flex; gap: 0.4rem; padding: 0 0.75rem 0.5rem; justify-content: center; }
-.bubble-mode-opt { padding: 0.35rem 0.9rem; border-radius: 999px; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.65); font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.bubble-mode-switch { display: flex; gap: 0.4rem; padding: 0 0.75rem 0.5rem; justify-content: center; flex-shrink: 0; }
+.bubble-mode-opt { padding: 0.35rem 0.9rem; border-radius: 999px; background: var(--bg-card); color: var(--text-light); font-size: 0.82rem; font-weight: 600; cursor: pointer; }
 .bubble-mode-opt.active { background: var(--accent); color: var(--primary-dark); }
-.bubble-occupancy-label { position: absolute; top: calc(100% + 20px); left: 50%; transform: translateX(-50%); font-size: 0.68rem; font-weight: 600; white-space: nowrap; pointer-events: none; }
+.bubble-occupancy-label { font-size: 0.7rem; font-weight: 600; white-space: nowrap; margin-top: 0.15rem; }
 .bubble-busy .bubble-occupancy-label { color: #E8837A; }
 .bubble-free .bubble-occupancy-label { color: #7FD99A; }
-.bubble-busy { filter: saturate(0.6); }
-.bubble-drop-zone { margin: 0 0.75rem; background: var(--bg-card); border: 2px dashed var(--border-color); border-radius: var(--radius-lg); height: 80px; display: flex; align-items: center; justify-content: center; transition: border-color 0.15s, background 0.15s; flex-shrink: 0; }
-.bubble-drop-zone-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)); }
+.bubble-busy .bubble-avatar-wrap { filter: saturate(0.6); }
+/* 29.07: компактная drop-зона -- не доминирует над экраном. */
+.bubble-drop-zone { margin: 0 0.75rem 0.5rem; background: var(--bg-card); border: 2px dashed var(--border-color); border-radius: var(--radius-lg); height: 76px; display: flex; align-items: center; justify-content: center; transition: border-color 0.15s, background 0.15s; flex-shrink: 0; }
+.bubble-drop-zone-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)); transform: scale(1.02); }
 .bubble-drop-label { color: var(--text-light); font-size: 0.85rem; }
-/* 28.07: overflow:hidden тут обрезал имя-подпись под кругом (position:absolute внутри
-   .bubble, торчит НИЖЕ границы круга) -- padding-bottom освобождает видимое место снизу
-   арены для подписей, не снимая overflow:hidden целиком (тот нужен, чтобы .bubble не
-   вылетал за пределы панели во время float-анимации/drag). */
-.bubble-arena { flex: 1; position: relative; overflow: hidden; margin-top: 0.5rem; padding-bottom: 1.4rem; box-sizing: border-box; }
-.bubble { position: absolute; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: grab; touch-action: none; transition: opacity 0.2s; overflow: visible; background: var(--bg-card); }
+/* 29.07: арена -- стабильный grid вместо случайных absolute left/top в процентах (та
+   схема гарантированно перекрывала круги друг с другом / выталкивала их за экран на
+   любом наборе из 2+ работников). Карточки в нормальном document flow; drag поднимает
+   конкретный .bubble в position:fixed (см. bubble-assign.js _bubbleDragStart) -- статичная
+   grid-раскладка не мешает этому, просто задаёт исходную стабильную позицию вместо хаоса. */
+.bubble-arena {
+  flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 0.9rem 0.6rem; padding: 0.4rem 0.9rem calc(1rem + env(safe-area-inset-bottom));
+  box-sizing: border-box; justify-items: center; align-content: start;
+}
+.bubble { position: static; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; cursor: grab; touch-action: none; width: 100%; }
 .bubble:active { cursor: grabbing; }
-.bubble-avatar { font-size: 0.95rem; font-weight: 700; color: var(--text-main); pointer-events: none; z-index: 1; }
-/* 28.07: имя под кругом -- position:absolute внутри .bubble так двигается вместе с
-   ним при drag (см. bubble-assign.js комментарий), не растягивает layout арены. */
+.bubble-avatar-wrap {
+  width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-card); border: 2px solid var(--border-color); transition: opacity 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+.bubble-matched .bubble-avatar-wrap { border-color: var(--accent); box-shadow: 0 0 10px 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+.bubble-unmatched .bubble-avatar-wrap { opacity: 0.6; }
+.bubble-avatar { font-size: 0.95rem; font-weight: 700; color: var(--text-main); pointer-events: none; }
 .bubble-name-label {
-  position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-  margin-top: 4px; font-size: 0.72rem; font-weight: 600; color: var(--text-main);
-  white-space: nowrap; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  font-size: 0.72rem; font-weight: 600; color: var(--text-main);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 }
 
 /* ── Bubble-assign confirm popup (10.32) — вид работ + период после drop ── */
