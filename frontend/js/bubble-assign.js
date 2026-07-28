@@ -83,7 +83,7 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
         // 28.07: owner request -- кружки были маленькие, увеличены; добавлена подпись
         // имени под кругом (раньше видно было только на title-tooltip при hover,
         // на touch-устройстве недоступном вообще).
-        const size = matched ? 88 : 68;
+        const size = matched ? 101 : 78;
         const opacity = matched ? '1' : '0.55';
         const glow = matched ? 'box-shadow:0 0 12px 3px var(--accent);border:2px solid var(--accent);' : 'border:2px solid var(--border-color);';
         // 28.07 v2: drag двигает именно .bubble напрямую (position:fixed + left/top
@@ -94,7 +94,7 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
           data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}"
           style="width:${size}px;height:${size}px;opacity:${opacity};${glow}
             animation:bubbleFloat ${dur}s ease-in-out ${delay}s infinite alternate;
-            left:${10 + ((i * 73) % 75)}%;top:${15 + ((i * 41) % 60)}%;"
+            left:${10 + ((i * 73) % 75)}%;top:${15 + ((i * 41) % 45)}%;"
           title="${esc(w.name)}">
           <span class="bubble-avatar">${esc(_makeAvatarText(w.name))}</span>
           ${matched ? '<span class="bubble-glow-ring"></span>' : ''}

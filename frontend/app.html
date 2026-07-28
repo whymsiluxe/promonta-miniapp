@@ -2512,7 +2512,11 @@ body.view-locked {
 .bubble-drop-zone { margin: 0 0.75rem; background: var(--bg-card); border: 2px dashed var(--border-color); border-radius: var(--radius-lg); height: 80px; display: flex; align-items: center; justify-content: center; transition: border-color 0.15s, background 0.15s; flex-shrink: 0; }
 .bubble-drop-zone-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)); }
 .bubble-drop-label { color: var(--text-light); font-size: 0.85rem; }
-.bubble-arena { flex: 1; position: relative; overflow: hidden; margin-top: 0.5rem; }
+/* 28.07: overflow:hidden тут обрезал имя-подпись под кругом (position:absolute внутри
+   .bubble, торчит НИЖЕ границы круга) -- padding-bottom освобождает видимое место снизу
+   арены для подписей, не снимая overflow:hidden целиком (тот нужен, чтобы .bubble не
+   вылетал за пределы панели во время float-анимации/drag). */
+.bubble-arena { flex: 1; position: relative; overflow: hidden; margin-top: 0.5rem; padding-bottom: 1.4rem; box-sizing: border-box; }
 .bubble { position: absolute; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: grab; touch-action: none; transition: opacity 0.2s; overflow: visible; background: var(--bg-card); }
 .bubble:active { cursor: grabbing; }
 .bubble-avatar { font-size: 0.95rem; font-weight: 700; color: var(--text-main); pointer-events: none; z-index: 1; }
