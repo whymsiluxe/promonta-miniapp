@@ -1946,23 +1946,27 @@ body.view-locked {
 .chat-reaction-chip {
   display: inline-flex; align-items: center; gap: 0.25rem;
   padding: 0.15rem 0.5rem; border-radius: 999px;
-  background: var(--bg-card-raised); border: 1px solid var(--border-color);
+  background: var(--chat-surface); border: 1px solid var(--chat-border);
+  color: var(--chat-text-secondary);
   font-size: 0.78rem; line-height: 1.3; cursor: pointer; user-select: none;
   transition: background .15s, border-color .15s, transform .1s;
 }
 .chat-reaction-chip:active { transform: scale(0.94); }
 .chat-reaction-chip.mine {
-  background: color-mix(in srgb, var(--c-accent, var(--primary)) 18%, var(--bg-card-raised));
-  border-color: color-mix(in srgb, var(--c-accent, var(--primary)) 45%, transparent);
-  color: var(--c-accent, var(--primary));
+  background: color-mix(in srgb, var(--chat-forest) 30%, var(--chat-surface));
+  border-color: var(--chat-forest);
+  color: var(--chat-forest-light);
 }
 .chat-reaction-chip-count { font-weight: 600; }
 
+/* Меню появляется через appendChild(document.body) в chat.js (см. _openChatBubbleMenu) --
+   вне DOM-поддерева #view-chat, поэтому стилизуется напрямую chat-переменными, не через
+   #view-chat-scoping ниже (тот кейс для элементов, которые реально внутри #view-chat). */
 .chat-bubble-menu-backdrop { position: fixed; inset: 0; z-index: 60; background: transparent; }
 .chat-bubble-menu {
   position: fixed; z-index: 61;
-  background: var(--bg-white); border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg); box-shadow: 0 8px 30px rgba(0,0,0,0.28);
+  background: var(--chat-surface-active); border: 1px solid var(--chat-border);
+  border-radius: var(--radius-lg); box-shadow: 0 8px 30px rgba(0,0,0,0.45);
   padding: 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
   min-width: 210px; max-width: calc(100vw - 2rem);
   animation: chatBubbleMenuPop 0.15s ease;
@@ -1974,13 +1978,81 @@ body.view-locked {
   flex: 1; font-size: 1.35rem; background: none; border: none; padding: 0.35rem 0;
   border-radius: 10px; cursor: pointer; line-height: 1;
 }
-.chat-bubble-menu-reactions button:active { background: var(--bg-card-raised); transform: scale(1.15); }
+.chat-bubble-menu-reactions button:active { background: var(--chat-surface-hover); transform: scale(1.15); }
 .chat-bubble-menu-delete {
   border: none; background: none; text-align: left; padding: 0.55rem 0.6rem;
-  border-top: 1px solid var(--border-color); color: var(--red);
+  border-top: 1px solid var(--chat-border); color: var(--red);
   font-size: 0.9rem; cursor: pointer; border-radius: 8px;
 }
-.chat-bubble-menu-delete:active { background: var(--bg-card-raised); }
+.chat-bubble-menu-delete:active { background: var(--chat-surface-hover); }
+
+/* ═══ Chat Hub dark palette (Phase 06, 2026-07-28, ТЗ3) ═══
+   Чат всегда тёмный (референс: Messages-style dark surface), независимо от
+   [data-theme] остального приложения (light Old Money по умолчанию, опциональный
+   dark toggle в Профиль→Настройки — см. tokens.css). Variables на :root (новые
+   имена, ничего не ломают), применение — #view-chat-scoped переопределения поверх
+   существующих правил той же специфичности (побеждают по source order, см. ниже
+   #view-chat.active рядом с #view-chat.active,#view-ai.active) — .ai-* (ИИ-чат
+   владельца) НЕ затронут, только #view-chat. */
+:root {
+  --chat-bg: #11130F;
+  --chat-surface: #191C17;
+  --chat-surface-hover: #20241E;
+  --chat-surface-active: #252A23;
+  --chat-text: #F5F1E8;
+  --chat-text-secondary: #AAA59A;
+  --chat-text-tertiary: #77756D;
+  --chat-forest: #2D6A51;
+  --chat-forest-light: #79A38F;
+  --chat-brass: #A98754;
+  --chat-border: rgba(245,241,232,0.08);
+  --chat-divider: rgba(245,241,232,0.07);
+}
+
+#view-chat.active { background: var(--chat-bg); }
+#view-chat header { background: var(--chat-bg); border-bottom: 1px solid var(--chat-border); }
+#view-chat header h1, #view-chat #chat-thread-title { color: var(--chat-text); }
+#view-chat .chat-back-btn { color: var(--chat-text-secondary); }
+#view-chat .chat-back-btn:active { background: var(--chat-surface-hover); }
+#view-chat .chat-close-thread-btn { color: var(--chat-text-secondary); }
+
+#view-chat .chat-search-input { background: var(--chat-surface); color: var(--chat-text); border-color: var(--chat-border); }
+#view-chat .chat-search-input::placeholder { color: var(--chat-text-tertiary); }
+#view-chat .chat-archive-btn { color: var(--chat-text-secondary); }
+#view-chat .chat-archive-btn:active { background: var(--chat-surface-hover); }
+
+#view-chat .chat-category-tabs .doc-type-opt { background: var(--chat-surface); color: var(--chat-text-secondary); }
+#view-chat .chat-category-tabs .doc-type-opt.active { background: var(--chat-forest); color: var(--chat-text); }
+
+#view-chat .chat-thread-item { border-bottom: 1px solid var(--chat-divider); }
+#view-chat .chat-thread-item:active { background: var(--chat-surface-hover); }
+#view-chat .chat-thread-avatar.group { background: var(--chat-surface-active); color: var(--chat-forest-light); }
+#view-chat .chat-online-dot { border-color: var(--chat-bg); }
+#view-chat .chat-thread-name { color: var(--chat-text); }
+#view-chat .chat-thread-preview { color: var(--chat-text-secondary); }
+#view-chat .chat-thread-time { color: var(--chat-text-tertiary); }
+#view-chat .chat-thread-badge { background: var(--chat-forest); }
+#view-chat .chat-day-divider { color: var(--chat-text-tertiary); }
+
+#view-chat .chat-messages { background: var(--chat-bg); }
+#view-chat .chat-msg-header .chat-name { color: var(--chat-text); }
+#view-chat .chat-bubble-own .chat-msg-header .chat-name { color: var(--chat-forest-light); }
+#view-chat .chat-text { color: var(--chat-text); }
+#view-chat .chat-time { color: var(--chat-text-tertiary); }
+#view-chat .chat-empty { color: var(--chat-text-tertiary); }
+
+#view-chat .chat-input-bar { background: var(--chat-surface); border-top: 1px solid var(--chat-border); }
+#view-chat .chat-input { background: var(--chat-surface-hover); color: var(--chat-text); }
+#view-chat .chat-input::placeholder { color: var(--chat-text-tertiary); }
+#view-chat .chat-attach-btn { color: var(--chat-text-secondary); }
+#view-chat .chat-attach-btn:active { background: var(--chat-surface-hover); }
+#view-chat .chat-send-btn { background: var(--chat-forest); color: var(--chat-text); }
+
+#view-chat #chat-voice-recording-bar { background: var(--chat-surface); border-top-color: var(--chat-border); }
+#view-chat .chat-voice-rec-hint { color: var(--chat-text-secondary); }
+#view-chat .chat-voice-player { background: var(--chat-surface); }
+#view-chat .chat-voice-transcript { color: var(--chat-text-tertiary); }
+#view-chat .chat-attach-file { background: var(--chat-surface); color: var(--chat-text); }
 
 /* AI bubbles */
 .ai-bubble {
