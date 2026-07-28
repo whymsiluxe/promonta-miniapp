@@ -3775,6 +3775,7 @@ async def checkin_finish(
     defects: str = Form(''),
     next_day_needs: str = Form(''),
     pause_minutes: int = Form(0),
+    voice_note_file_id: str = Form(''),
     files: list[UploadFile] = File(default=[]),
     user: dict = Depends(get_current_user),
     role: str = Depends(get_role),
@@ -3850,6 +3851,13 @@ async def checkin_finish(
         session['needs'] = needs_list or None
         session['defects'] = defects_list or None
         session['next_day_needs'] = next_day_needs.strip()[:1000] or None
+        # 28.07: owner request -- голосовое "что сделано" должно быть прослушиваемо
+        # владельцем, не только видно транскриптом. file_id уже создан/сохранён
+        # раньше через /api/transcribe (тот же поток что и для распознавания) --
+        # тут просто привязываем его к сессии смены. os.path.basename на всякий
+        # случай -- та же защита от path traversal, что и в get_transcribe_audio.
+        vnf = os.path.basename(voice_note_file_id.strip()) if voice_note_file_id.strip() else ''
+        session['voice_note_file_id'] = vnf or None
         # 24.07: если воркер финиширует смену прямо во время активной паузы (забыл нажать
         # "Продолжить") — закрываем её здесь же, не оставляем pause_started_at висеть
         # в завершённой сессии.
@@ -4015,6 +4023,11 @@ def list_checkins(object_id: str = '', date: str = '', user: dict = Depends(get_
         items = [i for i in items if i['object_id'] == object_id]
     if date:
         items = [i for i in items if i['date'] == date]
+    # 28.07: voice_note_file_id -- отдаём готовый audio_url, фронтенду не нужно самому
+    # собирать путь (тот же паттерн, что /api/transcribe уже возвращает при записи).
+    for i in items:
+        if i.get('voice_note_file_id'):
+            i['voice_note_audio_url'] = f"/api/transcribe/{i['voice_note_file_id']}/audio"
     return {"sessions": items}
 
 

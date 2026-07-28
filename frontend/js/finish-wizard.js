@@ -1,6 +1,7 @@
 // Finish-shift wizard (B3, 27.07). Отдельный файл от checkin.js -- не смешиваем с
 // существующим checkin-preview-modal (тот остаётся для start-shift, более простой flow).
 // 6 шагов: Фото -> Что сделано -> Доп.работы -> Потребности/проблемы -> Гео финиша -> Сводка.
+let _fwVoiceNoteFileId = ''; // 28.07: owner request -- голосовое "Что сделано" сохраняется как аудио, не только текстом
 // Voice-ввод на шагах 2-4 через /api/transcribe (см. B4). AI/voice текст всегда editable,
 // ничего не отправляется без явного подтверждения юзера (owner requirement).
 
@@ -122,9 +123,10 @@ function _fwRenderStep2() {
 function _fwWireStep2() {
   const textarea = document.getElementById('fw-work-summary');
   textarea?.addEventListener('input', () => { _fwWorkSummary = textarea.value; });
-  _fwWireVoiceButton('fw-voice-summary', text => {
+  _fwWireVoiceButton('fw-voice-summary', (text, fileId) => {
     textarea.value = (textarea.value ? textarea.value + ' ' : '') + text;
     _fwWorkSummary = textarea.value;
+    if (fileId) _fwVoiceNoteFileId = fileId;
   });
   document.getElementById('fw-back-2')?.addEventListener('click', () => _fwGoToStep(1));
   document.getElementById('fw-next-2')?.addEventListener('click', () => {
@@ -359,6 +361,7 @@ async function _fwSubmitFinish() {
     formData.append('needs', JSON.stringify(_fwNeeds));
     formData.append('defects', JSON.stringify(_fwDefects));
     formData.append('pause_minutes', String(_fwPauseMinutes));
+    if (_fwVoiceNoteFileId) formData.append('voice_note_file_id', _fwVoiceNoteFileId);
     _fwPhotos.forEach(f => formData.append('files', f));
 
     const idempotencyKey = crypto.randomUUID();
@@ -446,7 +449,7 @@ function _fwWireVoiceButton(btnId, onTranscript) {
           });
           if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
           const data = await res.json();
-          onTranscript(data.raw_transcript || '');
+          onTranscript(data.raw_transcript || '', data.file_id || '');
         } catch (e) {
           showToast('Не удалось распознать голос: ' + e.message, 'error');
         } finally {

@@ -143,9 +143,20 @@ async function _renderObjTeamAndShifts(objectId) {
         const worker = team.find(u => String(u.user_id) === String(s.user_id));
         const name = worker ? worker.name : s.user_id;
         const status = s.finish_at ? 'завершена' : 'идёт';
-        return `<div class="obj-info-item-row">
-          <span class="obj-info-item-text">${esc(name)}</span>
-          <span class="obj-info-item-qty">${esc(status)}</span>
+        // 28.07: owner report -- сводка смены была почти пустой (только имя+статус),
+        // хотя worker заполняет "что сделано" (текст) и опционально голосовое через
+        // finish-wizard. Оба теперь видны прямо тут, без отдельного клика/экрана.
+        const summaryHtml = s.done_summary
+          ? `<div class="obj-info-shift-summary">${esc(s.done_summary)}</div>` : '';
+        const audioHtml = s.voice_note_audio_url
+          ? `<audio class="obj-info-shift-audio" controls preload="none" src="${esc(API_BASE + s.voice_note_audio_url)}"></audio>` : '';
+        return `<div class="obj-info-item-row obj-info-shift-row">
+          <div class="obj-info-shift-row-top">
+            <span class="obj-info-item-text">${esc(name)}</span>
+            <span class="obj-info-item-qty">${esc(status)}</span>
+          </div>
+          ${summaryHtml}
+          ${audioHtml}
         </div>`;
       }).join('');
     }
