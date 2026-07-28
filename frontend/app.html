@@ -1025,6 +1025,10 @@ header h1 {
   background: transparent;
   padding: 0.5rem 1rem 0.25rem;
 }
+/* .mangel-form по умолчанию рисует себя как отдельную карточку (свой фон/margin/radius) --
+   внутри bottom sheet это давало card-в-card (двойной фон, лишние отступы). Sheet сама уже
+   карточка, форма внутри неё должна быть просто контентом. */
+.bottom-sheet-panel .mangel-form { background: transparent; margin: 0; border-radius: 0; padding: 0 1rem; }
 
 #stages-view { display: none; padding-bottom: 2rem; }
 #stages-view.open { display: block; }
@@ -3605,29 +3609,42 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
   </div>
   <div id="abw-month-grid" class="heatmap-month" data-no-swipe></div>
 
-  <div id="abw-reason-form" class="mangel-form" style="display:none;">
-    <div id="abw-selected-date" style="margin-bottom:0.5rem;font-weight:600;"></div>
-    <select id="abw-reason-select" class="mangel-select">
-      <option value="Krankheit">🤒 Болезнь</option>
-      <option value="Urlaub">🏖 Отпуск</option>
-      <option value="Sonstiges">📋 Другое</option>
-    </select>
+  <!-- 28.07 (Phase 05, day tap -> bottom sheet): раньше #abw-reason-form был inline-блоком
+       (display:block/none в потоке страницы) -- теперь bottom sheet, тот же переиспользуемый
+       паттерн, что new-object-sheet (objects.js). Остаётся ВНУТРИ #view-abwesenheit (не
+       вынесен на верхний уровень DOM, в отличие от new-object-sheet) -- родитель всегда
+       видим, пока форма может быть открыта (юзер должен быть на экране Календаря, чтобы
+       тапнуть день), поэтому display:none-родитель-прячет-fixed-потомка тут не воспроизводится. -->
+  <div class="bottom-sheet-overlay" id="abw-reason-sheet" style="display:none;" data-no-swipe>
+    <div class="bottom-sheet-panel">
+      <div class="bottom-sheet-handle"></div>
+      <div class="form-header">
+        <h1 id="abw-selected-date"></h1>
+        <button class="bottom-sheet-close-btn" id="abw-cancel-btn" type="button" aria-label="Закрыть">✕</button>
+      </div>
+      <div id="abw-reason-form" class="mangel-form">
+        <select id="abw-reason-select" class="mangel-select">
+          <option value="Krankheit">🤒 Болезнь</option>
+          <option value="Urlaub">🏖 Отпуск</option>
+          <option value="Sonstiges">📋 Другое</option>
+        </select>
 
-    <label class="abw-field-label">До какой даты (необязательно)</label>
-    <input type="date" id="abw-date-to-input" class="mangel-select">
-    <div class="abw-hint">Не заполняй, если не знаешь — например при болезни. Отметим до конца месяца, закроешь запись сам, когда поправишься.</div>
+        <label class="abw-field-label">До какой даты (необязательно)</label>
+        <input type="date" id="abw-date-to-input" class="mangel-select">
+        <div class="abw-hint">Не заполняй, если не знаешь — например при болезни. Отметим до конца месяца, закроешь запись сам, когда поправишься.</div>
 
-    <label class="abw-field-label">Время (необязательно, если только часть дня)</label>
-    <div class="abw-time-row">
-      <input type="time" id="abw-start-time-input" class="mangel-select">
-      <span class="abw-time-sep">—</span>
-      <input type="time" id="abw-end-time-input" class="mangel-select">
-    </div>
+        <label class="abw-field-label">Время (необязательно, если только часть дня)</label>
+        <div class="abw-time-row">
+          <input type="time" id="abw-start-time-input" class="mangel-select">
+          <span class="abw-time-sep">—</span>
+          <input type="time" id="abw-end-time-input" class="mangel-select">
+        </div>
 
-    <textarea id="abw-note-input" class="mangel-textarea" placeholder="Заметка (опционально)…" rows="2"></textarea>
-    <div class="mangel-form-actions">
-      <button class="submit-btn" id="abw-cancel-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);">Отмена</button>
-      <button class="submit-btn" id="abw-save-btn" type="button">Сохранить</button>
+        <textarea id="abw-note-input" class="mangel-textarea" placeholder="Заметка (опционально)…" rows="2"></textarea>
+        <div class="mangel-form-actions">
+          <button class="submit-btn" id="abw-save-btn" type="button">Сохранить</button>
+        </div>
+      </div>
     </div>
   </div>
 

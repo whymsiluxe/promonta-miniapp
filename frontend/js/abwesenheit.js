@@ -176,18 +176,43 @@ async function _decideAbwesenheit(entryId, status) {
   }
 }
 
+// 28.07 (Phase 05, "day tap -> bottom sheet"): тот же управляемый-sheet паттерн, что
+// new-object-sheet в objects.js -- overlay регистрируется в NavigationManager.overlayStack,
+// Telegram BackButton закрывает корректно вместо провала на предыдущий route.
+let _abwSheetOverlayUnregister = null;
+
 function _openAbwReasonForm(dateStr) {
   _abwSelectedDate = dateStr;
-  document.getElementById('abw-selected-date').textContent = dateStr;
-  document.getElementById('abw-reason-form').style.display = 'block';
+  document.getElementById('abw-selected-date').textContent = typeof fmtDateHuman === 'function' ? fmtDateHuman(dateStr) : dateStr;
+  const sheet = document.getElementById('abw-reason-sheet');
+  sheet.style.display = 'flex';
+  requestAnimationFrame(() => sheet.classList.add('open'));
+  if (typeof NavigationManager !== 'undefined' && !_abwSheetOverlayUnregister) {
+    _abwSheetOverlayUnregister = NavigationManager.registerOverlay(() => _closeAbwReasonFormInternal());
+  }
 }
 
-function _closeAbwReasonForm() {
-  document.getElementById('abw-reason-form').style.display = 'none';
+function _animateCloseAbwReasonSheet() {
+  const sheet = document.getElementById('abw-reason-sheet');
+  sheet.classList.remove('open');
+  setTimeout(() => { sheet.style.display = 'none'; }, 240);
   document.getElementById('abw-note-input').value = '';
   document.getElementById('abw-date-to-input').value = '';
   document.getElementById('abw-start-time-input').value = '';
   document.getElementById('abw-end-time-input').value = '';
+}
+
+// Вызывается ТОЛЬКО из NavigationManager (top.close()) — overlay уже popped.
+function _closeAbwReasonFormInternal() {
+  _abwSheetOverlayUnregister = null;
+  _animateCloseAbwReasonSheet();
+}
+
+// Вызывается при ручном закрытии (✕/тап по фону/после сохранения) — overlay ещё в
+// стеке, нужно явно снять.
+function _closeAbwReasonForm() {
+  if (_abwSheetOverlayUnregister) { _abwSheetOverlayUnregister(); _abwSheetOverlayUnregister = null; }
+  _animateCloseAbwReasonSheet();
 }
 
 async function _saveAbwesenheit() {
@@ -320,5 +345,8 @@ async function initAbwesenheitView() {
     renderAbwesenheitList();
   });
   document.getElementById('abw-cancel-btn').addEventListener('click', _closeAbwReasonForm);
+  document.getElementById('abw-reason-sheet').addEventListener('click', (e) => {
+    if (e.target.id === 'abw-reason-sheet') _closeAbwReasonForm(); // тап по фону закрывает
+  });
   document.getElementById('abw-save-btn').addEventListener('click', _saveAbwesenheit);
 }
