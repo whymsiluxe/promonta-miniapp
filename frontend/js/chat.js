@@ -441,6 +441,32 @@ async function _loadChatWorkers() {
   } catch (e) {
     _chatWorkers = [];
   }
+  _renderChatWorkerStrip();
+}
+
+// 28.07 (Phase 06): горизонтальная лента работников над табами -- тап открывает/
+// лениво создаёт DM. Search-circle из спеки пока отдельный <input> выше (полный
+// expandable-search state machine — отдельный, более крупный пункт плана).
+function _renderChatWorkerStrip() {
+  const strip = document.getElementById('chat-worker-strip');
+  if (!strip) return;
+  strip.innerHTML = _chatWorkers.map(w => {
+    const hue = _chatAvatarHue(w.user_id);
+    const unread = _chatUnreadByThread[String(w.user_id)] || 0;
+    return `
+    <div class="chat-worker-avatar-item" data-worker-id="${w.user_id}" data-worker-name="${_escChat(w.name || w.user_id)}">
+      <div class="chat-worker-avatar-circle" style="background:hsl(${hue} 45% 42%)">
+        ${(w.name || '?')[0].toUpperCase()}
+        ${w.online ? '<span class="chat-worker-online-dot"></span>' : ''}
+        ${unread > 0 ? `<span class="chat-worker-unread-dot">${unread > 99 ? '99+' : unread}</span>` : ''}
+      </div>
+      <span class="chat-worker-avatar-name">${_escChat((w.name || w.user_id).split(' ')[0])}</span>
+    </div>`;
+  }).join('');
+
+  strip.querySelectorAll('.chat-worker-avatar-item').forEach(item => {
+    item.addEventListener('click', () => openChatThread(item.dataset.workerId, item.dataset.workerName));
+  });
 }
 
 let _chatUnreadByThread = {};
@@ -565,6 +591,7 @@ async function _loadUnreadByThread() {
     const data = await api('/api/chat/unread_by_thread');
     _chatUnreadByThread = data.unread_by_thread || {};
     renderChatThreadList();
+    _renderChatWorkerStrip();
   } catch (e) {}
 }
 

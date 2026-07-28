@@ -2021,6 +2021,40 @@ body.view-locked {
 #view-chat .chat-archive-btn { color: var(--chat-text-secondary); }
 #view-chat .chat-archive-btn:active { background: var(--chat-surface-hover); }
 
+/* 28.07 (Phase 06): worker strip — горизонтальная лента активных работников над
+   табами, тап открывает/лениво создаёт DM (см. openChatThread в chat.js). */
+.chat-worker-strip {
+  display: flex; gap: 0.7rem; overflow-x: auto; scrollbar-width: none;
+  padding: 0.2rem 0.75rem 0.85rem; -webkit-overflow-scrolling: touch;
+}
+.chat-worker-strip::-webkit-scrollbar { display: none; }
+.chat-worker-strip:empty { display: none; }
+.chat-worker-avatar-item {
+  display: flex; flex-direction: column; align-items: center; gap: 0.25rem;
+  width: 60px; flex-shrink: 0; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.chat-worker-avatar-circle {
+  position: relative; width: 56px; height: 56px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem; font-weight: 700; color: #fff;
+  border: 2px solid var(--chat-border); transition: transform 0.1s ease;
+}
+.chat-worker-avatar-item:active .chat-worker-avatar-circle { transform: scale(0.94); }
+.chat-worker-online-dot {
+  position: absolute; bottom: 1px; right: 1px; width: 13px; height: 13px;
+  border-radius: 50%; background: var(--chat-forest-light); border: 2px solid var(--chat-bg);
+}
+.chat-worker-unread-dot {
+  position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 999px; background: var(--chat-brass); color: #14140F;
+  font-size: 0.65rem; font-weight: 800; display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--chat-bg);
+}
+.chat-worker-avatar-name {
+  font-size: 0.68rem; color: var(--chat-text-secondary); max-width: 60px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 #view-chat .chat-category-tabs .doc-type-opt { background: var(--chat-surface); color: var(--chat-text-secondary); }
 #view-chat .chat-category-tabs .doc-type-opt.active { background: var(--chat-forest); color: var(--chat-text); }
 
@@ -3780,6 +3814,9 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
       <input type="text" id="chat-thread-search" class="chat-search-input" placeholder="Поиск">
       <button class="chat-archive-btn" type="button" aria-label="Архив" title="Архив"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 4h18v4H3zM5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 13h4"/></svg></button>
     </div>
+    <!-- 28.07 (Phase 06, частично -- search circle из спеки остаётся отдельным input
+         выше до полного expandable-search рёбилда, см. docs/plan-phases/06-chat-hub-rebuild.md) -->
+    <div id="chat-worker-strip" class="chat-worker-strip"></div>
     <div class="chat-filter-tabs chat-category-tabs">
       <div class="doc-type-opt active" data-chat-category="general">Общий</div>
       <div class="doc-type-opt" data-chat-category="dm">Личные</div>
