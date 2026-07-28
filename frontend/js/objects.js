@@ -94,13 +94,19 @@ function renderObjectCard(obj) {
   const statusMeta = _objStatusMeta(obj['Статус']);
 
   const hero = _objHeroGradient(obj);
-  // 28.07: реальное фото объекта теперь идёт через защищённый backend endpoint (не
-  // публичный /media/ static путь) -- image_path тут используется только как флаг
-  // "есть загруженное фото", сам путь для запроса не нужен, endpoint сам резолвит
-  // fname по object_id на сервере.
-  const imgStyle = obj.image_path
-    ? `background:url('${API_BASE}/api/objects/${encodeURIComponent(oid)}/image/file') center/cover no-repeat`
-    : `background:url('/media/objects/${hero.photo}.jpg') center/cover no-repeat`;
+  // 28.07 v2: расширено до carousel из нескольких фото (PHASE F спека) -- если owner
+  // загрузил хотя бы одно реальное фото, рендерим slide-слои + dots (свайп/тап), иначе
+  // fallback остаётся единственным статичным слоем без dots (нет смысла крутить одно
+  // и то же stock-фото).
+  const photoCount = obj.photo_count || 0;
+  const heroSlidesHtml = photoCount > 0
+    ? Array.from({ length: photoCount }, (_, i) =>
+        `<div class="obj-hero-slide${i === 0 ? ' active' : ''}" style="background:url('${API_BASE}/api/objects/${encodeURIComponent(oid)}/image/file?index=${i}') center/cover no-repeat"></div>`
+      ).join('')
+    : `<div class="obj-hero-slide active" style="background:url('/media/objects/${hero.photo}.jpg') center/cover no-repeat"></div>`;
+  const heroDotsHtml = photoCount > 1
+    ? `<div class="obj-hero-dots">${Array.from({ length: photoCount }, (_, i) => `<span class="obj-hero-dot${i === 0 ? ' active' : ''}" data-slide-idx="${i}"></span>`).join('')}</div>`
+    : '';
 
   // Worker avatars -- overlap-композиция снизу-слева (первый крупнее), макс 3 + "+N".
   const assignedUsers = obj.assigned_users || [];
@@ -133,7 +139,9 @@ function renderObjectCard(obj) {
 
   return `
   <div class="card obj-card-v2" data-id="${oid}" data-status="${esc(obj['Статус'] || '')}">
-    <div class="obj-card-hero" style="${imgStyle}">
+    <div class="obj-card-hero">
+      <div class="obj-hero-slides" data-photo-count="${photoCount}">${heroSlidesHtml}</div>
+      ${heroDotsHtml}
       ${_objWeatherIslandHtml(obj)}
       <div class="obj-hero-people">${peopleDots}${extraDots}${addBtn}</div>
       <div class="obj-hero-status-pill" style="--pill-accent:${statusMeta.color}">${esc(statusMeta.label)}</div>
@@ -296,6 +304,39 @@ function attachObjectsHandlers() {
       e.stopPropagation(); // не даём всплыть до card-level клика ниже -- открылось бы дважды/на неверный таб
       openObjectDetail(el.dataset.objectId, el.dataset.objectName, 'stages', el.closest('.card')?.dataset.status);
     });
+  });
+
+  // 28.07: тап по dots переключает слайд фото-carousel, не открывает Object Detail.
+  document.querySelectorAll('#objects-cards .obj-hero-dot').forEach(dot => {
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const hero = dot.closest('.obj-card-hero');
+      const idx = Number(dot.dataset.slideIdx);
+      hero.querySelectorAll('.obj-hero-slide').forEach((s, i) => s.classList.toggle('active', i === idx));
+      hero.querySelectorAll('.obj-hero-dot').forEach((d, i) => d.classList.toggle('active', i === idx));
+    });
+  });
+  // Свайп по самому фото тоже листает carousel (не только тап по dots) -- тот же
+  // жест, что юзер уже ожидает от галерей/сторис. stopPropagation чтобы не триггерить
+  // card-level клик (открытие Object Detail) или global tab-swipe.
+  document.querySelectorAll('#objects-cards .obj-hero-slides[data-photo-count]').forEach(slidesEl => {
+    const photoCount = Number(slidesEl.dataset.photoCount);
+    if (photoCount < 2) return;
+    let startX = 0;
+    slidesEl.addEventListener('touchstart', (e) => { startX = e.touches[0].clientX; }, { passive: true });
+    slidesEl.addEventListener('touchend', (e) => {
+      const dx = e.changedTouches[0].clientX - startX;
+      if (Math.abs(dx) < 40) return;
+      const hero = slidesEl.closest('.obj-card-hero');
+      const slides = Array.from(hero.querySelectorAll('.obj-hero-slide'));
+      const dots = Array.from(hero.querySelectorAll('.obj-hero-dot'));
+      const currentIdx = slides.findIndex(s => s.classList.contains('active'));
+      const nextIdx = dx < 0
+        ? Math.min(currentIdx + 1, slides.length - 1)
+        : Math.max(currentIdx - 1, 0);
+      slides.forEach((s, i) => s.classList.toggle('active', i === nextIdx));
+      dots.forEach((d, i) => d.classList.toggle('active', i === nextIdx));
+    }, { passive: true });
   });
 
   document.querySelectorAll('#objects-cards .obj-extra-dots-btn').forEach(el => {

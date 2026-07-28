@@ -823,36 +823,56 @@ def _save_object_images(images: dict):
     _atomic_write_json(OBJECT_IMAGES_FILE, images)
 
 
+OBJECT_PHOTO_MAX = 8  # разумный потолок для carousel, не безлимит
+
+
 @app.post("/api/objects/{object_id}/image")
 async def upload_object_image(object_id: str, file: UploadFile = File(...),
                                user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    # 28.07: owner request -- сейчас карточка объекта показывает только stock-фото
-    # fallback (media/objects/*.jpg), НЕ было способа загрузить реальное фото объекта
-    # вообще. Только owner (worker не должен подменять фото объекта).
+    # 28.07 v2: расширено до массива фото (carousel в карточке объекта, PHASE F спека) --
+    # раньше был единственный fname (перезаписывался при повторной загрузке). Только owner.
     raw = await file.read()
     if len(raw) > 8 * 1024 * 1024:
         raise HTTPException(400, "Фото слишком большое (макс. 8 МБ)")
     detected = sniff_image(raw)
     if not detected:
         raise HTTPException(400, "Файл должен быть изображением")
+    images = _load_object_images()
+    existing = images.get(object_id) or []
+    if len(existing) >= OBJECT_PHOTO_MAX:
+        raise HTTPException(400, f"Максимум {OBJECT_PHOTO_MAX} фото на объект")
     ext = _ALLOWED_IMAGE_MIME_EXT[detected]
     os.makedirs(OBJECT_PHOTO_DIR, exist_ok=True)
     fname = f"{uuid.uuid4().hex}.{ext}"
     with open(os.path.join(OBJECT_PHOTO_DIR, fname), 'wb') as f_out:
         f_out.write(raw)
-    images = _load_object_images()
-    images[object_id] = fname
+    images[object_id] = existing + [fname]
     _save_object_images(images)
-    return {"status": "ok", "image_path": fname}
+    return {"status": "ok", "photos": images[object_id]}
+
+
+@app.delete("/api/objects/{object_id}/image/{fname}")
+def delete_object_image(object_id: str, fname: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    safe_name = os.path.basename(fname)
+    images = _load_object_images()
+    existing = images.get(object_id) or []
+    if safe_name not in existing:
+        raise HTTPException(404, "Фото не найдено")
+    images[object_id] = [f for f in existing if f != safe_name]
+    _save_object_images(images)
+    path = os.path.join(OBJECT_PHOTO_DIR, safe_name)
+    if os.path.exists(path):
+        os.remove(path)
+    return {"status": "ok", "photos": images[object_id]}
 
 
 @app.get("/api/objects/{object_id}/image/file")
-def get_object_image_file(object_id: str, user: dict = Depends(get_current_user)):
+def get_object_image_file(object_id: str, index: int = 0, user: dict = Depends(get_current_user)):
     images = _load_object_images()
-    fname = images.get(object_id)
-    if not fname:
+    photos = images.get(object_id) or []
+    if not photos or index < 0 or index >= len(photos):
         raise HTTPException(404, "Фото не загружено")
-    path = os.path.join(OBJECT_PHOTO_DIR, fname)
+    path = os.path.join(OBJECT_PHOTO_DIR, photos[index])
     if not os.path.exists(path):
         raise HTTPException(404, "Файл отсутствует")
     return FileResponse(path)
@@ -896,7 +916,7 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
         obj = dict(zip(header, r))
         oid = str(obj.get('ID объекта', ''))
         obj['assigned_users'] = [_user_info(a['user_id']) for a in assignments.get(oid, [])]
-        obj['image_path'] = images.get(oid)
+        obj['photo_count'] = len(images.get(oid) or [])
         if role != 'owner':
             # 10.5: бюджет — финансовая информация, работнику видеть не должен.
             for f in BUDGET_FIELDS:
