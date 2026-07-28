@@ -2081,16 +2081,28 @@ def _load_chat() -> list:
 
 
 def _save_chat(messages: list):
+    # 28.07: owner request -- история чата должна сохраняться на сервере, не теряться
+    # молча. Раньше messages[-CHAT_MAX:] отбрасывал всё, что не влезло в последние 200,
+    # без следа. Теперь то, что вылетает за пределы CHAT_MAX, архивируется тем же
+    # append-only архивом, что уже используется для явного удаления треда/сообщения.
+    if len(messages) > CHAT_MAX:
+        _archive_chat_messages(messages[:-CHAT_MAX])
+        messages = messages[-CHAT_MAX:]
     with open(CHAT_FILE, 'w', encoding='utf-8') as f:
-        json.dump(messages[-CHAT_MAX:], f, ensure_ascii=False)
+        json.dump(messages, f, ensure_ascii=False)
 
 
 CHAT_RETENTION_SECONDS = 7 * 24 * 3600  # 7 дней — сообщения старше удаляются автоматически
 
 
 def _purge_old_chat(messages: list) -> list:
+    # 28.07: то же самое -- сообщения старше 7 дней архивируются, не стираются молча.
     cutoff = time.time() - CHAT_RETENTION_SECONDS
-    return [m for m in messages if m.get('ts', 0) >= cutoff]
+    keep = [m for m in messages if m.get('ts', 0) >= cutoff]
+    expired = [m for m in messages if m.get('ts', 0) < cutoff]
+    if expired:
+        _archive_chat_messages(expired)
+    return keep
 
 
 CHAT_READS_FILE = '/home/promonta/agent/miniapp/chat_reads.json'
