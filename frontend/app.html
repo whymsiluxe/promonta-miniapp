@@ -129,7 +129,12 @@ header {
      min-width совпадают за счёт symmetry) гарантирует центр титула = центр header
      независимо от того, есть ли элементы по бокам. */
   display: grid;
-  grid-template-columns: minmax(44px, auto) 1fr minmax(44px, auto);
+  /* 28.07 (external audit ТЗ п.9): Telegram НЕ даёт точную ширину своих
+     Close/Menu-кнопок напрямую -- только общий safe-area inset края экрана. Гарантия
+     "никогда не налезет" возможна только через увеличенный запас, не точный расчёт.
+     44px было минимумом без запаса -- поднято до 64px на всякий нетестированный
+     случай (другое устройство/версия Telegram с более широкими системными кнопками). */
+  grid-template-columns: minmax(64px, auto) 1fr minmax(64px, auto);
   align-items: center;
   position: sticky;
   top: 0;
