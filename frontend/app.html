@@ -3229,10 +3229,20 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
 .checkin-preview-inner { width: 100%; height: 100%; background: var(--bg-app); padding: 1.25rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; overflow-y: auto; box-sizing: border-box; }
 #finish-wizard-modal { position: fixed; inset: 0; z-index: 1650; background: var(--bg-app); display: flex; }
 .fw-inner { width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; }
-.fw-header { display: flex; align-items: center; gap: 0.5rem; padding: calc(1rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 0.5rem calc(1rem + var(--tg-safe-left, 0px)); flex-shrink: 0; }
-.fw-progress { font-size: 0.75rem; color: var(--text-light); }
-.fw-title { font-size: 1.05rem; font-weight: 700; flex: 1; }
-.fw-close-btn { background: none; border: none; font-size: 1.1rem; color: var(--text-light); padding: 0.3rem; }
+/* 28.07: то же grid-центрирование, что у общего <header>/.form-header -- flex:1 на
+   .fw-title центрировал title МЕЖДУ .fw-progress (слева, переменной ширины) и
+   .fw-close-btn (справа), не по центру полосы. */
+.fw-header {
+  display: grid;
+  grid-template-columns: minmax(44px, auto) 1fr minmax(44px, auto);
+  align-items: center;
+  gap: 0.5rem;
+  padding: calc(1rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 0.5rem calc(1rem + var(--tg-safe-left, 0px));
+  flex-shrink: 0;
+}
+.fw-progress { grid-column: 1; font-size: 0.75rem; color: var(--text-light); }
+.fw-title { grid-column: 2; text-align: center; font-size: 1.05rem; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fw-close-btn { grid-column: 3; justify-self: end; background: none; border: none; font-size: 1.1rem; color: var(--text-light); padding: 0.3rem; }
 .fw-body { flex: 1; overflow-y: auto; padding: 0.5rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); }
 .fw-hint { font-size: 0.9rem; color: var(--text-light); margin-bottom: 0.75rem; }
 .fw-photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 0.75rem; }
@@ -3260,9 +3270,9 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
 .fw-geo-status { padding: 1rem; background: var(--bg-card); border-radius: 10px; text-align: center; }
 .fw-geo-status.fw-geo-ok { color: var(--accent); }
 .fw-geo-status.fw-geo-error { color: var(--red); }
-.fw-summary-section { background: var(--bg-card); border-radius: 10px; padding: 0.7rem 0.9rem; margin-bottom: 0.5rem; font-size: 0.9rem; }
+.fw-summary-section { background: var(--bg-card); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 0.6rem; font-size: 1.05rem; line-height: 1.4; }
 .fw-summary-section ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
-.fw-submit-status { text-align: center; margin-top: 0.75rem; font-size: 0.85rem; }
+.fw-submit-status { text-align: center; margin-top: 0.85rem; font-size: 1rem; }
 .fw-submit-status.fw-submit-error { color: var(--red); }
 .checkin-sync-status { display: none; font-size: 0.95rem; color: var(--text-light); text-align: center; padding: 0.6rem; margin-top: 0.5rem; border-radius: var(--radius-md); background: var(--bg-card-raised); }
 .checkin-sync-status.checkin-sync-error { color: var(--warning); }
@@ -3802,7 +3812,7 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
         <span class="more-menu-label">Инструмент</span>
         <span class="more-menu-chevron">▾</span>
       </div>
-      <div class="more-menu-item" onclick="switchView('documents')">
+      <div class="more-menu-item" id="profile-more-documents" onclick="switchView('documents')">
         <span class="more-menu-icon" style="background:var(--icon-bg-3)">📄</span>
         <span class="more-menu-label">Документы</span>
         <span class="more-menu-chevron">▾</span>
@@ -4235,6 +4245,10 @@ function applyRoleNav() {
     workerNav.style.display = 'none';
     if (checkinFab) checkinFab.style.display = 'none';
   }
+  // 28.07: owner request -- Документы не нужны воркеру в меню "Ещё" (не его рабочий
+  // инструмент), только владельцу.
+  const docsMenuItem = document.getElementById('profile-more-documents');
+  if (docsMenuItem) docsMenuItem.style.display = currentRole === 'worker' ? 'none' : '';
   _applyBottomNavHeight();
 }
 
