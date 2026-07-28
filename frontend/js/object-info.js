@@ -730,7 +730,8 @@ function _attachObjStagesHandlers(objectId, stages) {
 // Физически переносит #chat-thread-detail-view DOM-узел (со всей его viewport/composer
 // логикой нетронутой) из его обычного места внутри #view-chat в панель этого таба, и
 // возвращает обратно при выходе -- не дублируем chat.js, не строим параллельный рендер.
-let _objChatHomeParent = null; // куда вернуть DOM при unembed
+let _objChatHomeParent = null;
+let _objChatScrollY = null; // window.scrollY на момент embed, восстанавливается при unembed
 let _objChatHomeNextSibling = null;
 let _objChatOffsetObserver = null;
 
@@ -755,12 +756,6 @@ async function embedObjectChat(objectId, objectName) {
   panel.classList.add('obj-chat-active');
   chatView.style.display = 'flex';
 
-  _updateObjChatOffset();
-  if (!_objChatOffsetObserver && window.ResizeObserver) {
-    _objChatOffsetObserver = new ResizeObserver(_updateObjChatOffset);
-    _objChatOffsetObserver.observe(document.getElementById('obj-detail-tabs'));
-  }
-
   // Переиспользуем chat.js внутреннее состояние напрямую -- не switchView('chat'),
   // не openObjectOrMangelChat (та тянет за собой fullscreen header объекта, не нужный
   // тут). nav-hide (chat-dialog-open) добавлен отдельно (25.07) -- composer иначе делил
@@ -772,7 +767,22 @@ async function embedObjectChat(objectId, objectName) {
   // пересчитывался на scroll (только на resize). Правильнее не гнаться пересчётом
   // offset вслед за скроллом, а вообще не давать body скроллиться, пока чат активен --
   // тот же view-locked механизм, что root-табы Чат/ИИ уже используют для той же цели.
+  // ВАЖНО: view-locked должен применяться ДО _updateObjChatOffset() -- position:fixed
+  // на body может визуально сдвинуть документ (обычный баг position:fixed без сохранения
+  // scrollY), меняя реальную позицию табов; посчитанный ДО этого offset становится
+  // устаревшим сразу же, из-за чего input-bar "уезжал" в верх видимой области. Юзер мог
+  // проскроллить экран объекта вниз ДО открытия таба Чат (в отличие от root Chat/AI табов,
+  // куда обычно заходят с scrollY=0) -- сохраняем/восстанавливаем позицию явно, а не
+  // полагаемся на то, что position:fixed сам аккуратно сохранит текущий scroll (не сохраняет).
+  _objChatScrollY = window.scrollY;
+  document.body.style.top = `-${_objChatScrollY}px`;
   document.body.classList.add('view-locked');
+
+  _updateObjChatOffset();
+  if (!_objChatOffsetObserver && window.ResizeObserver) {
+    _objChatOffsetObserver = new ResizeObserver(_updateObjChatOffset);
+    _objChatOffsetObserver.observe(document.getElementById('obj-detail-tabs'));
+  }
   _chatActiveThread = null;
   _chatActiveThreadKey = `obj:${objectId}`;
   _chatReturnToView = null;
@@ -785,6 +795,11 @@ async function embedObjectChat(objectId, objectName) {
 function unembedObjectChat() {
   document.body.classList.remove('chat-dialog-open');
   document.body.classList.remove('view-locked');
+  document.body.style.top = '';
+  if (typeof _objChatScrollY === 'number') {
+    window.scrollTo(0, _objChatScrollY);
+    _objChatScrollY = null;
+  }
   const panel = document.getElementById('obj-detail-panel-chat');
   const chatView = document.getElementById('chat-thread-detail-view');
   if (!panel || !chatView || !_objChatHomeParent) return;
