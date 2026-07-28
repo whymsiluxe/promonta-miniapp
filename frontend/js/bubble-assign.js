@@ -264,6 +264,12 @@ async function _confirmBubbleAssign() {
     hapticImpact('medium');
     _closeBubbleConfirmPopup();
     _closeBubblePanel();
+    // 28.07: owner request -- undo-после-назначения. unassign_user endpoint уже
+    // существовал (owner использует его для явного снятия воркера), просто не был
+    // подключён к этому конкретному success-пути. Action-toast с окном 6 сек --
+    // назначение УЖЕ физически произошло на сервере, undo это отдельный DELETE-вызов,
+    // не отмена ещё не отправленного действия.
+    _showBubbleUndoToast(_bubbleObjectId, userId);
     if (typeof initObjectsView === 'function' && document.getElementById('view-objects')?.classList.contains('active')) {
       loadedViews.delete('objects');
       initObjectsView();
@@ -349,4 +355,31 @@ async function _bubbleDragEnd(e) {
     _bubbleDragEl.style.animationPlayState = '';
   }
   _bubbleDragEl = null;
+}
+
+function _showBubbleUndoToast(objectId, userId) {
+  const existing = document.getElementById('bubble-undo-toast');
+  if (existing) existing.remove();
+  const el = document.createElement('div');
+  el.id = 'bubble-undo-toast';
+  el.className = 'bubble-undo-toast';
+  el.innerHTML = `<span>Работник назначен</span><button type="button" id="bubble-undo-btn">Отменить</button>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('bubble-undo-toast-show'));
+  const timer = setTimeout(() => el.remove(), 6000);
+  document.getElementById('bubble-undo-btn').addEventListener('click', async () => {
+    clearTimeout(timer);
+    el.remove();
+    try {
+      await api(`/api/objects/${objectId}/assign/${userId}`, { method: 'DELETE' });
+      hapticImpact('light');
+      showToast('Назначение отменено', 'success');
+      if (typeof initObjectsView === 'function' && document.getElementById('view-objects')?.classList.contains('active')) {
+        loadedViews.delete('objects');
+        initObjectsView();
+      }
+    } catch (err) {
+      showToast('Не удалось отменить: ' + err.message, 'error');
+    }
+  });
 }

@@ -3224,6 +3224,16 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
 #app-toast.app-toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
 #app-toast.app-toast-error { background: rgba(185,28,28,0.95); }
 #app-toast.app-toast-success { background: rgba(21,128,61,0.95); }
+.bubble-undo-toast {
+  position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%) translateY(20px);
+  width: 92%; max-width: 420px; padding: 0.85rem 0.9rem 0.85rem 1.25rem; border-radius: var(--radius-lg);
+  background: rgba(20,20,20,0.97); color: #fff; font-size: 0.95rem; z-index: 99999;
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.bubble-undo-toast-show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+.bubble-undo-toast button { flex-shrink: 0; background: none; border: none; color: var(--accent); font-weight: 700; font-size: 0.95rem; cursor: pointer; padding: 0.3rem 0.5rem; }
 
 .chat-attach-img-wrap { border-radius: var(--radius-md); overflow: hidden; margin-bottom: 0.3rem; max-width: 220px; }
 .chat-attach-img { width: 100%; display: block; }
