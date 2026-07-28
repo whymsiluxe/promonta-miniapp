@@ -1118,7 +1118,10 @@ header h1 {
 .obj-doc-viewer-body iframe { width: 100%; height: 100%; border: none; }
 
 /* ── Этапы-роадмап объекта (24.07, Step 6) ── */
-.obj-stages-roadmap { padding: 0.5rem 0; }
+/* 28.07: owner referenced a Pinterest board -- colorful pill badges with icons on
+   dark background (In progress/Done/Not Started style). Roadmap card itself gets a
+   dark surface, status labels become icon+text pills instead of plain colored text. */
+.obj-stages-roadmap { padding: 0.75rem; background: #1B1B1F; border-radius: var(--radius-lg); }
 .obj-stage-node { display: flex; gap: 0.75rem; }
 .obj-stage-line { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; width: 20px; }
 .obj-stage-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--bg-card-raised); border: 2px solid var(--border-color); flex-shrink: 0; margin-top: 0.35rem; }
@@ -1126,10 +1129,15 @@ header h1 {
 .obj-stage-dot.done { background: var(--c-accent, var(--green)); border-color: var(--c-accent, var(--green)); }
 .obj-stage-connector { width: 2px; flex: 1; min-height: 28px; background: var(--border-color); }
 .obj-stage-body { flex: 1; min-width: 0; padding-bottom: 1.1rem; }
-.obj-stage-name { font-weight: 600; margin-bottom: 0.2rem; }
-.obj-stage-status-label { display: inline-block; font-size: 0.78rem; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--bg-card-raised); color: var(--text-light); }
-.obj-stage-status-в-процессе { background: color-mix(in srgb, var(--c-accent, var(--green)) 18%, transparent); color: var(--c-accent, var(--green)); }
-.obj-stage-status-готово { background: color-mix(in srgb, var(--c-accent, var(--green)) 12%, transparent); color: var(--c-accent, var(--green)); }
+.obj-stage-name { font-weight: 600; margin-bottom: 0.3rem; color: #F5F1E8; }
+.obj-stage-status-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; font-weight: 600; padding: 0.3rem 0.7rem; border-radius: 999px; }
+.obj-stage-status-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.obj-stage-status-предстоит { background: rgba(245,241,232,0.1); color: rgba(245,241,232,0.65); }
+.obj-stage-status-предстоит::before { background: rgba(245,241,232,0.4); }
+.obj-stage-status-в-процессе { background: rgba(74,201,196,0.16); color: #4AC9C4; }
+.obj-stage-status-в-процессе::before { background: #4AC9C4; }
+.obj-stage-status-готово { background: rgba(93,214,44,0.16); color: #5DD62C; }
+.obj-stage-status-готово::before { background: #5DD62C; }
 .obj-stage-complete-btn { display: block; margin-top: 0.5rem; padding: 0.5rem 1rem; border-radius: var(--radius-sm); border: none; background: var(--c-accent, var(--green)); color: #fff; font-size: 0.85rem; cursor: pointer; }
 .obj-stage-move-col { display: flex; flex-direction: column; gap: 0.2rem; flex-shrink: 0; align-self: flex-start; margin-top: 0.2rem; }
 .obj-stage-move-btn { width: 32px; height: 28px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.75rem; cursor: pointer; }
@@ -3412,10 +3420,12 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
     <div class="doc-type-switch chat-filter-tabs" id="obj-detail-tabs">
       <div class="doc-type-opt active" data-obj-tab="chat">Чат</div>
       <div class="doc-type-opt" data-obj-tab="info">Инфо</div>
+      <div class="doc-type-opt" data-obj-tab="stages">Этапы</div>
       <div class="doc-type-opt" data-obj-tab="needs">Потребности</div>
     </div>
     <div id="obj-detail-panel-chat" class="obj-detail-panel" style="display:block;"></div>
     <div id="obj-detail-panel-info" class="obj-detail-panel" style="display:none;"></div>
+    <div id="obj-detail-panel-stages" class="obj-detail-panel" style="display:none;"></div>
     <div id="obj-detail-panel-needs" class="obj-detail-panel" style="display:none;"></div>
   </div>
 

@@ -46,10 +46,6 @@ async function renderObjectInfoTab(objectId) {
       <div id="obj-works-panel-tasks" style="display:none;"></div>
     </div>
     <div class="obj-info-section">
-      <div class="obj-info-section-title">Этапы</div>
-      <div id="obj-info-stages-summary"></div>
-    </div>
-    <div class="obj-info-section">
       <div class="obj-info-section-title-row">
         <span class="obj-info-section-title" style="margin-bottom:0;">Дефекты</span>
         <span id="obj-info-defects-count" class="obj-info-count-badge"></span>
@@ -100,7 +96,6 @@ async function renderObjectInfoTab(objectId) {
     _renderObjDescriptionSection(objectId),
     _renderObjWorksVolumesSection(objectId),
     _renderObjWorksTasksSection(objectId),
-    _renderObjStagesSummary(objectId),
     _renderObjDefectsSummary(objectId),
     _renderObjDocsSummary(objectId),
   ];
@@ -250,13 +245,45 @@ async function _renderObjWorksTasksSection(objectId) {
 
 // ── Этапы (компактная сводка, полный roadmap живёт по клику -- переиспользует
 // renderObjectStagesTab-логику, просто рендерит в новый контейнер) ──
-async function _renderObjStagesSummary(objectId) {
-  const wrap = document.getElementById('obj-info-stages-summary');
-  if (!wrap) return;
-  wrap.innerHTML = `<div id="obj-stages-roadmap" class="obj-stages-roadmap"></div>`;
+// 28.07: owner request -- Этапы был "кнопкой в никуда" (stage-strip на карточке
+// объекта уже открывал Object Detail с initialTab='stages', но такого таба физически
+// не существовало -- только секция внутри Инфо). Теперь полноценный отдельный таб,
+// секция из Инфо убрана (не дублируем), переиспользует тот же _loadObjStages/roadmap
+// рендер, что раньше жил внутри Инфо.
+async function renderObjectStagesTab(objectId) {
+  const panel = document.getElementById('obj-detail-panel-stages');
+  if (!panel) return;
+  // 28.07: любой воркер может добавить этап (см. backend permissions), не только owner.
+  panel.innerHTML = `
+    <div id="obj-stages-roadmap" class="obj-stages-roadmap"></div>
+    <div class="obj-info-section">
+      <div class="form-field">
+        <input type="text" id="obj-stages-tab-new-name" class="mangel-select" placeholder="напр. Фасад, Стяжка пола">
+      </div>
+      <button class="form-submit-btn" id="obj-stages-tab-add-btn" type="button" style="margin-top:0.5rem">+ Добавить этап</button>
+    </div>
+  `;
   await _loadObjStages(objectId);
   if (currentRole !== 'owner' && typeof _openCheckinStatusScreen === 'function') {
-    _appendCheckinShortcut(wrap, objectId);
+    _appendCheckinShortcut(panel, objectId);
+  }
+  const addBtn = document.getElementById('obj-stages-tab-add-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', async () => {
+      const input = document.getElementById('obj-stages-tab-new-name');
+      const name = input.value.trim();
+      if (!name) return;
+      addBtn.disabled = true;
+      try {
+        await api(`/api/objects/${objectId}/stages`, { method: 'POST', body: JSON.stringify({ name }) });
+        input.value = '';
+        await _loadObjStages(objectId);
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      } finally {
+        addBtn.disabled = false;
+      }
+    });
   }
 }
 

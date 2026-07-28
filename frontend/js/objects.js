@@ -717,6 +717,10 @@ function _initObjDetailTab(tab) {
     renderObjectInfoTab(_objDetailCurrentId);
     return;
   }
+  if (tab === 'stages') {
+    renderObjectStagesTab(_objDetailCurrentId);
+    return;
+  }
   if (tab === 'needs') {
     renderObjectNeedsTab(_objDetailCurrentId);
     return;
@@ -729,7 +733,7 @@ function _initObjDetailTab(tab) {
 // зонами со своим горизонтальным/вертикальным взаимодействием (сама строка табов уже
 // скроллится тапом -- не нужно вдобавок дёргать её свайпом; чат-композер/сообщения,
 // roadmap move-кнопки -- те же exclusion-соображения что у глобального swipe-nav.js).
-const OBJ_DETAIL_TAB_ORDER = ['chat', 'info', 'needs'];
+const OBJ_DETAIL_TAB_ORDER = ['chat', 'info', 'stages', 'needs'];
 let _objTabSwipeStartX = 0;
 let _objTabSwipeStartY = 0;
 let _objTabSwipeExcluded = false;
