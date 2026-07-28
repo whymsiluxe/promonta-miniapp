@@ -2090,6 +2090,40 @@ body.view-locked {
   --chat-brass: #A98754;
   --chat-border: var(--border-color);
   --chat-divider: var(--border-color);
+
+  /* 28.07: owner request -- Календарь тёмный, тот же оливково-серый принцип, что был
+     у чата до отката (не charcoal, светлее, чтобы текст/иконки читались легко). */
+  --abw-bg: #2A2D27;
+  --abw-surface: #34382F;
+  --abw-surface-raised: #3D423A;
+  --abw-text: #F5F1E8;
+  --abw-text-secondary: #C4BFB2;
+  --abw-border: rgba(245,241,232,0.12);
+}
+
+#view-abwesenheit.active { background: var(--abw-bg); }
+#view-abwesenheit header { background: var(--abw-bg); border-bottom: 1px solid var(--abw-border); }
+#view-abwesenheit header h1 { color: var(--abw-text); }
+#view-abwesenheit #abw-month-label,
+#view-abwesenheit .abw-legend-item,
+#view-abwesenheit #abw-list,
+#view-abwesenheit .heatmap-cell:not(.abw-avail-cell) { color: var(--abw-text-secondary); }
+#view-abwesenheit .abw-request-card,
+#view-abwesenheit #abw-profile-select,
+#view-abwesenheit .mangel-select {
+  background: var(--abw-surface);
+  color: var(--abw-text);
+  border-color: var(--abw-border);
+}
+#view-abwesenheit .abw-request-name { color: var(--abw-text); }
+#view-abwesenheit .heatmap-cell {
+  background: var(--abw-surface);
+  color: var(--abw-text-secondary);
+}
+#view-abwesenheit .heatmap-cell.filled { color: var(--primary-dark); }
+#view-abwesenheit #abw-prev-month,
+#view-abwesenheit #abw-next-month {
+  color: var(--abw-text-secondary);
 }
 
 #view-chat.active { background: var(--chat-bg); }
