@@ -43,8 +43,8 @@ function renderHomeRadioPlayer() {
         <button class="home-radio-play-btn" id="home-radio-playpause" type="button" aria-label="Воспроизвести">${RADIO_ICON_PLAY}</button>
         <button class="home-radio-ctrl-btn" id="home-radio-next" type="button" aria-label="Следующая станция">${RADIO_ICON_NEXT}</button>
       </div>
-      <div class="home-radio-stations" id="home-radio-stations" aria-live="off">
-        ${RadioController.stations.map((s, i) => `<button class="home-radio-station-chip" type="button" data-station-idx="${i}">${esc(s.name)}</button>`).join('')}
+      <div class="home-radio-stations-viewport">
+        <div class="home-radio-stations" id="home-radio-stations" aria-live="off"></div>
       </div>
       <div class="home-radio-status-row">
         <span class="home-radio-live-dot" id="home-radio-live-dot" style="display:none;"></span>
@@ -74,9 +74,57 @@ function renderHomeRadioPlayer() {
     RadioController.play(Number(btn.dataset.stationIdx));
     hapticImpact('light');
   });
+  _buildRadioStationLoop();
 
   _homeRadioUnsubscribe = RadioController.subscribe(_updateHomeRadioUi);
   _updateHomeRadioUi(RadioController.getState());
+}
+
+// Бесконечный луп станций: реальный список x3 (before/current/after), стартуем
+// проскроллено на средний блок. При приближении к любому краю бесшовно прыгаем
+// на тот же индекс в среднем блоке (без анимации, в тот же кадр -- юзер не видит скачок,
+// т.к. визуально там та же станция). native scroll-snap на каждом чипе, только CSS,
+// без сторонних либ -- дешевле по перфу, чем JS-драг-эмуляция.
+function _buildRadioStationLoop() {
+  const wrap = document.getElementById('home-radio-stations');
+  if (!wrap) return;
+  const stations = RadioController.stations;
+  const n = stations.length;
+  const blocks = [];
+  for (let b = 0; b < 3; b++) {
+    stations.forEach((s, i) => {
+      blocks.push(`<button class="home-radio-station-chip" type="button" data-station-idx="${i}">${esc(s.name)}</button>`);
+    });
+  }
+  wrap.innerHTML = blocks.join('');
+
+  requestAnimationFrame(() => {
+    const chipW = wrap.children[0]?.offsetWidth || 0;
+    const gap = parseFloat(getComputedStyle(wrap).gap) || 0;
+    const step = chipW + gap;
+    const blockWidth = step * n;
+    wrap.scrollLeft = blockWidth; // старт на среднем блоке
+    _radioLoopBlockWidth = blockWidth;
+  });
+
+  wrap.addEventListener('scroll', _onRadioStationsScroll);
+}
+
+let _radioLoopBlockWidth = 0;
+let _radioLoopScrollRaf = null;
+function _onRadioStationsScroll(e) {
+  if (_radioLoopScrollRaf) return;
+  _radioLoopScrollRaf = requestAnimationFrame(() => {
+    _radioLoopScrollRaf = null;
+    const wrap = e.target;
+    const bw = _radioLoopBlockWidth;
+    if (!bw) return;
+    if (wrap.scrollLeft < bw * 0.5) {
+      wrap.scrollLeft += bw;
+    } else if (wrap.scrollLeft > bw * 1.5) {
+      wrap.scrollLeft -= bw;
+    }
+  });
 }
 
 function _updateHomeRadioUi(s) {

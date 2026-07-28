@@ -8,10 +8,25 @@
 // с длительностью означало бы fake progress (явно запрещено).
 
 const RADIO_STATIONS = [
-  { id: 'techno', name: 'Techno', url: 'https://radiorecord.hostingradio.ru/techno96.aacp' },
-  { id: 'gop', name: 'Гоп FM', url: 'https://radiorecord.hostingradio.ru/gop96.aacp' },
-  { id: 'rap', name: 'Rap', url: 'https://radiorecord.hostingradio.ru/rap96.aacp' },
-  { id: 'deep', name: 'Deep', url: 'https://radiorecord.hostingradio.ru/deep96.aacp' },
+  { id: 'afro', name: 'Afro House', url: 'https://radiorecord.hostingradio.ru/afro96.aacp' },
+  { id: 'chil', name: 'Chill-Out', url: 'https://radiorecord.hostingradio.ru/chil96.aacp' },
+  { id: 'nashashlyki', name: 'На шашлыки!', url: 'https://radiorecord.hostingradio.ru/nashashlyki96.aacp' },
+  { id: 'mix', name: 'Megamix', url: 'https://radiorecord.hostingradio.ru/mix96.aacp' },
+  { id: 'rock', name: 'Rock', url: 'https://radiorecord.hostingradio.ru/rock96.aacp' },
+  { id: 'chillhouse', name: 'Chill House', url: 'https://radiorecord.hostingradio.ru/chillhouse96.aacp' },
+  { id: 'summerdance', name: 'Summer Dance', url: 'https://radiorecord.hostingradio.ru/summerparty96.aacp' },
+  { id: 'beach', name: 'Beach Party', url: 'https://radiorecord.hostingradio.ru/beach96.aacp' },
+  { id: 'ibiza', name: 'Innocence', url: 'https://radiorecord.hostingradio.ru/ibiza96.aacp' },
+  { id: 'drumhits', name: "D'n'B Classics", url: 'https://radiorecord.hostingradio.ru/drumhits96.aacp' },
+  { id: 'summerlounge', name: 'Summer Lounge', url: 'https://radiorecord.hostingradio.ru/summerlounge96.aacp' },
+  { id: 'vip', name: 'VIP House', url: 'https://radiorecord.hostingradio.ru/vip96.aacp' },
+  { id: 'organic', name: 'Organic', url: 'https://radiorecord.hostingradio.ru/organic96.aacp' },
+  { id: 'workout', name: 'Workout', url: 'https://radiorecord.hostingradio.ru/workout96.aacp' },
+  { id: 'jackin', name: 'Bass House', url: 'https://radiorecord.hostingradio.ru/jackin96.aacp' },
+  { id: 'trancehouse', name: 'Trancehouse', url: 'https://radiorecord.hostingradio.ru/trancehouse96.aacp' },
+  { id: 'neurofunk', name: 'Neurofunk', url: 'https://radiorecord.hostingradio.ru/neurofunk96.aacp' },
+  { id: 'darkside', name: 'Darkside', url: 'https://radiorecord.hostingradio.ru/darkside96.aacp' },
+  { id: 'martingarrix', name: 'Martin Garrix', url: 'https://radiorecord.hostingradio.ru/martingarrix96.aacp' },
 ];
 
 const RadioController = (() => {
