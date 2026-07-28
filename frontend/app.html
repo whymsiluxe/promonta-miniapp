@@ -1239,8 +1239,12 @@ header h1 {
    ниже, чем у остальных nested-экранов (h1 крупнее, свой контекст) -- меньший offset
    тут держит кнопку рядом с title, всё ещё ниже Close по вертикали. */
 #obj-detail-back {
+  /* 28.07 v5: left:46px наезжал на сам title (первая grid-колонка тут узкая --
+     minmax(44px, auto) -- 46px сдвигал кнопку почти в колонку заголовка). Кнопка уже
+     в правильном месте по горизонтали через grid-column:1, нужен только вертикальный
+     сдвиг вниз, чтобы выйти из-под Close. */
   top: 8px;
-  left: 46px;
+  left: 0;
 }
 .form-header .back-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
 
