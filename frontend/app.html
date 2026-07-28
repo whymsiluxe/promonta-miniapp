@@ -1198,11 +1198,14 @@ header h1 {
   padding: 0;
   line-height: 1;
   flex-shrink: 0;
-  /* 28.07: owner report -- кнопка залезала под Telegram Close (оба в левом верхнем
-     углу). align-items:center в .form-header ставит кнопку по центру своей строки,
-     та же строка что и Close визуально -- сдвигаем чуть ниже, а не весь header. */
-  margin-top: 10px;
   align-self: start;
+  /* 28.07 v2: margin-top растягивал высоту grid-строки (margin на grid-item увеличивает
+     track), утягивая title вниз вместе с кнопкой -- ровно баг, который owner поймал
+     ("на разной высоте эти две кнопки", title сместился). position:relative;top не
+     участвует в расчёте высоты трека -- сдвигает кнопку визуально, не трогая соседей
+     (H1 остаётся ровно на уровне Telegram Close, как и должно быть). */
+  position: relative;
+  top: 10px;
 }
 .form-header .back-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
 
@@ -2011,6 +2014,18 @@ body.view-locked {
   font-size: 0.9rem; cursor: pointer; border-radius: 8px;
 }
 .chat-bubble-menu-delete:active { background: var(--chat-surface-hover); }
+
+/* 28.07 (Phase 06): pin/mute/archive UI поверх готового backend data layer --
+   long-press на .chat-thread-item открывает то же .chat-bubble-menu (переиспользуем
+   контейнер меню сообщений, тут просто 3 текстовых пункта вместо реакций+delete). */
+.chat-thread-menu-item {
+  border: none; background: none; text-align: left; padding: 0.55rem 0.6rem;
+  color: var(--chat-text); font-size: 0.9rem; cursor: pointer; border-radius: 8px;
+}
+.chat-thread-menu-item:active { background: var(--chat-surface-hover); }
+.chat-thread-pin-icon, .chat-thread-mute-icon { display: inline-flex; color: var(--chat-brass); }
+.chat-archive-btn.active { background: var(--chat-forest); color: var(--chat-text); }
+.chat-thread-list-archived-mode { position: relative; }
 
 /* ═══ Chat Hub dark palette (Phase 06, 2026-07-28, ТЗ3) ═══
    Чат всегда тёмный (референс: Messages-style dark surface), независимо от
