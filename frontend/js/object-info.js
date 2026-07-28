@@ -868,9 +868,39 @@ let _objChatHeaderHomeNextSibling = null;
 async function embedObjectChat(objectId, objectName) {
   const panel = document.getElementById('obj-detail-panel-chat');
   const chatView = document.getElementById('chat-thread-detail-view');
-  const formHeader = document.querySelector('#view-object-detail > .form-header');
+  // 29.07 v4: real bug found via Playwright (not guessed) -- calling embedObjectChat() a
+  // second time while it's already active (e.g. re-tapping the "Чат" tab, or any code path
+  // that re-runs _initObjDetailTab('chat')) queried '#view-object-detail > .form-header',
+  // but the FIRST call already physically moved .form-header out of #view-object-detail and
+  // into #obj-chat-embed-header -- the selector no longer matched anything, formHeader/tabs
+  // came back null, the embed header was created empty (0 height), and the chat view's flex
+  // sibling got a wrong, too-small height. This is exactly the "composer sits high, huge gap
+  // below" symptom the owner reported and screenshotted -- reproduced and confirmed visually
+  // via a headless Playwright run against the live server with a real signed initData.
+  // Fix: if already embedded, look for the header INSIDE #obj-chat-embed-header instead of
+  // assuming it's still a direct child of #view-object-detail.
+  const alreadyEmbedded = panel?.classList.contains('obj-chat-active');
+  const formHeader = alreadyEmbedded
+    ? document.getElementById('obj-chat-embed-header')?.querySelector('.form-header')
+    : document.querySelector('#view-object-detail > .form-header');
   const tabs = document.getElementById('obj-detail-tabs');
   if (!panel || !chatView) return;
+  // Re-entering an already-active embed (same thread) -- nothing structural to redo, just
+  // refresh messages. Avoids re-running the DOM-move logic against a panel that's already
+  // in its embedded shape.
+  if (alreadyEmbedded && _chatActiveThreadKey === `obj:${objectId}`) {
+    // 29.07 v4: this early-return path must ALSO clear the inline style="display:block" --
+    // _objDetailTabClick() re-sets panel.style.display='block' on every tab click, including
+    // re-clicking the already-active "Чат" tab, which lands here. Found via Playwright: the
+    // panel's inline style beats the #obj-detail-panel-chat.obj-chat-active{display:flex}
+    // CSS rule regardless of which code path set it, so skipping this line here silently
+    // reintroduced the exact same "flex container never applies" bug as the direct-DOM-move
+    // fix below, just via a different call path.
+    panel.style.display = '';
+    await _loadChatMessages(true);
+    markChatRead(null, `obj:${objectId}`);
+    return;
+  }
 
   if (!_objChatHomeParent) {
     _objChatHomeParent = chatView.parentElement;
@@ -890,6 +920,16 @@ async function embedObjectChat(objectId, objectName) {
   }
   panel.appendChild(chatView);
   panel.classList.add('obj-chat-active');
+  // 29.07 v4: real bug #2 found via Playwright computed-style dump -- app.html's markup has
+  // <div id="obj-detail-panel-chat" class="obj-detail-panel" style="display:block;">. That
+  // INLINE style always wins over the #obj-detail-panel-chat.obj-chat-active{display:flex}
+  // CSS rule (inline style has higher specificity than any selector, full stop), so the panel
+  // stayed display:block even after .obj-chat-active was added -- #chat-thread-detail-view's
+  // flex:1 had no flex CONTAINER to size itself against, so it fell back to intrinsic content
+  // height instead of filling the remaining viewport. This alone explains the "composer high,
+  // huge empty gap below" symptom independent of bug #1 above. Clearing the inline style lets
+  // the CSS class rule take over.
+  panel.style.display = '';
   chatView.style.display = 'flex';
 
   // Переиспользуем chat.js внутреннее состояние напрямую -- не switchView('chat'),

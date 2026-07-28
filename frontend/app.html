@@ -1057,7 +1057,11 @@ header h1 {
 #obj-detail-tabs { overflow-x: auto; scrollbar-width: none; margin-top: 12px; }
 #obj-detail-tabs::-webkit-scrollbar { display: none; }
 #obj-detail-tabs .doc-type-opt { flex-shrink: 0; padding: 0.5rem 0.9rem; }
-.obj-detail-panel { padding: 0 0.75rem; min-height: 40vh; }
+.obj-detail-panel { display: none; padding: 0 0.75rem; min-height: 40vh; }
+/* 29.07 v4: default display:none заменяет удалённый inline style="display:block" на
+   #obj-detail-panel-chat -- JS всегда явно ставит 'block'/'none' на каждое переключение
+   таба (objects.js), этот CSS-default только для самого первого рендера до первого JS-вызова
+   (в реальности не видно вообще -- #view-object-detail целиком display:none на старте). */
 
 /* ── Чат-таб объекта (29.07 v3, полный редизайн layout) ──────────────────────────
    ПРЕЖНИЙ подход (JS ResizeObserver → --obj-detail-chat-offset → top:<px>) три раза не
@@ -3599,7 +3603,15 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
       <div class="doc-type-opt" data-obj-tab="stages">Этапы</div>
       <div class="doc-type-opt" data-obj-tab="needs">Потребности</div>
     </div>
-    <div id="obj-detail-panel-chat" class="obj-detail-panel" style="display:block;"></div>
+    <!-- 29.07 v4: НЕТ inline style="display:block" здесь (в отличие от info/stages/needs
+         ниже) -- реальный баг, найденный через Playwright: инлайн-стиль всегда бьёт
+         #obj-detail-panel-chat.obj-chat-active{display:flex} по specificity, независимо от
+         JS panel.style.display='' попыток его расчистить на каждом отдельном пути. JS
+         (openObjectDetail/_objDetailTabClick в objects.js) уже явно ставит 'block'/'none'
+         на каждое переключение таба -- дефолтный display:none у .obj-detail-panel ниже
+         (CSS) достаточен до первого JS-переключения, #view-object-detail и так display:none
+         целиком на старте. -->
+    <div id="obj-detail-panel-chat" class="obj-detail-panel"></div>
     <div id="obj-detail-panel-info" class="obj-detail-panel" style="display:none;"></div>
     <div id="obj-detail-panel-stages" class="obj-detail-panel" style="display:none;"></div>
     <div id="obj-detail-panel-needs" class="obj-detail-panel" style="display:none;"></div>
@@ -4669,9 +4681,16 @@ async function initApp() {
     requestAnimationFrame(() => {
       const activeView = document.querySelector('.view.active');
       if (activeView) activeView.classList.toggle('header-scrolled', window.scrollY > 24);
-      // 29.07: --obj-detail-chat-offset пересчёт убран -- встроенный чат теперь inset:0
-      // full-viewport оверлей (см. object-info.js embedObjectChat), больше не зависит от
-      // scroll-позиции внешнего документа.
+      // 28.07: owner report -- встроенный чат объекта (#obj-detail-panel-chat.obj-chat-active,
+      // position:fixed) "наезжал" на заголовок/табы при протяжке экрана. Root cause: --obj-detail-
+      // chat-offset пересчитывался только через ResizeObserver на #obj-detail-tabs (изменение
+      // РАЗМЕРА), не на body-level scroll (изменение ПОЗИЦИИ) -- сам #view-object-detail скроллится
+      // обычным document-flow (см. комментарий выше), табы физически уезжают вместе со скроллом,
+      // а top у зафиксированного чата остаётся приклеен к устаревшей координате. Пересчитываем
+      // offset тем же throttled rAF, что уже используется здесь для header-scrolled.
+      if (typeof _updateObjChatOffset === 'function' && document.getElementById('obj-detail-panel-chat')?.classList.contains('obj-chat-active')) {
+        _updateObjChatOffset();
+      }
       _headerScrollTicking = false;
     });
   }, { passive: true });
