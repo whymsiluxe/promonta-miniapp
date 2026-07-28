@@ -2248,6 +2248,113 @@ def get_my_chat_threads(user: dict = Depends(get_current_user), role: str = Depe
     return {"threads": result}
 
 
+def _message_preview(msg: dict | None) -> str:
+    if not msg:
+        return ''
+    if msg.get('text'):
+        return msg['text']
+    att = msg.get('attachment') or {}
+    if (att.get('content_type') or '').startswith('audio'):
+        return '🎤 Голосовое'
+    if att:
+        return '📎 Файл'
+    return ''
+
+
+THREAD_TYPE_BY_PREFIX = {'obj:': 'OBJECT', 'mangel:': 'DEFECT', 'task:': 'TASK'}
+
+
+@app.get("/api/chat/threads")
+def get_normalized_chat_threads(type: str = '', user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """Phase 06: normalized shape (id/type/title/avatar_url/subtitle/last_message/
+    unread_count/muted/pinned/version) per docs/plan-phases/06-chat-hub-rebuild.md.
+    Kept ALONGSIDE the legacy /api/chat/my_threads (not replacing it) -- no frontend
+    UI reads this yet, the live Chat Hub still runs on the old endpoints, this is
+    additive groundwork for the eventual frontend rebuild.
+    `type` filter: GENERAL/DIRECT/OBJECT/DEFECT/TASK (spec's ChatThread.type enum,
+    extended with TASK per the 5-tabs decision in docs/DECISIONS.md, 2026-07-28).
+    Also fixes two real gaps found while building this: the old /api/chat/my_threads
+    never included GENERAL or DIRECT threads at all (only obj:/mangel:/task:), so
+    the frontend's "Общий чат"/DM previews in the thread list were always the
+    static fallback text, never the actual last message -- see chat.js
+    renderChatThreadList()'s _threadByKey('group') / _threadByKey(worker.user_id)
+    calls, which could never match anything this endpoint's predecessor returned.
+    No cursor/pagination -- CHAT_MAX caps total stored messages at 200 across ALL
+    threads, so pagination has no real workload to justify yet; revisit if that
+    cap is ever raised.
+    """
+    uid = str(user['id'])
+    with _chat_lock:
+        messages = _purge_old_chat(_load_chat())
+        _save_chat(messages)
+    reads = _load_reads()
+    meta = _load_chat_thread_meta()
+    profiles = _load_worker_profiles()
+    roles = _load_roles()
+
+    def _last_message_field(last):
+        return {"text": _message_preview(last), "ts": last['ts'], "sender_id": str(last['user_id'])} if last else None
+
+    threads = []
+
+    if not type or type == 'GENERAL':
+        group_msgs = [m for m in messages if not m.get('to_user_id') and not m.get('thread_key')]
+        last = max(group_msgs, key=lambda m: m['ts']) if group_msgs else None
+        unread = sum(1 for m in group_msgs if str(m.get('user_id')) != uid and m['ts'] > _thread_last_read(reads, uid, 'group'))
+        prefs = _thread_user_prefs(meta, 'group', uid)
+        threads.append({
+            "id": "group", "type": "GENERAL", "title": "Общий чат", "avatar_url": None,
+            "subtitle": _message_preview(last), "last_message": _last_message_field(last),
+            "unread_count": unread, **prefs, "version": last['ts'] if last else 0,
+        })
+
+    if not type or type == 'DIRECT':
+        for wuid in (set(roles.keys()) | set(profiles.keys())):
+            if wuid == uid:
+                continue
+            dm_msgs = [m for m in messages if not m.get('thread_key') and (
+                (str(m.get('user_id')) == uid and str(m.get('to_user_id')) == wuid) or
+                (str(m.get('user_id')) == wuid and str(m.get('to_user_id')) == uid))]
+            last = max(dm_msgs, key=lambda m: m['ts']) if dm_msgs else None
+            thread_id = _chat_thread_id(uid, wuid)
+            unread = sum(1 for m in dm_msgs if str(m.get('user_id')) != uid and m['ts'] > _thread_last_read(reads, uid, wuid))
+            prefs = _thread_user_prefs(meta, thread_id, uid)
+            p = profiles.get(wuid, {})
+            last_seen = _last_seen.get(wuid)
+            threads.append({
+                "id": wuid, "type": "DIRECT",
+                "title": _sanitize_display_name(p.get('name'), wuid),
+                "avatar_url": f"/api/profile/{wuid}/avatar" if p.get('avatar') else None,
+                "subtitle": _message_preview(last) or ('Владелец' if roles.get(wuid) == 'owner' else 'Работник'),
+                "online": bool(last_seen and (time.time() - last_seen) < ONLINE_THRESHOLD_SECONDS),
+                "last_message": _last_message_field(last),
+                "unread_count": unread, **prefs, "version": last['ts'] if last else 0,
+            })
+
+    if not type or type in ('OBJECT', 'DEFECT', 'TASK'):
+        keys = {m['thread_key'] for m in messages if m.get('thread_key')}
+        for key in keys:
+            ttype = next((v for p, v in THREAD_TYPE_BY_PREFIX.items() if key.startswith(p)), None)
+            if not ttype or (type and type != ttype):
+                continue
+            try:
+                _check_thread_access(key, uid, role)
+            except HTTPException:
+                continue
+            thread_msgs = [m for m in messages if m.get('thread_key') == key]
+            last = max(thread_msgs, key=lambda m: m['ts']) if thread_msgs else None
+            unread = sum(1 for m in thread_msgs if str(m.get('user_id')) != uid and m['ts'] > _thread_last_read(reads, uid, key))
+            prefs = _thread_user_prefs(meta, key, uid)
+            threads.append({
+                "id": key, "type": ttype, "title": _thread_title(key), "avatar_url": None,
+                "subtitle": _message_preview(last), "last_message": _last_message_field(last),
+                "unread_count": unread, **prefs, "version": last['ts'] if last else 0,
+            })
+
+    threads.sort(key=lambda t: t['last_message']['ts'] if t['last_message'] else 0, reverse=True)
+    return {"threads": threads}
+
+
 @app.get("/api/chat/messages")
 def get_chat_messages(with_: str = '', thread_key: str = '', user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     with _chat_lock:
