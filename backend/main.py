@@ -2058,8 +2058,22 @@ def get_feed_photo_file(photo_id: str, index: int = 0, user: dict = Depends(get_
 # Хранение: JSON-файл, последние 200 сообщений. Polling с фронта каждые 8 сек.
 # Инстанс один, файл достаточен — без WebSocket и БД для простоты.
 CHAT_FILE = '/home/promonta/agent/miniapp/chat_messages.json'
+CHAT_ARCHIVE_FILE = '/home/promonta/agent/miniapp/chat_messages_archive.json'
 CHAT_MAX = 200
 _chat_lock = __import__('threading').Lock()
+
+
+def _archive_chat_messages(messages: list):
+    # 28.07: owner request -- удаление треда/сообщения не должно стирать историю
+    # безвозвратно. Append-only архив на диске, отдельный от рабочего chat_messages.json
+    # (тот же принцип, что закрытые Потребности архивируются в Google Sheets вместо
+    # физического удаления).
+    if not messages:
+        return
+    archive = _safe_load_json(CHAT_ARCHIVE_FILE, [])
+    archive.extend(messages)
+    with open(CHAT_ARCHIVE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(archive, f, ensure_ascii=False)
 
 
 def _load_chat() -> list:
@@ -2740,11 +2754,40 @@ def delete_chat_message(msg_id: str, user: dict = Depends(get_current_user), rol
             raise HTTPException(403, 'Можно удалять только свои сообщения')
         messages = [m for m in messages if m['id'] != msg_id]
         _save_chat(messages)
+    _archive_chat_messages([target])
     reactions = _load_chat_reactions()
     remaining = [r for r in reactions if r['message_id'] != msg_id]
     if len(remaining) != len(reactions):
         _save_chat_reactions(remaining)
     return {"status": "ok"}
+
+
+@app.delete("/api/chat/threads")
+def delete_chat_thread(thread_key: str = '', with_: str = '', user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    # 28.07: owner request -- удалить целый тред (DM с конкретным юзером или obj:/mangel:/
+    # task: тред), пропадает у обеих сторон. История не теряется -- те же сообщения,
+    # что _archive_chat_messages уже использует для отдельных удалённых сообщений.
+    if not thread_key and not with_:
+        raise HTTPException(400, "Укажи thread_key или with_")
+    with _chat_lock:
+        messages = _load_chat()
+        if thread_key:
+            to_delete = [m for m in messages if m.get('thread_key') == thread_key]
+            remaining = [m for m in messages if m.get('thread_key') != thread_key]
+        else:
+            to_delete = [m for m in messages if not m.get('thread_key') and (
+                (str(m.get('user_id')) == with_) or (str(m.get('to_user_id')) == with_)
+            )]
+            deleted_ids = {m['id'] for m in to_delete}
+            remaining = [m for m in messages if m['id'] not in deleted_ids]
+        _save_chat(remaining)
+    _archive_chat_messages(to_delete)
+    deleted_ids = {m['id'] for m in to_delete}
+    reactions = _load_chat_reactions()
+    remaining_reactions = [r for r in reactions if r['message_id'] not in deleted_ids]
+    if len(remaining_reactions) != len(reactions):
+        _save_chat_reactions(remaining_reactions)
+    return {"status": "ok", "deleted_count": len(to_delete)}
 
 
 def _check_message_access(msg: dict, uid: str, role: str):

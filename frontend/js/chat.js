@@ -648,9 +648,14 @@ function _openChatThreadPrefsMenu(itemEl, prefsKey, payloadBase) {
   backdrop.className = 'chat-bubble-menu-backdrop';
   const menu = document.createElement('div');
   menu.className = 'chat-bubble-menu';
+  // 28.07: owner request -- удалить целый тред (пропадает у обеих сторон, история
+  // сохраняется на сервере в архиве -- _archive_chat_messages на бэкенде). Только owner,
+  // только для реальных тредов (group -- prefsKey==='group' -- нет смысла удалять).
+  const canDeleteThread = currentRole === 'owner' && prefsKey !== 'group';
   menu.innerHTML = `
     <button type="button" class="chat-thread-menu-item" data-pref="pinned">${prefs.pinned ? '✓ ' : ''}${prefs.pinned ? 'Открепить' : 'Закрепить'}</button>
     <button type="button" class="chat-thread-menu-item" data-pref="muted">${prefs.muted ? '✓ ' : ''}${prefs.muted ? 'Включить уведомления' : 'Заглушить'}</button>
+    ${canDeleteThread ? `<button type="button" class="chat-thread-menu-item chat-thread-menu-delete" data-delete-thread="1">🗑 Удалить чат</button>` : ''}
   `;
   document.body.appendChild(backdrop);
   document.body.appendChild(menu);
@@ -673,6 +678,23 @@ function _openChatThreadPrefsMenu(itemEl, prefsKey, payloadBase) {
       _toggleChatThreadPref(prefsKey, payloadBase, prefName, !prefs[prefName]);
     });
   });
+  const deleteBtn = menu.querySelector('[data-delete-thread]');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      close();
+      if (!confirm('Удалить весь чат? Собеседник тоже его больше не увидит. История сохранится на сервере.')) return;
+      try {
+        const qs = payloadBase.thread_key
+          ? `thread_key=${encodeURIComponent(payloadBase.thread_key)}`
+          : `with_=${encodeURIComponent(payloadBase.to_user_id)}`;
+        await api(`/api/chat/threads?${qs}`, { method: 'DELETE' });
+        hapticImpact('medium');
+        renderChatThreadList();
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  }
 }
 
 let _chatThreadLongPressTimer = null;
