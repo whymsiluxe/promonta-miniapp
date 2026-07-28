@@ -44,6 +44,15 @@ function _makeAvatarText(name) {
 async function openBubbleAssign(objectId, stageName, dropZoneEl) {
   _bubbleObjectId = objectId;
   _bubbleStage = stageName;
+  // 28.07: owner report -- панель открывалась схлопнутой в верхнюю полосу экрана,
+  // список объектов виднелся полупрозрачно позади. Root cause: body.view-locked
+  // (position:fixed; width:100%, без height/top) может остаться на body с предыдущего
+  // embedded-chat сеанса внутри Object Detail, если юзер покинул тот экран не через
+  // штатный unembedObjectChat() путь -- класс "залипает". #bubble-panel сам по себе
+  // position:fixed;inset:0 корректен, но fixed positioning context ломается, если
+  // body тоже fixed без явной высоты. Defensive cleanup здесь, не полагаемся на то
+  // что предыдущий экран его снял штатно.
+  document.body.classList.remove('view-locked');
 
   // 10.31 (Fable-аудит): раньше список строился только из уже назначенных на
   // другие объекты + текущего юзера, у остальных worker'ов skills всегда было [] —
