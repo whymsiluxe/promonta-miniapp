@@ -914,8 +914,8 @@ function _initObjDetailTab(tab) {
     return;
   }
   if (tab === 'info') {
-    // 25.07 v3: Инфо рендерит всю сводку (статус/описание/работы/этапы/дефекты/документы)
-    // одним вызовом. Потребности -- отдельный object-scoped таб (см. ниже), не часть Инфо.
+    // 29.07 v2: Инфо рендерит всю сводку (статус/описание/работы/дефекты/документы/
+    // потребности) одним вызовом -- Потребности перенесены сюда из бывшей 4-й вкладки.
     renderObjectInfoTab(_objDetailCurrentId);
     return;
   }
@@ -923,19 +923,16 @@ function _initObjDetailTab(tab) {
     renderObjectStagesTab(_objDetailCurrentId);
     return;
   }
-  if (tab === 'needs') {
-    renderObjectNeedsTab(_objDetailCurrentId);
-    return;
-  }
   panel.innerHTML = `<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>`;
 }
 
-// 25.07: свайп-переключение между 6 табами объекта (тот же UX, что юзер уже одобрил
+// 25.07: свайп-переключение между табами объекта (тот же UX, что юзер уже одобрил
 // в подвкладках Чата) -- жест ловится на весь #view-object-detail, но глушится над
 // зонами со своим горизонтальным/вертикальным взаимодействием (сама строка табов уже
 // скроллится тапом -- не нужно вдобавок дёргать её свайпом; чат-композер/сообщения,
 // roadmap move-кнопки -- те же exclusion-соображения что у глобального swipe-nav.js).
-const OBJ_DETAIL_TAB_ORDER = ['chat', 'info', 'stages', 'needs'];
+// 29.07 v2: 'needs' убран -- Потребности больше не отдельный таб (перенесены в Инфо).
+const OBJ_DETAIL_TAB_ORDER = ['chat', 'info', 'stages'];
 let _objTabSwipeStartX = 0;
 let _objTabSwipeStartY = 0;
 let _objTabSwipeExcluded = false;

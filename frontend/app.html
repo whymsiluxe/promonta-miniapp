@@ -1147,29 +1147,40 @@ header h1 {
 /* 28.07: owner referenced a Pinterest board -- colorful pill badges with icons on
    dark background (In progress/Done/Not Started style). Roadmap card itself gets a
    dark surface, status labels become icon+text pills instead of plain colored text. */
-.obj-stages-roadmap { padding: 0.75rem; background: #1B1B1F; border-radius: var(--radius-lg); }
+/* ── План работ / Roadmap timeline -- полный визуальный rebuild (29.07 v2) ──────────
+   Owner screenshot report: вся "дорожка" была одной большой тёмной карточкой
+   (background:#1B1B1F на .obj-stages-roadmap), не выглядела как связанный timeline --
+   просто один тёмный блок на светлом экране. Rebuild: сама .obj-stages-roadmap
+   прозрачная (не карточка вообще), КАЖДЫЙ этап -- собственная светлая ivory/raised
+   карточка (Old Money/Quiet Luxury палитра, как остальные .obj-info-item-row), линия
+   timeline идёт СЛЕВА от карточек (не внутри тёмного фона). */
+.obj-stages-roadmap { padding: 0; }
 .obj-stage-node { display: flex; gap: 0.6rem; position: relative; touch-action: none; }
 /* 28.07: fade+slide-in stagger при первой отрисовке списка (owner request "красивые анимации") */
 .obj-stage-node-enter { animation: objStageEnter 320ms cubic-bezier(.22,1,.36,1) both; }
 @keyframes objStageEnter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 .obj-stage-line { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; width: 20px; }
-.obj-stage-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--bg-card-raised); border: 2px solid var(--border-color); flex-shrink: 0; margin-top: 0.35rem; transition: background 200ms, border-color 200ms, box-shadow 200ms; }
+.obj-stage-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--bg-card-raised); border: 2px solid var(--border-color); flex-shrink: 0; margin-top: 0.9rem; transition: background 200ms, border-color 200ms, box-shadow 200ms; }
 .obj-stage-dot.active { background: var(--c-accent, var(--green)); border-color: var(--c-accent, var(--green)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent, var(--green)) 25%, transparent); animation: objStageDotPulse 1.8s ease-in-out infinite; }
 @keyframes objStageDotPulse { 0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent, var(--green)) 25%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c-accent, var(--green)) 12%, transparent); } }
 .obj-stage-dot.done { background: var(--c-accent, var(--green)); border-color: var(--c-accent, var(--green)); }
-.obj-stage-connector { width: 2px; flex: 1; min-height: 28px; background: var(--border-color); }
-.obj-stage-body { flex: 1; min-width: 0; padding-bottom: 1.1rem; }
+.obj-stage-connector { width: 2px; flex: 1; min-height: 20px; background: var(--border-color); margin: 2px 0; }
+.obj-stage-body {
+  flex: 1; min-width: 0; margin-bottom: 0.7rem; padding: 0.7rem 0.85rem;
+  background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
+}
 .obj-stage-header { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
-.obj-stage-name { font-weight: 600; color: #F5F1E8; flex: 1; min-width: 0; }
-.obj-stage-status-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; font-weight: 600; padding: 0.3rem 0.7rem; border-radius: 999px; flex-shrink: 0; }
+.obj-stage-name { font-weight: 600; color: var(--text-main); flex: 1; min-width: 0; }
+.obj-stage-status-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.76rem; font-weight: 600; padding: 0.28rem 0.65rem; border-radius: 999px; flex-shrink: 0; }
 .obj-stage-status-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.obj-stage-status-предстоит { background: rgba(245,241,232,0.1); color: rgba(245,241,232,0.65); }
-.obj-stage-status-предстоит::before { background: rgba(245,241,232,0.4); }
-.obj-stage-status-в-процессе { background: rgba(74,201,196,0.16); color: #4AC9C4; }
-.obj-stage-status-в-процессе::before { background: #4AC9C4; }
-.obj-stage-status-готово { background: rgba(93,214,44,0.16); color: #5DD62C; }
-.obj-stage-status-готово::before { background: #5DD62C; }
-.obj-stage-chevron { flex-shrink: 0; color: rgba(245,241,232,0.5); transition: transform 220ms cubic-bezier(.22,1,.36,1); font-size: 0.9rem; }
+.obj-stage-status-предстоит { background: color-mix(in srgb, var(--text-light) 14%, transparent); color: var(--text-light); }
+.obj-stage-status-предстоит::before { background: var(--text-light); }
+.obj-stage-status-в-процессе { background: rgba(74,201,196,0.14); color: #2C8E89; }
+.obj-stage-status-в-процессе::before { background: #2C8E89; }
+.obj-stage-status-готово { background: color-mix(in srgb, var(--c-accent, var(--green)) 16%, transparent); color: var(--c-accent, var(--green)); }
+.obj-stage-status-готово::before { background: var(--c-accent, var(--green)); }
+.obj-stage-chevron { flex-shrink: 0; color: var(--text-light); transition: transform 220ms cubic-bezier(.22,1,.36,1); font-size: 0.9rem; }
 .obj-stage-node.expanded .obj-stage-chevron { transform: rotate(180deg); }
 /* 28.07: аккордеон через grid-template-rows 0fr/1fr -- плавнее чем max-height (не нужно
    знать точную итоговую высоту заранее, работает с динамическим текстом любой длины). */
@@ -1179,26 +1190,57 @@ header h1 {
 }
 .obj-stage-node.expanded .obj-stage-description-wrap { grid-template-rows: 1fr; }
 .obj-stage-description-wrap > * { overflow: hidden; }
-.obj-stage-description-text { font-size: 0.9rem; line-height: 1.5; color: rgba(245,241,232,0.8); padding-top: 0.2rem; }
-.obj-stage-description-empty { color: rgba(245,241,232,0.4); font-style: italic; }
+.obj-stage-description-text { font-size: 0.9rem; line-height: 1.5; color: var(--text-main); padding-top: 0.2rem; }
+.obj-stage-description-empty { color: var(--text-light); font-style: italic; }
+/* 29.07 v2: read-mode -- по умолчанию видимый блок, "Редактировать" переключает на editor.
+   Раньше owner (canEditDescription=true) ВСЕГДА видел открытую textarea с placeholder-
+   текстом, выглядевшим как реальные данные -- read/edit теперь явно разделены. */
+.obj-stage-description-read { display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem; }
+.obj-stage-description-edit-btn {
+  padding: 0.3rem 0.7rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);
+  background: none; color: var(--c-accent, var(--accent)); font-size: 0.78rem; font-weight: 600; cursor: pointer;
+}
+.obj-stage-description-editor { margin-top: 0.2rem; }
 .obj-stage-description-input {
   width: 100%; box-sizing: border-box; min-height: 80px; resize: vertical;
-  background: rgba(245,241,232,0.06); border: 1px solid rgba(245,241,232,0.15); border-radius: var(--radius-sm);
-  color: #F5F1E8; font-family: var(--font-body); font-size: 0.9rem; padding: 0.6rem; line-height: 1.5;
+  background: var(--bg-app); border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+  color: var(--text-main); font-family: var(--font-body); font-size: 0.9rem; padding: 0.6rem; line-height: 1.5;
 }
 .obj-stage-description-input:focus { outline: none; border-color: var(--c-accent, var(--green)); }
-.obj-stage-description-save { margin-top: 0.4rem; padding: 0.4rem 0.9rem; border-radius: var(--radius-sm); border: none; background: var(--c-accent, var(--green)); color: #0F0F0F; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.obj-stage-description-editor-actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+.obj-stage-description-save, .obj-stage-description-cancel { padding: 0.4rem 0.9rem; border-radius: var(--radius-sm); border: none; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.obj-stage-description-save { background: var(--c-accent, var(--green)); color: #fff; }
+.obj-stage-description-cancel { background: var(--bg-app); border: 1px solid var(--border-color); color: var(--text-main); }
 .obj-stage-complete-btn { display: block; margin-top: 0.6rem; padding: 0.5rem 1rem; border-radius: var(--radius-sm); border: none; background: var(--c-accent, var(--green)); color: #fff; font-size: 0.85rem; cursor: pointer; }
 /* 28.07: drag handle заменил up/down-кнопки (owner request -- "перетаскивая один над
    другим"), тот же pointer-capture паттерн, что bubble-assign.js уже использует. */
 .obj-stage-drag-handle {
-  flex-shrink: 0; align-self: flex-start; margin-top: 0.2rem; width: 28px; height: 28px;
-  display: flex; align-items: center; justify-content: center; color: rgba(245,241,232,0.35);
+  flex-shrink: 0; align-self: flex-start; margin-top: 0.75rem; margin-left: -0.2rem; width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center; color: var(--text-light);
   font-size: 1.1rem; cursor: grab; touch-action: none; border-radius: 8px; transition: background 150ms;
 }
-.obj-stage-drag-handle:active { cursor: grabbing; background: rgba(245,241,232,0.08); }
-.obj-stage-node.obj-stage-dragging { opacity: 0.9; box-shadow: 0 8px 24px -8px rgba(0,0,0,0.5); background: rgba(245,241,232,0.04); border-radius: var(--radius-md); }
-.obj-stage-node.obj-stage-drop-target .obj-stage-body { outline: 2px dashed var(--c-accent, var(--green)); outline-offset: 4px; border-radius: var(--radius-sm); }
+.obj-stage-drag-handle:active { cursor: grabbing; background: color-mix(in srgb, var(--text-main) 6%, transparent); }
+.obj-stage-node.obj-stage-dragging .obj-stage-body { opacity: 0.9; box-shadow: 0 8px 24px -8px rgba(0,0,0,0.25); }
+.obj-stage-node.obj-stage-drop-target .obj-stage-body { outline: 2px dashed var(--c-accent, var(--green)); outline-offset: 2px; }
+/* 29.07 v2: компактная кнопка-триггер добавления этапа вместо постоянно открытого
+   input+большой кнопки (owner screenshot report). Открывает bottom sheet ниже. */
+.obj-stage-add-trigger {
+  width: 100%; margin-top: 0.3rem; padding: 0.65rem; border-radius: var(--radius-md);
+  border: 1px dashed var(--border-color); background: none; color: var(--text-light);
+  font-size: 0.88rem; font-weight: 600; cursor: pointer;
+}
+.obj-stage-add-trigger:active { background: color-mix(in srgb, var(--text-main) 4%, transparent); }
+.obj-stage-add-sheet { position: fixed; inset: 0; z-index: 8200; display: flex; align-items: flex-end; }
+.obj-stage-add-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
+.obj-stage-add-sheet-inner {
+  position: relative; width: 100%; background: var(--bg-card); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 1.1rem 1rem calc(1.1rem + env(safe-area-inset-bottom)); box-sizing: border-box;
+}
+.obj-stage-add-sheet-title { font-weight: 700; font-size: 1.05rem; color: var(--text-main); margin-bottom: 0.8rem; }
+.obj-stage-add-sheet-actions { display: flex; gap: 0.6rem; margin-top: 0.9rem; }
+/* Пустой Roadmap (owner ТЗ п.38/58) -- компактная строка + действие, не большая тёмная
+   карточка со статичным текстом (был прежний "Этапов пока нет" в #1B1B1F карточке). */
+.obj-stages-empty { padding: 1.2rem 0.9rem; text-align: center; color: var(--text-light); font-size: 0.9rem; }
 
 .stage-clickable { cursor: pointer; align-items: center; }
 .stage-edit-icon { font-size: 0.75rem; margin-left: 4px; opacity: 0.6; }
@@ -3624,15 +3666,15 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
       <button class="back-btn" id="obj-detail-back">←</button>
       <h1 id="obj-detail-title">Объект</h1>
     </div>
-    <!-- 25.07 v3: 6 плоских табов -> 3 (Чат/Инфо/Потребности), одинаково для обеих ролей.
-         Задачи/Дефекты/Этапы теперь секции ВНУТРИ Инфо (не отдельные top-level экраны),
-         Потребности остаётся отдельным object-scoped табом по явному требованию владельца
-         (worker->owner заявки, отдельная семантика от Работ/Задач). -->
+    <!-- 29.07 v2: финальная структура (owner ТЗ) -- ровно 3 таба: Чат/Инфо/План работ.
+         Потребности перенесены ВНУТРЬ Инфо как секция (renderObjectInfoTab), отменяя
+         25.07-решение держать их отдельным табом -- явное новое требование владельца.
+         "Этапы" переименован в "План работ" (тот же панель-id obj-detail-panel-stages
+         сохранён -- meняется только заголовок таба и подпись, не JS-адресация). -->
     <div class="doc-type-switch chat-filter-tabs" id="obj-detail-tabs">
       <div class="doc-type-opt active" data-obj-tab="chat">Чат</div>
       <div class="doc-type-opt" data-obj-tab="info">Инфо</div>
-      <div class="doc-type-opt" data-obj-tab="stages">Этапы</div>
-      <div class="doc-type-opt" data-obj-tab="needs">Потребности</div>
+      <div class="doc-type-opt" data-obj-tab="stages">План работ</div>
     </div>
     <!-- 29.07 v4: НЕТ inline style="display:block" здесь (в отличие от info/stages/needs
          ниже) -- реальный баг, найденный через Playwright: инлайн-стиль всегда бьёт
@@ -3645,7 +3687,6 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
     <div id="obj-detail-panel-chat" class="obj-detail-panel"></div>
     <div id="obj-detail-panel-info" class="obj-detail-panel" style="display:none;"></div>
     <div id="obj-detail-panel-stages" class="obj-detail-panel" style="display:none;"></div>
-    <div id="obj-detail-panel-needs" class="obj-detail-panel" style="display:none;"></div>
   </div>
 
   <div id="stages-view">

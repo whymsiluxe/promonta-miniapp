@@ -69,6 +69,19 @@ async function renderObjectInfoTab(objectId) {
       </div>
       <div id="obj-info-docs-summary"></div>
     </div>
+    <!-- 29.07 v2: Потребности перенесены сюда из отдельной 4-й вкладки (owner ТЗ: финальная
+         структура Object Detail -- ровно 3 таба Чат/Инфо/План работ, без отдельной вкладки
+         Потребности). Разметка и вся логика ниже (_loadObjNeeds/_renderNeedRow) перенесены
+         без изменений из бывшего renderObjectNeedsTab, только id панели/списка сменился. -->
+    <div class="obj-info-section">
+      <div class="obj-info-section-title">Потребности</div>
+      <div id="obj-needs-list" class="obj-info-items-list"></div>
+      ${currentRole !== 'owner' ? `
+      <div class="obj-info-add-row">
+        <input type="text" id="obj-needs-new-text" class="obj-info-input" placeholder="Например: нужен перфоратор">
+        <button id="obj-needs-add-btn" class="obj-info-add-btn" type="button">+</button>
+      </div>` : ''}
+    </div>
   `;
 
   const photoUploadBtn = document.getElementById('obj-info-photo-upload-btn');
@@ -134,12 +147,30 @@ async function renderObjectInfoTab(objectId) {
     });
   });
 
+  const needsAddBtn = document.getElementById('obj-needs-add-btn');
+  if (needsAddBtn) {
+    needsAddBtn.addEventListener('click', async () => {
+      const textEl = document.getElementById('obj-needs-new-text');
+      const text = textEl.value.trim();
+      if (!text) return;
+      try {
+        await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: text, object_id: objectId }) });
+        textEl.value = '';
+        hapticImpact('light');
+        await _loadObjNeeds(objectId);
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  }
+
   const promises = [
     _renderObjDescriptionSection(objectId),
     _renderObjWorksVolumesSection(objectId),
     _renderObjWorksTasksSection(objectId),
     _renderObjDefectsSummary(objectId),
     _renderObjDocsSummary(objectId),
+    _loadObjNeeds(objectId),
   ];
   if (currentRole === 'owner') promises.push(_renderObjTeamAndShifts(objectId));
   await Promise.all(promises);
@@ -292,41 +323,61 @@ async function _renderObjWorksTasksSection(objectId) {
 // не существовало -- только секция внутри Инфо). Теперь полноценный отдельный таб,
 // секция из Инфо убрана (не дублируем), переиспользует тот же _loadObjStages/roadmap
 // рендер, что раньше жил внутри Инфо.
+// 29.07 v2: "Добавить этап" больше не постоянно открытый input+большая кнопка (owner
+// screenshot report: "Этапов пока нет" в чёрной карточке + вечно видимая форма добавления
+// доминировали над экраном). Компактная кнопка-триггер открывает bottom sheet с полем ввода --
+// тот же паттерн, что уже использует остальное приложение (Stage Editor, Add Defect и т.п.).
 async function renderObjectStagesTab(objectId) {
   const panel = document.getElementById('obj-detail-panel-stages');
   if (!panel) return;
-  // 28.07: любой воркер может добавить этап (см. backend permissions), не только owner.
   panel.innerHTML = `
     <div id="obj-stages-roadmap" class="obj-stages-roadmap"></div>
-    <div class="obj-info-section">
-      <div class="form-field">
-        <input type="text" id="obj-stages-tab-new-name" class="mangel-select" placeholder="напр. Фасад, Стяжка пола">
-      </div>
-      <button class="form-submit-btn" id="obj-stages-tab-add-btn" type="button" style="margin-top:0.5rem">+ Добавить этап</button>
-    </div>
+    <button class="obj-stage-add-trigger" id="obj-stages-tab-add-trigger" type="button">+ Добавить этап</button>
   `;
   await _loadObjStages(objectId);
   if (currentRole !== 'owner' && typeof _openCheckinStatusScreen === 'function') {
     _appendCheckinShortcut(panel, objectId);
   }
-  const addBtn = document.getElementById('obj-stages-tab-add-btn');
-  if (addBtn) {
-    addBtn.addEventListener('click', async () => {
-      const input = document.getElementById('obj-stages-tab-new-name');
-      const name = input.value.trim();
-      if (!name) return;
-      addBtn.disabled = true;
-      try {
-        await api(`/api/objects/${objectId}/stages`, { method: 'POST', body: JSON.stringify({ name }) });
-        input.value = '';
-        await _loadObjStages(objectId);
-      } catch (e) {
-        showToast('Ошибка: ' + e.message, 'error');
-      } finally {
-        addBtn.disabled = false;
-      }
-    });
-  }
+  document.getElementById('obj-stages-tab-add-trigger')?.addEventListener('click', () => _openAddStageSheet(objectId));
+}
+
+function _openAddStageSheet(objectId) {
+  const existing = document.getElementById('obj-stage-add-sheet');
+  if (existing) existing.remove();
+  const sheet = document.createElement('div');
+  sheet.id = 'obj-stage-add-sheet';
+  sheet.className = 'obj-stage-add-sheet';
+  sheet.innerHTML = `
+    <div class="obj-stage-add-sheet-backdrop"></div>
+    <div class="obj-stage-add-sheet-inner">
+      <div class="obj-stage-add-sheet-title">Добавить этап</div>
+      <input type="text" id="obj-stages-tab-new-name" class="obj-info-input" placeholder="напр. Фасад, Стяжка пола" autofocus>
+      <div class="obj-stage-add-sheet-actions">
+        <button class="obj-confirm-cancel" id="obj-stage-add-cancel-btn" type="button">Отмена</button>
+        <button class="obj-confirm-ok" id="obj-stage-add-ok-btn" type="button">Добавить</button>
+      </div>
+    </div>`;
+  document.body.appendChild(sheet);
+  const close = () => sheet.remove();
+  sheet.querySelector('.obj-stage-add-sheet-backdrop').addEventListener('click', close);
+  document.getElementById('obj-stage-add-cancel-btn').addEventListener('click', close);
+  document.getElementById('obj-stages-tab-new-name').focus();
+  document.getElementById('obj-stage-add-ok-btn').addEventListener('click', async () => {
+    const input = document.getElementById('obj-stages-tab-new-name');
+    const name = input.value.trim();
+    if (!name) return;
+    const okBtn = document.getElementById('obj-stage-add-ok-btn');
+    okBtn.disabled = true;
+    try {
+      await api(`/api/objects/${objectId}/stages`, { method: 'POST', body: JSON.stringify({ name }) });
+      hapticImpact('light');
+      close();
+      await _loadObjStages(objectId);
+    } catch (e) {
+      showToast('Ошибка: ' + e.message, 'error');
+      okBtn.disabled = false;
+    }
+  });
 }
 
 // ── Дефекты (компактная сводка) ──
@@ -541,36 +592,9 @@ function _renderNeedRow(n) {
   </div>`;
 }
 
-async function renderObjectNeedsTab(objectId) {
-  const panel = document.getElementById('obj-detail-panel-needs');
-  panel.innerHTML = `
-    <div id="obj-needs-list" class="obj-info-items-list"></div>
-    ${currentRole !== 'owner' ? `
-    <div class="obj-info-add-row">
-      <input type="text" id="obj-needs-new-text" class="obj-info-input" placeholder="Например: нужен перфоратор">
-      <button id="obj-needs-add-btn" class="obj-info-add-btn" type="button">+</button>
-    </div>` : ''}
-  `;
-  await _loadObjNeeds(objectId);
-
-  const addBtn = document.getElementById('obj-needs-add-btn');
-  if (addBtn) {
-    addBtn.addEventListener('click', async () => {
-      const textEl = document.getElementById('obj-needs-new-text');
-      const text = textEl.value.trim();
-      if (!text) return;
-      try {
-        await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: text, object_id: objectId }) });
-        textEl.value = '';
-        hapticImpact('light');
-        await _loadObjNeeds(objectId);
-      } catch (e) {
-        showToast('Ошибка: ' + e.message, 'error');
-      }
-    });
-  }
-}
-
+// 29.07 v2: renderObjectNeedsTab() удалена -- Потребности больше не отдельная вкладка,
+// разметка+обработчики теперь инлайн внутри renderObjectInfoTab() выше. _loadObjNeeds()
+// остаётся отдельной функцией (переиспользуется add-handler'ом для перерисовки после add).
 async function _loadObjNeeds(objectId) {
   const list = document.getElementById('obj-needs-list');
   if (!list) return;
@@ -652,7 +676,7 @@ async function _loadObjStages(objectId) {
   try {
     const { stages } = await api(`/api/objects/${objectId}/stages`);
     if (!stages.length) {
-      wrap.innerHTML = `<div class="obj-info-empty">Этапов пока нет</div>`;
+      wrap.innerHTML = `<div class="obj-stages-empty">План работ ещё не создан</div>`;
       return;
     }
     const currentIdx = stages.findIndex(s => s['Статус'] === 'в процессе');
@@ -683,6 +707,11 @@ function _renderStageRoadmapNode(s, idx, total, isCurrent) {
   const canWorkerComplete = currentRole !== 'owner' && isCurrent;
   const description = s['Описание'] || '';
   const canEditDescription = currentRole === 'owner';
+  // 29.07 v2: owner screenshot report -- textarea была ПОСТОЯННО видна в режиме просмотра
+  // (canEditDescription всегда true для owner), placeholder-текст выглядел как реальные
+  // данные этапа. Read/edit теперь явно разделены: по умолчанию всегда read-mode текст
+  // (или "Описание пока не добавлено"), owner получает кнопку "Редактировать" -- editor
+  // (textarea+Сохранить) появляется только после явного тапа, не по умолчанию.
   return `
   <div class="obj-stage-node" data-row="${s['_row']}" data-num="${s['№ этапа']}" draggable="false">
     <div class="obj-stage-drag-handle" title="Перетащить для смены порядка">⠿</div>
@@ -697,13 +726,18 @@ function _renderStageRoadmapNode(s, idx, total, isCurrent) {
         <span class="obj-stage-chevron">▾</span>
       </div>
       <div class="obj-stage-description-wrap" id="obj-stage-desc-${s['_row']}">
-        ${canEditDescription
-          ? `<textarea class="obj-stage-description-input" data-row="${s['_row']}" placeholder="Что нужно сделать на этом этапе: например, заклеить опасные места, подготовить под демонтаж, взять нужный инструмент…">${esc(description)}</textarea>
-             <button class="obj-stage-description-save" data-row="${s['_row']}" type="button" style="display:none;">Сохранить</button>`
-          : (description
-              ? `<div class="obj-stage-description-text">${esc(description)}</div>`
-              : `<div class="obj-stage-description-text obj-stage-description-empty">Описание пока не добавлено</div>`)
-        }
+        <div class="obj-stage-description-read" data-row="${s['_row']}">
+          <div class="obj-stage-description-text${description ? '' : ' obj-stage-description-empty'}">${description ? esc(description) : 'Описание пока не добавлено'}</div>
+          ${canEditDescription ? `<button class="obj-stage-description-edit-btn" data-row="${s['_row']}" type="button">Редактировать</button>` : ''}
+        </div>
+        ${canEditDescription ? `
+        <div class="obj-stage-description-editor" data-row="${s['_row']}" style="display:none;">
+          <textarea class="obj-stage-description-input" data-row="${s['_row']}" placeholder="Что нужно сделать на этом этапе: например, заклеить опасные места, подготовить под демонтаж, взять нужный инструмент…">${esc(description)}</textarea>
+          <div class="obj-stage-description-editor-actions">
+            <button class="obj-stage-description-cancel" data-row="${s['_row']}" type="button">Отмена</button>
+            <button class="obj-stage-description-save" data-row="${s['_row']}" type="button">Сохранить</button>
+          </div>
+        </div>` : ''}
         ${canWorkerComplete ? `<button class="obj-stage-complete-btn" data-row="${s['_row']}" type="button">Готово</button>` : ''}
       </div>
     </div>
@@ -715,34 +749,64 @@ function _attachObjStagesHandlers(objectId, stages) {
   // max-height transition вместо display:none/block -- плавная анимация без JS-таймера.
   document.querySelectorAll('.obj-stage-header[data-toggle-row]').forEach(header => {
     header.addEventListener('click', (e) => {
-      if (e.target.closest('.obj-stage-description-input, .obj-stage-description-save')) return;
+      if (e.target.closest('.obj-stage-description-input, .obj-stage-description-edit-btn, .obj-stage-description-save, .obj-stage-description-cancel')) return;
       const node = header.closest('.obj-stage-node');
       node.classList.toggle('expanded');
     });
   });
 
-  document.querySelectorAll('.obj-stage-description-input').forEach(textarea => {
-    textarea.addEventListener('input', () => {
-      const saveBtn = document.querySelector(`.obj-stage-description-save[data-row="${textarea.dataset.row}"]`);
-      if (saveBtn) saveBtn.style.display = 'inline-block';
+  // 29.07 v2: read/edit split -- "Редактировать" переключает read-блок на editor
+  // (textarea+Сохранить/Отмена), textarea больше не видна по умолчанию.
+  document.querySelectorAll('.obj-stage-description-edit-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const row = btn.dataset.row;
+      document.querySelector(`.obj-stage-description-read[data-row="${row}"]`).style.display = 'none';
+      const editor = document.querySelector(`.obj-stage-description-editor[data-row="${row}"]`);
+      editor.style.display = 'block';
+      editor.querySelector('.obj-stage-description-input')?.focus();
     });
+  });
+
+  document.querySelectorAll('.obj-stage-description-input').forEach(textarea => {
     // Не закрывать аккордеон тапом внутри textarea.
     textarea.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  document.querySelectorAll('.obj-stage-description-cancel').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const row = btn.dataset.row;
+      const editor = document.querySelector(`.obj-stage-description-editor[data-row="${row}"]`);
+      const original = document.querySelector(`.obj-stage-description-read[data-row="${row}"] .obj-stage-description-text`)?.textContent || '';
+      const textarea = editor.querySelector('.obj-stage-description-input');
+      if (textarea) textarea.value = original === 'Описание пока не добавлено' ? '' : original;
+      editor.style.display = 'none';
+      document.querySelector(`.obj-stage-description-read[data-row="${row}"]`).style.display = '';
+    });
   });
 
   document.querySelectorAll('.obj-stage-description-save').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const textarea = document.querySelector(`.obj-stage-description-input[data-row="${btn.dataset.row}"]`);
+      const row = btn.dataset.row;
+      const textarea = document.querySelector(`.obj-stage-description-input[data-row="${row}"]`);
       btn.disabled = true;
       btn.textContent = 'Сохраняю…';
       try {
-        await api(`/api/objects/${objectId}/stages/${btn.dataset.row}/description`, {
+        await api(`/api/objects/${objectId}/stages/${row}/description`, {
           method: 'PATCH',
           body: JSON.stringify({ description: textarea.value }),
         });
         hapticImpact('light');
-        btn.style.display = 'none';
+        // Обновляем read-блок текстом без полной перерисовки этапа (не теряем expanded-state).
+        const readWrap = document.querySelector(`.obj-stage-description-read[data-row="${row}"]`);
+        const readText = readWrap.querySelector('.obj-stage-description-text');
+        const val = textarea.value.trim();
+        readText.textContent = val || 'Описание пока не добавлено';
+        readText.classList.toggle('obj-stage-description-empty', !val);
+        document.querySelector(`.obj-stage-description-editor[data-row="${row}"]`).style.display = 'none';
+        readWrap.style.display = '';
       } catch (err) {
         showToast('Ошибка: ' + err.message, 'error');
       } finally {
