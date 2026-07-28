@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-28 (autonomous session, continued — expandable search circle)
+
+Commit `0d69608`, deployed. Full detail in `docs/plan-phases/06-chat-hub-rebuild.md`.
+
+### Added
+- Chat Hub search moved from a standalone `<input>` above the worker strip into an expandable circle that's the first item in the same horizontal ribbon (`frontend/app.html`'s `#chat-search-circle`, `frontend/js/chat.js`'s `_initChatSearchCircle()`/`_setChatSearchExpanded()`). Tap expands to full width with the icon shifting left, input focusing, and a close button appearing on the right; avatars hide while expanded. Collapses on close-tap or on blur-while-empty. 250ms debounce.
+- Search now covers the "Общий" tab (previously never filtered at all) and matches `last_preview` text on Объекты/Дефекты/Потребности, not just thread titles. A distinct "Ничего не найдено" empty state now appears when a query has zero matches, separate from each tab's normal empty-state text.
+- `data-no-swipe` added to the whole worker strip (search circle + avatars) — was missing since the strip was first added (commit `b5becd7`), closed while already touching this area.
+
+### Known, deliberate gap
+No SEARCHING/ERROR states or `AbortController` — search stays a synchronous client-side filter over already-loaded data (thread titles/worker names/message previews), since no backend full-text-search endpoint exists. Building fake network states for an operation with no network request would violate the same "don't imitate" principle already applied to read receipts elsewhere in this phase.
+
 ## 2026-07-28 (autonomous session, continued — chat polling consolidation + a concurrent-session note)
 
 Commit `9609941` on `main`. **Operational note, read before trusting this commit's title**: this repo currently has two independent Claude processes able to write to it concurrently with no locking — this autonomous phase-05-10 loop (`autonomous-miniapp.timer`, every 3h) and the separate always-on Telegram-bot agent process (`bot.py`'s persistent `claude -p` session, which the owner can direct to edit/commit here too, per the top-level `CLAUDE.md`'s instruction to read this repo's own `CLAUDE.md` first). Both were live at the same time this pass: while this session had `frontend/js/chat.js`/`critical-alerts.js`/`app.html` staged (not yet committed) for the polling-consolidation work below, the other process independently edited+committed 2 unrelated radio/FAB fixes (`018f648`, then `9609941`) and its commit swept up this session's already-staged files into its own commit message. Verified byte-for-byte: no content was lost or corrupted (`node --check` clean on every touched file, working-tree diff against `9609941` is empty) — only the commit message for the chat-polling work is wrong/misleading. Not rewriting history to fix it (repo governance requires explicit owner approval for that, and rebasing while a second live writer might commit again is its own risk) — recording the true attribution here instead. **If this happens again, both processes should commit more frequently/in smaller windows to shrink the race window; a real fix (lock file, or serializing the two agents) is a process/ops question for the owner, not something to unilaterally build into this repo's own tooling without asking.**
