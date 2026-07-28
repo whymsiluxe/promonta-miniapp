@@ -651,7 +651,6 @@ function _openChatThreadPrefsMenu(itemEl, prefsKey, payloadBase) {
   menu.innerHTML = `
     <button type="button" class="chat-thread-menu-item" data-pref="pinned">${prefs.pinned ? '✓ ' : ''}${prefs.pinned ? 'Открепить' : 'Закрепить'}</button>
     <button type="button" class="chat-thread-menu-item" data-pref="muted">${prefs.muted ? '✓ ' : ''}${prefs.muted ? 'Включить уведомления' : 'Заглушить'}</button>
-    <button type="button" class="chat-thread-menu-item" data-pref="archived">${prefs.archived ? '✓ ' : ''}${prefs.archived ? 'Вернуть из архива' : 'Архивировать'}</button>
   `;
   document.body.appendChild(backdrop);
   document.body.appendChild(menu);
@@ -948,17 +947,6 @@ async function initChatView() {
   _loadMyChatThreads();
   _loadChatThreadPrefs().then(renderChatThreadList); // pin/mute/archive приходят отдельным запросом, ре-рендерим когда готовы
   _initChatSearchCircle(); // idempotent -- поиск-input теперь в search circle внутри worker-strip
-
-  const archiveBtn = document.querySelector('.chat-archive-btn');
-  if (archiveBtn && !archiveBtn.dataset.wired) {
-    archiveBtn.dataset.wired = '1';
-    archiveBtn.addEventListener('click', () => {
-      _chatShowArchived = !_chatShowArchived;
-      archiveBtn.classList.toggle('active', _chatShowArchived);
-      hapticImpact('light');
-      renderChatThreadList();
-    });
-  }
 
   document.querySelectorAll('.chat-category-tabs [data-chat-category]').forEach(tab => {
     tab.addEventListener('click', () => {
