@@ -551,12 +551,9 @@ header h1 {
 .abw-day-reason { color: var(--text-light); font-size: 0.78rem; }
 
 /* ── Chat thread-selector (Фаза 6, Connecteam-полировка 10.14) ── */
-.chat-search-wrap { display: flex; align-items: center; gap: 0.5rem; padding: 0 0.75rem 0.6rem; }
-.chat-search-input {
-  flex: 1; min-width: 0; box-sizing: border-box; border: none; border-radius: var(--radius-md);
-  background: var(--bg-card); color: var(--text-main); padding: 0.55rem 0.85rem; font-size: 0.88rem;
-}
-.chat-search-input::placeholder { color: var(--text-light); }
+/* 28.07: поисковый input переехал в search circle внутри worker-strip, .chat-search-wrap
+   теперь несёт только archive-кнопку -- justify-end вместо растянутого flex:1 input. */
+.chat-search-wrap { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; padding: 0 0.75rem 0.6rem; }
 .chat-archive-btn {
   flex-shrink: 0; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
   border: none; border-radius: var(--radius-md); background: var(--bg-card); color: var(--text-light); cursor: pointer;
@@ -1178,7 +1175,10 @@ header h1 {
   display: grid;
   grid-template-columns: minmax(44px, auto) 1fr minmax(44px, auto);
   align-items: center;
-  padding: calc(1.25rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 1rem calc(1rem + var(--tg-safe-left, 0px));
+  /* 28.07: top-padding был 1.25rem (в разы больше, чем 0.35rem у общего <header>) --
+     title сидел заметно НИЖЕ уровня Telegram Close/back-btn вместо одной строки с
+     ними. Выравниваем под тот же паттерн, что общий header. */
+  padding: calc(0.35rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 1rem calc(1rem + var(--tg-safe-left, 0px));
 }
 .form-header .back-btn { grid-column: 1; }
 .form-header .bottom-sheet-close-btn { grid-column: 3; justify-self: end; }
@@ -2042,19 +2042,51 @@ body.view-locked {
 #view-chat .chat-back-btn:active { background: var(--chat-surface-hover); }
 #view-chat .chat-close-thread-btn { color: var(--chat-text-secondary); }
 
-#view-chat .chat-search-input { background: var(--chat-surface); color: var(--chat-text); border-color: var(--chat-border); }
-#view-chat .chat-search-input::placeholder { color: var(--chat-text-tertiary); }
 #view-chat .chat-archive-btn { color: var(--chat-text-secondary); }
 #view-chat .chat-archive-btn:active { background: var(--chat-surface-hover); }
 
 /* 28.07 (Phase 06): worker strip — горизонтальная лента активных работников над
    табами, тап открывает/лениво создаёт DM (см. openChatThread в chat.js). */
 .chat-worker-strip {
-  display: flex; gap: 0.7rem; overflow-x: auto; scrollbar-width: none;
-  padding: 0.2rem 0.75rem 0.85rem; -webkit-overflow-scrolling: touch;
+  display: flex; align-items: center; gap: 0.7rem;
+  padding: 0.2rem 0.75rem 0.85rem;
 }
-.chat-worker-strip::-webkit-scrollbar { display: none; }
-.chat-worker-strip:empty { display: none; }
+.chat-worker-strip-avatars {
+  display: flex; gap: 0.7rem; overflow-x: auto; scrollbar-width: none;
+  -webkit-overflow-scrolling: touch; min-width: 0; flex: 1;
+}
+.chat-worker-strip-avatars::-webkit-scrollbar { display: none; }
+/* 28.07 (Phase 06): при активном поиске аватары скрываются целиком ("исчезают" из
+   спеки) -- проще и надёжнее, чем анимировать индивидуальный slide-away каждого. */
+.chat-worker-strip.search-active .chat-worker-strip-avatars { display: none; }
+.chat-search-circle {
+  position: relative; flex-shrink: 0; display: flex; align-items: center;
+  width: 56px; height: 56px; border-radius: 999px; overflow: hidden;
+  background: var(--chat-surface); border: 1px solid var(--chat-border);
+  transition: width 260ms cubic-bezier(.22,1,.36,1), border-radius 260ms cubic-bezier(.22,1,.36,1);
+}
+.chat-search-circle.expanded { width: 100%; border-radius: 18px; }
+.chat-search-icon-btn {
+  flex-shrink: 0; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center;
+  background: none; border: none; color: var(--chat-text-secondary); cursor: pointer; padding: 0;
+  transition: transform 200ms;
+}
+.chat-search-circle.expanded .chat-search-icon-btn { transform: scale(0.94) translateX(-2px); }
+.chat-search-circle-input {
+  flex: 1; min-width: 0; border: none; background: none; outline: none;
+  font-size: 0.95rem; color: var(--chat-text); opacity: 0; pointer-events: none;
+  transition: opacity 180ms; padding-right: 0.25rem;
+}
+.chat-search-circle.expanded .chat-search-circle-input { opacity: 1; pointer-events: auto; }
+.chat-search-circle-input::placeholder { color: var(--chat-text-tertiary); }
+.chat-search-close-btn {
+  flex-shrink: 0; width: 40px; height: 56px; display: none; align-items: center; justify-content: center;
+  background: none; border: none; color: var(--chat-text-secondary); cursor: pointer; padding: 0;
+}
+.chat-search-circle.expanded .chat-search-close-btn { display: flex; }
+@media (prefers-reduced-motion: reduce) {
+  .chat-search-circle, .chat-search-icon-btn, .chat-search-circle-input { transition: none !important; }
+}
 .chat-worker-avatar-item {
   display: flex; flex-direction: column; align-items: center; gap: 0.25rem;
   width: 60px; flex-shrink: 0; cursor: pointer; -webkit-tap-highlight-color: transparent;
@@ -3847,12 +3879,21 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
       <h1>Чат</h1>
     </header>
     <div class="chat-search-wrap">
-      <input type="text" id="chat-thread-search" class="chat-search-input" placeholder="Поиск">
       <button class="chat-archive-btn" type="button" aria-label="Архив" title="Архив"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 4h18v4H3zM5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 13h4"/></svg></button>
     </div>
-    <!-- 28.07 (Phase 06, частично -- search circle из спеки остаётся отдельным input
-         выше до полного expandable-search рёбилда, см. docs/plan-phases/06-chat-hub-rebuild.md) -->
-    <div id="chat-worker-strip" class="chat-worker-strip"></div>
+    <!-- 28.07 (Phase 06): search circle слит в одну ленту с worker-strip, первым
+         элементом, как в спеке. Раскрывается по тапу (icon-btn), схлопывается по ×
+         или blur-если-пусто. Полнотекстовый поиск по сообщениям не реализован (нет
+         backend search endpoint) -- фильтр client-side по уже загруженным заголовкам
+         тредов/именам/превью, см. chat.js _initChatSearchCircle(). -->
+    <div id="chat-worker-strip" class="chat-worker-strip" data-no-swipe>
+      <div class="chat-search-circle" id="chat-search-circle">
+        <button class="chat-search-icon-btn" id="chat-search-icon-btn" type="button" aria-label="Поиск"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <input type="text" id="chat-thread-search" class="chat-search-circle-input" placeholder="Поиск" autocomplete="off">
+        <button class="chat-search-close-btn" id="chat-search-close-btn" type="button" aria-label="Закрыть поиск" tabindex="-1"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="chat-worker-strip-avatars" id="chat-worker-strip-avatars"></div>
+    </div>
     <div class="chat-filter-tabs chat-category-tabs">
       <div class="doc-type-opt active" data-chat-category="general">Общий</div>
       <div class="doc-type-opt" data-chat-category="dm">Личные</div>

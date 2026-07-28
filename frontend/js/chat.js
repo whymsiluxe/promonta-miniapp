@@ -492,10 +492,11 @@ async function _loadChatWorkers() {
 }
 
 // 28.07 (Phase 06): горизонтальная лента работников над табами -- тап открывает/
-// лениво создаёт DM. Search-circle из спеки пока отдельный <input> выше (полный
-// expandable-search state machine — отдельный, более крупный пункт плана).
+// лениво создаёт DM. Рендерит только в #chat-worker-strip-avatars -- search circle
+// (первый элемент ленты, см. app.html) остаётся статичной разметкой, не перезаписывается
+// на каждый re-render, иначе терялись бы фокус/введённый текст/expanded-состояние.
 function _renderChatWorkerStrip() {
-  const strip = document.getElementById('chat-worker-strip');
+  const strip = document.getElementById('chat-worker-strip-avatars');
   if (!strip) return;
   strip.innerHTML = _chatWorkers.map(w => {
     const hue = _chatAvatarHue(w.user_id);
@@ -514,6 +515,64 @@ function _renderChatWorkerStrip() {
   strip.querySelectorAll('.chat-worker-avatar-item').forEach(item => {
     item.addEventListener('click', () => openChatThread(item.dataset.workerId, item.dataset.workerName));
   });
+}
+
+// 28.07 (Phase 06): expandable search circle, слит в одну ленту с worker-strip (спека).
+// Остаётся client-side (фильтр по уже загруженным заголовкам/именам/preview) -- полнотекстовый
+// поиск по истории сообщений потребовал бы нового backend search endpoint, вне рамок этого
+// прохода (см. docs/plan-phases/06-chat-hub-rebuild.md). Поэтому нет отдельных
+// SEARCHING/ERROR-состояний из спеки -- нет сетевого запроса, которому нужен был бы
+// AbortController/таймаут; debounce остаётся ради плавности рендера на каждый keystroke.
+let _chatSearchDebounceTimer = null;
+
+function _setChatSearchExpanded(expanded) {
+  const circle = document.getElementById('chat-search-circle');
+  const strip = document.getElementById('chat-worker-strip');
+  if (!circle) return;
+  circle.classList.toggle('expanded', expanded);
+  if (strip) strip.classList.toggle('search-active', expanded);
+}
+
+function _initChatSearchCircle() {
+  const circle = document.getElementById('chat-search-circle');
+  const iconBtn = document.getElementById('chat-search-icon-btn');
+  const closeBtn = document.getElementById('chat-search-close-btn');
+  const input = document.getElementById('chat-thread-search');
+  if (!circle || circle.dataset.wired) return; // идемпотентно -- initChatView может перевызываться
+  circle.dataset.wired = '1';
+
+  iconBtn.addEventListener('click', () => {
+    _setChatSearchExpanded(true);
+    input.focus();
+    hapticImpact('light');
+  });
+  closeBtn.addEventListener('click', () => {
+    input.value = '';
+    _chatSearchQuery = '';
+    _setChatSearchExpanded(false);
+    renderChatThreadList();
+  });
+  input.addEventListener('blur', () => {
+    if (!input.value.trim()) _setChatSearchExpanded(false);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') input.blur();
+  });
+  input.addEventListener('input', () => {
+    if (_chatSearchDebounceTimer) clearTimeout(_chatSearchDebounceTimer);
+    _chatSearchDebounceTimer = setTimeout(() => {
+      _chatSearchQuery = input.value;
+      renderChatThreadList();
+    }, 250);
+  });
+
+  // "сохранять query при возврате из найденного чата" (спека) -- _chatSearchQuery не
+  // сбрасывается при открытии/закрытии треда, initChatView может перевызываться при
+  // повторном открытии таба Чат, восстанавливаем визуальное expanded-состояние.
+  if (_chatSearchQuery) {
+    input.value = _chatSearchQuery;
+    _setChatSearchExpanded(true);
+  }
 }
 
 let _chatUnreadByThread = {};
@@ -571,7 +630,14 @@ function renderChatThreadList() {
     const t = _threadByKey('group');
     const preview = t?.last_preview ? _escChat(t.last_preview) : 'Команда Promonta';
     const time = _threadTimeLabel(t?.last_ts);
-    const groupItem = `
+    // 28.07 (Phase 06): "Общий" раньше вообще не фильтровался поиском -- матчим по
+    // названию+превью последнего сообщения (полная история сообщений не загружена
+    // на фронт, реальный full-text поиск по чату потребовал бы backend endpoint).
+    const generalMatches = !q || 'общий чат'.includes(q) || (t?.last_preview || '').toLowerCase().includes(q);
+    if (!generalMatches) {
+      listEl.innerHTML = '<div class="chat-empty">Ничего не найдено</div>';
+    } else {
+      listEl.innerHTML = `
       <div class="chat-thread-item" data-thread="">
         <div class="chat-thread-avatar group"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
         <div class="chat-thread-info">
@@ -583,7 +649,7 @@ function renderChatThreadList() {
           ${_threadBadge(_chatUnreadByThread.group || 0)}
         </div>
       </div>`;
-    listEl.innerHTML = groupItem;
+    }
   } else if (_chatCategory === 'dm') {
     const filteredWorkers = q ? _chatWorkers.filter(w => (w.name || '').toLowerCase().includes(q)) : _chatWorkers;
     listEl.innerHTML = filteredWorkers.map(w => {
@@ -606,11 +672,11 @@ function renderChatThreadList() {
           ${_threadBadge(_chatUnreadByThread[String(w.user_id)] || 0)}
         </div>
       </div>`;
-    }).join('') || '<div class="chat-empty">Нет личных чатов</div>';
+    }).join('') || `<div class="chat-empty">${q ? 'Ничего не найдено' : 'Нет личных чатов'}</div>`;
   } else {
     const prefix = _chatCategory === 'obj' ? 'obj:' : _chatCategory === 'mangel' ? 'mangel:' : 'task:';
     let filtered = _chatMyThreads.filter(t => t.thread_key.startsWith(prefix));
-    if (q) filtered = filtered.filter(t => t.title.toLowerCase().includes(q));
+    if (q) filtered = filtered.filter(t => t.title.toLowerCase().includes(q) || (t.last_preview || '').toLowerCase().includes(q));
     listEl.innerHTML = filtered.map(t => `
       <div class="chat-thread-item" data-thread-key="${t.thread_key}">
         <div class="chat-thread-avatar group" style="background:${_chatCategory === 'obj' ? 'color-mix(in srgb, var(--c-brass, var(--accent)) 16%, var(--bg-card-raised))' : 'color-mix(in srgb, #9A4B42 16%, var(--bg-card-raised))'};color:${_chatCategory === 'obj' ? 'var(--c-brass, var(--accent))' : '#9A4B42'};border-color:${_chatCategory === 'obj' ? 'color-mix(in srgb, var(--c-brass, var(--accent)) 35%, transparent)' : 'color-mix(in srgb, #9A4B42 35%, transparent)'}"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
@@ -622,7 +688,7 @@ function renderChatThreadList() {
           ${_threadTimeLabel(t.last_ts) ? `<span class="chat-thread-time">${_threadTimeLabel(t.last_ts)}</span>` : ''}
           ${_threadBadge(_chatUnreadByThread[t.thread_key] || 0)}
         </div>
-      </div>`).join('') || '<div class="chat-empty">Чатов пока нет</div>';
+      </div>`).join('') || `<div class="chat-empty">${q ? 'Ничего не найдено' : 'Чатов пока нет'}</div>`;
   }
 
   listEl.querySelectorAll('[data-thread-key]').forEach(item => {
@@ -754,14 +820,7 @@ async function initChatView() {
   renderChatThreadList();
   _loadUnreadByThread();
   _loadMyChatThreads();
-
-  const searchInput = document.getElementById('chat-thread-search');
-  if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      _chatSearchQuery = searchInput.value;
-      renderChatThreadList();
-    });
-  }
+  _initChatSearchCircle(); // idempotent -- поиск-input теперь в search circle внутри worker-strip
 
   document.querySelectorAll('.chat-category-tabs [data-chat-category]').forEach(tab => {
     tab.addEventListener('click', () => {
