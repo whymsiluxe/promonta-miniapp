@@ -2107,6 +2107,15 @@ def _chat_thread_id(user_id: str, to_user_id: str | None) -> str:
     return '-'.join(sorted([str(user_id), str(to_user_id)]))
 
 
+def _reject_self_chat(user_id, to_user_id: str | None):
+    """Phase 06 audit: self-DM was never explicitly blocked -- a buggy/replayed
+    client sending to_user_id == own id would silently create a degenerate
+    'uid-uid' thread. Group (to_user_id falsy) and obj:/mangel:/task: threads
+    (thread_key path) are unaffected."""
+    if to_user_id and str(to_user_id) == str(user_id):
+        raise HTTPException(400, "Нельзя написать самому себе")
+
+
 def _object_chat_participants(object_id: str) -> list:
     roles = _load_roles()
     owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
@@ -2321,6 +2330,7 @@ def post_chat_attachment(thread_key: str = Form(''), to_user_id: str = Form(''),
     if thread_key:
         _check_thread_access(thread_key, str(user['id']), role)
     else:
+        _reject_self_chat(user['id'], to_user_id or None)
         thread_id = _chat_thread_id(user['id'], to_user_id or None)
         thread_meta = _load_chat_thread_meta()
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
@@ -2433,6 +2443,7 @@ async def post_chat_voice(thread_key: str = Form(''), to_user_id: str = Form('')
     if thread_key:
         _check_thread_access(thread_key, str(user['id']), role)
     else:
+        _reject_self_chat(user['id'], to_user_id or None)
         thread_id = _chat_thread_id(user['id'], to_user_id or None)
         thread_meta = _load_chat_thread_meta()
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
@@ -2545,6 +2556,7 @@ def post_chat_message(body: ChatMessageBody, user: dict = Depends(get_current_us
     if body.thread_key:
         _check_thread_access(body.thread_key, str(user['id']), role)
     else:
+        _reject_self_chat(user['id'], body.to_user_id)
         thread_id = _chat_thread_id(user['id'], body.to_user_id)
         thread_meta = _load_chat_thread_meta()
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
