@@ -94,6 +94,12 @@ const NavigationManager = (() => {
   function _syncTelegramBackButton() {
     try {
       const tgBack = window.Telegram?.WebApp?.BackButton;
+      // 28.07 (Phase 04 remainder, item 3): "never both at once" -- в реальном Telegram-
+      // клиенте показывается системная BackButton (вне WebView), но .chat-back-btn в шапке
+      // рендерился одновременно с ней, т.к. ничего не проверяло её наличие. body-класс
+      // прячет ВСЕ .chat-back-btn через CSS, когда нативная кнопка доступна -- остаётся
+      // видимой только в браузере/dev-preview, где Telegram.WebApp.BackButton не существует.
+      document.body.classList.toggle('tg-native-back', !!tgBack);
       if (!tgBack) return; // версия клиента может не поддерживать — не считаем ошибкой
       if (overlayStack.length || stack.length > 1) {
         tgBack.show();
@@ -107,6 +113,8 @@ const NavigationManager = (() => {
     try {
       window.Telegram?.WebApp?.BackButton?.onClick(() => back());
     } catch (e) {}
+
+    _syncTelegramBackButton();
 
     // Android hardware back / браузерный back — тот же .back(), не системный переход.
     window.addEventListener('popstate', (e) => {
