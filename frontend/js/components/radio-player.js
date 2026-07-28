@@ -12,12 +12,15 @@ const RADIO_ICON_CLOSE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="
 const RADIO_ICON_WAVE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="2.5" height="4" fill="currentColor"><animate attributeName="height" values="4;12;4" dur="0.9s" repeatCount="indefinite"/><animate attributeName="y" values="10;6;10" dur="0.9s" repeatCount="indefinite"/></rect><rect x="10.5" y="7" width="2.5" height="10" fill="currentColor"><animate attributeName="height" values="10;16;10" dur="0.9s" begin="0.15s" repeatCount="indefinite"/><animate attributeName="y" values="7;4;7" dur="0.9s" begin="0.15s" repeatCount="indefinite"/></rect><rect x="17" y="9" width="2.5" height="6" fill="currentColor"><animate attributeName="height" values="6;14;6" dur="0.9s" begin="0.3s" repeatCount="indefinite"/><animate attributeName="y" values="9;5;9" dur="0.9s" begin="0.3s" repeatCount="indefinite"/></rect></svg>';
 
 function _radioStateLabel(s) {
-  if (s.state === 'LOADING') return 'Подключение…';
-  if (s.state === 'BUFFERING') return 'Буферизация…';
+  // Название убранного верхнего блока (station.name) теперь показывается тут же,
+  // рядом со статусом -- единственное место в компактной версии, где видно, что играет.
+  const name = s.station ? s.station.name : null;
+  if (s.state === 'LOADING') return name ? `Подключение… · ${name}` : 'Подключение…';
+  if (s.state === 'BUFFERING') return name ? `Буферизация… · ${name}` : 'Буферизация…';
   if (s.state === 'ERROR') return 'Не удалось запустить радио';
   if (s.state === 'OFFLINE') return 'Нет подключения к интернету';
-  if (s.state === 'PLAYING') return 'В эфире';
-  if (s.state === 'PAUSED') return 'На паузе';
+  if (s.state === 'PLAYING') return name ? `В эфире · ${name}` : 'В эфире';
+  if (s.state === 'PAUSED') return name ? `На паузе · ${name}` : 'На паузе';
   return 'Выберите станцию';
 }
 
@@ -34,21 +37,17 @@ function renderHomeRadioPlayer() {
   mount.innerHTML = `
     <div class="home-radio-player" id="home-radio-player">
       <div class="home-radio-glow"></div>
-      <div class="home-radio-top">
-        <div class="home-radio-title" id="home-radio-title">PROMONTA RADIO</div>
-        <div class="home-radio-sub" id="home-radio-sub">Выберите станцию</div>
-      </div>
       <div class="home-radio-controls">
         <button class="home-radio-ctrl-btn" id="home-radio-prev" type="button" aria-label="Предыдущая станция">${RADIO_ICON_PREV}</button>
         <button class="home-radio-play-btn" id="home-radio-playpause" type="button" aria-label="Воспроизвести">${RADIO_ICON_PLAY}</button>
         <button class="home-radio-ctrl-btn" id="home-radio-next" type="button" aria-label="Следующая станция">${RADIO_ICON_NEXT}</button>
       </div>
-      <div class="home-radio-stations-viewport">
-        <div class="home-radio-stations" id="home-radio-stations" aria-live="off"></div>
-      </div>
       <div class="home-radio-status-row">
         <span class="home-radio-live-dot" id="home-radio-live-dot" style="display:none;"></span>
         <span id="home-radio-status" aria-live="polite">Выберите станцию</span>
+      </div>
+      <div class="home-radio-stations-viewport">
+        <div class="home-radio-stations" id="home-radio-stations" aria-live="off"></div>
       </div>
     </div>
   `;
@@ -130,13 +129,11 @@ function _onRadioStationsScroll(e) {
 function _updateHomeRadioUi(s) {
   const root = document.getElementById('home-radio-player');
   if (!root) return; // ушли с Home, mount уже не в DOM -- подписка просто no-op'ит
-  const sub = document.getElementById('home-radio-sub');
   const playBtn = document.getElementById('home-radio-playpause');
   const statusEl = document.getElementById('home-radio-status');
   const liveDot = document.getElementById('home-radio-live-dot');
   const playing = s.state === 'PLAYING' || s.state === 'BUFFERING' || s.state === 'LOADING';
 
-  sub.textContent = s.station ? s.station.name : 'Выберите станцию ниже';
   playBtn.innerHTML = playing ? RADIO_ICON_PAUSE : RADIO_ICON_PLAY;
   playBtn.setAttribute('aria-label', playing ? 'Пауза' : 'Воспроизвести');
   playBtn.classList.toggle('is-loading', s.state === 'LOADING' || s.state === 'BUFFERING');
