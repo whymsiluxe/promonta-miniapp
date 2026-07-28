@@ -852,7 +852,10 @@ let _objTabSwipeExcluded = false;
 const OBJ_TAB_SWIPE_THRESHOLD = 50;
 
 function _isObjTabSwipeExcluded(target) {
-  return !!target.closest?.('#obj-detail-tabs, .chat-messages, .chat-input-bar, .obj-stage-move-col, .obj-info-doc-viewer, #obj-info-doc-viewer, input, textarea');
+  // 28.07: .obj-stage-move-col удалён (заменён drag-handle), новые классы аккордеона/drag
+  // добавлены -- без этого глобальный tab-swipe перехватывал тап по заголовку этапа
+  // (не давая аккордеону открыться) и конфликтовал с drag-перетаскиванием.
+  return !!target.closest?.('#obj-detail-tabs, .chat-messages, .chat-input-bar, .obj-stage-header, .obj-stage-drag-handle, .obj-stages-roadmap, .obj-info-doc-viewer, #obj-info-doc-viewer, input, textarea');
 }
 
 function _currentObjDetailTab() {
