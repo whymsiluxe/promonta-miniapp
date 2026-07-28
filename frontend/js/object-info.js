@@ -899,7 +899,16 @@ async function embedObjectChat(objectId, objectName) {
   document.body.style.top = `-${_objChatScrollY}px`;
   document.body.classList.add('view-locked');
 
-  _updateObjChatOffset();
+  // 28.07 v2: owner report -- поле ввода всё ещё оказывалось высоко с пустым местом
+  // под ним ПРИ ПЕРВОМ входе в таб. Root cause: _updateObjChatOffset() вызывался
+  // синхронно в том же кадре, что body.style.top/classList.add('view-locked') --
+  // браузер ещё не применил эти изменения (layout/paint не прошли), getBoundingClientRect()
+  // табов возвращал устаревшие координаты, --obj-detail-chat-offset считался неверным
+  // (скорее всего заниженным/нулевым из старой немодифицированной позиции документа),
+  // из-за чего calc(vp - offset) давал слишком маленькую высоту панели. rAF даёт браузеру
+  // кадр на применение стилей перед первым вычислением; ResizeObserver ниже перехватывает
+  // все последующие изменения (переключение таба туда-обратно и т.п.) уже без этой гонки.
+  requestAnimationFrame(_updateObjChatOffset);
   if (!_objChatOffsetObserver && window.ResizeObserver) {
     _objChatOffsetObserver = new ResizeObserver(_updateObjChatOffset);
     _objChatOffsetObserver.observe(document.getElementById('obj-detail-tabs'));
