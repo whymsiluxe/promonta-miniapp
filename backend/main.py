@@ -3411,6 +3411,26 @@ def update_task_status(task_id: str, body: TaskStatusBody, user: dict = Depends(
     task['status'] = body.status
     if body.status == 'закрыто':
         task['closed_at'] = int(time.time())
+        # 28.07: owner request -- закрытые потребности не засорять основной список,
+        # но не терять данные -- архивируем строкой в Google Sheet ("Потребности"
+        # вкладка, тот же SHEET_ID что Объекты/Дефекты/Zeiterfassung), затем убираем
+        # из рабочего JSON. Экспорт best-effort -- сбой Sheets API не должен блокировать
+        # закрытие потребности воркеру/owner (тот же паттерн что _write_zeiterfassung_row).
+        try:
+            import objekte_lib as o
+            from datetime import datetime
+            created_str = datetime.fromtimestamp(task.get('created_at', 0)).strftime('%Y-%m-%d %H:%M') if task.get('created_at') else ''
+            closed_str = datetime.fromtimestamp(task['closed_at']).strftime('%Y-%m-%d %H:%M')
+            o.append_row_safe('Потребности', [
+                task.get('id', ''), task.get('object_id', ''), task.get('title', ''),
+                task.get('description', ''), task.get('category', ''), task.get('priority', ''),
+                task.get('from_name', task.get('from_user_id', '')), created_str, closed_str,
+            ])
+        except Exception as e:
+            print(f'WARNING: не удалось заархивировать потребность {task_id} в Sheets: {e}')
+        items = [t for t in items if t['id'] != task_id]
+        _save_tasks(items)
+        return task
     _save_tasks(items)
     return task
 
