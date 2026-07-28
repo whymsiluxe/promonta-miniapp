@@ -1059,18 +1059,22 @@ header h1 {
 #obj-detail-tabs .doc-type-opt { flex-shrink: 0; padding: 0.5rem 0.9rem; }
 .obj-detail-panel { padding: 0 0.75rem; min-height: 40vh; }
 
-/* ── Чат-таб объекта -- встроен под таб-баром, не поверх всего экрана (24.07 Step 2 v2) ──
-   Высота считается через ResizeObserver на #obj-detail-tabs (JS ниже, переменная
-   --obj-detail-chat-offset) + тот же --tg-vp-height, что держит клавиатуру всех
-   остальных full-height экранов -- один источник истины, не дублируем rAF-логику. */
+/* ── Чат-таб объекта (29.07 v3, полный редизайн layout) ──────────────────────────
+   ПРЕЖНИЙ подход (JS ResizeObserver → --obj-detail-chat-offset → top:<px>) три раза не
+   срабатывал на реальном устройстве (rAF-фикс, reorder-фикс -- оба не помогли, owner
+   report "composer посреди экрана, огромная пустота снизу"). Root cause архитектурный,
+   не timing: JS-измеренный top зависит от getBoundingClientRect() внешних табов в
+   ТЕКУЩЕМ document flow -- ЛЮБАЯ рассинхронизация (scroll, layout thrash, разный порядок
+   событий на разных WebView) даёт неверную высоту. Единственное место в проекте, которое
+   НАДЁЖНО работает -- root #view-chat.active / .photo-comments-modal: оба используют
+   inset:0 + var(--tg-vp-height), БЕЗ JS-измеренного top. Тот же паттерн здесь: embedded
+   чат становится full-viewport оверлеем СО СВОИМ header (название объекта + 3 таба
+   вкладки Object Detail), а не пытается встроиться под уже отрендеренные внешние табы. */
 #obj-detail-panel-chat.obj-chat-active {
   position: fixed;
-  left: 0; right: 0;
-  margin: 0 auto;
+  inset: 0;
   width: 100%;
-  max-width: 480px;
-  top: var(--obj-detail-chat-offset, 120px);
-  height: calc(var(--tg-vp-height, 100dvh) - var(--obj-detail-chat-offset, 120px));
+  height: var(--tg-vp-height, 100dvh);
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -1078,10 +1082,18 @@ header h1 {
   background: var(--bg-app);
   overflow: hidden;
 }
-#obj-detail-panel-chat.obj-chat-active #chat-thread-detail-view {
-  display: flex; flex: 1; min-height: 0; width: 100%;
+#obj-detail-panel-chat.obj-chat-active #obj-chat-embed-header {
+  flex: 0 0 auto;
 }
-#obj-detail-panel-chat.obj-chat-active #chat-thread-detail-view header { display: none; } /* заголовок треда не нужен -- уже есть header объекта + таб-бар сверху */
+#obj-detail-panel-chat.obj-chat-active #chat-thread-detail-view {
+  display: flex; flex: 1 1 auto; min-height: 0; width: 100%;
+}
+#obj-detail-panel-chat.obj-chat-active #chat-thread-detail-view header { display: none; } /* заголовок треда не нужен -- свой header (см. #obj-chat-embed-header) уже показывает название объекта + табы */
+#obj-chat-embed-header {
+  display: flex; flex-direction: column;
+}
+#obj-chat-embed-header .form-header { padding-bottom: 0.5rem; }
+#obj-chat-embed-header #obj-detail-tabs { margin: 0; padding: 0 0.75rem 0.6rem; }
 
 /* ── Инфо-таб объекта (24.07, Step 3) ── */
 .obj-info-section { margin: 1rem 0; }
@@ -1269,17 +1281,9 @@ header h1 {
   top: 46px;
   left: 46px;
 }
-/* 28.07 v4: owner report -- на экране Объекта (#obj-detail-back) top:46px уносил
-   кнопку СЛИШКОМ низко, на строку табов (Чат/Инфо/Этапы/Потребности) ниже заголовка,
-   вместо того чтобы остаться в одной строке с "Квартира Вебер". Этот .form-header
-   ниже, чем у остальных nested-экранов (h1 крупнее, свой контекст) -- меньший offset
-   тут держит кнопку рядом с title, всё ещё ниже Close по вертикали. */
-#obj-detail-back {
-  /* 28.07 v6: 8px было мало -- Close всё ещё перекрывал верх кнопки (обрезанная
-     стрелка на скрине). 46px было много -- залезало на строку табов. */
-  top: 28px;
-  left: 0;
-}
+/* 29.07: top/left magic-offset убран -- в реальном Telegram кнопка теперь скрыта целиком
+   (см. body.tg-native-back #obj-detail-back), офсет под Close ей больше не нужен.
+   В dev-preview кнопка остаётся на обычном месте .form-header .back-btn. */
 .form-header .back-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
 
 .form-header h1 {
@@ -1747,16 +1751,9 @@ body.chat-dialog-open .bottom-nav { display: none; }
   line-height: 1;
   flex-shrink: 0;
 }
-/* 28.07: owner report -- на экране треда чата (#chat-thread-back-btn) стрелка
-   перекрывается Telegram Close (тот же баг, что уже чинили для .form-header/
-   .fw-header back-btn -- этот конкретный экземпляр не использует
-   onclick="NavigationManager.back()", поэтому не попадает под общий tg-native-back
-   селектор скрытия, и тот прошлый фикс сюда не докатился). Тот же offset. */
-#chat-thread-back-btn {
-  position: relative;
-  top: 46px;
-  left: 0px;
-}
+/* 29.07: top/left magic-offset убран -- в реальном Telegram кнопка теперь скрыта целиком
+   (см. body.tg-native-back #chat-thread-back-btn ниже), офсет под Close ей больше не
+   нужен. В dev-preview (нет Telegram Close вообще) кнопка остаётся на обычном месте. */
 .chat-back-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
 /* 28.07 (Phase 04 remainder, item 3): в реальном Telegram-клиенте нативная BackButton уже
    выполняет эту роль -- скрываем ТОЛЬКО кнопки, которые реально дублируют NavigationManager.back()
@@ -1767,6 +1764,16 @@ body.chat-dialog-open .bottom-nav { display: none; }
    селектор точно бьёт по всем 7 местам с inline onclick="NavigationManager.back()", как fallback
    для браузера/dev-preview, где Telegram.WebApp.BackButton недоступен, остаётся видимым. */
 body.tg-native-back [onclick="NavigationManager.back()"] { display: none; }
+/* 29.07: #obj-detail-back и #chat-thread-back-btn НЕ используют inline onclick (bind через
+   addEventListener в JS) -- атрибутный селектор выше их не ловит, оба оставались видимыми
+   рядом с Telegram BackButton (owner screenshot -- двойная стрелка на Object Detail).
+   Оба зарегистрированы в навигации (Object Detail -- NavigationManager.registerOverlay,
+   chat thread -- switchView), т.е. Telegram BackButton гарантированно их дублирует, ровно
+   тот же случай, что и остальные 7. Явные ID вместо попытки унифицировать под общий
+   селектор -- меньше риска зацепить чужую кнопку той же переиспользуемой .back-btn/
+   .chat-back-btn разметкой. */
+body.tg-native-back #obj-detail-back,
+body.tg-native-back #chat-thread-back-btn { display: none; }
 
 /* ── NavigationHeader (25.07, Phase 0.5) -- 3D ivory back-кнопка по спеку плана ──
    .nav-back-btn расширяет .chat-back-btn (JS добавляет класс + chevron SVG, не заменяет) --
@@ -4662,16 +4669,9 @@ async function initApp() {
     requestAnimationFrame(() => {
       const activeView = document.querySelector('.view.active');
       if (activeView) activeView.classList.toggle('header-scrolled', window.scrollY > 24);
-      // 28.07: owner report -- встроенный чат объекта (#obj-detail-panel-chat.obj-chat-active,
-      // position:fixed) "наезжал" на заголовок/табы при протяжке экрана. Root cause: --obj-detail-
-      // chat-offset пересчитывался только через ResizeObserver на #obj-detail-tabs (изменение
-      // РАЗМЕРА), не на body-level scroll (изменение ПОЗИЦИИ) -- сам #view-object-detail скроллится
-      // обычным document-flow (см. комментарий выше), табы физически уезжают вместе со скроллом,
-      // а top у зафиксированного чата остаётся приклеен к устаревшей координате. Пересчитываем
-      // offset тем же throttled rAF, что уже используется здесь для header-scrolled.
-      if (typeof _updateObjChatOffset === 'function' && document.getElementById('obj-detail-panel-chat')?.classList.contains('obj-chat-active')) {
-        _updateObjChatOffset();
-      }
+      // 29.07: --obj-detail-chat-offset пересчёт убран -- встроенный чат теперь inset:0
+      // full-viewport оверлей (см. object-info.js embedObjectChat), больше не зависит от
+      // scroll-позиции внешнего документа.
       _headerScrollTicking = false;
     });
   }, { passive: true });

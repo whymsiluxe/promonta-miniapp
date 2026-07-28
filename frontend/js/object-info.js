@@ -847,25 +847,29 @@ async function _stageDragEnd(objectId, stages) {
   }
 }
 
-// ═══════════ Встроенный чат объекта — Step 2 v2 (24.07) ═══════════
+// ═══════════ Встроенный чат объекта — Step 2 v2 (24.07), layout rebuild (29.07 v3) ═══════════
 // Физически переносит #chat-thread-detail-view DOM-узел (со всей его viewport/composer
 // логикой нетронутой) из его обычного места внутри #view-chat в панель этого таба, и
 // возвращает обратно при выходе -- не дублируем chat.js, не строим параллельный рендер.
+//
+// 29.07 v3: JS-измеренный top (--obj-detail-chat-offset через ResizeObserver+rAF) снят
+// целиком -- три попытки (rAF, reorder, view-locked+scrollY save/restore) не решили owner
+// report "composer посреди экрана". Новый подход копирует единственный в проекте паттерн,
+// который реально надёжен (#view-chat.active/.photo-comments-modal): inset:0 + var(--tg-vp-height),
+// НИКАКОГО JS-измерения чужого DOM. Панель чата физически переносит к себе ещё и
+// .form-header+#obj-detail-tabs (не клонирует -- один DOM-узел, одни и те же обработчики
+// кликов таба продолжают работать), так что заголовок объекта и переключатель вкладок
+// остаются видны поверх fullscreen чата без пересчёта чьей-либо позиции.
 let _objChatHomeParent = null;
-let _objChatScrollY = null; // window.scrollY на момент embed, восстанавливается при unembed
 let _objChatHomeNextSibling = null;
-let _objChatOffsetObserver = null;
-
-function _updateObjChatOffset() {
-  const tabs = document.getElementById('obj-detail-tabs');
-  if (!tabs) return;
-  const rect = tabs.getBoundingClientRect();
-  document.documentElement.style.setProperty('--obj-detail-chat-offset', `${rect.bottom}px`);
-}
+let _objChatHeaderHomeParent = null;
+let _objChatHeaderHomeNextSibling = null;
 
 async function embedObjectChat(objectId, objectName) {
   const panel = document.getElementById('obj-detail-panel-chat');
   const chatView = document.getElementById('chat-thread-detail-view');
+  const formHeader = document.querySelector('#view-object-detail > .form-header');
+  const tabs = document.getElementById('obj-detail-tabs');
   if (!panel || !chatView) return;
 
   if (!_objChatHomeParent) {
@@ -873,6 +877,17 @@ async function embedObjectChat(objectId, objectName) {
     _objChatHomeNextSibling = chatView.nextElementSibling;
   }
   panel.innerHTML = '';
+  const embedHeader = document.createElement('div');
+  embedHeader.id = 'obj-chat-embed-header';
+  panel.appendChild(embedHeader);
+  if (formHeader && tabs) {
+    if (!_objChatHeaderHomeParent) {
+      _objChatHeaderHomeParent = formHeader.parentElement;
+      _objChatHeaderHomeNextSibling = tabs.nextElementSibling;
+    }
+    embedHeader.appendChild(formHeader);
+    embedHeader.appendChild(tabs);
+  }
   panel.appendChild(chatView);
   panel.classList.add('obj-chat-active');
   chatView.style.display = 'flex';
@@ -882,37 +897,11 @@ async function embedObjectChat(objectId, objectName) {
   // тут). nav-hide (chat-dialog-open) добавлен отдельно (25.07) -- composer иначе делил
   // экран с bottom-nav, юзер явно попросил единообразие с обычным полноэкранным чатом.
   document.body.classList.add('chat-dialog-open');
-  // 28.07: owner report -- встроенный чат объекта (position:fixed на всю оставшуюся
-  // высоту) "плыл" относительно заголовка/табов при протяжке, потому что весь
-  // #view-object-detail скроллится обычным document/body-flow, а офсет чата не
-  // пересчитывался на scroll (только на resize). Правильнее не гнаться пересчётом
-  // offset вслед за скроллом, а вообще не давать body скроллиться, пока чат активен --
-  // тот же view-locked механизм, что root-табы Чат/ИИ уже используют для той же цели.
-  // ВАЖНО: view-locked должен применяться ДО _updateObjChatOffset() -- position:fixed
-  // на body может визуально сдвинуть документ (обычный баг position:fixed без сохранения
-  // scrollY), меняя реальную позицию табов; посчитанный ДО этого offset становится
-  // устаревшим сразу же, из-за чего input-bar "уезжал" в верх видимой области. Юзер мог
-  // проскроллить экран объекта вниз ДО открытия таба Чат (в отличие от root Chat/AI табов,
-  // куда обычно заходят с scrollY=0) -- сохраняем/восстанавливаем позицию явно, а не
-  // полагаемся на то, что position:fixed сам аккуратно сохранит текущий scroll (не сохраняет).
-  _objChatScrollY = window.scrollY;
-  document.body.style.top = `-${_objChatScrollY}px`;
-  document.body.classList.add('view-locked');
-
-  // 28.07 v2: owner report -- поле ввода всё ещё оказывалось высоко с пустым местом
-  // под ним ПРИ ПЕРВОМ входе в таб. Root cause: _updateObjChatOffset() вызывался
-  // синхронно в том же кадре, что body.style.top/classList.add('view-locked') --
-  // браузер ещё не применил эти изменения (layout/paint не прошли), getBoundingClientRect()
-  // табов возвращал устаревшие координаты, --obj-detail-chat-offset считался неверным
-  // (скорее всего заниженным/нулевым из старой немодифицированной позиции документа),
-  // из-за чего calc(vp - offset) давал слишком маленькую высоту панели. rAF даёт браузеру
-  // кадр на применение стилей перед первым вычислением; ResizeObserver ниже перехватывает
-  // все последующие изменения (переключение таба туда-обратно и т.п.) уже без этой гонки.
-  requestAnimationFrame(_updateObjChatOffset);
-  if (!_objChatOffsetObserver && window.ResizeObserver) {
-    _objChatOffsetObserver = new ResizeObserver(_updateObjChatOffset);
-    _objChatOffsetObserver.observe(document.getElementById('obj-detail-tabs'));
-  }
+  // 29.07 v3: view-locked/scrollY save-restore больше не нужны -- панель теперь inset:0
+  // full-viewport оверлей поверх ВСЕГО #view-object-detail (включая перенесённый сюда
+  // header+tabs), а не "плавающий" элемент, чья позиция зависела от текущего scroll
+  // родительского документа. Document ниже может оставаться как есть, оверлей его
+  // полностью перекрывает независимо от scrollY.
   _chatActiveThread = null;
   _chatActiveThreadKey = `obj:${objectId}`;
   _chatReturnToView = null;
@@ -938,14 +927,19 @@ async function embedObjectChat(objectId, objectName) {
 
 function unembedObjectChat() {
   document.body.classList.remove('chat-dialog-open');
-  document.body.classList.remove('view-locked');
-  document.body.style.top = '';
-  if (typeof _objChatScrollY === 'number') {
-    window.scrollTo(0, _objChatScrollY);
-    _objChatScrollY = null;
-  }
   const panel = document.getElementById('obj-detail-panel-chat');
   const chatView = document.getElementById('chat-thread-detail-view');
+  const formHeader = document.getElementById('obj-chat-embed-header')?.querySelector('.form-header');
+  const tabs = document.getElementById('obj-detail-tabs');
+  if (formHeader && tabs && _objChatHeaderHomeParent) {
+    if (_objChatHeaderHomeNextSibling) {
+      _objChatHeaderHomeParent.insertBefore(formHeader, _objChatHeaderHomeNextSibling);
+      _objChatHeaderHomeParent.insertBefore(tabs, _objChatHeaderHomeNextSibling);
+    } else {
+      _objChatHeaderHomeParent.appendChild(formHeader);
+      _objChatHeaderHomeParent.appendChild(tabs);
+    }
+  }
   if (!panel || !chatView || !_objChatHomeParent) return;
   panel.classList.remove('obj-chat-active');
   chatView.style.display = 'none';
@@ -953,9 +947,5 @@ function unembedObjectChat() {
     _objChatHomeParent.insertBefore(chatView, _objChatHomeNextSibling);
   } else {
     _objChatHomeParent.appendChild(chatView);
-  }
-  if (_objChatOffsetObserver) {
-    _objChatOffsetObserver.disconnect();
-    _objChatOffsetObserver = null;
   }
 }
