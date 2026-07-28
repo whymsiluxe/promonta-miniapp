@@ -2527,6 +2527,9 @@ body.view-locked {
   font-weight: 700; flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
 }
 .obj-people-dot-first { z-index: 6; }
+/* 28.07 (ТЗ п.21): реальное фото поверх инициалов после загрузки, плавный переход. */
+.obj-people-dot[data-auth-avatar] { transition: background-image 200ms ease; }
+.obj-people-dot-has-photo { color: transparent; } /* инициалы скрыты, фото в background виднее без наложенного текста */
 .obj-people-more { background: rgba(20,22,18,0.75); color: #F5F1E8; }
 .obj-people-add {
   width: 36px; height: 36px; border-radius: 50%; background: var(--c-brass, var(--accent));

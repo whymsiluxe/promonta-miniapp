@@ -115,12 +115,18 @@ function renderObjectCard(obj) {
     : '';
 
   // Worker avatars -- overlap-композиция снизу-слева (первый крупнее), макс 3 + "+N".
+  // 28.07 (ТЗ п.21): реальное фото профиля вместо только инициалов, если work загрузил
+  // avatar (has_avatar с backend). Инициалы остаются как fallback -- видны сразу, фото
+  // подгружается асинхронно поверх через session-level Blob URL кэш (_avatarBlobCache,
+  // см. attachObjectsHandlers) -- один и тот же работник назначен на несколько объектов
+  // не должен грузить свою аватарку заново на каждой карточке.
   const assignedUsers = obj.assigned_users || [];
   const visibleUsers = assignedUsers.slice(0, 3);
   const peopleDots = visibleUsers.map((u, i) => {
     const initials = (u.name || '?').split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
     const size = i === 0 ? 56 : 46;
-    return `<div class="obj-people-dot${i === 0 ? ' obj-people-dot-first' : ''}" style="width:${size}px;height:${size}px;margin-left:${i > 0 ? '-14px' : '0'};z-index:${5 - i}" title="${esc(u.name)}" onclick="event.stopPropagation();openUserCard('${u.user_id}')">${esc(initials)}</div>`;
+    const avatarAttr = u.has_avatar ? `data-auth-avatar="${esc(u.user_id)}"` : '';
+    return `<div class="obj-people-dot${i === 0 ? ' obj-people-dot-first' : ''}" ${avatarAttr} style="width:${size}px;height:${size}px;margin-left:${i > 0 ? '-14px' : '0'};z-index:${5 - i}" title="${esc(u.name)}" onclick="event.stopPropagation();openUserCard('${u.user_id}')">${esc(initials)}</div>`;
   }).join('');
   // "+N" открывает Object Detail (полный список команды -- отдельный team-sheet
   // не строим, это редкий edge case при 4+ работниках на одном объекте).
@@ -333,6 +339,30 @@ function _loadAuthObjectPhoto(el) {
   });
 }
 
+// 28.07 (ТЗ п.21): session-level кэш userId -> Blob URL для worker-аватарок на карточках
+// объектов. Один и тот же работник может быть назначен на несколько объектов -- без
+// кэша каждая карточка грузила бы его фото заново. Кэш живёт на весь сеанс приложения
+// (не revoke при обычном re-render списка объектов), только реальный upload новой
+// аватарки инвалидирует конкретную запись (см. profile.js avatar upload flow -- вне
+// скоупа этой правки, аватарки на карточках объекта обновятся при следующей полной
+// перезагрузке приложения, что приемлемо для этого некритичного визуального элемента).
+const _avatarBlobCache = new Map(); // userId -> Promise<string|null> (Blob URL или null при ошибке)
+
+function _loadAuthAvatar(el) {
+  const uid = el.dataset.authAvatar;
+  if (!uid) return;
+  if (!_avatarBlobCache.has(uid)) {
+    _avatarBlobCache.set(uid, authImageUrl(`/api/profile/${encodeURIComponent(uid)}/avatar`).catch(() => null));
+  }
+  _avatarBlobCache.get(uid).then(blobUrl => {
+    if (!blobUrl) return; // fetch упал -- инициалы остаются как fallback, тихо
+    el.style.backgroundImage = `url('${blobUrl}')`;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
+    el.classList.add('obj-people-dot-has-photo'); // скрывает текст инициалов через CSS, фото не перекрывается
+  });
+}
+
 function _initObjPhotoLazyLoad() {
   if (_objPhotoObserver) _objPhotoObserver.disconnect();
   if (!window.IntersectionObserver) {
@@ -356,6 +386,9 @@ function _initObjPhotoLazyLoad() {
 function attachObjectsHandlers() {
   attachObjectsDragHandlers();
   _initObjPhotoLazyLoad();
+  // Аватарки маленькие и немного на карточку -- грузим сразу, IntersectionObserver
+  // тут был бы лишней сложностью ради небольшого выигрыша (в отличие от 8-фото carousel).
+  document.querySelectorAll('#objects-cards [data-auth-avatar]').forEach(_loadAuthAvatar);
 
   document.querySelectorAll('#objects-cards .metric-fill').forEach(fill => {
     const target = fill.style.width;

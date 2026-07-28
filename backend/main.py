@@ -977,7 +977,14 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
 
     def _user_info(uid: str) -> dict:
         p = profiles.get(str(uid), {})
-        return {"user_id": str(uid), "name": _sanitize_display_name(p.get('name'), str(uid))}
+        # 28.07 (external audit ТЗ п.21): реальная аватарка вместо только инициалов,
+        # если работник её загрузил (has_avatar уже трекается профилем, /api/profile
+        # avatar endpoint уже существует -- переиспользуем, не строим параллельный).
+        return {
+            "user_id": str(uid),
+            "name": _sanitize_display_name(p.get('name'), str(uid)),
+            "has_avatar": bool(p.get('avatar')),
+        }
 
     def _stage_summary(oid: str) -> dict | None:
         stages = stages_by_object.get(oid.upper())
