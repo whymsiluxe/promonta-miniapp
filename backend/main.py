@@ -970,10 +970,30 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
     assignments = _load_assignments()
     profiles = _load_worker_profiles()
     images = _load_object_images()
+    # 28.07 (external audit ТЗ п.20): batch stage summary -- один вызов all_stages_grouped()
+    # для ВСЕХ объектов разом, не N+1 запросов к Google Sheets (один на каждую карточку).
+    import objekte_lib as o
+    stages_by_object = o.all_stages_grouped()
 
     def _user_info(uid: str) -> dict:
         p = profiles.get(str(uid), {})
         return {"user_id": str(uid), "name": _sanitize_display_name(p.get('name'), str(uid))}
+
+    def _stage_summary(oid: str) -> dict | None:
+        stages = stages_by_object.get(oid.upper())
+        if not stages:
+            return None
+        completed = [s.get('Название этапа', '') for s in stages if s.get('Статус') == 'готово']
+        current = next((s for s in stages if s.get('Статус') == 'в процессе'), None)
+        current_idx = stages.index(current) if current else -1
+        next_stage = stages[current_idx + 1] if current and current_idx + 1 < len(stages) else None
+        return {
+            "completed": completed,
+            "completed_count": len(completed),
+            "current": current.get('Название этапа', '') if current else None,
+            "next": next_stage.get('Название этапа', '') if next_stage else None,
+            "total": len(stages),
+        }
 
     objects = []
     for r in data:
@@ -981,6 +1001,7 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
         oid = str(obj.get('ID объекта', ''))
         obj['assigned_users'] = [_user_info(a['user_id']) for a in assignments.get(oid, [])]
         obj['photo_count'] = len(images.get(oid) or [])
+        obj['stage_summary'] = _stage_summary(oid)
         if role != 'owner':
             # 10.5: бюджет — финансовая информация, работнику видеть не должен.
             for f in BUDGET_FIELDS:

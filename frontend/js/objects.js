@@ -132,16 +132,32 @@ function renderObjectCard(obj) {
   const startDateLabel = _objStartDateLabel(obj);
   const mapsUrl = obj['Адрес'] ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(obj['Адрес'])}` : '';
 
-  // Stage summary strip -- из списка объектов доступен только текущий этап строкой
-  // (не полный timeline с DONE/ACTIVE/NEXT статусами -- это потребовало бы отдельного
-  // /api/objects/{id}/stages запроса на каждую карточку, N+1 на списке). Показываем то,
-  // что реально есть без лишних round-trip'ов; полный roadmap -- в Object Detail -> Этапы.
-  const stagesStripHtml = stageLabel
-    ? `<div class="obj-stage-strip stage-clickable" data-object-id="${oid}" data-object-name="${esc(obj['Объект']) || ''}">
-         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg>
-         <span>${isWaiting ? 'Ожидает: ' : ''}${esc(stageLabel)}</span>
-       </div>`
-    : `<div class="obj-stage-strip stage-clickable" data-object-id="${oid}" data-object-name="${esc(obj['Объект']) || ''}"><span style="color:var(--text-light)">Этапы не добавлены</span></div>`;
+  // 28.07 (external audit ТЗ п.20): краткий roadmap вместо одной строки текущего этапа --
+  // stage_summary приходит батчем с backend (list_objects читает всю таблицу Этапы один
+  // раз, не N+1 запрос на карточку). completed показываем только последний завершённый
+  // (не весь список -- на узкой карточке место ограничено), current + next для контекста.
+  const summary = obj.stage_summary;
+  let stagesStripHtml;
+  if (summary && summary.total > 0) {
+    const parts = [];
+    if (summary.completed_count > 0) {
+      const lastCompleted = summary.completed[summary.completed.length - 1];
+      parts.push(`<span class="obj-stage-strip-item obj-stage-strip-done">✓ ${esc(lastCompleted)}</span>`);
+    }
+    if (summary.current) {
+      parts.push(`<span class="obj-stage-strip-item obj-stage-strip-active">● ${esc(summary.current)}</span>`);
+    }
+    if (summary.next) {
+      parts.push(`<span class="obj-stage-strip-item obj-stage-strip-next">○ ${esc(summary.next)}</span>`);
+    }
+    if (!parts.length) {
+      // Все этапы "предстоит", ни один не в процессе/готово -- показываем первый как next.
+      parts.push(`<span class="obj-stage-strip-item obj-stage-strip-next">○ ${esc(summary.completed[0] || '')}</span>`);
+    }
+    stagesStripHtml = `<div class="obj-stage-strip obj-stage-strip-roadmap stage-clickable" data-object-id="${oid}" data-object-name="${esc(obj['Объект']) || ''}">${parts.join('<span class="obj-stage-strip-arrow">→</span>')}</div>`;
+  } else {
+    stagesStripHtml = `<div class="obj-stage-strip stage-clickable" data-object-id="${oid}" data-object-name="${esc(obj['Объект']) || ''}"><span style="color:var(--text-light)">Этапы не добавлены</span></div>`;
+  }
 
   return `
   <div class="card obj-card-v2" data-id="${oid}" data-status="${esc(obj['Статус'] || '')}">

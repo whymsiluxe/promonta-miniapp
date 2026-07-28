@@ -2553,6 +2553,16 @@ body.view-locked {
   margin: 0.8rem 0.75rem 0.75rem; background: var(--bg-card-raised); border-radius: var(--radius-md, 16px);
   padding: 0.65rem 0.9rem; color: var(--c-accent, var(--accent)); font-size: 0.88rem; font-weight: 600;
 }
+/* 28.07 (ТЗ п.20): краткий roadmap на карточке объекта (было -- одна строка текущего
+   этапа) -- ✓ done -- ● active -- ○ next, разделены стрелкой, ellipsis каждого пункта
+   не даёт длинным названиям сломать layout на узком экране. */
+.obj-stage-strip-roadmap { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; justify-content: flex-start; gap: 0; }
+.obj-stage-strip-roadmap::-webkit-scrollbar { display: none; }
+.obj-stage-strip-item { flex-shrink: 0; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; }
+.obj-stage-strip-done { color: var(--text-light); opacity: 0.75; }
+.obj-stage-strip-active { color: var(--c-accent, var(--accent)); font-weight: 700; }
+.obj-stage-strip-next { color: var(--text-light); }
+.obj-stage-strip-arrow { flex-shrink: 0; color: var(--text-light); opacity: 0.4; margin: 0 0.4rem; font-size: 0.75rem; }
 
 /* ═══════════ BUBBLE ASSIGN PANEL (Фаза 2d) ═══════════ */
 #bubble-panel { position: fixed; inset: 0; z-index: 8000; background: rgba(0,0,0,0.88); display: flex; flex-direction: column; }
