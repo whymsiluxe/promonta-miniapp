@@ -578,6 +578,116 @@ function _initChatSearchCircle() {
 let _chatUnreadByThread = {};
 let _chatSearchQuery = '';
 
+// 28.07 (Phase 06): pin/mute/archive UI поверх уже существующего backend data layer
+// (POST /api/chat/threads/prefs, chat_thread_meta.json.user_prefs). Читаем сюда через
+// нормализованный GET /api/chat/threads (Phase 06 groundwork, раньше ничем не
+// использовался) в read-only режиме -- основной рендер списка по-прежнему берёт
+// заголовки/превью из старых /api/chat/my_threads+/api/workers (полная замена
+// источника данных — риск отдельный, не в этом проходе, см. docs/plan-phases/06-*).
+// Ключи здесь совпадают с уже используемыми в _chatUnreadByThread/_threadByKey
+// ('group', worker_id для DM, thread_key для obj:/mangel:/task:) -- нормализованный
+// endpoint возвращает `id` именно в этой схеме.
+const CHAT_DEFAULT_PREFS = { muted: false, pinned: false, archived: false };
+let _chatThreadPrefs = {};
+let _chatShowArchived = false;
+
+async function _loadChatThreadPrefs() {
+  try {
+    const data = await api('/api/chat/threads');
+    const byId = {};
+    (data.threads || []).forEach(t => {
+      byId[t.id] = { muted: !!t.muted, pinned: !!t.pinned, archived: !!t.archived };
+    });
+    _chatThreadPrefs = byId;
+  } catch (e) {
+    _chatThreadPrefs = {};
+  }
+}
+
+function _threadPrefsFor(key) {
+  return _chatThreadPrefs[key] || CHAT_DEFAULT_PREFS;
+}
+
+function _threadPrefsIcons(prefs) {
+  if (!prefs.pinned && !prefs.muted) return '';
+  let html = '<span class="chat-thread-prefs-icons">';
+  if (prefs.pinned) html += '<span class="chat-thread-pin-icon" title="Закреплено"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M14 2l8 8-4 1-5 5-1 4-2-2-5 5-1-1 5-5-2-2 4-1 5-5 1-4z"/></svg></span>';
+  if (prefs.muted) html += '<span class="chat-thread-mute-icon" title="Заглушено"><svg viewBox="0 0 24 24" width="13" height="13"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6"/></svg></span>';
+  html += '</span>';
+  return html;
+}
+
+// Сортирует закреплённые вверх (стабильная сортировка сохраняет порядок внутри групп),
+// фильтрует архивные из обычного вида / показывает только архивные в режиме "Архив".
+function _applyThreadPrefsView(items, getKey) {
+  const withPrefs = items.map(it => ({ it, prefs: _threadPrefsFor(getKey(it)) }));
+  const visible = withPrefs.filter(x => _chatShowArchived ? x.prefs.archived : !x.prefs.archived);
+  visible.sort((a, b) => (b.prefs.pinned === a.prefs.pinned) ? 0 : (b.prefs.pinned ? 1 : -1));
+  return visible;
+}
+
+async function _toggleChatThreadPref(prefsKey, payloadBase, prefName, newVal) {
+  try {
+    const res = await api('/api/chat/threads/prefs', {
+      method: 'POST',
+      body: JSON.stringify({ ...payloadBase, [prefName]: newVal }),
+    });
+    _chatThreadPrefs[prefsKey] = { ...CHAT_DEFAULT_PREFS, ..._threadPrefsFor(prefsKey), ...res.prefs };
+    renderChatThreadList();
+    hapticImpact('light');
+  } catch (e) {
+    showToast('Ошибка: ' + e.message, 'error');
+  }
+}
+
+function _openChatThreadPrefsMenu(itemEl, prefsKey, payloadBase) {
+  document.querySelectorAll('.chat-bubble-menu, .chat-bubble-menu-backdrop').forEach(el => el.remove());
+  const prefs = _threadPrefsFor(prefsKey);
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'chat-bubble-menu-backdrop';
+  const menu = document.createElement('div');
+  menu.className = 'chat-bubble-menu';
+  menu.innerHTML = `
+    <button type="button" class="chat-thread-menu-item" data-pref="pinned">${prefs.pinned ? '✓ ' : ''}${prefs.pinned ? 'Открепить' : 'Закрепить'}</button>
+    <button type="button" class="chat-thread-menu-item" data-pref="muted">${prefs.muted ? '✓ ' : ''}${prefs.muted ? 'Включить уведомления' : 'Заглушить'}</button>
+    <button type="button" class="chat-thread-menu-item" data-pref="archived">${prefs.archived ? '✓ ' : ''}${prefs.archived ? 'Вернуть из архива' : 'Архивировать'}</button>
+  `;
+  document.body.appendChild(backdrop);
+  document.body.appendChild(menu);
+
+  const rect = itemEl.getBoundingClientRect();
+  const menuWidth = menu.offsetWidth || 210;
+  const menuHeight = menu.offsetHeight || 130;
+  let left = Math.min(Math.max(16, rect.left), window.innerWidth - menuWidth - 16);
+  let top = rect.bottom + 4;
+  if (top + menuHeight > window.innerHeight - 16) top = rect.top - menuHeight - 4;
+  menu.style.left = left + 'px';
+  menu.style.top = Math.max(16, top) + 'px';
+
+  const close = () => { backdrop.remove(); menu.remove(); };
+  backdrop.addEventListener('click', close);
+  menu.querySelectorAll('[data-pref]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      close();
+      const prefName = btn.dataset.pref;
+      _toggleChatThreadPref(prefsKey, payloadBase, prefName, !prefs[prefName]);
+    });
+  });
+}
+
+let _chatThreadLongPressTimer = null;
+function _attachChatThreadLongPress(itemEl, prefsKey, payloadBase) {
+  itemEl.addEventListener('touchstart', () => {
+    _chatThreadLongPressTimer = setTimeout(() => {
+      hapticImpact('medium');
+      _openChatThreadPrefsMenu(itemEl, prefsKey, payloadBase);
+    }, 500);
+  }, { passive: true });
+  itemEl.addEventListener('touchend', () => clearTimeout(_chatThreadLongPressTimer));
+  itemEl.addEventListener('touchmove', () => clearTimeout(_chatThreadLongPressTimer));
+}
+
 
 function _hideBottomNavInline() {
   const ownerNav = document.getElementById('bottom-nav-owner');
@@ -626,6 +736,8 @@ function renderChatThreadList() {
   const listEl = document.getElementById('chat-thread-list');
   const q = _chatSearchQuery.trim().toLowerCase();
 
+  listEl.classList.toggle('chat-thread-list-archived-mode', _chatShowArchived);
+
   if (_chatCategory === 'general') {
     const t = _threadByKey('group');
     const preview = t?.last_preview ? _escChat(t.last_preview) : 'Команда Promonta';
@@ -634,8 +746,10 @@ function renderChatThreadList() {
     // названию+превью последнего сообщения (полная история сообщений не загружена
     // на фронт, реальный full-text поиск по чату потребовал бы backend endpoint).
     const generalMatches = !q || 'общий чат'.includes(q) || (t?.last_preview || '').toLowerCase().includes(q);
-    if (!generalMatches) {
-      listEl.innerHTML = '<div class="chat-empty">Ничего не найдено</div>';
+    const generalPrefs = _threadPrefsFor('group');
+    const generalVisible = generalMatches && (_chatShowArchived ? generalPrefs.archived : !generalPrefs.archived);
+    if (!generalVisible) {
+      listEl.innerHTML = `<div class="chat-empty">${!generalMatches ? 'Ничего не найдено' : 'Общий чат в архиве'}</div>`;
     } else {
       listEl.innerHTML = `
       <div class="chat-thread-item" data-thread="">
@@ -645,14 +759,17 @@ function renderChatThreadList() {
           <div class="chat-thread-preview">${preview}</div>
         </div>
         <div class="chat-thread-meta">
+          ${_threadPrefsIcons(generalPrefs)}
           ${time ? `<span class="chat-thread-time">${time}</span>` : ''}
           ${_threadBadge(_chatUnreadByThread.group || 0)}
         </div>
       </div>`;
+      _attachChatThreadLongPress(listEl.querySelector('.chat-thread-item'), 'group', {});
     }
   } else if (_chatCategory === 'dm') {
-    const filteredWorkers = q ? _chatWorkers.filter(w => (w.name || '').toLowerCase().includes(q)) : _chatWorkers;
-    listEl.innerHTML = filteredWorkers.map(w => {
+    let filteredWorkers = q ? _chatWorkers.filter(w => (w.name || '').toLowerCase().includes(q)) : _chatWorkers;
+    const viewWorkers = _applyThreadPrefsView(filteredWorkers, w => String(w.user_id));
+    listEl.innerHTML = viewWorkers.map(({ it: w, prefs }) => {
       const t = _threadByKey(String(w.user_id));
       const preview = t?.last_preview ? _escChat(t.last_preview) : (w.role === 'owner' ? 'Владелец' : 'Работник');
       const time = _threadTimeLabel(t?.last_ts);
@@ -668,16 +785,21 @@ function renderChatThreadList() {
           <div class="chat-thread-preview">${preview}</div>
         </div>
         <div class="chat-thread-meta">
+          ${_threadPrefsIcons(prefs)}
           ${time ? `<span class="chat-thread-time">${time}</span>` : ''}
           ${_threadBadge(_chatUnreadByThread[String(w.user_id)] || 0)}
         </div>
       </div>`;
-    }).join('') || `<div class="chat-empty">${q ? 'Ничего не найдено' : 'Нет личных чатов'}</div>`;
+    }).join('') || `<div class="chat-empty">${q ? 'Ничего не найдено' : (_chatShowArchived ? 'Архив пуст' : 'Нет личных чатов')}</div>`;
+    listEl.querySelectorAll('.chat-thread-item[data-thread]').forEach(item => {
+      _attachChatThreadLongPress(item, item.dataset.thread, { to_user_id: item.dataset.thread });
+    });
   } else {
     const prefix = _chatCategory === 'obj' ? 'obj:' : _chatCategory === 'mangel' ? 'mangel:' : 'task:';
     let filtered = _chatMyThreads.filter(t => t.thread_key.startsWith(prefix));
     if (q) filtered = filtered.filter(t => t.title.toLowerCase().includes(q) || (t.last_preview || '').toLowerCase().includes(q));
-    listEl.innerHTML = filtered.map(t => `
+    const viewThreads = _applyThreadPrefsView(filtered, t => t.thread_key);
+    listEl.innerHTML = viewThreads.map(({ it: t, prefs }) => `
       <div class="chat-thread-item" data-thread-key="${t.thread_key}">
         <div class="chat-thread-avatar group" style="background:${_chatCategory === 'obj' ? 'color-mix(in srgb, var(--c-brass, var(--accent)) 16%, var(--bg-card-raised))' : 'color-mix(in srgb, #9A4B42 16%, var(--bg-card-raised))'};color:${_chatCategory === 'obj' ? 'var(--c-brass, var(--accent))' : '#9A4B42'};border-color:${_chatCategory === 'obj' ? 'color-mix(in srgb, var(--c-brass, var(--accent)) 35%, transparent)' : 'color-mix(in srgb, #9A4B42 35%, transparent)'}"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
         <div class="chat-thread-info">
@@ -685,10 +807,14 @@ function renderChatThreadList() {
           <div class="chat-thread-preview">${_escChat(t.last_preview || '')}</div>
         </div>
         <div class="chat-thread-meta">
+          ${_threadPrefsIcons(prefs)}
           ${_threadTimeLabel(t.last_ts) ? `<span class="chat-thread-time">${_threadTimeLabel(t.last_ts)}</span>` : ''}
           ${_threadBadge(_chatUnreadByThread[t.thread_key] || 0)}
         </div>
-      </div>`).join('') || `<div class="chat-empty">${q ? 'Ничего не найдено' : 'Чатов пока нет'}</div>`;
+      </div>`).join('') || `<div class="chat-empty">${q ? 'Ничего не найдено' : (_chatShowArchived ? 'Архив пуст' : 'Чатов пока нет')}</div>`;
+    listEl.querySelectorAll('[data-thread-key]').forEach(item => {
+      _attachChatThreadLongPress(item, item.dataset.threadKey, { thread_key: item.dataset.threadKey });
+    });
   }
 
   listEl.querySelectorAll('[data-thread-key]').forEach(item => {
@@ -820,7 +946,19 @@ async function initChatView() {
   renderChatThreadList();
   _loadUnreadByThread();
   _loadMyChatThreads();
+  _loadChatThreadPrefs().then(renderChatThreadList); // pin/mute/archive приходят отдельным запросом, ре-рендерим когда готовы
   _initChatSearchCircle(); // idempotent -- поиск-input теперь в search circle внутри worker-strip
+
+  const archiveBtn = document.querySelector('.chat-archive-btn');
+  if (archiveBtn && !archiveBtn.dataset.wired) {
+    archiveBtn.dataset.wired = '1';
+    archiveBtn.addEventListener('click', () => {
+      _chatShowArchived = !_chatShowArchived;
+      archiveBtn.classList.toggle('active', _chatShowArchived);
+      hapticImpact('light');
+      renderChatThreadList();
+    });
+  }
 
   document.querySelectorAll('.chat-category-tabs [data-chat-category]').forEach(tab => {
     tab.addEventListener('click', () => {

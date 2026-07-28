@@ -2418,10 +2418,18 @@ def get_unread_by_thread(user: dict = Depends(get_current_user), role: str = Dep
     25.07: расширено на thread_key-треды (obj:/mangel:/task:) -- раньше badge считался
     только для group/DM веток, вкладки Объекты/Дефекты/Потребности в списке чатов не
     показывали unread вообще (не забыт badge в разметке -- сам подсчёт не доходил
-    до этих сообщений, т.к. цикл ниже фильтровал только по to_user_id)."""
+    до этих сообщений, т.к. цикл ниже фильтровал только по to_user_id).
+    28.07 (Phase 06): заглушённые (muted) треды исключены из счёта -- иначе mute-иконка
+    во frontend была бы декоративной, а не реальным подавлением уведомлений. prefs_id
+    для DM отличается от display-ключа thread_key (тот -- id собеседника, prefs хранятся
+    под отсортированной парой _chat_thread_id, см. set_chat_thread_prefs) -- не перепутать.
+    Аналогичный fix НЕ внесён в /api/chat/unread_count (общий nav-badge): тот вообще
+    не различает thread_key-треды (obj:/mangel:/task:) от group -- отдельный, более
+    старый и более рискованный для правки баг, задокументирован отдельно, не в этом проходе."""
     with _chat_lock:
         messages = _load_chat()
         reads = _load_reads()
+    meta = _load_chat_thread_meta()
     me = str(user['id'])
     by_thread = {}
     for m in messages:
@@ -2434,12 +2442,16 @@ def get_unread_by_thread(user: dict = Depends(get_current_user), role: str = Dep
             except HTTPException:
                 continue
             thread_key = tkey
+            prefs_id = tkey
         else:
             to_uid = m.get('to_user_id')
             if to_uid and str(to_uid) != me:
                 continue  # чужой DM
             thread_key = 'group' if not to_uid else str(m['user_id'])
+            prefs_id = thread_key if not to_uid else _chat_thread_id(me, thread_key)
         if m.get('ts', 0) <= _thread_last_read(reads, me, thread_key):
+            continue
+        if _thread_user_prefs(meta, prefs_id, me).get('muted'):
             continue
         by_thread[thread_key] = by_thread.get(thread_key, 0) + 1
     return {"unread_by_thread": by_thread}
