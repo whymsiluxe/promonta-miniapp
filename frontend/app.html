@@ -1233,6 +1233,15 @@ header h1 {
   top: 46px;
   left: 46px;
 }
+/* 28.07 v4: owner report -- на экране Объекта (#obj-detail-back) top:46px уносил
+   кнопку СЛИШКОМ низко, на строку табов (Чат/Инфо/Этапы/Потребности) ниже заголовка,
+   вместо того чтобы остаться в одной строке с "Квартира Вебер". Этот .form-header
+   ниже, чем у остальных nested-экранов (h1 крупнее, свой контекст) -- меньший offset
+   тут держит кнопку рядом с title, всё ещё ниже Close по вертикали. */
+#obj-detail-back {
+  top: 8px;
+  left: 46px;
+}
 .form-header .back-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
 
 .form-header h1 {
