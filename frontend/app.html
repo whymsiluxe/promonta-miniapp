@@ -73,8 +73,12 @@ body.keyboard-open .bottom-nav { opacity: 0; transform: translateX(-50%) transla
 
 .nav-item:active { transform: scale(0.9); }
 .nav-item.active { color: var(--primary-dark); }
-.nav-icon-svg { width: 34px; height: 34px; padding: 6px; transition: background-color 0.2s; border-radius: 999px; box-sizing: content-box; }
-.nav-item.active .nav-icon-svg { stroke-width: 2.3; background: var(--accent); color: var(--primary-dark); }
+.nav-icon-svg { width: 34px; height: 34px; padding: 6px; transition: background-color 0.2s, box-shadow 0.2s; border-radius: 999px; box-sizing: content-box; }
+/* 28.07: owner report -- активная вкладка была недостаточно заметна (только тонкая
+   заливка иконки). Добавлена тень под иконкой -- тот же приём, что .objects-fab/
+   .nav-back-btn уже используют в остальном UI, для консистентности "приподнятого"
+   активного состояния. */
+.nav-item.active .nav-icon-svg { stroke-width: 2.3; background: var(--accent); color: var(--primary-dark); box-shadow: 0 3px 10px -3px color-mix(in srgb, var(--accent) 70%, transparent); }
 
 .nav-item { position: relative; }
 /* 25.07: план явно требовал убрать crown-emoji (👑) -- заменён на маленькую

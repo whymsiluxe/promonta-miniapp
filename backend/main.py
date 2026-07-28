@@ -4592,7 +4592,10 @@ def list_my_abwesenheit(user: dict = Depends(get_current_user)):
 
 
 @app.get("/api/abwesenheit/all")
-def list_all_abwesenheit(user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+def list_all_abwesenheit(user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    # 28.07: owner request -- воркер тоже может смотреть общий календарь команды
+    # (view-only). Approve/reject остаются отдельно защищены require_owner на
+    # /api/abwesenheit/{id}/status -- этот endpoint только читает список.
     _auto_close_expired_open_ended_abwesenheit()
     entries = _load_abwesenheit()
     for e in entries:

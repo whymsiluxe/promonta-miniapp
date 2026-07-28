@@ -21,7 +21,9 @@ function _abwDateInRange(dateStr, entry) {
 
 async function loadAbwesenheit() {
   try {
-    const res = currentRole === 'owner' ? await api('/api/abwesenheit/all') : await api('/api/abwesenheit');
+    // 28.07: /all теперь доступен любой роли (view-only) -- воркер тоже видит общий
+    // календарь команды, не только свои записи, когда выбрал коллегу в селекторе.
+    const res = await api('/api/abwesenheit/all');
     _abwEntries = res.entries || [];
   } catch (e) {
     _abwEntries = [];
@@ -103,7 +105,13 @@ function renderAbwesenheitList() {
   const y = _abwCurrentMonth.getFullYear();
   const m = _abwCurrentMonth.getMonth();
   const monthPrefix = `${y}-${String(m + 1).padStart(2, '0')}`;
-  const entriesThisMonth = _abwEntries.filter(e => e.date_from.startsWith(monthPrefix) || e.date_to.startsWith(monthPrefix));
+  // 28.07: /api/abwesenheit/all теперь доступен и worker'у (для dropdown "чей календарь
+  // смотреть"), но список заявок ("Никто не отмечен" / карточки) должен по умолчанию
+  // показывать только свои записи воркеру -- иначе он видит заявки всех коллег всегда,
+  // не только когда явно выбрал кого-то в селекторе (тот выбор влияет на availability
+  // heatmap, не на этот список).
+  const scopedEntries = currentRole === 'owner' ? _abwEntries : _abwEntries.filter(e => String(e.user_id) === String(currentUserId));
+  const entriesThisMonth = scopedEntries.filter(e => e.date_from.startsWith(monthPrefix) || e.date_to.startsWith(monthPrefix));
 
   const listEl = document.getElementById('abw-list');
   if (!entriesThisMonth.length) {
@@ -252,11 +260,10 @@ async function _closeOpenAbwesenheit(entryId) {
 
 async function _initAbwProfileSelector() {
   const wrap = document.getElementById('abw-profile-selector-wrap');
-  if (currentRole !== 'owner') {
-    wrap.style.display = 'none';
-    document.getElementById('abw-availability-legend').style.display = 'flex'; // свой календарь — та же 3-состояния легенда
-    return;
-  }
+  // 28.07: owner request -- воркер тоже может переключаться на общий календарь команды
+  // (тот же dropdown, что раньше был owner-only). Backend /api/abwesenheit/all и
+  // /api/workers уже открыты для любой авторизованной роли (view-only), approve/reject
+  // остаются отдельно защищены require_owner.
   wrap.style.display = 'block';
   const select = document.getElementById('abw-profile-select');
   if (select.dataset.wired) return;
@@ -264,7 +271,7 @@ async function _initAbwProfileSelector() {
 
   try {
     const data = await api('/api/workers');
-    const workers = (data.workers || []).filter(w => w.role === 'worker');
+    const workers = (data.workers || []).filter(w => w.role === 'worker' && String(w.user_id) !== String(currentUserId));
     workers.forEach(w => {
       const opt = document.createElement('option');
       opt.value = w.user_id;
