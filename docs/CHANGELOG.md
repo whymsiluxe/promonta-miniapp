@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-28 (autonomous session, continued — pin/mute/archive UI)
+
+Commit `ff83a1b`, deployed (including a backend restart — this pass touches `main.py`). Full detail in `docs/plan-phases/06-chat-hub-rebuild.md`.
+
+### Added
+- Long-press a chat thread row → pin/mute/archive menu, wired to the already-existing `POST /api/chat/threads/prefs` (data layer shipped earlier this phase, commit `509e20e`, with no UI until now). Pinned threads sort to the top of their tab; archived threads hide from the normal list; the previously dead `.chat-archive-btn` in the header now toggles an archive-only view.
+- Prefs are read via the normalized `GET /api/chat/threads` (Phase 06 groundwork, unused by any frontend code until now) as a read-only supplementary source layered on top of the existing render path — not a replacement of the primary thread-list data source (`/api/chat/my_threads` + `/api/workers`), which stays as-is; see "Known gaps" below for why.
+- `get_unread_by_thread` now excludes muted threads from its per-thread counts, so the new mute icon reflects a real notification suppression rather than a decorative label.
+
+### Found, not fixed (flagged, not silently patched)
+While touching `get_unread_by_thread`, found that its sibling `get_unread_count` (the global nav/Home unread badge everyone sees) doesn't distinguish `thread_key`-based threads (obj:/mangel:/task:) from the group chat at all — it attributes their unread messages to the group thread's `last_read` timestamp, which can produce an incorrect total count. Pre-existing, unrelated to this pass's changes, too risky to fix in the same commit as a live-chat feature addition — needs its own careful pass. Tracked in `docs/plan-phases/06-chat-hub-rebuild.md`.
+
+### Verification
+`python3 -m py_compile backend/main.py`, `node --check` on both JS/HTML touched, `tests/test_chat_backend.py` 16/16 passing (via `/home/promonta/agent/miniapp/.venv/bin/python`, the actual systemd-service venv). Service restarted cleanly, no new tracebacks in `journalctl` post-restart.
+
 ## 2026-07-28 (autonomous session, continued — expandable search circle)
 
 Commit `0d69608`, deployed. Full detail in `docs/plan-phases/06-chat-hub-rebuild.md`.
