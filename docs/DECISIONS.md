@@ -29,4 +29,17 @@ Architectural decision log. New decisions get a new entry; superseded ones are m
 
 ---
 
+**Date**: 2026-07-28
+**Status**: Accepted
+**Decision**: Chat Hub keeps 5 category tabs (Общий/Личные/Объекты/Дефекты/Потребности), not the 4 the Phase 06 spec (ТЗ3) literally describes.
+**Context**: `docs/plan-phases/06-chat-hub-rebuild.md`'s code audit found a 5th tab, "Потребности" (`task:ID` threads), already live in production and in active daily use — it predates this plan and isn't a Phase 06 addition. The spec text says "4 таба" and lists only Общий/Личные/Объекты/Дефекты.
+**Problem**: Silently dropping the tab during the rebuild would delete team members' access to an existing, used feature (task-request chat threads) with no owner sign-off; silently keeping it would mean diverging from a written spec without recording why.
+**Options considered**: (1) drop Потребности to match the spec literally, (2) keep it and treat the spec's "4 таба" as describing the four *new* dark-theme tab types being introduced, not a hard cap, (3) block the whole Phase 06 rebuild pending an explicit owner answer.
+**Chosen**: (2) — keep 5 tabs.
+**Why**: `app.html`'s Object Info screen has an explicit prior comment recording an owner requirement to keep Потребности as its own object-scoped surface ("Потребности остаётся отдельным object-scoped табом по явному требованию владельца"), which is direct evidence the owner treats task-requests as a first-class, separate concern from defects — not something to fold away. Removing a live, working, explicitly-requested feature to satisfy a tab-count in a planning doc is a worse failure mode than a documented, reversible deviation from that doc. Blocking the entire rebuild on this alone (option 3) wasn't warranted — it's a low-stakes, easily-revisited call, not one that needed to stall a multi-session project.
+**Consequences**: All Chat Hub rebuild work (worker strip, tabs component, search-per-tab, empty states) targets 5 tabs. If the owner later says they actually meant 4 and wants Потребности folded into Объекты or removed from Chat Hub entirely, that's a small, isolated follow-up, not a rearchitecture.
+**Affected files**: `frontend/app.html` (chat category tabs), `frontend/js/chat.js`, `docs/plan-phases/06-chat-hub-rebuild.md`.
+
+---
+
 *(No earlier decisions are recorded — prior sessions did not maintain this log. Everything before 2026-07-23 is undocumented architectural history; where it matters, it's referenced inline in other docs from session memory rather than reconstructed here as a formal decision.)*
