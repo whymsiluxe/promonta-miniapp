@@ -69,4 +69,6 @@ Second track (UI/UX redesign, per a separate ChatGPT brief) planned but not star
 
 ## Next recommended step
 
-Continue Batch 3 UI items if desired (all need a specific library/architecture decision first — charting for budget donut/sparklines, Kanban board pattern for tasks, drag-and-drop calendar) — see [TODO.md](TODO.md). Otherwise, no urgent open item; the app is in a stable, documented, version-controlled state for the first time.
+**(2026-07-28 update, supersedes the paragraph below for current priority)**: Phases 01-05 of `docs/plan-phases/` are done (see each file's status markers). Phase 06 (Chat Hub full rebuild) is next — NOT started, but `docs/plan-phases/06-chat-hub-rebuild.md` now has a full code-verified current-state audit ready for whoever picks it up. One concrete decision is needed from the owner before starting: the spec wants 4 chat tabs, 5 exist today (extra "Потребности" tab) — flagged in that file, not resolved silently. Phases 07-10 (Object Card rebuild, Radio polish, Architecture split, Tests/docs final) follow in order per `docs/plan-phases/README.md`.
+
+Older/superseded: Continue Batch 3 UI items if desired (all need a specific library/architecture decision first — charting for budget donut/sparklines, Kanban board pattern for tasks, drag-and-drop calendar) — see [TODO.md](TODO.md).
