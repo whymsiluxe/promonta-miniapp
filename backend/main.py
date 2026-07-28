@@ -2676,11 +2676,63 @@ def _chat_thread_participants(thread_id: str) -> list:
     return thread_id.split('-')
 
 
+DEFAULT_THREAD_PREFS = {'muted': False, 'pinned': False, 'archived': False}
+
+
+def _thread_user_prefs(meta: dict, thread_id: str, uid: str) -> dict:
+    """Phase 06: mute/pin/archive — per-user (ThreadParticipant), не глобальные для
+    треда, в отличие от closed/closed_at/closed_by (те owner-only, глобальные)."""
+    prefs = meta.get(thread_id, {}).get('user_prefs', {}).get(uid)
+    return {**DEFAULT_THREAD_PREFS, **prefs} if prefs else dict(DEFAULT_THREAD_PREFS)
+
+
+class ChatThreadPrefsBody(BaseModel):
+    to_user_id: str | None = None
+    thread_key: str | None = None
+    muted: bool | None = None
+    pinned: bool | None = None
+    archived: bool | None = None
+
+
+@app.post("/api/chat/threads/prefs")
+def set_chat_thread_prefs(body: ChatThreadPrefsBody, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """Per-user mute/pin/archive toggle. Real data layer (chat_thread_meta.json
+    user_prefs) backing the Phase 06 spec's pin/mute/archive requirement -- see
+    docs/plan-phases/06-chat-hub-rebuild.md ("не рисовать fake controls, сначала
+    строить data layer"). No frontend UI wired to this yet."""
+    uid = str(user['id'])
+    if body.thread_key:
+        _check_thread_access(body.thread_key, uid, role)
+        thread_id = body.thread_key
+    else:
+        thread_id = _chat_thread_id(user['id'], body.to_user_id)
+
+    with _chat_lock:
+        meta = _load_chat_thread_meta()
+        thread_meta = meta.setdefault(thread_id, {})
+        prefs_by_user = thread_meta.setdefault('user_prefs', {})
+        current = {**DEFAULT_THREAD_PREFS, **prefs_by_user.get(uid, {})}
+        if body.muted is not None:
+            current['muted'] = body.muted
+        if body.pinned is not None:
+            current['pinned'] = body.pinned
+        if body.archived is not None:
+            current['archived'] = body.archived
+        prefs_by_user[uid] = current
+        _save_chat_thread_meta(meta)
+    return {"status": "ok", "thread_id": thread_id, "prefs": current}
+
+
 @app.post("/api/chat/threads/close")
 def close_chat_thread(body: ChatThreadCloseBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     thread_id = _chat_thread_id(user['id'], body.to_user_id)
     meta = _load_chat_thread_meta()
-    meta[thread_id] = {'closed': True, 'closed_at': int(time.time()), 'closed_by': str(user['id'])}
+    # Phase 06: было meta[thread_id] = {...} -- полная перезапись стирала бы
+    # user_prefs (mute/pin/archive), добавленные ниже. Мержим, не заменяем.
+    thread_meta = meta.setdefault(thread_id, {})
+    thread_meta['closed'] = True
+    thread_meta['closed_at'] = int(time.time())
+    thread_meta['closed_by'] = str(user['id'])
     _save_chat_thread_meta(meta)
 
     for uid in _chat_thread_participants(thread_id):
