@@ -525,6 +525,14 @@ function initCheckinControls() {
   });
 
   startBtn.addEventListener('click', () => {
+    // 28.07: owner request -- старт смены сначала спрашивает какой этап (тот же
+    // stage-picker, что уже был у FAB-потока в worker-checkin-fab.js), только потом
+    // открывает фото. Раньше это работало только при старте через FAB на Home, не
+    // при старте прямо со страницы Этапов объекта.
+    if (typeof _openStagePickerThenStart === 'function') {
+      _openStagePickerThenStart(_stagesCurrentObjectId);
+      return;
+    }
     _checkinPendingAction = 'start';
     document.getElementById('checkin-photo-input').click();
   });

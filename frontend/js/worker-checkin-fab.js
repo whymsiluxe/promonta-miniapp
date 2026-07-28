@@ -166,10 +166,18 @@ async function _openStagePickerThenStart(objectId) {
     stages = data.stages || [];
   } catch (e) { /* тихо -- отсутствие этапов не должно блокировать старт смены */ }
 
-  if (!stages.length) {
-    _startWorkerCheckin(objectId, null);
-    return;
-  }
+  // 28.07: owner request -- picker показывается ВСЕГДА (не только если уже есть этапы),
+  // чтобы можно было добавить первый этап на объекте с чистого листа тоже, не только
+  // выбрать существующий.
+  _renderStagePickerModal(objectId, stages);
+}
+
+// 28.07: owner request -- добавление нового этапа прямо из picker'а (не только выбор
+// существующего), внизу списка. Отдельная функция, чтобы после создания этапа можно
+// было перерисовать тот же picker с обновлённым списком без дублирования разметки.
+function _renderStagePickerModal(objectId, stages) {
+  const existing = document.getElementById('worker-stage-picker-modal');
+  if (existing) existing.remove();
 
   const modal = document.createElement('div');
   modal.id = 'worker-stage-picker-modal';
@@ -187,6 +195,10 @@ async function _openStagePickerThenStart(objectId) {
           </div>
         `).join('')}
       </div>
+      <div class="worker-picker-add-row">
+        <input type="text" class="mangel-select" id="worker-picker-new-stage-name" placeholder="напр. Фасад, Стяжка пола">
+        <button class="form-submit-btn" id="worker-picker-add-stage-btn" type="button">+ Добавить этап</button>
+      </div>
     </div>
   `;
   document.body.appendChild(modal);
@@ -199,6 +211,19 @@ async function _openStagePickerThenStart(objectId) {
       modal.remove();
       _startWorkerCheckin(objectId, item.dataset.stageName);
     });
+  });
+  modal.querySelector('#worker-picker-add-stage-btn').addEventListener('click', async () => {
+    const input = modal.querySelector('#worker-picker-new-stage-name');
+    const name = input.value.trim();
+    if (!name) return;
+    try {
+      await api(`/api/objects/${objectId}/stages`, { method: 'POST', body: JSON.stringify({ name }) });
+      const data = await api(`/api/objects/${objectId}/stages`);
+      _renderStagePickerModal(objectId, data.stages || []);
+      hapticImpact('light');
+    } catch (e) {
+      showToast('Не удалось добавить этап: ' + e.message, 'error');
+    }
   });
 }
 
