@@ -2513,9 +2513,16 @@ body.view-locked {
 .bubble-drop-zone-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)); }
 .bubble-drop-label { color: var(--text-light); font-size: 0.85rem; }
 .bubble-arena { flex: 1; position: relative; overflow: hidden; margin-top: 0.5rem; }
-.bubble { position: absolute; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: grab; touch-action: none; transition: opacity 0.2s; }
+.bubble { position: absolute; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: grab; touch-action: none; transition: opacity 0.2s; overflow: visible; background: var(--bg-card); }
 .bubble:active { cursor: grabbing; }
-.bubble-avatar { font-size: 0.7rem; font-weight: 700; color: var(--text-main); pointer-events: none; z-index: 1; }
+.bubble-avatar { font-size: 0.95rem; font-weight: 700; color: var(--text-main); pointer-events: none; z-index: 1; }
+/* 28.07: имя под кругом -- position:absolute внутри .bubble так двигается вместе с
+   ним при drag (см. bubble-assign.js комментарий), не растягивает layout арены. */
+.bubble-name-label {
+  position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  margin-top: 4px; font-size: 0.72rem; font-weight: 600; color: var(--text-main);
+  white-space: nowrap; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
 
 /* ── Bubble-assign confirm popup (10.32) — вид работ + период после drop ── */
 #bubble-confirm-popup { position: fixed; inset: 0; z-index: 8100; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; padding: 1rem; }

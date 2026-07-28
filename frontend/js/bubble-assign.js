@@ -80,9 +80,16 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
         const matched = _isSkillMatch(w.skills || [], stageName);
         const delay = (i * 0.37).toFixed(2);
         const dur = (2.2 + Math.abs(((i * 17) % 10) / 10)).toFixed(2);
-        const size = matched ? 72 : 54;
+        // 28.07: owner request -- кружки были маленькие, увеличены; добавлена подпись
+        // имени под кругом (раньше видно было только на title-tooltip при hover,
+        // на touch-устройстве недоступном вообще).
+        const size = matched ? 88 : 68;
         const opacity = matched ? '1' : '0.55';
         const glow = matched ? 'box-shadow:0 0 12px 3px var(--accent);border:2px solid var(--accent);' : 'border:2px solid var(--border-color);';
+        // 28.07 v2: drag двигает именно .bubble напрямую (position:fixed + left/top
+        // в px, см. _bubbleDragMove) -- подпись имени должна ехать вместе с кругом при
+        // перетаскивании, поэтому она ВНУТРИ .bubble (overflow:visible), не в отдельном
+        // родительском wrap, который остался бы на месте пока круг летит к drop-зоне.
         return `<div class="bubble"
           data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}"
           style="width:${size}px;height:${size}px;opacity:${opacity};${glow}
@@ -91,6 +98,7 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
           title="${esc(w.name)}">
           <span class="bubble-avatar">${esc(_makeAvatarText(w.name))}</span>
           ${matched ? '<span class="bubble-glow-ring"></span>' : ''}
+          <span class="bubble-name-label">${esc(w.name.split(' ')[0])}</span>
         </div>`;
       }).join('')}
     </div>
