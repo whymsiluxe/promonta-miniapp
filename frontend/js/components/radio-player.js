@@ -102,7 +102,14 @@ function _buildRadioStationLoop() {
     const gap = parseFloat(getComputedStyle(wrap).gap) || 0;
     const step = chipW + gap;
     const blockWidth = step * n;
-    wrap.scrollLeft = blockWidth; // старт на среднем блоке
+    // CSS .home-radio-stations задаёт scroll-behavior:smooth для свайпа юзера --
+    // но та же настройка анимирует и ЭТОТ программный jump на старте, из-за чего
+    // юзер видел, будто список сам собой едет при каждом заходе на Home. Отключаем
+    // smooth ровно на время прыжка, возвращаем сразу после.
+    wrap.style.scrollBehavior = 'auto';
+    wrap.scrollLeft = blockWidth; // старт на среднем блоке, без видимой анимации
+    void wrap.offsetHeight; // форсируем reflow, чтобы scrollLeft применился до возврата smooth
+    wrap.style.scrollBehavior = '';
     _radioLoopBlockWidth = blockWidth;
   });
 

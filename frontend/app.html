@@ -4370,7 +4370,7 @@ async function initApp() {
     });
   }, { passive: true });
 
-  startUnreadChatPolling();
+  startChatPolling();
 
   if (!initData) {
     document.body.innerHTML = '<div style="padding:2rem 1rem;text-align:center;color:var(--text-light)">Открыто вне Telegram — нет initData для авторизации API.</div>';

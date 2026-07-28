@@ -1,6 +1,6 @@
 // Глобальный попап критических алертов (Фаза 10.16) — крутится независимо от того,
 // какой view открыт, поверх всего приложения. Polling — тот же паттерн, что чат
-// (см. CHAT_UNREAD_POLL_MS в chat.js), без WebSocket.
+// (см. startChatPolling()/_chatPollTick() в chat.js), без WebSocket.
 
 const CRITICAL_ALERT_POLL_MS = 15000;
 let _criticalAlertModalOpen = false;

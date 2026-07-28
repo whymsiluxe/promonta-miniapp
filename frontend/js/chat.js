@@ -1,12 +1,20 @@
 // Таб "Чат" — командный чат команды Promonta.
 // Хранение: JSON-файл на VPS (последние 200 сообщений), polling каждые 8 сек.
 // Решение: WebSocket избыточен для 2-5 чел., простой polling без зависимостей.
+//
+// 28.07 (Phase 06): единый polling controller (см. startChatPolling() внизу файла) —
+// раньше было 2 независимых setInterval (сообщения активного треда 8s + total unread
+// 15s, последний всегда активен независимо от видимости вкладки/приложения). Backend
+// не отдаёт реальный пагинационный cursor (полный массив ≤200 сообщений на каждый
+// запрос) — "monotonic cursor" из спеки реализован практически: сравнение сигнатуры
+// (id+реакции) последнего снятого снимка вместо старой maxTs+length эвристики, которая
+// не ловила reaction-only изменение (ts/length не менялись, но чужая реакция добавилась).
 
 const CHAT_POLL_MS = 8000;
 let _chatPollTimer = null;
-let _chatLastTs = 0;
-let _chatLastCount = 0; // 27.07 (B10, точечный фикс): maxTs-only пропускал delete/reorder,
-                          // если последнее сообщение не менялось -- length меняется даже тогда.
+let _chatPollAbort = null;
+let _chatPollBackoffMs = 0;
+let _chatLastRenderSig = null;
 let _chatMyId = null;
 let _chatIsOwner = false;
 let _chatActiveThread = null; // null = группа, иначе user_id собеседника (DM)
@@ -51,19 +59,18 @@ function _renderChatMessages(messages) {
 
   if (!messages || messages.length === 0) {
     container.innerHTML = '<div class="chat-empty">Сообщений пока нет. Напишите первым!</div>';
-    _chatLastTs = 0;
-    _chatLastCount = 0;
+    _chatLastRenderSig = null;
     return;
   }
 
-  const maxTs = Math.max(...messages.map(m => m.ts));
-  // length меняется при delete/reaction-как-новом-сообщении даже если maxTs не вырос
-  // (например удалили не последнее сообщение) -- ловим это без полного cursor redesign.
-  if (maxTs <= _chatLastTs && messages.length === _chatLastCount) return;
+  // Сигнатура снимка: id (порядок+delete/insert) + сводка реакций каждого сообщения --
+  // ловит и удаление не-последнего сообщения, и reaction-only изменение без нового
+  // сообщения/смены ts, оба пропускались старой maxTs+length эвристикой.
+  const sig = messages.map(m => `${m.id}:${(m.reactions || []).map(r => `${r.reaction}${r.count}${r.mine ? '1' : '0'}`).join('')}`).join('|');
+  if (sig === _chatLastRenderSig) return;
 
   const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
-  _chatLastTs = maxTs;
-  _chatLastCount = messages.length;
+  _chatLastRenderSig = sig;
 
   // 24.07: группировка последовательных сообщений одного отправителя (Connecteam-стиль) —
   // второе+ сообщение подряд от того же юзера в пределах 120 сек не повторяет имя, садится
@@ -293,17 +300,18 @@ async function _confirmDeleteChatMessage(msgId, bubbleEl) {
   }
 }
 
-async function _loadChatMessages(forceScroll) {
+async function _loadChatMessages(forceScroll, signal) {
   try {
     const path = _chatActiveThreadKey ? `/api/chat/messages?thread_key=${encodeURIComponent(_chatActiveThreadKey)}`
       : _chatActiveThread ? `/api/chat/messages?with_=${_chatActiveThread}` : '/api/chat/messages';
-    const data = await api(path);
+    const data = await api(path, signal ? { signal } : {});
     _renderChatMessages(data.messages || []);
     if (forceScroll) {
       const c = document.getElementById('chat-messages');
       if (c) c.scrollTop = c.scrollHeight;
     }
   } catch (e) {
+    if (e.name === 'AbortError') return;
     console.error('Chat poll error:', e.message);
   }
 }
@@ -340,8 +348,7 @@ async function _sendChatAttachment(file) {
       body: formData,
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
-    _chatLastTs = 0;
-    _chatLastCount = 0;
+    _chatLastRenderSig = null;
     await _loadChatMessages(true);
     hapticImpact('light');
   } catch (e) {
@@ -371,8 +378,7 @@ async function _sendChatMessage() {
     });
     input.value = '';
     input.style.height = 'auto';
-    _chatLastTs = 0;
-    _chatLastCount = 0;
+    _chatLastRenderSig = null;
     await _loadChatMessages(true);
     _loadMyChatThreads(); // 24.07: обновляет last_ts/last_preview в списке тредов, иначе
                            // дата/превью там оставались устаревшими до следующего захода
@@ -392,9 +398,6 @@ async function _sendChatMessage() {
   }
 }
 
-const CHAT_UNREAD_POLL_MS = 15000;
-let _chatUnreadTimer = null;
-
 function _renderUnreadBadge(count) {
   const badge = document.getElementById('chat-nav-badge');
   if (badge) {
@@ -412,17 +415,61 @@ function _renderUnreadBadge(count) {
   }
 }
 
-async function _pollUnreadChat() {
+async function _pollUnreadChat(signal) {
   try {
-    const data = await api('/api/chat/unread_count');
+    const data = await api('/api/chat/unread_count', signal ? { signal } : {});
     _renderUnreadBadge(data.unread || 0);
-  } catch (e) {}
+  } catch (e) {
+    if (e.name !== 'AbortError') throw e;
+  }
 }
 
-function startUnreadChatPolling() {
-  _pollUnreadChat();
-  if (_chatUnreadTimer) clearInterval(_chatUnreadTimer);
-  _chatUnreadTimer = setInterval(_pollUnreadChat, CHAT_UNREAD_POLL_MS);
+// 28.07 (Phase 06): единый polling tick для всего Chat Hub — заменяет старые
+// независимые _chatUnreadTimer(15s)/_chatPollTimer(8s). Каждый тик всегда обновляет
+// total unread (нужен глобально для nav-badge вне зависимости от открытого экрана),
+// и дополнительно сообщения активного треда — если он сейчас открыт. AbortController
+// отменяет предыдущий незавершённый тик, если новый уже стартовал (защита от гонки
+// устаревшего ответа, актуально при быстром открытии/закрытии тредов). Backoff растёт
+// экспоненциально при сетевых ошибках, сбрасывается на первом успешном тике.
+function _chatIsThreadDetailOpen() {
+  const el = document.getElementById('chat-thread-detail-view');
+  return !!el && el.style.display !== 'none';
+}
+
+async function _chatPollTick() {
+  if (document.hidden) { _scheduleNextChatPoll(); return; }
+  if (_chatPollAbort) _chatPollAbort.abort();
+  _chatPollAbort = new AbortController();
+  const signal = _chatPollAbort.signal;
+  try {
+    const jobs = [_pollUnreadChat(signal)];
+    if (_chatIsThreadDetailOpen()) jobs.push(_loadChatMessages(false, signal));
+    await Promise.all(jobs);
+    _chatPollBackoffMs = 0;
+  } catch (e) {
+    if (e.name !== 'AbortError') _chatPollBackoffMs = Math.min((_chatPollBackoffMs || 4000) * 2, 60000);
+  } finally {
+    _scheduleNextChatPoll();
+  }
+}
+
+function _scheduleNextChatPoll() {
+  if (_chatPollTimer) clearTimeout(_chatPollTimer);
+  _chatPollTimer = setTimeout(_chatPollTick, CHAT_POLL_MS + _chatPollBackoffMs);
+}
+
+function _onChatVisibilityChange() {
+  // Немедленный тик при возврате в приложение вместо ожидания истечения текущего
+  // интервала -- badge/сообщения не должны выглядеть устаревшими сразу после разблокировки.
+  if (!document.hidden) _chatPollTick();
+}
+
+let _chatPollingStarted = false;
+function startChatPolling() {
+  _chatPollTick();
+  if (_chatPollingStarted) return;
+  _chatPollingStarted = true;
+  document.addEventListener('visibilitychange', _onChatVisibilityChange);
 }
 
 async function markChatRead(threadUserId, threadKey) {
@@ -603,8 +650,7 @@ function openChatThread(threadUserId, title) {
   document.getElementById('chat-thread-detail-view').style.display = 'flex';
   document.body.classList.add('chat-dialog-open');
   _hideBottomNavInline();
-  _chatLastTs = 0;
-  _chatLastCount = 0;
+  _chatLastRenderSig = null;
   _loadChatMessages(true);
   _refreshChatThreadCloseState();
   markChatRead(threadUserId); // per-thread — сбрасываем badge только этого треда (10.29)
@@ -621,8 +667,7 @@ function openObjectOrMangelChat(threadKey, title, returnToView) {
   document.body.classList.add('chat-dialog-open');
   _hideBottomNavInline();
   document.getElementById('chat-close-thread-btn').style.display = 'none'; // закрытие тредов не поддержано для obj:/mangel:
-  _chatLastTs = 0;
-  _chatLastCount = 0;
+  _chatLastRenderSig = null;
   _loadChatMessages(true);
   markChatRead(null, threadKey); // 25.07: obj:/mangel:/task: треды раньше никогда не отмечались прочитанными
 }
@@ -726,12 +771,9 @@ async function initChatView() {
     });
   });
 
-  if (_chatPollTimer) clearInterval(_chatPollTimer);
-  _chatPollTimer = setInterval(() => {
-    if (_chatActiveThread !== null || document.getElementById('chat-thread-detail-view').style.display !== 'none') {
-      _loadChatMessages(false);
-    }
-  }, CHAT_POLL_MS);
+  // Сообщения активного треда теперь подхватываются единым _chatPollTick() (см. выше,
+  // startChatPolling) — отдельный setInterval здесь был вторым независимым таймером,
+  // консолидированным в этой фазе.
 
   document.getElementById('chat-thread-back-btn').addEventListener('click', closeChatThread);
 
@@ -861,8 +903,7 @@ async function _sendVoiceMessage(blob) {
       body: formData,
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
-    _chatLastTs = 0;
-    _chatLastCount = 0;
+    _chatLastRenderSig = null;
     await _loadChatMessages(true);
     hapticImpact('medium');
   } catch (e) {

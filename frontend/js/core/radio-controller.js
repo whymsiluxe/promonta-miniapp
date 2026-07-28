@@ -9,6 +9,7 @@
 
 const RADIO_STATIONS = [
   { id: 'afro', name: 'Afro House', url: 'https://radiorecord.hostingradio.ru/afro96.aacp' },
+  { id: 'gop', name: 'Гоп FM', url: 'https://radiorecord.hostingradio.ru/gop96.aacp' },
   { id: 'chil', name: 'Chill-Out', url: 'https://radiorecord.hostingradio.ru/chil96.aacp' },
   { id: 'nashashlyki', name: 'На шашлыки!', url: 'https://radiorecord.hostingradio.ru/nashashlyki96.aacp' },
   { id: 'mix', name: 'Megamix', url: 'https://radiorecord.hostingradio.ru/mix96.aacp' },
@@ -27,6 +28,7 @@ const RADIO_STATIONS = [
   { id: 'neurofunk', name: 'Neurofunk', url: 'https://radiorecord.hostingradio.ru/neurofunk96.aacp' },
   { id: 'darkside', name: 'Darkside', url: 'https://radiorecord.hostingradio.ru/darkside96.aacp' },
   { id: 'martingarrix', name: 'Martin Garrix', url: 'https://radiorecord.hostingradio.ru/martingarrix96.aacp' },
+  { id: 'russianhits', name: 'Russian Hits', url: 'https://radiorecord.hostingradio.ru/russianhits96.aacp' },
 ];
 
 const RadioController = (() => {
