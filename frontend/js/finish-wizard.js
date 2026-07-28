@@ -34,7 +34,11 @@ function openFinishShiftWizard(sessionId, objectId) {
   _fwExtraWorks = [];
   _fwNeeds = [];
   _fwDefects = [];
-  _fwPauseMinutes = 30;
+  // 28.07: owner report -- было захардкожено 30 минут независимо от реальной паузы,
+  // и нигде не показывалось в сводке. Читаем реально накопленное время паузы из
+  // активной сессии (тот же источник, что checkin.js уже использует для старого flow).
+  const activeSession = typeof _getActiveCheckinSession === 'function' ? _getActiveCheckinSession(objectId) : null;
+  _fwPauseMinutes = Math.round((activeSession?.pauseAccumulatedSeconds || 0) / 60);
   _fwFinishGeo = null;
   document.getElementById('finish-wizard-modal').style.display = 'flex';
   _fwRenderStep();
@@ -331,6 +335,7 @@ function _fwRenderStep6() {
     <div class="fw-summary-section"><b>Доп. работы:</b><ul>${extraWorksHtml}</ul></div>
     <div class="fw-summary-section"><b>Потребности:</b><ul>${needsHtml}</ul></div>
     <div class="fw-summary-section"><b>Дефекты:</b><ul>${defectsHtml}</ul></div>
+    <div class="fw-summary-section"><b>Пауза за смену:</b> ${_fwPauseMinutes > 0 ? `${_fwPauseMinutes} мин.` : 'без пауз'}</div>
     <div class="fw-summary-section"><b>Геолокация:</b> ${_fwFinishGeo ? '📍 определена' : '⚠️ не определена'}</div>
     <div class="fw-nav-row">
       <button class="fw-back-btn" id="fw-back-6" type="button">← Назад</button>
@@ -401,6 +406,14 @@ async function _fwSubmitFinish() {
     document.getElementById('finish-wizard-modal').style.display = 'none';
     showToast('Смена завершена', 'success');
     if (typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
+    // 28.07: owner report -- завершил смену через finish-wizard, но Home-карточка
+    // "Смена идёт" (worker-shift-cta, отдельный независимый источник состояния)
+    // оставалась устаревшей, т.к. этот wizard никогда её не трогал -- только
+    // checkin.js (старый finish-flow) синхронизировал её, finish-wizard.js не был
+    // подключён к этому же обновлению. Тот же паттерн, что уже есть в checkin.js.
+    if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
+      _loadWorkerShiftCta();
+    }
   } catch (e) {
     statusEl.textContent = 'Ошибка: ' + e.message;
     statusEl.classList.add('fw-submit-error');
