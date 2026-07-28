@@ -821,6 +821,25 @@ let _objDetailCurrentName = '';
 let _objDetailCurrentStatus = '';
 const _objDetailLoadedTabs = new Set();
 
+// 29.07: owner report (Symptom B) -- Objects list found squished/dimmed with body.view-locked
+// stuck. Root cause: #view-object-detail is NOT a .view and was never pushed into
+// NavigationManager's stack (unlike every other pushed screen) -- opened/closed only via direct
+// openObjectDetail()/closeObjectDetail() calls. Telegram's native BackButton and Android
+// hardware/gesture back both route through NavigationManager.back(), which had no idea Object
+// Detail was open: with stack depth still 1 ('objects'), back() fell into its "at root" branch
+// and called switchView('home'). switchView() DOES call unembedObjectChat() (clears view-locked,
+// body.style.top, scroll restore) as its first line -- but it only ever toggles elements queried
+// via document.querySelectorAll('.view'), and #view-object-detail deliberately has no .view class
+// (see comment at openObjectDetail below), so it never got hidden. Net result after a hardware-back
+// out of the embedded chat tab: view-locked/body.style.top were cleaned up correctly, but
+// #view-object-detail (display:block, no longer chat-embedded) stayed visually stacked in front of
+// whatever switchView('home') activated underneath -- consistent with the owner's screenshot of a
+// dimmed/squished Objects screen sitting behind something still on top.
+// Fix: register Object Detail as a NavigationManager overlay (same registerOverlay pattern already
+// used for new-object-sheet/photo-comments-modal) so BackButton/hardware-back calls
+// closeObjectDetail() directly instead of falling through to the "no idea this exists" branch.
+let _objDetailOverlayUnregister = null;
+
 function openObjectDetail(objectId, objectName, initialTab, objectStatus) {
   _objDetailCurrentId = objectId;
   _objDetailCurrentName = objectName || objectId;
@@ -831,6 +850,10 @@ function openObjectDetail(objectId, objectName, initialTab, objectStatus) {
   const view = document.getElementById('view-object-detail');
   view.style.display = 'block';
   document.getElementById('obj-detail-title').textContent = _objDetailCurrentName;
+
+  if (typeof NavigationManager !== 'undefined' && !_objDetailOverlayUnregister) {
+    _objDetailOverlayUnregister = NavigationManager.registerOverlay(() => _closeObjectDetailInternal());
+  }
 
   const tab = initialTab || 'chat';
   document.querySelectorAll('#obj-detail-tabs .doc-type-opt').forEach(opt => {
@@ -849,7 +872,25 @@ function _objDetailTabClick(tab) {
   _initObjDetailTab(tab);
 }
 
+// Вызывается ТОЛЬКО из NavigationManager (top.close(), т.е. BackButton/hardware-back) --
+// overlay уже popped на этот момент, повторный unregister не нужен (тот же паттерн что
+// _closeNewObjectViewInternal). Это путь, которого раньше не было вообще для Object Detail --
+// без него hardware/gesture back проваливался в NavigationManager.back()'s root-branch,
+// которая ничего не знала про #view-object-detail (см. комментарий у openObjectDetail).
+function _closeObjectDetailInternal() {
+  _objDetailOverlayUnregister = null;
+  if (typeof unembedObjectChat === 'function') unembedObjectChat();
+  document.getElementById('view-object-detail').style.display = 'none';
+  document.getElementById('objects-list-view').style.display = '';
+  refreshObjectsFabVisibility();
+  _objDetailCurrentId = null;
+  loadObjects();
+}
+
+// Вызывается при ручном закрытии (тап по #obj-detail-back) -- overlay ещё в стеке,
+// нужно явно снять, иначе следующий Back попытается закрыть уже закрытый экран.
 function closeObjectDetail() {
+  if (_objDetailOverlayUnregister) { _objDetailOverlayUnregister(); _objDetailOverlayUnregister = null; }
   if (typeof unembedObjectChat === 'function') unembedObjectChat();
   document.getElementById('view-object-detail').style.display = 'none';
   document.getElementById('objects-list-view').style.display = '';

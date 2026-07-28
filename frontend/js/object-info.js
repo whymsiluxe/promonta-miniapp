@@ -918,6 +918,20 @@ async function embedObjectChat(objectId, objectName) {
   _chatReturnToView = null;
   document.getElementById('chat-close-thread-btn').style.display = 'none';
   _chatLastTs = 0;
+  // 29.07: _chatLastRenderSig (chat.js) was never reset here. _renderChatMessages() no-ops
+  // when the freshly-fetched signature matches the last one it wrote -- correct for polling
+  // the SAME thread, but embedObjectChat() switches _chatActiveThreadKey to a DIFFERENT
+  // thread (obj:${objectId}) while the in-memory sig from whatever was rendered before this
+  // embed (root chat, a DM, a different object) is still sitting in _chatLastRenderSig. If
+  // this object's thread happens to render to an identical signature string (e.g. this
+  // object's chat was already viewed earlier this session and nothing changed since), the
+  // real fetch succeeds but _renderChatMessages() returns before touching #chat-messages,
+  // leaving whatever was in the DOM node when it got moved into this panel -- on a true
+  // first-ever open in the session this is the static "Загрузка..." placeholder from
+  // app.html, since nothing has written into #chat-messages yet. Resetting to null here
+  // guarantees the first render after every embed always writes real content once the
+  // fetch resolves, regardless of what was rendered before this thread became active.
+  _chatLastRenderSig = null;
   await _loadChatMessages(true);
   markChatRead(null, `obj:${objectId}`);
 }
