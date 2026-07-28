@@ -2608,7 +2608,7 @@ body.view-locked {
 .home-radio-play-btn:active { transform: scale(0.95); }
 .home-radio-play-btn.is-loading { opacity: 0.6; }
 .home-radio-stations-viewport { position: relative; margin-bottom: 0.7rem; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%); mask-image: linear-gradient(90deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%); }
-.home-radio-stations { position: relative; display: flex; gap: 0.4rem; overflow-x: auto; scrollbar-width: none; padding: 0.2rem 0; scroll-snap-type: x mandatory; scroll-behavior: smooth; }
+.home-radio-stations { position: relative; display: flex; gap: 0.4rem; overflow-x: auto; scrollbar-width: none; padding: 0.2rem 0; scroll-snap-type: x proximity; scroll-behavior: smooth; }
 .home-radio-stations::-webkit-scrollbar { display: none; }
 .home-radio-station-chip { flex-shrink: 0; scroll-snap-align: center; background: rgba(245,241,232,0.08); border: 1px solid transparent; color: rgba(245,241,232,0.8); font-size: 0.8rem; font-weight: 600; padding: 0.4rem 0.8rem; border-radius: 999px; cursor: pointer; transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.15s; }
 .home-radio-station-chip:active { transform: scale(0.94); }
@@ -2626,6 +2626,14 @@ body.view-locked {
   background: color-mix(in srgb, #1B211C 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(245,241,232,0.12); border-radius: 999px; color: #F5F1E8;
   box-shadow: 0 8px 20px -12px rgba(0,0,0,0.4);
+  transition: width 200ms ease, max-width 200ms ease;
+}
+/* 28.07: на табе Объекты mini-player перекрывал .objects-fab (оба в правом углу над
+   nav) -- сужаем только здесь, оставляя объектам-FAB свободную зону справа. Другие
+   табы не трогаем -- там FAB не показывается вообще (см. refreshObjectsFabVisibility). */
+body.view-objects-active .radio-mini-player {
+  left: calc(50% - 40px);
+  width: calc(100% - 24px - 76px);
 }
 .radio-mini-wave { flex-shrink: 0; color: var(--c-brass, #A9844F); display: flex; }
 .radio-mini-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; font-weight: 600; }

@@ -373,7 +373,11 @@ function refreshObjectsFabVisibility() {
   if (!fab) return;
   const objectsActive = document.getElementById('view-objects')?.classList.contains('active');
   const listVisible = document.getElementById('objects-list-view')?.style.display !== 'none';
-  fab.classList.toggle('visible', !!(objectsActive && listVisible && currentRole === 'owner'));
+  const fabVisible = !!(objectsActive && listVisible && currentRole === 'owner');
+  fab.classList.toggle('visible', fabVisible);
+  // 28.07: radio-mini-player перекрывал этот FAB (оба в правом углу над nav) -- сужаем
+  // mini-player только пока FAB реально виден, см. `.radio-mini-player` CSS.
+  document.body.classList.toggle('view-objects-active', fabVisible);
 }
 
 async function submitNewObject() {
