@@ -3440,6 +3440,7 @@ def get_stages(object_id: str, user: dict = Depends(get_current_user)):
 
 class NewStageBody(BaseModel):
     name: str
+    description: str = ''
 
 
 @app.post("/api/objects/{object_id}/stages")
@@ -3449,9 +3450,26 @@ def create_stage(object_id: str, body: NewStageBody, user: dict = Depends(get_cu
     import objekte_lib as o
     if not body.name.strip():
         raise HTTPException(400, "Name erforderlich")
-    num = o.add_stage(object_id, body.name.strip())
+    num = o.add_stage(object_id, body.name.strip(), body.description.strip()[:2000])
     o.sync_current_stage(object_id)
     return {"stage_num": num}
+
+
+class StageDescriptionBody(BaseModel):
+    description: str
+
+
+@app.patch("/api/objects/{object_id}/stages/{row_num}/description")
+def update_stage_description_endpoint(object_id: str, row_num: int, body: StageDescriptionBody, user: dict = Depends(get_current_user)):
+    # 28.07: roadmap-этапы -- owner request "чтоб работник знал что ему делать" (список
+    # подзадач текстом внутри развёрнутого этапа). Любая роль может редактировать (тот же
+    # принцип, что уже применён к созданию/просмотру этапов сегодня -- не owner-only).
+    import objekte_lib as o
+    try:
+        o.update_stage_description(row_num, body.description.strip()[:2000])
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"status": "ok"}
 
 
 class StageStatusBody(BaseModel):
