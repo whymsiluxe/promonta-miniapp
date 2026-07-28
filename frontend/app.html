@@ -1100,7 +1100,7 @@ header h1 {
 .obj-info-subtabs .doc-type-opt { padding: 0.35rem 0.7rem; font-size: 0.82rem; }
 
 #obj-info-doc-viewer { display: none; position: fixed; inset: 0; z-index: 400; background: var(--bg-app); flex-direction: column; }
-.obj-doc-viewer-header { display: flex; align-items: center; gap: 0.5rem; padding: calc(0.6rem + var(--tg-safe-top, 0px)) 0.75rem 0.6rem; flex-shrink: 0; }
+.obj-doc-viewer-header { display: flex; align-items: center; gap: 0.5rem; padding: calc(0.35rem + var(--tg-safe-top, 0px)) 0.75rem 0.6rem; flex-shrink: 0; }
 .obj-doc-viewer-header h1 { font-size: 1rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
 .obj-doc-viewer-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; }
 .obj-doc-viewer-body img { max-width: 100%; max-height: 100%; object-fit: contain; }
@@ -1370,9 +1370,11 @@ header h1 {
   background: var(--bg-card);
 }
 .photo-comments-modal .pc-header {
-  flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem;
-  padding: calc(0.75rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 0.75rem calc(1rem + var(--tg-safe-left, 0px)); border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0; display: grid; grid-template-columns: minmax(44px, auto) 1fr minmax(44px, auto); align-items: center; gap: 0.5rem;
+  padding: calc(0.35rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 0.75rem calc(1rem + var(--tg-safe-left, 0px)); border-bottom: 1px solid var(--border-color);
 }
+.pc-header .chat-back-btn { grid-column: 1; }
+.pc-header h1 { grid-column: 2; text-align: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .photo-comments-modal .pc-photo { width: 100%; max-height: 45vh; object-fit: cover; flex-shrink: 0; display: block; }
 .pc-photo-wrap { position: relative; flex-shrink: 0; }
 .pc-photo-label { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.55); color: #fff; font-size: 0.78rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 999px; }
