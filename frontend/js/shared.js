@@ -40,9 +40,17 @@ function api(path, options = {}) {
     delete _prefetchCache[path];
     return cached;
   }
+  // 28.07 (ТЗ п.26): api() ставил Content-Type: application/json безусловно -- если бы
+  // кто-то передал FormData как body (никто пока так не делает, все uploads используют
+  // отдельный fetch() -- проверено, но лучше не оставлять ловушку для будущего кода),
+  // это сломало бы multipart boundary, который браузер должен проставить сам. FormData
+  // detection пропускает наш Content-Type override целиком.
+  const isFormData = options.body instanceof FormData;
+  const headers = { 'X-Telegram-Init-Data': initData, ...(options.headers || {}) };
+  if (!isFormData) headers['Content-Type'] = 'application/json';
   return fetch(API_BASE + path, {
     ...options,
-    headers: { 'X-Telegram-Init-Data': initData, 'Content-Type': 'application/json', ...(options.headers || {}) }
+    headers
   }).then(async res => {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
     return res.json();
