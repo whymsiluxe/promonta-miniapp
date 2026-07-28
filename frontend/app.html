@@ -524,6 +524,7 @@ header h1 {
 .active-shift-timer { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .active-shift-gps { font-size: 0.8rem; color: var(--text-light); }
 .active-shift-quick-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+.active-shift-main-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
 .active-shift-qa-btn { background: var(--bg-card-raised); border: none; border-radius: 10px; padding: 0.55rem 0.3rem; font-size: 0.8rem; color: var(--text-main); }
 .checkin-btn { padding: 0.75rem; font-weight: 600; }
 /* 22.07: отдельный экран Check-in через FAB (не 6-й таб nav — 5 табов принятое IA-решение) */
@@ -3433,6 +3434,14 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
         <button type="button" class="active-shift-qa-btn" id="active-shift-qa-need">📦 Потребность</button>
         <button type="button" class="active-shift-qa-btn" id="active-shift-qa-defect">⚠️ Дефект</button>
       </div>
+      <!-- 28.07: owner request -- убрать дублирующий бар Старт/Пауза/Финиш ниже,
+           пока смена активна виден только этот блок с реальным статусом (таймер+GPS).
+           Пауза/Финиш физически переехали сюда, id/обработчики те же (checkin.js
+           обращается по id, не по родителю), логика показа/скрытия не менялась. -->
+      <div class="active-shift-main-actions">
+        <button class="submit-btn checkin-btn" id="checkin-pause-toggle-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);display:none;">⏸ Пауза</button>
+        <button class="submit-btn checkin-btn" id="checkin-finish-btn" type="button" style="background:var(--red);" disabled>■ Финиш смены</button>
+      </div>
     </div>
 
     <div id="stages-list" class="form-section"></div>
@@ -3446,8 +3455,6 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
 
     <div class="checkin-bar" style="margin-top:1.25rem;">
       <button class="submit-btn checkin-btn" id="checkin-start-btn" type="button">▶ Старт смены</button>
-      <button class="submit-btn checkin-btn" id="checkin-pause-toggle-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);display:none;">⏸ Пауза</button>
-      <button class="submit-btn checkin-btn" id="checkin-finish-btn" type="button" style="background:var(--red);" disabled>■ Финиш смены</button>
       <button class="checkin-manual-link" id="checkin-analyze-btn" type="button" style="display:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px;margin-right:0.2rem;"><path d="M12 2l1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2z" fill="currentColor"/><path d="M19 15l0.7 2.3L22 18l-2.3 0.7L19 21l-0.7-2.3L16 18l2.3-0.7L19 15z" fill="currentColor"/></svg> AI-анализ смены</button>
       <button class="checkin-manual-link" id="checkin-manual-link-btn" type="button">Внести время вручную</button>
     </div>

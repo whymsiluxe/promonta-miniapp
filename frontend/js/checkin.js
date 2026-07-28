@@ -154,13 +154,20 @@ function _tickActiveShiftTimer() {
 function _updateActiveShiftPanel(activeSession, objectId) {
   const panel = document.getElementById('active-shift-panel');
   if (!panel) return;
+  // 28.07: owner request -- нижний бар со "Старт смены" дублировал active-shift-panel
+  // (таймер+статус), путая юзера двумя разными индикаторами состояния. Теперь бар
+  // виден только пока смены НЕТ (там ровно одна кнопка "Старт смены" после того как
+  // Пауза/Финиш переехали внутрь панели), панель заменяет его целиком, пока смена идёт.
+  const bar = document.querySelector('.checkin-bar');
 
   if (!activeSession || !activeSession.startAt) {
     panel.style.display = 'none';
+    if (bar) bar.style.display = 'flex';
     _stopActiveShiftTimer();
     return;
   }
 
+  if (bar) bar.style.display = 'none';
   panel.style.display = 'block';
   _activeShiftStartAt = activeSession.startAt;
   _activeShiftPauseStartedAt = activeSession.pauseStartedAt || null;
