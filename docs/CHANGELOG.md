@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-07-28 (autonomous session, continued — Phase 06 Chat Hub rebuild, partial)
+
+Full detail and status markers in `docs/plan-phases/06-chat-hub-rebuild.md`. Commits `50309ac`, `583a3ff`, `7204908`, `feb9bf2`, `509e20e`, `0ec6acb`, `7476da6`, `b5becd7`, `9159715`.
+
+This is explicitly a multi-session project per the phase file's own prior audit — this pass made real, deployed progress but did not finish it (search animation and polling consolidation remain, see Known gaps).
+
+### Decided
+- Chat Hub keeps 5 category tabs (Общий/Личные/Объекты/Дефекты/Потребности), not the spec's literal "4 таба" — see `docs/DECISIONS.md` 2026-07-28 entry. Потребности predates the plan and is in active daily use with a prior recorded owner requirement; dropping it silently would have deleted a live feature.
+
+### Fixed
+- Self-DM was never explicitly blocked backend-side (`POST /api/chat/messages`, `/messages/attachment`, `/messages/voice`) — now rejected with 400.
+- `close_chat_thread` fully overwrote `chat_thread_meta.json[thread_id]` instead of merging — would have silently wiped the new `user_prefs` (mute/pin/archive) the next time a thread with prefs set was closed.
+- The legacy `GET /api/chat/my_threads` only ever returned obj:/mangel:/task: threads, never GENERAL or DIRECT, even though `chat.js`'s `renderChatThreadList()` tries to look up group/DM previews from it — those lookups could never match, so "Общий чат"/DM row previews in the thread list always showed static fallback text instead of the real last message. Fixed in the new normalized endpoint (see Added); legacy endpoint left untouched since the live UI still depends on its exact current shape.
+
+### Added
+- `POST /api/chat/messages/{msg_id}/reactions` — compact fixed reaction set (👍✅👀❗), toggle semantics, backed by new `chat_reactions.json`. Wired to a long-press context menu on message bubbles (replaces the old touchstart→confirm()-only-for-own-messages delete flow with one menu offering reactions to everyone plus delete when allowed) with optimistic update + rollback-on-error.
+- `POST /api/chat/threads/prefs` — real per-user mute/pin/archive data layer in `chat_thread_meta.json` (`user_prefs`). No frontend controls wired to it yet (per the phase spec's explicit "don't draw fake controls before the data layer exists").
+- `GET /api/chat/threads` — normalized shape (`id`/`type`/`title`/`avatar_url`/`subtitle`/`last_message`/`unread_count`/`muted`/`pinned`/`archived`/`version`, `online` on DIRECT) across all 5 tab types, kept alongside the legacy endpoints, not yet consumed by any frontend — groundwork for the eventual full rebuild.
+- Chat Hub always-dark palette: 11 new `--chat-*` CSS variables, scoped to `#view-chat` so the chat screen renders dark independent of the app-wide Old Money light/dark theme setting (same pattern as Messages-style apps).
+- Worker strip above the category tabs — horizontal avatar row, tap opens/lazily-creates a DM, shows real online presence and per-worker unread count. Partial implementation: the spec's "search circle" is meant to be the first item in this same ribbon, still a separate plain `<input>` above it for now (see Known gaps).
+- `tests/test_chat_backend.py` — 16 stdlib `unittest` cases (no new dependency) covering the backend logic added this phase, actually executed against the real `backend/main.py` (16/16 passing), unlike the still-unexecuted `tests/smoke-nav-fab.js` from Phase 04.
+
+### Known gaps (documented, not fixed this pass — see "BLOCKED"/open items in the phase file)
+- Expandable search state machine (COLLAPSED/EXPANDING/ACTIVE/SEARCHING/NO_RESULTS/ERROR/COLLAPSING) not built — the plain `<input>` search bar from before this session is unchanged.
+- Chat polling is still the original 2 independent timers (`_chatPollTimer` 8s, `_chatUnreadTimer` 15s), not the spec's single controller with monotonic cursor/AbortController/backoff — flagged as the highest-risk remaining item, deliberately not rushed against a live daily-used feature.
+- Granular read receipts (SENDING/SENT/DELIVERED/READ/FAILED) not built — backend only knows binary read/unread per thread, so DELIVERED/FAILED aren't real states to report yet.
+- Frontend still runs on the legacy raw-storage-shape chat endpoints end-to-end; the new normalized `GET /api/chat/threads` exists but nothing reads it yet.
+
 ## 2026-07-28 (autonomous session, continued — Phase 05 design system)
 
 Full detail and status markers in `docs/plan-phases/05-design-system.md`. Commits `9606f3d`, `752b2f3`.

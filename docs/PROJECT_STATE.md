@@ -1,6 +1,6 @@
 # Project state
 
-**Last updated**: 2026-07-28 (autonomous session, Phase 04 remainder — see `docs/HANDOFF_PHASE05_10.md` and `docs/plan-phases/04-telegram-ui-navigation.md`).
+**Last updated**: 2026-07-28 (autonomous session, Phase 06 Chat Hub rebuild in progress — see `docs/HANDOFF_PHASE05_10.md` and `docs/plan-phases/06-chat-hub-rebuild.md`).
 **Branch**: `main` (GitHub default). `fix/security-reliability-p1` was superseded — its content shipped directly on `main` in earlier sessions (commits `d698a28`/`a564b6c`), confirmed 2026-07-25; that branch can be deleted, nothing left to merge from it.
 **Repo**: https://github.com/whymsiluxe/promonta-miniapp — private (was made public 2026-07-23 for one-time ChatGPT read-only audit, reverted to private after this branch was pushed — see CHANGELOG).
 **Working tree**: clean as of last commit in this session; not pushed to `origin` (this session has no confirmation it has push access/credentials configured the same way prior Mac sessions did — verify before assuming `origin/main` is current).
@@ -69,6 +69,6 @@ Second track (UI/UX redesign, per a separate ChatGPT brief) planned but not star
 
 ## Next recommended step
 
-**(2026-07-28 update, supersedes the paragraph below for current priority)**: Phases 01-05 of `docs/plan-phases/` are done (see each file's status markers). Phase 06 (Chat Hub full rebuild) is next — NOT started, but `docs/plan-phases/06-chat-hub-rebuild.md` now has a full code-verified current-state audit ready for whoever picks it up. One concrete decision is needed from the owner before starting: the spec wants 4 chat tabs, 5 exist today (extra "Потребности" tab) — flagged in that file, not resolved silently. Phases 07-10 (Object Card rebuild, Radio polish, Architecture split, Tests/docs final) follow in order per `docs/plan-phases/README.md`.
+**(2026-07-28 update #2, supersedes the paragraph below)**: Phases 01-05 done. Phase 06 (Chat Hub full rebuild) is **in progress, not finished** — see `docs/plan-phases/06-chat-hub-rebuild.md` status section and `docs/CHANGELOG.md`'s "Phase 06 Chat Hub rebuild, partial" entry for the full list. Shipped and deployed this pass: the 5-vs-4-tabs decision (kept 5, see `docs/DECISIONS.md`), self-DM rejection, message reactions (backend + UI), a real mute/pin/archive data layer (backend only, no UI yet), a normalized `GET /api/chat/threads` endpoint (backend only, not consumed by frontend yet), the always-dark chat palette, a worker strip above the tabs, and a first (backend-only) unit test file. Still open, in priority order for the next session: the expandable search state machine, consolidating the 2 chat polling timers into 1, granular read receipts, and actually wiring the new normalized endpoint + mute/pin/archive to frontend UI. Phases 07-10 (Object Card rebuild, Radio polish, Architecture split, Tests/docs final) follow in order per `docs/plan-phases/README.md` once 06 is done.
 
 Older/superseded: Continue Batch 3 UI items if desired (all need a specific library/architecture decision first — charting for budget donut/sparklines, Kanban board pattern for tasks, drag-and-drop calendar) — see [TODO.md](TODO.md).

@@ -72,13 +72,16 @@ This is a route inventory grouped by feature area, built by grepping all `@app.g
 
 ## Chat
 
-- `GET /api/chat/messages`, `GET /api/chat/my_threads`, `GET /api/chat/threads/status`, `GET /api/chat/unread_count`, `GET /api/chat/unread_by_thread` — read-side.
-- `POST /api/chat/messages` — send text.
-- `POST /api/chat/messages/attachment` — send file (8MB limit per prior session notes, UNVERIFIED still current).
-- `POST /api/chat/messages/voice` — send voice note (transcribed server-side via `faster-whisper`).
-- `DELETE /api/chat/messages/{msg_id}` — own messages only, or any if owner (verified).
+- `GET /api/chat/messages`, `GET /api/chat/my_threads`, `GET /api/chat/threads/status`, `GET /api/chat/unread_count`, `GET /api/chat/unread_by_thread` — read-side (legacy/raw-storage shape, still what the live frontend uses).
+- `GET /api/chat/threads?type=GENERAL|DIRECT|OBJECT|DEFECT|TASK` (2026-07-28, Phase 06) — normalized shape (`id`/`type`/`title`/`avatar_url`/`subtitle`/`last_message`/`unread_count`/`muted`/`pinned`/`archived`/`version`, `online` on `DIRECT` entries) across all 5 chat tab types. Additive, kept alongside the legacy endpoints above — no frontend UI reads it yet, groundwork for the Chat Hub rebuild. No cursor/pagination (see code comment: `CHAT_MAX` caps stored messages at 200 total).
+- `POST /api/chat/messages` — send text. Rejects `to_user_id == self` with 400 (2026-07-28).
+- `POST /api/chat/messages/attachment` — send file (8MB limit per prior session notes, UNVERIFIED still current). Rejects self-DM like above.
+- `POST /api/chat/messages/voice` — send voice note (transcribed server-side via `faster-whisper`). Rejects self-DM like above.
+- `DELETE /api/chat/messages/{msg_id}` — own messages only, or any if owner (verified). Also prunes that message's reactions (2026-07-28).
+- `POST /api/chat/messages/{msg_id}/reactions` (2026-07-28, Phase 06) — body `{reaction}`, one of the fixed set `👍✅👀❗`; toggles that reaction for the caller on that message (uniqueness per message_id+user_id+reaction), returns the updated per-message summary. Same access check as reading the message (thread membership).
 - `POST /api/chat/read` — mark read.
 - `POST /api/chat/threads/close` / `reopen` **[owner]**.
+- `POST /api/chat/threads/prefs` (2026-07-28, Phase 06) — body `{thread_key|to_user_id, muted?, pinned?, archived?}`, sets any subset of the three per-user flags on a thread. New real data layer (`chat_thread_meta.json`'s `user_prefs`), not wired to any frontend UI yet.
 - `GET /api/chat/attachments/{fname}` — file retrieval, membership-checked per 2026-07-15 audit notes (not re-verified here).
 
 ## Critical alerts

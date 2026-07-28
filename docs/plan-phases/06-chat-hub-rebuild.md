@@ -78,3 +78,30 @@ Frontend файлы: `frontend/js/screens/chat-hub.js`, `components/{chat-worker
 
 ---
 
+## Статус (2026-07-28, сессия 2 — реализация начата, не закончена)
+
+Следующая сессия после аудита выше — план рекомендации выполнен по пунктам 1-3 и частично 4-6. Всё закоммичено и задеплоено на прод небольшими шагами (`python3 -m py_compile` / `node --check` перед каждым деплоем), живой чат не ломался ни разу за сессию.
+
+### FIXED / реализовано и задеплоено
+- **"4 vs 5 табов"** — РЕШЕНО, оставляем 5. См. `docs/DECISIONS.md` запись 2026-07-28.
+- **Self-chat** — теперь явно запрещён (400) в `POST /api/chat/messages`, `/messages/attachment`, `/messages/voice`. Commit `583a3ff`.
+- **Reactions (👍✅👀❗)** — backend (`chat_reactions.json`, toggle endpoint `POST /api/chat/messages/{id}/reactions`, embedded в `GET /api/chat/messages`) + frontend (long-press context menu на бабле, объединён с существующим delete — отдельная схема жестов для двух функций создала бы конфликт; чип реакции кликабелен напрямую; optimistic + rollback). Commits `7204908`, `feb9bf2`.
+- **Pin/mute/archive data layer** — `chat_thread_meta.json.user_prefs` (per-user), endpoint `POST /api/chat/threads/prefs`. Backend только, **frontend controls НЕ нарисованы** (сознательно — спека прямо запрещает fake controls без data layer; теперь data layer есть, controls — следующий шаг). Попутно найден и исправлен реальный баг: `close_chat_thread` перезаписывал весь `meta[thread_id]`, что стёрло бы `user_prefs`. Commit `509e20e`.
+- **Нормализованный `GET /api/chat/threads`** — полный целевой shape (`id/type/title/avatar_url/subtitle/last_message/unread_count/muted/pinned/archived/version`, `online` на DIRECT), покрывает все 5 типов. Existing `/api/chat/my_threads` НЕ тронут (используется живым UI). Заодно исправлен найденный попутно баг: старый `my_threads` никогда не возвращал GENERAL/DIRECT треды вообще — только obj:/mangel:/task:, из-за чего превью "Общий чат"/DM в списке чатов всегда показывали статичный fallback-текст, не реальное последнее сообщение (`_threadByKey()` в chat.js искал по ключу, которого не было в ответе). **Frontend ещё не читает этот endpoint** — только backend-groundwork. Commit `0ec6acb`.
+- **Тёмная chat-specific палитра** — все 11 переменных из спеки, scoped на `#view-chat` (чат всегда тёмный, независимо от app-wide темы), не задевает `.ai-*` (чат с ИИ у owner). Commit `7476da6`.
+- **Worker strip** — горизонтальная лента над табами, тап открывает/лениво создаёт DM, реальный online-presence + unread per-worker. Частично: search circle из спеки НЕ слит в один компонент с лентой (отдельный `<input>` выше, как был) — см. "Не сделано" ниже. Commit `b5becd7`.
+- **Тесты** — `tests/test_chat_backend.py`, 16 stdlib-unittest кейсов на добавленную backend-логику, реально запущены (16/16 pass), не просто написаны. Commit `9159715`.
+
+### Не сделано (осознанно, не блокер — следующая сессия)
+- **Expandable search state machine** (COLLAPSED/EXPANDING/ACTIVE/SEARCHING/NO_RESULTS/ERROR/COLLAPSING, слияние с worker-strip в одну ленту) — самый крупный оставшийся фронтенд-кусок этой фазы, требует отдельного прохода с анимацией/debounce/AbortController/per-tab-scope поиска. Текущий plain `<input>` работает (клиентский filter в `renderChatThreadList`), просто не по референсу.
+- **Polling consolidation** (2 таймера → 1 controller, monotonic cursor, AbortController, backoff) — сознательно не трогали в этой сессии: самый рискованный пункт (затрагивает работающий live-polling), решили не рисковать в той же сессии, где уже сделано много других изменений в тот же файл. Следующий шаг, отдельно, с полным вниманием.
+- **Granular read receipts** (SENDING/SENT/DELIVERED/READ/FAILED) — backend реально знает только бинарное read/unread per-thread, не per-message DELIVERED/FAILED. Строить fake-состояния запрещено спекой напрямую ("не имитировать delivery если backend знает только SENT/READ") — этот пункт требует сначала решить, нужен ли per-message read-tracking вообще (сейчас его нет, только per-thread last_read ts), это архитектурное решение, не мелкая правка.
+- **Pin/mute/archive UI** — data layer готов (см. выше), кнопки/свайпы в списке тредов ещё не нарисованы.
+- **Нормализованный endpoint не подключен к фронту** — существует, не используется. Переключение живого UI на него — отдельный, более рискованный шаг (нужно параллельно тестировать оба пути перед вырезанием старого).
+- **Файловая структура из спеки** (`screens/chat-hub.js`, отдельные `components/*.js`, `core/chat-controller.js`) — всё ещё в одном `chat.js` (теперь ~900+ строк). Не разбито намеренно: разбиение на модули без сборки (vanilla JS, `<script>`-теги) — это Architecture phase 09 забота (порядок загрузки, глобальные функции), смешивать с Chat Hub функциональными изменениями в одну сессию было бы рискованно.
+
+### Рекомендация для следующей сессии (обновлено)
+Порядок: 1) polling consolidation (самое рискованное, но и самое ценное — текущие 2 таймера дают устаревшие badges/previews в нескольких местах), 2) expandable search, 3) wiring нормализованного endpoint к фронту (с явным fallback/сравнением против старого перед вырезанием), 4) pin/mute/archive UI поверх готового data layer, 5) read-receipts — только после архитектурного решения про per-message tracking.
+
+---
+
