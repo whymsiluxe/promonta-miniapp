@@ -2,6 +2,7 @@
 """Promonta Mini App — FastAPI backend. Фаза 2 плана: скелет + initData-auth + roles.
 Запуск: uvicorn main:app --host 127.0.0.1 --port 8001
 """
+import copy
 import csv
 import hashlib
 import hmac
@@ -126,12 +127,48 @@ def _lock_for(path: str):
 def _atomic_write_json(path: str, data, ensure_ascii: bool = False):
     """Пишет во временный файл + os.replace — процесс, упавший посреди записи
     (напр. systemctl restart), не оставляет обрезанный JSON, который потом валит
-    json.load на старте всех эндпоинтов, читающих этот стор (10.29)."""
+    json.load на старте всех эндпоинтов, читающих этот стор (10.29).
+
+    ВАЖНО: сам по себе не защищает от read-modify-write гонки -- если код делает
+    `data = _safe_load_json(path, default); data[k] = v; _atomic_write_json(path, data)`,
+    лок захватывается только на сам _atomic_write_json, ЧТЕНИЕ происходит СНАРУЖИ лока.
+    Два параллельных запроса могут оба прочитать одинаковую версию до того как первый
+    успеет записать -- второй молча затирает изменения первого. Для любого места, где
+    read-modify-write должен быть атомарным (не просто "запись не оставит corrupt файл"),
+    используй update_json_transaction() ниже, не _safe_load_json+_atomic_write_json
+    по отдельности (28.07, real bug found by external audit, ТЗ п.5)."""
     with _lock_for(path):
         tmp_path = f'{path}.tmp-{os.getpid()}'
         with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=ensure_ascii)
         os.replace(tmp_path, path)
+
+
+def update_json_transaction(path: str, default, mutator):
+    """Read-modify-write под ОДНИМ захватом лока -- закрывает гонку, которую
+    _atomic_write_json сам по себе не решает (см. комментарий выше). mutator получает
+    текущую структуру (или default, если файла нет/битый), мутирует её IN-PLACE
+    (list.append/dict[k]=v — не return нового объекта, чтобы не плодить два разных
+    паттерна использования) и может опционально вернуть значение для вызывающего кода.
+    НЕ вызывать _atomic_write_json изнутри mutator -- тот же _lock_for(path) не
+    reentrant, будет deadlock (threading.Lock, не RLock)."""
+    with _lock_for(path):
+        if not os.path.exists(path):
+            data = default() if callable(default) else copy.deepcopy(default)
+        else:
+            try:
+                with open(path, encoding='utf-8') as f:
+                    data = json.load(f)
+            except json.JSONDecodeError:
+                print(f'ERROR: {path} corrupt JSON in transaction, falling back to default')
+                data = default() if callable(default) else copy.deepcopy(default)
+        result = mutator(data)
+        tmp_path = f'{path}.tmp-{os.getpid()}'
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp_path, path)
+        return result
+
 
 
 def _safe_load_json(path: str, default):
@@ -837,33 +874,53 @@ async def upload_object_image(object_id: str, file: UploadFile = File(...),
     detected = sniff_image(raw)
     if not detected:
         raise HTTPException(400, "Файл должен быть изображением")
-    images = _load_object_images()
-    existing = images.get(object_id) or []
-    if len(existing) >= OBJECT_PHOTO_MAX:
-        raise HTTPException(400, f"Максимум {OBJECT_PHOTO_MAX} фото на объект")
     ext = _ALLOWED_IMAGE_MIME_EXT[detected]
     os.makedirs(OBJECT_PHOTO_DIR, exist_ok=True)
     fname = f"{uuid.uuid4().hex}.{ext}"
-    with open(os.path.join(OBJECT_PHOTO_DIR, fname), 'wb') as f_out:
+    fpath = os.path.join(OBJECT_PHOTO_DIR, fname)
+    with open(fpath, 'wb') as f_out:
         f_out.write(raw)
-    images[object_id] = existing + [fname]
-    _save_object_images(images)
-    return {"status": "ok", "photos": images[object_id]}
+
+    # 28.07 v3 (real bug found by external audit): было _load_object_images() +
+    # _save_object_images() как два отдельных вызова -- read происходил СНАРУЖИ лока,
+    # два параллельных upload на один object_id могли оба прочитать одинаковый
+    # existing-список и один затирал фото, добавленное другим. update_json_transaction
+    # держит read+mutate+write под одним захватом _lock_for(path).
+    def _mutator(images):
+        existing = images.get(object_id) or []
+        if len(existing) >= OBJECT_PHOTO_MAX:
+            raise HTTPException(400, f"Максимум {OBJECT_PHOTO_MAX} фото на объект")
+        images[object_id] = existing + [fname]
+        return images[object_id]
+
+    try:
+        photos = update_json_transaction(OBJECT_IMAGES_FILE, {}, _mutator)
+    except HTTPException:
+        # 28.07: metadata-транзакция не прошла (лимит фото достигнут) -- не оставляем
+        # orphan-файл на диске без записи в metadata (ТЗ п.24: "не оставлять файл на
+        # диске при неуспешной транзакции").
+        if os.path.exists(fpath):
+            os.remove(fpath)
+        raise
+    return {"status": "ok", "photos": photos}
 
 
 @app.delete("/api/objects/{object_id}/image/{fname}")
 def delete_object_image(object_id: str, fname: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     safe_name = os.path.basename(fname)
-    images = _load_object_images()
-    existing = images.get(object_id) or []
-    if safe_name not in existing:
-        raise HTTPException(404, "Фото не найдено")
-    images[object_id] = [f for f in existing if f != safe_name]
-    _save_object_images(images)
+
+    def _mutator(images):
+        existing = images.get(object_id) or []
+        if safe_name not in existing:
+            raise HTTPException(404, "Фото не найдено")
+        images[object_id] = [f for f in existing if f != safe_name]
+        return images[object_id]
+
+    photos = update_json_transaction(OBJECT_IMAGES_FILE, {}, _mutator)
     path = os.path.join(OBJECT_PHOTO_DIR, safe_name)
     if os.path.exists(path):
         os.remove(path)
-    return {"status": "ok", "photos": images[object_id]}
+    return {"status": "ok", "photos": photos}
 
 
 @app.get("/api/objects/{object_id}/image/file")
@@ -972,15 +1029,22 @@ def _dates_overlap(a_from: str, a_to: str, b_from: str, b_to: str) -> bool:
 
 @app.post("/api/objects/{object_id}/assign")
 def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    assignments = _load_assignments()
     key = str(object_id)
-    if key not in assignments:
-        assignments[key] = []
-    already = any(
-        a['user_id'] == str(body.user_id) and a.get('stage_id', '') == body.stage_id
-        for a in assignments[key]
-    )
-    if not already:
+
+    # 28.07 (real bug found by external audit): было _load_assignments()+_save_assignments()
+    # как отдельные вызовы -- read вне лока, два параллельных assign на один объект могли
+    # оба увидеть список ДО добавления и один запрос затирал назначение, добавленное другим
+    # (та же гонка что чинили для object photos). update_json_transaction держит все проверки
+    # + мутацию под одним захватом _lock_for(path).
+    def _mutator(assignments):
+        if key not in assignments:
+            assignments[key] = []
+        already = any(
+            a['user_id'] == str(body.user_id) and a.get('stage_id', '') == body.stage_id
+            for a in assignments[key]
+        )
+        if already:
+            return
         # 22.07: одобренный отпуск/больничный блокирует назначение — жёсткая проверка,
         # не просто цветовая подсказка в календаре (юзер подтвердил явно).
         for e in _load_abwesenheit():
@@ -1011,17 +1075,20 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
             'date_to': body.date_to,
             'assigned_at': datetime.utcnow().isoformat()
         })
-        _save_assignments(assignments)
+
+    update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
     return {"status": "ok"}
 
 
 @app.delete("/api/objects/{object_id}/assign/{user_id}")
 def unassign_user(object_id: str, user_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    assignments = _load_assignments()
     key = str(object_id)
-    if key in assignments:
-        assignments[key] = [a for a in assignments[key] if a['user_id'] != str(user_id)]
-        _save_assignments(assignments)
+
+    def _mutator(assignments):
+        if key in assignments:
+            assignments[key] = [a for a in assignments[key] if a['user_id'] != str(user_id)]
+
+    update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
     return {"status": "ok"}
 
 
