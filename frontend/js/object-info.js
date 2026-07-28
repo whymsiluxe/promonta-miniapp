@@ -473,10 +473,29 @@ function _closeObjInfoDocViewer() {
 // хотел сначала убрать в Инфо, затем явно попросил вернуть как полноценный
 // top-level таб наравне с Чат/Инфо, доступный и owner и worker).
 function _renderNeedRow(n) {
+  // 28.07: owner request -- вкладка Потребности была read-only списком (текст+статус,
+  // без действий). Owner теперь может продвигать статус (тот же open->в работе->закрыто
+  // паттерн, что уже есть в tasks.js), и обе роли могут открыть чат с другой стороной
+  // заявки прямо отсюда, не переходя в общий Чат вручную.
+  const status = n.status || 'открыто';
+  const nextStatus = status === 'открыто' ? 'в работе' : status === 'в работе' ? 'закрыто' : null;
+  const advanceBtn = (currentRole === 'owner' && nextStatus)
+    ? `<button class="obj-info-empty-action" data-need-advance="${n.id}" data-next-status="${nextStatus}" type="button">${nextStatus === 'закрыто' ? 'Закрыть' : 'Взять в работу'}</button>`
+    : '';
+  // Owner видит кнопку "Чат" к заявителю (from_user_id), worker -- к owner (from_user_id
+  // это сам worker, ему нужен чат с to_user_id = owner).
+  const chatTargetId = currentRole === 'owner' ? n.from_user_id : n.to_user_id;
+  const chatTargetName = currentRole === 'owner' ? (n.from_name || n.from_user_id) : 'Владелец';
+  const chatBtn = chatTargetId
+    ? `<button class="obj-info-empty-action" data-need-chat="${esc(chatTargetId)}" data-chat-name="${esc(chatTargetName)}" type="button">💬 Чат</button>`
+    : '';
   return `
-  <div class="obj-info-item-row">
-    <span class="obj-info-item-text">${esc(n.title || '')}</span>
-    <span class="obj-info-item-qty">${esc(n.status || 'открыто')}</span>
+  <div class="obj-info-item-row" style="flex-direction:column;align-items:stretch;gap:0.4rem;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <span class="obj-info-item-text">${esc(n.title || '')}</span>
+      <span class="obj-info-item-qty">${esc(status)}</span>
+    </div>
+    ${(advanceBtn || chatBtn) ? `<div class="obj-info-actions-row">${advanceBtn}${chatBtn}</div>` : ''}
   </div>`;
 }
 
@@ -520,6 +539,25 @@ async function _loadObjNeeds(objectId) {
       return;
     }
     list.innerHTML = tasks.map(_renderNeedRow).join('');
+    list.querySelectorAll('[data-need-advance]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await api(`/api/tasks/${btn.dataset.needAdvance}`, { method: 'PATCH', body: JSON.stringify({ status: btn.dataset.nextStatus }) });
+          hapticImpact('light');
+          await _loadObjNeeds(objectId);
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, 'error');
+        }
+      });
+    });
+    list.querySelectorAll('[data-need-chat]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        // switchView первым -- openChatThread сам не переключает таб, юзер остался бы
+        // на экране Объекта с чат-view открытым позади него, невидимо.
+        switchView('chat');
+        if (typeof openChatThread === 'function') openChatThread(btn.dataset.needChat, btn.dataset.chatName);
+      });
+    });
   } catch (e) {
     list.innerHTML = `<div class="obj-info-empty-row"><span>Ошибка: ${esc(e.message)}</span></div>`;
   }
