@@ -8,6 +8,10 @@ let _bubbleStage = null;
 let _bubbleDragEl = null;
 let _bubbleDragOffX = 0;
 let _bubbleDragOffY = 0;
+let _bubbleDragStartX = 0;
+let _bubbleDragStartY = 0;
+let _bubbleDragMoved = false;
+const BUBBLE_TAP_THRESHOLD_PX = 6; // 28.07 (Phase 05): движение меньше этого = тап, не drag
 
 // Skill ↔ stage keyword mapping
 const SKILL_STAGE_MAP = {
@@ -67,7 +71,7 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
       <span class="bubble-panel-stage">${esc(stageName || '')}</span>
       <button class="bubble-panel-close" onclick="_closeBubblePanel()">✕</button>
     </div>
-    <div class="bubble-panel-hint">Перетащите работника на зону этапа</div>
+    <div class="bubble-panel-hint">Перетащите работника на зону этапа или просто тапните по нему</div>
     <div id="bubble-drop-zone" class="bubble-drop-zone">
       <div class="bubble-drop-label">⬆ Перетащить сюда</div>
     </div>
@@ -277,6 +281,9 @@ function _bubbleDragStart(e) {
   const rect = _bubbleDragEl.getBoundingClientRect();
   _bubbleDragOffX = e.clientX - rect.left;
   _bubbleDragOffY = e.clientY - rect.top;
+  _bubbleDragStartX = e.clientX;
+  _bubbleDragStartY = e.clientY;
+  _bubbleDragMoved = false;
   _bubbleDragEl.style.position = 'fixed';
   _bubbleDragEl.style.zIndex = '9999';
   _bubbleDragEl.style.animationPlayState = 'paused';
@@ -289,6 +296,9 @@ function _bubbleDragStart(e) {
 function _bubbleDragMove(e) {
   if (!_bubbleDragEl) return;
   e.preventDefault();
+  if (Math.abs(e.clientX - _bubbleDragStartX) > BUBBLE_TAP_THRESHOLD_PX || Math.abs(e.clientY - _bubbleDragStartY) > BUBBLE_TAP_THRESHOLD_PX) {
+    _bubbleDragMoved = true;
+  }
   _bubbleDragEl.style.left = (e.clientX - _bubbleDragOffX) + 'px';
   _bubbleDragEl.style.top = (e.clientY - _bubbleDragOffY) + 'px';
 
@@ -305,6 +315,20 @@ async function _bubbleDragEnd(e) {
   if (!_bubbleDragEl) return;
   _bubbleDragEl.removeEventListener('pointermove', _bubbleDragMove);
   _bubbleDragEl.removeEventListener('pointerup', _bubbleDragEnd);
+
+  // 28.07 (Phase 05, "Drag — не единственный способ"): панель всегда открыта для ОДНОГО
+  // конкретного этапа (нет выбора зоны при тапе) -- тап без значимого движения однозначно
+  // эквивалентен перетаскиванию в единственную drop-зону, ведёт в тот же confirm-popup.
+  if (!_bubbleDragMoved) {
+    const tappedEl = _bubbleDragEl;
+    _bubbleDragEl = null;
+    if (_bubbleObjectId) {
+      _openBubbleConfirmPopup(tappedEl);
+    } else {
+      _returnBubbleToArena(tappedEl);
+    }
+    return;
+  }
 
   const dropZone = document.getElementById('bubble-drop-zone');
   let dropped = false;
