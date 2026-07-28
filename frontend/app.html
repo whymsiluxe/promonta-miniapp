@@ -43,10 +43,11 @@ body {
   transform: translateX(-50%);
   width: calc(100% - 24px);
   max-width: 456px;
-  background: color-mix(in srgb, var(--bg-card) 55%, transparent);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  border: 1px solid color-mix(in srgb, var(--text-main) 8%, transparent);
+  /* 28.07: owner request -- было полупрозрачное blur (цвет зависел от фона под ним,
+     на Объектах казалось темнее из-за тёмных фото карточек, на Home светлее). Теперь
+     фиксированный тёмный фон, одинаковый на всех вкладках, без зависимости от подложки. */
+  background: #2A2D27;
+  border: 1px solid rgba(245,241,232,0.1);
   border-radius: 999px;
   display: flex;
   padding: 10px 8px;
@@ -67,12 +68,16 @@ body.keyboard-open .bottom-nav { opacity: 0; transform: translateX(-50%) transla
   justify-content: center;
   padding: 8px 0;
   cursor: pointer;
-  color: var(--text-light);
+  /* 28.07: nav-панель теперь всегда тёмная (не зависит от подложки под ней) -- цвет
+     иконок больше не может идти от общей темы (--text-light тёмный в light-теме,
+     невидим на тёмном фоне nav-бара). Собственные ivory-based цвета, тот же принцип
+     что --chat-text-secondary у чата. */
+  color: rgba(245,241,232,0.55);
   transition: color 0.15s, transform 0.1s;
 }
 
 .nav-item:active { transform: scale(0.9); }
-.nav-item.active { color: var(--primary-dark); }
+.nav-item.active { color: #F5F1E8; }
 .nav-icon-svg { width: 34px; height: 34px; padding: 6px; transition: background-color 0.2s, box-shadow 0.2s; border-radius: 999px; box-sizing: content-box; }
 /* 28.07: owner report -- активная вкладка была недостаточно заметна (только тонкая
    заливка иконки). Добавлена тень под иконкой -- тот же приём, что .objects-fab/
@@ -2059,20 +2064,21 @@ body.view-locked {
    #view-chat.active рядом с #view-chat.active,#view-ai.active) — .ai-* (ИИ-чат
    владельца) НЕ затронут, только #view-chat. */
 :root {
-  /* 28.07: owner report -- было слишком тёмным (charcoal #11130F). Тот же тёмный
-     принцип, но заметно светлее -- оливково-серый вместо почти-чёрного. */
-  --chat-bg: #2A2D27;
-  --chat-surface: #34382F;
-  --chat-surface-hover: #3D423A;
-  --chat-surface-active: #464B41;
-  --chat-text: #F5F1E8;
-  --chat-text-secondary: #C4BFB2;
-  --chat-text-tertiary: #948F82;
+  /* 28.07 v2: owner reverted the fixed-dark chat palette entirely -- chat now uses
+     the same light Old Money theme as the rest of the app (nav-bar dark treatment
+     replaces it as the visual differentiator, not the chat screen background). */
+  --chat-bg: var(--bg-app);
+  --chat-surface: var(--bg-card);
+  --chat-surface-hover: var(--bg-card-raised);
+  --chat-surface-active: var(--bg-card-raised);
+  --chat-text: var(--text-main);
+  --chat-text-secondary: var(--text-light);
+  --chat-text-tertiary: var(--text-light);
   --chat-forest: #2D6A51;
-  --chat-forest-light: #79A38F;
+  --chat-forest-light: #1F513E;
   --chat-brass: #A98754;
-  --chat-border: rgba(245,241,232,0.12);
-  --chat-divider: rgba(245,241,232,0.1);
+  --chat-border: var(--border-color);
+  --chat-divider: var(--border-color);
 }
 
 #view-chat.active { background: var(--chat-bg); }
