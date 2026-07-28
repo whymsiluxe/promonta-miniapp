@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-28 (autonomous session, continued — live owner requests: radio stations, tab transition)
+
+Two direct owner requests handled outside the phase-file sequence (owner testing live on his phone mid-session, per this project's normal working pattern). Commits `25ca0be`, `0e0adac`, `41b3ef7`. Verified deployed: repo `frontend/app.html`/`frontend/js/*` byte-identical to `/var/www/miniapp/` as of this check.
+
+### Changed
+- **Radio: 19 real stations, infinite-loop swipeable carousel** (`frontend/js/core/radio-controller.js`, `frontend/js/components/radio-player.js`, `frontend/app.html`) — `RADIO_STATIONS` expanded from 4 placeholder entries to 19 real `radiorecord.hostingradio.ru` streams (Afro House, Chill-Out, Rock, Megamix, etc). Station chip strip now renders the real list 3x (before/current/after blocks) and snaps to the middle block on mount; a scroll listener silently re-centers scroll position when the user nears either edge, so swiping past the first/last real station wraps around with no visible seam — no third-party carousel library, pure CSS `scroll-snap` + a small JS recenter. This is Phase 08 (radio player rebuild) scope, ahead of that phase's own formal status write-up — see `docs/plan-phases/08-radio-player-rebuild.md`.
+- **Radio: compact layout** — removed the redundant top `PROMONTA RADIO` title/subtitle block (station name is now shown inline in the status row instead, e.g. "В эфире · Rock"), moved the status row above the station carousel, and excluded `.home-radio-stations-viewport` from the global tab-swipe gesture (`frontend/js/swipe-nav.js`) so swiping through stations no longer also triggers a bottom-nav tab change.
+- **Bottom-nav tab transition** (`frontend/app.html`, `switchView()`) — switching between root tabs (Home/Chat/Objects/Calendar/Profile) now plays a directional slide+fade (`tabSlideInFromRight`/`tabSlideInFromLeft`, 320ms, `prefers-reduced-motion` respected) based on each tab's position in `TAB_ORDER`, instead of an instant hard cut. Scoped to `opts.isTabSwitch && !opts.fromBack` only — push/back navigation into nested screens (object detail, tools, documents, etc.) is untouched, keeping its own existing semantics.
+
 ## 2026-07-28 (autonomous session, continued — Phase 06 Chat Hub rebuild, partial)
 
 Full detail and status markers in `docs/plan-phases/06-chat-hub-rebuild.md`. Commits `50309ac`, `583a3ff`, `7204908`, `feb9bf2`, `509e20e`, `0ec6acb`, `7476da6`, `b5becd7`, `9159715`.
