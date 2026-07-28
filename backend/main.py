@@ -3438,11 +3438,24 @@ def require_mangel_access(ticket_id: str, user: dict = Depends(get_current_user)
         raise HTTPException(404, str(e))
 
 
+def _enrich_mangel_tickets_with_author(tickets: list) -> list:
+    # 28.07: owner request -- "фиксация кто добавил дефект" уже была на бэкенде
+    # (created_by в mangel_lib), но фронтенд её не показывал -- не было имени,
+    # только сырой user_id. Резолвим здесь, а не в mangel_lib.py (тот файл живёт
+    # вне git-репо, прямые prod-правки там рискованны -- см. HANDOFF).
+    profiles = _load_worker_profiles()
+    for t in tickets:
+        created_by = t.get('created_by')
+        if created_by:
+            t['created_by_name'] = _sanitize_display_name(profiles.get(str(created_by), {}).get('name'), str(created_by))
+    return tickets
+
+
 @app.get("/api/mangel")
 def get_mangel_list(object_id: str = '', user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     # 28.07: owner request -- любой воркер видит дефекты любого объекта, не только
     # назначенного. Раньше worker без object_id получал только дефекты своих объектов.
-    tickets = ml.list_tickets(object_id or None)
+    tickets = _enrich_mangel_tickets_with_author(ml.list_tickets(object_id or None))
     return {"tickets": tickets, "total": len(tickets)}
 
 
@@ -3454,7 +3467,7 @@ def get_mangel_counts(user: dict = Depends(get_current_user)):
 @app.get("/api/mangel/{ticket_id}")
 def get_mangel_ticket(ticket_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_mangel_access)):
     try:
-        return ml.get_ticket(ticket_id)
+        return _enrich_mangel_tickets_with_author([ml.get_ticket(ticket_id)])[0]
     except KeyError as e:
         raise HTTPException(404, str(e))
 

@@ -37,6 +37,9 @@ function renderMangelTicketCard(ticket) {
   const chips = [
     { label: esc(ticket.object_id) || '—', sub: 'объект', color: 'var(--text-light)' },
   ];
+  // 28.07: owner request -- "фиксация кто добавил дефект" видна теперь и в UI, не
+  // только в данных (created_by_name резолвится бэкендом).
+  if (ticket.created_by_name) chips.push({ label: esc(ticket.created_by_name), sub: 'добавил', color: 'var(--text-light)' });
   if (commentCount) chips.push({ label: `💬 ${commentCount}`, sub: 'комментарии', color: 'var(--text-light)' });
   const chipsHtml = chips.map(c =>
     `<div class="obj-stat-chip"><span class="obj-chip-val" style="color:${c.color}">${c.label}</span><span class="obj-chip-sub">${c.sub}</span></div>`
