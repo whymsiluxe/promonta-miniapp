@@ -100,6 +100,13 @@ body.keyboard-open .bottom-nav { opacity: 0; transform: translateX(-50%) transla
 .nav-badge.show { display: block; }
 
 .view { display: none; }
+.view.active.tab-enter-right { animation: tabSlideInFromRight 0.32s cubic-bezier(0.22,1,0.36,1); }
+.view.active.tab-enter-left { animation: tabSlideInFromLeft 0.32s cubic-bezier(0.22,1,0.36,1); }
+@keyframes tabSlideInFromRight { from { opacity: 0; transform: translateX(18px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes tabSlideInFromLeft { from { opacity: 0; transform: translateX(-18px) scale(0.985); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .view.active.tab-enter-right, .view.active.tab-enter-left { animation: none; }
+}
 .view.swipe-exiting { display: block !important; position: fixed; top: 0; left: 0; right: 0; max-width: inherit; margin: 0 auto; z-index: 5; }
 .view.active { display: block; }
 
@@ -4022,11 +4029,27 @@ const loadedViews = new Set();
 // 24.07 (Phase 0.5): NavigationManager стек — push для программных переходов вглубь
 // (открытие детейла из списка), replaceRoot для клика по nav-таб (не растим стек бесконечно
 // при простой смене вкладки), ничего не трогаем при возврате через .back() (fromBack).
+const TAB_ORDER = ['home', 'chat', 'objects', 'abwesenheit', 'profile'];
+let _lastActiveTabView = null;
+
 function switchView(viewName, opts = {}) {
   // Если #chat-thread-detail-view был перемещён в obj-detail-panel-chat (embed),
   // вернуть его домой до смены вида -- иначе #view-chat окажется без этого узла и
   // обычный чат перестанет работать до следующего закрытия экрана объекта.
   if (typeof unembedObjectChat === 'function') unembedObjectChat();
+
+  // Slide+fade только между bottom-nav табами (isTabSwitch) -- push/back стек экранов
+  // (object-detail, tools, documents и т.п.) не трогаем, там своя навигационная семантика
+  // и лишняя анимация только замедлит восприятие вложенности.
+  let _tabMotionClass = null;
+  if (opts.isTabSwitch && !opts.fromBack) {
+    const fromIdx = TAB_ORDER.indexOf(_lastActiveTabView);
+    const toIdx = TAB_ORDER.indexOf(viewName);
+    if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
+      _tabMotionClass = toIdx > fromIdx ? 'tab-enter-right' : 'tab-enter-left';
+    }
+    _lastActiveTabView = viewName;
+  }
 
   if (typeof NavigationManager !== 'undefined' && !opts.fromBack) {
     if (opts.isTabSwitch) {
@@ -4036,9 +4059,14 @@ function switchView(viewName, opts = {}) {
     }
   }
 
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active', 'tab-enter-left', 'tab-enter-right'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById(`view-${viewName}`).classList.add('active');
+  const _targetViewEl = document.getElementById(`view-${viewName}`);
+  _targetViewEl.classList.add('active');
+  if (_tabMotionClass) {
+    _targetViewEl.classList.add(_tabMotionClass);
+    _targetViewEl.addEventListener('animationend', () => _targetViewEl.classList.remove(_tabMotionClass), { once: true });
+  }
   if (viewName !== 'chat') document.body.classList.remove('chat-dialog-open');
   const navItem = document.querySelector(`.nav-item[data-view="${viewName}"]`);
   if (navItem) navItem.classList.add('active');
