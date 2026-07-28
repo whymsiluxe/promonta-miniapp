@@ -98,10 +98,16 @@ function renderObjectCard(obj) {
   // загрузил хотя бы одно реальное фото, рендерим slide-слои + dots (свайп/тап), иначе
   // fallback остаётся единственным статичным слоем без dots (нет смысла крутить одно
   // и то же stock-фото).
+  // 28.07 v3 (fix, real bug found by ChatGPT audit): protected endpoint requires
+  // X-Telegram-Init-Data header -- a plain CSS background:url() can never send it,
+  // so every uploaded photo silently 401'd and rendered nothing. Slides now render
+  // empty with a data-auth-object-photo URL; _loadAuthObjectPhotos() (below) fetches
+  // each one with the auth header via the existing authBgImage() helper and sets the
+  // background only once the blob is actually available.
   const photoCount = obj.photo_count || 0;
   const heroSlidesHtml = photoCount > 0
     ? Array.from({ length: photoCount }, (_, i) =>
-        `<div class="obj-hero-slide${i === 0 ? ' active' : ''}" style="background:url('${API_BASE}/api/objects/${encodeURIComponent(oid)}/image/file?index=${i}') center/cover no-repeat"></div>`
+        `<div class="obj-hero-slide${i === 0 ? ' active' : ''}" data-auth-object-photo="/api/objects/${encodeURIComponent(oid)}/image/file?index=${i}"></div>`
       ).join('')
     : `<div class="obj-hero-slide active" style="background:url('/media/objects/${hero.photo}.jpg') center/cover no-repeat"></div>`;
   const heroDotsHtml = photoCount > 1
@@ -290,8 +296,50 @@ function endObjectDrag() {
   objDragState = null;
 }
 
+// 28.07 v3: lazy-load + auth для carousel-фото (см. heroSlidesHtml комментарий выше).
+// Один IntersectionObserver на все карточки -- не пересоздаём его на каждый рендер,
+// disconnect предыдущего перед новым, чтобы не копить наблюдателей на устаревших DOM-узлах.
+let _objPhotoObserver = null;
+
+function _loadAuthObjectPhoto(el) {
+  const url = el.dataset.authObjectPhoto;
+  if (!url || el.dataset.authLoaded) return;
+  el.dataset.authLoaded = '1'; // не грузить второй раз, даже если IntersectionObserver сработает повторно
+  el.classList.add('obj-hero-slide-loading');
+  authBgImage(el, url).then(() => {
+    el.classList.remove('obj-hero-slide-loading');
+    if (!el.style.backgroundImage) {
+      // authBgImage тихо глотает ошибку (catch пустой) -- если backgroundImage не
+      // выставился, значит fetch/decode упал; помечаем состояние явно вместо пустого
+      // чёрного hero.
+      el.classList.add('obj-hero-slide-error');
+    }
+  });
+}
+
+function _initObjPhotoLazyLoad() {
+  if (_objPhotoObserver) _objPhotoObserver.disconnect();
+  if (!window.IntersectionObserver) {
+    // Без IntersectionObserver (маловероятно в Telegram WebView, но защитный fallback) --
+    // грузим только первый (активный) слайд каждой карточки сразу, не все восемь разом.
+    document.querySelectorAll('#objects-cards .obj-hero-slide.active[data-auth-object-photo]').forEach(_loadAuthObjectPhoto);
+    return;
+  }
+  _objPhotoObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      const hero = entry.target;
+      const activeSlide = hero.querySelector('.obj-hero-slide.active[data-auth-object-photo]');
+      if (activeSlide) _loadAuthObjectPhoto(activeSlide);
+      _objPhotoObserver.unobserve(hero);
+    });
+  }, { rootMargin: '200px 0px' }); // немного заранее, чтобы не было видимой задержки при обычном скролле
+  document.querySelectorAll('#objects-cards .obj-card-hero').forEach(hero => _objPhotoObserver.observe(hero));
+}
+
 function attachObjectsHandlers() {
   attachObjectsDragHandlers();
+  _initObjPhotoLazyLoad();
 
   document.querySelectorAll('#objects-cards .metric-fill').forEach(fill => {
     const target = fill.style.width;
@@ -312,7 +360,10 @@ function attachObjectsHandlers() {
       e.stopPropagation();
       const hero = dot.closest('.obj-card-hero');
       const idx = Number(dot.dataset.slideIdx);
-      hero.querySelectorAll('.obj-hero-slide').forEach((s, i) => s.classList.toggle('active', i === idx));
+      hero.querySelectorAll('.obj-hero-slide').forEach((s, i) => {
+        s.classList.toggle('active', i === idx);
+        if (i === idx) _loadAuthObjectPhoto(s); // 28.07: подгружаем неактивный слайд только когда реально показывается
+      });
       hero.querySelectorAll('.obj-hero-dot').forEach((d, i) => d.classList.toggle('active', i === idx));
     });
   });
@@ -334,7 +385,10 @@ function attachObjectsHandlers() {
       const nextIdx = dx < 0
         ? Math.min(currentIdx + 1, slides.length - 1)
         : Math.max(currentIdx - 1, 0);
-      slides.forEach((s, i) => s.classList.toggle('active', i === nextIdx));
+      slides.forEach((s, i) => {
+        s.classList.toggle('active', i === nextIdx);
+        if (i === nextIdx) _loadAuthObjectPhoto(s);
+      });
       dots.forEach((d, i) => d.classList.toggle('active', i === nextIdx));
     }, { passive: true });
   });
