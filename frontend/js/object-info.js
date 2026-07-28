@@ -10,6 +10,15 @@
 // "пока нет данных" (owner explicitly called this out as looking unfinished).
 async function renderObjectInfoTab(objectId) {
   const panel = document.getElementById('obj-detail-panel-info');
+  // 28.07: owner request -- не было способа загрузить реальное фото объекта, карточка
+  // всегда показывала stock-фото fallback. Owner-only, тот же upload-паттерн что уже
+  // используется для документов/дефектов (sniff_image валидация на бэкенде).
+  const photoUploadHtml = currentRole === 'owner' ? `
+    <div class="obj-info-section">
+      <div class="obj-info-section-title">Фото объекта</div>
+      <input type="file" id="obj-info-photo-input" accept="image/*" style="display:none;">
+      <button class="obj-info-empty-action" id="obj-info-photo-upload-btn" type="button">+ Загрузить фото</button>
+    </div>` : '';
   const statusEditorHtml = currentRole === 'owner' ? `
     <div class="obj-info-section">
       <div class="obj-info-section-title">Статус объекта</div>
@@ -28,6 +37,7 @@ async function renderObjectInfoTab(objectId) {
     </div>` : '';
 
   panel.innerHTML = `
+    ${photoUploadHtml}
     ${statusEditorHtml}
     ${teamShiftsHtml}
     <div class="obj-info-section">
@@ -60,6 +70,38 @@ async function renderObjectInfoTab(objectId) {
       <div id="obj-info-docs-summary"></div>
     </div>
   `;
+
+  const photoUploadBtn = document.getElementById('obj-info-photo-upload-btn');
+  const photoInput = document.getElementById('obj-info-photo-input');
+  if (photoUploadBtn && photoInput) {
+    photoUploadBtn.addEventListener('click', () => photoInput.click());
+    photoInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      photoUploadBtn.disabled = true;
+      photoUploadBtn.textContent = 'Загрузка…';
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        await fetch(`${API_BASE}/api/objects/${encodeURIComponent(objectId)}/image`, {
+          method: 'POST',
+          headers: { 'X-Telegram-Init-Data': initData },
+          body: fd,
+        }).then(async r => {
+          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+        });
+        hapticImpact('medium');
+        showToast('Фото обновлено', 'success');
+        if (typeof loadObjects === 'function') loadObjects();
+      } catch (err) {
+        showToast('Ошибка: ' + err.message, 'error');
+      } finally {
+        photoUploadBtn.disabled = false;
+        photoUploadBtn.textContent = '+ Загрузить фото';
+      }
+    });
+  }
 
   const statusSwitch = document.getElementById('obj-detail-status-switch');
   if (statusSwitch) {

@@ -94,8 +94,12 @@ function renderObjectCard(obj) {
   const statusMeta = _objStatusMeta(obj['Статус']);
 
   const hero = _objHeroGradient(obj);
+  // 28.07: реальное фото объекта теперь идёт через защищённый backend endpoint (не
+  // публичный /media/ static путь) -- image_path тут используется только как флаг
+  // "есть загруженное фото", сам путь для запроса не нужен, endpoint сам резолвит
+  // fname по object_id на сервере.
   const imgStyle = obj.image_path
-    ? `background:url('/media/${obj.image_path}') center/cover no-repeat`
+    ? `background:url('${API_BASE}/api/objects/${encodeURIComponent(oid)}/image/file') center/cover no-repeat`
     : `background:url('/media/objects/${hero.photo}.jpg') center/cover no-repeat`;
 
   // Worker avatars -- overlap-композиция снизу-слева (первый крупнее), макс 3 + "+N".

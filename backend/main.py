@@ -804,6 +804,7 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
 # ---------- Назначения работников на объекты (Фаза 2c, восстановлено после инцидента Фазы 3) ----------
 OBJECT_ASSIGNMENTS_FILE = '/home/promonta/agent/miniapp/object_assignments.json'
 OBJECT_IMAGES_FILE = '/home/promonta/agent/miniapp/object_images.json'
+OBJECT_PHOTO_DIR = '/home/promonta/agent/miniapp/object_photos'
 
 
 def _load_assignments() -> dict:
@@ -816,6 +817,45 @@ def _save_assignments(assignments: dict):
 
 def _load_object_images() -> dict:
     return _safe_load_json(OBJECT_IMAGES_FILE, {})
+
+
+def _save_object_images(images: dict):
+    _atomic_write_json(OBJECT_IMAGES_FILE, images)
+
+
+@app.post("/api/objects/{object_id}/image")
+async def upload_object_image(object_id: str, file: UploadFile = File(...),
+                               user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    # 28.07: owner request -- сейчас карточка объекта показывает только stock-фото
+    # fallback (media/objects/*.jpg), НЕ было способа загрузить реальное фото объекта
+    # вообще. Только owner (worker не должен подменять фото объекта).
+    raw = await file.read()
+    if len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(400, "Фото слишком большое (макс. 8 МБ)")
+    detected = sniff_image(raw)
+    if not detected:
+        raise HTTPException(400, "Файл должен быть изображением")
+    ext = _ALLOWED_IMAGE_MIME_EXT[detected]
+    os.makedirs(OBJECT_PHOTO_DIR, exist_ok=True)
+    fname = f"{uuid.uuid4().hex}.{ext}"
+    with open(os.path.join(OBJECT_PHOTO_DIR, fname), 'wb') as f_out:
+        f_out.write(raw)
+    images = _load_object_images()
+    images[object_id] = fname
+    _save_object_images(images)
+    return {"status": "ok", "image_path": fname}
+
+
+@app.get("/api/objects/{object_id}/image/file")
+def get_object_image_file(object_id: str, user: dict = Depends(get_current_user)):
+    images = _load_object_images()
+    fname = images.get(object_id)
+    if not fname:
+        raise HTTPException(404, "Фото не загружено")
+    path = os.path.join(OBJECT_PHOTO_DIR, fname)
+    if not os.path.exists(path):
+        raise HTTPException(404, "Файл отсутствует")
+    return FileResponse(path)
 
 
 _sheets_cache: dict = {}
