@@ -14,6 +14,11 @@ let _chatActiveThreadKey = null; // 10.36: чат объекта/дефекта 
 let _chatWorkers = [];
 let _chatReturnToView = null; // 21.07: откуда открыт чат (Потребности/Дефекты) — назад должен вернуть туда, не в общий список тредов
 
+// 28.07 (Phase 06): message reactions — компактный фиксированный набор, зеркалит
+// backend CHAT_REACTION_OPTIONS (main.py). Держать в синхроне при изменении набора.
+const CHAT_REACTION_OPTIONS = ['👍', '✅', '👀', '❗'];
+let _chatMessagesById = {}; // msg_id -> msg (последний рендер), для optimistic reaction toggle
+
 function _escChat(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -67,7 +72,9 @@ function _renderChatMessages(messages) {
   let lastDayKey = null;
   let lastUid = null;
   let lastTs = null;
+  _chatMessagesById = {};
   container.innerHTML = messages.map(msg => {
+    _chatMessagesById[msg.id] = msg;
     const isOwn = msg.user_id === _chatMyId;
     const dayKey = new Date(msg.ts * 1000).toDateString();
     let divider = '';
@@ -94,6 +101,7 @@ function _renderChatMessages(messages) {
       <div class="chat-msg-header">${avatarHtml}${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span></div>
       ${msg.attachment ? _renderChatAttachment(msg) : ''}
       ${msg.text ? `<div class="chat-text">${_escChat(msg.text)}</div>` : ''}
+      <div class="chat-reactions-slot">${_renderChatReactions(msg)}</div>
     </div>`;
   }).join('');
 
@@ -101,7 +109,7 @@ function _renderChatMessages(messages) {
     container.scrollTop = container.scrollHeight;
   }
 
-  _attachChatDeleteHandlers(container);
+  _attachChatBubbleHandlers(container);
   container.querySelectorAll('[data-auth-src] img.chat-attach-img').forEach(img => {
     const wrap = img.closest('[data-auth-src]');
     if (wrap) authImg(img, wrap.dataset.authSrc);
@@ -146,21 +154,132 @@ async function _extractTaskFromTranscript(transcript, btnEl) {
 
 let _chatLongPressTimer = null;
 
-function _attachChatDeleteHandlers(container) {
+// 28.07 (Phase 06): один long-press-меню на реакции + удаление (раньше long-press
+// сразу открывал confirm() на удаление, только для своих/owner сообщений; реакции
+// нужны на ЛЮБОМ сообщении, поэтому меню теперь общее, delete-пункт в нём — опционален).
+function _attachChatBubbleHandlers(container) {
   container.querySelectorAll('.chat-bubble').forEach(bubble => {
+    const msgId = bubble.dataset.msgId;
     const canDelete = _chatIsOwner || Number(bubble.dataset.uid) === _chatMyId;
-    if (!canDelete) return;
 
     bubble.addEventListener('touchstart', () => {
       _chatLongPressTimer = setTimeout(() => {
         hapticImpact('medium');
-        _confirmDeleteChatMessage(bubble.dataset.msgId, bubble);
+        _openChatBubbleMenu(bubble, msgId, canDelete);
       }, 500);
     }, { passive: true });
 
     bubble.addEventListener('touchend', () => clearTimeout(_chatLongPressTimer));
     bubble.addEventListener('touchmove', () => clearTimeout(_chatLongPressTimer));
   });
+
+  container.querySelectorAll('.chat-reaction-chip').forEach(chip => {
+    chip.addEventListener('click', e => {
+      e.stopPropagation();
+      _toggleChatReaction(chip.dataset.msgId, chip.dataset.reaction);
+    });
+  });
+}
+
+function _renderChatReactions(msg) {
+  const reactions = msg.reactions || [];
+  if (!reactions.length) return '';
+  return `<div class="chat-reactions">${reactions.map(r => `
+    <span class="chat-reaction-chip${r.mine ? ' mine' : ''}" data-reaction="${r.reaction}" data-msg-id="${msg.id}">${r.reaction}<span class="chat-reaction-chip-count">${r.count}</span></span>
+  `.trim()).join('')}</div>`;
+}
+
+function _rerenderBubbleReactions(msgId) {
+  const msg = _chatMessagesById[msgId];
+  const bubble = document.querySelector(`.chat-bubble[data-msg-id="${msgId}"]`);
+  const slot = bubble && bubble.querySelector('.chat-reactions-slot');
+  if (!msg || !slot) return;
+  slot.innerHTML = _renderChatReactions(msg);
+  slot.querySelectorAll('.chat-reaction-chip').forEach(chip => {
+    chip.addEventListener('click', e => {
+      e.stopPropagation();
+      _toggleChatReaction(chip.dataset.msgId, chip.dataset.reaction);
+    });
+  });
+}
+
+// Optimistic toggle: применяем локально сразу, откатываем при ошибке сервера —
+// требование спеки ("optimistic + rollback on error").
+async function _toggleChatReaction(msgId, reaction) {
+  const msg = _chatMessagesById[msgId];
+  if (!msg) return;
+  const prevReactions = (msg.reactions || []).map(r => ({ ...r }));
+  hapticImpact('light');
+
+  const next = prevReactions.map(r => ({ ...r }));
+  const existing = next.find(r => r.reaction === reaction);
+  if (existing && existing.mine) {
+    existing.count -= 1;
+    existing.mine = false;
+    if (existing.count <= 0) next.splice(next.indexOf(existing), 1);
+  } else if (existing) {
+    existing.count += 1;
+    existing.mine = true;
+  } else {
+    next.push({ reaction, count: 1, mine: true });
+  }
+  next.sort((a, b) => CHAT_REACTION_OPTIONS.indexOf(a.reaction) - CHAT_REACTION_OPTIONS.indexOf(b.reaction));
+  msg.reactions = next;
+  _rerenderBubbleReactions(msgId);
+
+  try {
+    const res = await api(`/api/chat/messages/${msgId}/reactions`, {
+      method: 'POST',
+      body: JSON.stringify({ reaction }),
+    });
+    msg.reactions = res.reactions || [];
+  } catch (e) {
+    msg.reactions = prevReactions;
+    showToast('Ошибка: ' + e.message, 'error');
+  }
+  _rerenderBubbleReactions(msgId);
+}
+
+function _openChatBubbleMenu(bubble, msgId, canDelete) {
+  document.querySelectorAll('.chat-bubble-menu, .chat-bubble-menu-backdrop').forEach(el => el.remove());
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'chat-bubble-menu-backdrop';
+  const menu = document.createElement('div');
+  menu.className = 'chat-bubble-menu';
+  menu.innerHTML = `
+    <div class="chat-bubble-menu-reactions">
+      ${CHAT_REACTION_OPTIONS.map(r => `<button type="button" data-reaction="${r}">${r}</button>`).join('')}
+    </div>
+    ${canDelete ? `<button type="button" class="chat-bubble-menu-delete">Удалить сообщение</button>` : ''}
+  `;
+  document.body.appendChild(backdrop);
+  document.body.appendChild(menu);
+
+  const rect = bubble.getBoundingClientRect();
+  const menuWidth = menu.offsetWidth || 210;
+  const menuHeight = menu.offsetHeight || 100;
+  let left = Math.min(Math.max(16, rect.left), window.innerWidth - menuWidth - 16);
+  let top = rect.bottom + 6;
+  if (top + menuHeight > window.innerHeight - 16) top = rect.top - menuHeight - 6;
+  menu.style.left = left + 'px';
+  menu.style.top = Math.max(16, top) + 'px';
+
+  const close = () => { backdrop.remove(); menu.remove(); };
+  backdrop.addEventListener('click', close);
+  menu.querySelectorAll('[data-reaction]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      close();
+      _toggleChatReaction(msgId, btn.dataset.reaction);
+    });
+  });
+  const delBtn = menu.querySelector('.chat-bubble-menu-delete');
+  if (delBtn) {
+    delBtn.addEventListener('click', () => {
+      close();
+      _confirmDeleteChatMessage(msgId, bubble);
+    });
+  }
 }
 
 async function _confirmDeleteChatMessage(msgId, bubbleEl) {
