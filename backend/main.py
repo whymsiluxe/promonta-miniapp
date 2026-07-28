@@ -2101,6 +2101,34 @@ def _save_chat_thread_meta(meta: dict):
     _atomic_write_json(CHAT_THREAD_META_FILE, meta)
 
 
+CHAT_REACTIONS_FILE = '/home/promonta/agent/miniapp/chat_reactions.json'
+CHAT_REACTION_OPTIONS = ['👍', '✅', '👀', '❗']
+
+
+def _load_chat_reactions() -> list:
+    """Phase 06: список {message_id,user_id,reaction,created_at}, а не словарь --
+    один пользователь может оставить НЕСКОЛЬКО разных reaction на одно сообщение
+    (👍 и 👀 одновременно), но не два одинаковых -- уникальность по (message_id,
+    user_id, reaction), toggle снимает при повторном POST того же типа."""
+    return _safe_load_json(CHAT_REACTIONS_FILE, [])
+
+
+def _save_chat_reactions(reactions: list):
+    _atomic_write_json(CHAT_REACTIONS_FILE, reactions)
+
+
+def _reactions_summary_for_message(reactions: list, message_id: str, my_id: str) -> list:
+    by_type = {}
+    for r in reactions:
+        if r['message_id'] != message_id:
+            continue
+        entry = by_type.setdefault(r['reaction'], {'reaction': r['reaction'], 'count': 0, 'mine': False})
+        entry['count'] += 1
+        if str(r['user_id']) == my_id:
+            entry['mine'] = True
+    return [by_type[e] for e in CHAT_REACTION_OPTIONS if e in by_type]
+
+
 def _chat_thread_id(user_id: str, to_user_id: str | None) -> str:
     if not to_user_id:
         return 'group'
@@ -2239,6 +2267,11 @@ def get_chat_messages(with_: str = '', thread_key: str = '', user: dict = Depend
     else:
         # Групповой тред: только сообщения без to_user_id (старые записи без ключа — тоже групповые)
         messages = [m for m in messages if not m.get('to_user_id') and not m.get('thread_key')]
+
+    reactions = _load_chat_reactions()
+    my_id = str(user['id'])
+    for m in messages:
+        m['reactions'] = _reactions_summary_for_message(reactions, m['id'], my_id)
     return {"messages": messages}
 
 
@@ -2588,7 +2621,48 @@ def delete_chat_message(msg_id: str, user: dict = Depends(get_current_user), rol
             raise HTTPException(403, 'Можно удалять только свои сообщения')
         messages = [m for m in messages if m['id'] != msg_id]
         _save_chat(messages)
+    reactions = _load_chat_reactions()
+    remaining = [r for r in reactions if r['message_id'] != msg_id]
+    if len(remaining) != len(reactions):
+        _save_chat_reactions(remaining)
     return {"status": "ok"}
+
+
+def _check_message_access(msg: dict, uid: str, role: str):
+    thread_key = msg.get('thread_key')
+    if thread_key:
+        _check_thread_access(thread_key, uid, role)
+        return
+    thread_id = _chat_thread_id(msg['user_id'], msg.get('to_user_id'))
+    if uid not in _chat_thread_participants(thread_id) and role != 'owner':
+        raise HTTPException(403, "Нет доступа к этому сообщению")
+
+
+class ChatReactionBody(BaseModel):
+    reaction: str
+
+
+@app.post("/api/chat/messages/{msg_id}/reactions")
+def toggle_chat_reaction(msg_id: str, body: ChatReactionBody, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    if body.reaction not in CHAT_REACTION_OPTIONS:
+        raise HTTPException(400, "Недопустимая реакция")
+    uid = str(user['id'])
+    with _chat_lock:
+        messages = _load_chat()
+        msg = next((m for m in messages if m['id'] == msg_id), None)
+        if msg is None:
+            raise HTTPException(404, "Сообщение не найдено")
+        _check_message_access(msg, uid, role)
+
+        reactions = _load_chat_reactions()
+        existing = next((r for r in reactions if r['message_id'] == msg_id and str(r['user_id']) == uid and r['reaction'] == body.reaction), None)
+        if existing:
+            reactions.remove(existing)
+        else:
+            reactions.append({"message_id": msg_id, "user_id": uid, "reaction": body.reaction, "created_at": int(time.time())})
+        _save_chat_reactions(reactions)
+        summary = _reactions_summary_for_message(reactions, msg_id, uid)
+    return {"reactions": summary}
 
 
 class ChatThreadCloseBody(BaseModel):
