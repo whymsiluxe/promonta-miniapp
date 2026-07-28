@@ -1,9 +1,11 @@
 # Project state
 
-**Last updated**: 2026-07-25.
+**Last updated**: 2026-07-28 (autonomous session, Phase 04 remainder — see `docs/HANDOFF_PHASE05_10.md` and `docs/plan-phases/04-telegram-ui-navigation.md`).
 **Branch**: `main` (GitHub default). `fix/security-reliability-p1` was superseded — its content shipped directly on `main` in earlier sessions (commits `d698a28`/`a564b6c`), confirmed 2026-07-25; that branch can be deleted, nothing left to merge from it.
 **Repo**: https://github.com/whymsiluxe/promonta-miniapp — private (was made public 2026-07-23 for one-time ChatGPT read-only audit, reverted to private after this branch was pushed — see CHANGELOG).
-**Working tree**: clean, `main` up to date with `origin/main`.
+**Working tree**: clean as of last commit in this session; not pushed to `origin` (this session has no confirmation it has push access/credentials configured the same way prior Mac sessions did — verify before assuming `origin/main` is current).
+
+**Note (2026-07-28)**: the sections below this point (Incident log, mid-flight work, known bugs) describe state as of 2026-07-25 and predate a large amount of work done since (owner sent 6 new ТЗ on 2026-07-27, spawning `docs/plan-phases/01-10`; phases 01-04 are done, see those files' status markers and `docs/HANDOFF_PHASE05_10.md` for the authoritative current picture). Not rewritten wholesale this session — flagging so nobody trusts the stale detail below as current without checking `docs/plan-phases/` first.
 
 ## What this document is
 

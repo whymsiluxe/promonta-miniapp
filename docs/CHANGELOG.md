@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-07-28 (autonomous session — Phase 04 remainder, per docs/HANDOFF_PHASE05_10.md)
+
+Full detail and status markers in `docs/plan-phases/04-telegram-ui-navigation.md` ("Remainder items 1-6"). Commits `d305ba7`, `21db273`, `eca02dc`, `ce7e2e4`.
+
+### Fixed
+- Telegram's native BackButton and the custom in-header `.chat-back-btn` could render simultaneously on all 7 screens reached via `NavigationManager.push()` (tools/documents/working-objects/my-tasks/tasks/mangel/ai) — nothing hid the custom one when the native one was showing. First fix attempt (`d305ba7`) was too broad and hid `checkin-status-close-btn`/`chat-thread-back-btn`, which aren't wired through NavigationManager and have no other way to close — this would have stranded real users. Corrected in `21db273` to a precise `[onclick="NavigationManager.back()"]` selector, verified against every actual usage of the shared `.chat-back-btn` class before redeploying.
+
+### Changed
+- Objects screen's `+` button moved from the header (was overlapping Telegram's top-right menu button) to a `position:fixed` FAB above bottom-nav, positioned via a newly-measured `--app-bottom-nav-height` CSS var (`_applyBottomNavHeight()`) instead of a magic pixel offset.
+- "Новый объект" object-creation form converted from a full-screen inline view to a managed bottom sheet (`#new-object-sheet`), registered in `NavigationManager.overlayStack` so Telegram's BackButton closes it correctly.
+
+### Added
+- `tests/smoke-nav-fab.js` — first test file in this repo (still no framework/CI, this is a single ad-hoc Playwright script per the phase brief). Written and logic-reviewed, **not executed**: the sandbox this session ran in has no root access to install Playwright's Chromium system dependencies (`npx playwright install chromium --with-deps` needs sudo; the bare download is missing `libnspr4.so` and others with no apt access).
+
+### Known gap (not fixed, documented)
+- Root-vs-nested route classification is still incomplete: Object Detail, Stages view, and Chat thread detail are shown/hidden via ad-hoc `style.display` toggles outside `NavigationManager`'s route/overlay stacks (unlike the 7 screens above and the new object-creation sheet). Telegram's native BackButton doesn't know about them, so on those specific screens only the in-app close/back control works. This matches the original phase's C6/C9/C10 items (single source of truth navigation, per-tab stacks, screen lifecycle), which were not attempted this session — the existing screens work today via their own mechanism and a rewrite risked breaking more than the remaining phase 05-10 budget could absorb to fix.
+
 ## Unreleased
 
 ### Added
