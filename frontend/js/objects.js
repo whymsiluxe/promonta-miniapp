@@ -465,15 +465,28 @@ function closeNewObjectView() {
   _animateCloseNewObjectSheet();
 }
 
-// 28.07 (Phase 04 remainder, item 1): FAB виден только когда активен таб Объекты И
-// показан список (не bottom sheet/детейл объекта/этапы), и роль -- owner.
+// 28.07 v2 (real bug found by external audit): listVisible проверял только
+// #objects-list-view.style.display, но open sheet (#new-object-sheet) -- ОТДЕЛЬНЫЙ
+// DOM-узел, список объектов позади него display'а не меняет. FAB оставался visible
+// поверх открытой формы. Теперь проверяем явно каждое известное overlay-состояние,
+// не полагаясь на один CSS-класс где-то в DOM.
 function refreshObjectsFabVisibility() {
   const fab = document.getElementById('add-object');
   if (!fab) return;
   const objectsActive = document.getElementById('view-objects')?.classList.contains('active');
   const listVisible = document.getElementById('objects-list-view')?.style.display !== 'none';
-  const fabVisible = !!(objectsActive && listVisible && currentRole === 'owner');
+  const newObjectSheetOpen = document.getElementById('new-object-sheet')?.classList.contains('open');
+  const objectDetailOpen = document.getElementById('view-object-detail')?.style.display !== 'none';
+  const stagesViewOpen = document.getElementById('stages-view')?.classList.contains('open');
+  const keyboardOpen = document.body.classList.contains('keyboard-open');
+  const fabVisible = !!(
+    objectsActive && listVisible && currentRole === 'owner'
+    && !newObjectSheetOpen && !objectDetailOpen && !stagesViewOpen && !keyboardOpen
+  );
   fab.classList.toggle('visible', fabVisible);
+  fab.setAttribute('aria-hidden', fabVisible ? 'false' : 'true');
+  fab.tabIndex = fabVisible ? 0 : -1;
+  if (!fabVisible && document.activeElement === fab) fab.blur();
   // 28.07: radio-mini-player перекрывал этот FAB (оба в правом углу над nav) -- сужаем
   // mini-player только пока FAB реально виден, см. `.radio-mini-player` CSS.
   document.body.classList.toggle('view-objects-active', fabVisible);

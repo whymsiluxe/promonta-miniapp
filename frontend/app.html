@@ -4504,7 +4504,12 @@ function _applyViewportHeightNow() {
       _fullViewportHeight = vv.height;
     }
     const keyboardLikelyOpen = (_fullViewportHeight - vv.height) > 120;
+    const keyboardStateChanged = document.body.classList.contains('keyboard-open') !== keyboardLikelyOpen;
     document.body.classList.toggle('keyboard-open', keyboardLikelyOpen);
+    // 28.07: FAB visibility учитывает keyboard-open (см. refreshObjectsFabVisibility) --
+    // без этого вызова здесь FAB не скрывался бы, если клавиатура открылась на экране
+    // Объекты без прохождения через switchView (единственное другое место, что дёргает эту функцию).
+    if (keyboardStateChanged && typeof refreshObjectsFabVisibility === 'function') refreshObjectsFabVisibility();
   }
 }
 
