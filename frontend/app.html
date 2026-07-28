@@ -1127,15 +1127,20 @@ header h1 {
    dark background (In progress/Done/Not Started style). Roadmap card itself gets a
    dark surface, status labels become icon+text pills instead of plain colored text. */
 .obj-stages-roadmap { padding: 0.75rem; background: #1B1B1F; border-radius: var(--radius-lg); }
-.obj-stage-node { display: flex; gap: 0.75rem; }
+.obj-stage-node { display: flex; gap: 0.6rem; position: relative; touch-action: none; }
+/* 28.07: fade+slide-in stagger при первой отрисовке списка (owner request "красивые анимации") */
+.obj-stage-node-enter { animation: objStageEnter 320ms cubic-bezier(.22,1,.36,1) both; }
+@keyframes objStageEnter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 .obj-stage-line { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; width: 20px; }
-.obj-stage-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--bg-card-raised); border: 2px solid var(--border-color); flex-shrink: 0; margin-top: 0.35rem; }
-.obj-stage-dot.active { background: var(--c-accent, var(--green)); border-color: var(--c-accent, var(--green)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent, var(--green)) 25%, transparent); }
+.obj-stage-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--bg-card-raised); border: 2px solid var(--border-color); flex-shrink: 0; margin-top: 0.35rem; transition: background 200ms, border-color 200ms, box-shadow 200ms; }
+.obj-stage-dot.active { background: var(--c-accent, var(--green)); border-color: var(--c-accent, var(--green)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent, var(--green)) 25%, transparent); animation: objStageDotPulse 1.8s ease-in-out infinite; }
+@keyframes objStageDotPulse { 0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent, var(--green)) 25%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c-accent, var(--green)) 12%, transparent); } }
 .obj-stage-dot.done { background: var(--c-accent, var(--green)); border-color: var(--c-accent, var(--green)); }
 .obj-stage-connector { width: 2px; flex: 1; min-height: 28px; background: var(--border-color); }
 .obj-stage-body { flex: 1; min-width: 0; padding-bottom: 1.1rem; }
-.obj-stage-name { font-weight: 600; margin-bottom: 0.3rem; color: #F5F1E8; }
-.obj-stage-status-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; font-weight: 600; padding: 0.3rem 0.7rem; border-radius: 999px; }
+.obj-stage-header { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+.obj-stage-name { font-weight: 600; color: #F5F1E8; flex: 1; min-width: 0; }
+.obj-stage-status-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; font-weight: 600; padding: 0.3rem 0.7rem; border-radius: 999px; flex-shrink: 0; }
 .obj-stage-status-label::before { content: ''; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .obj-stage-status-предстоит { background: rgba(245,241,232,0.1); color: rgba(245,241,232,0.65); }
 .obj-stage-status-предстоит::before { background: rgba(245,241,232,0.4); }
@@ -1143,10 +1148,36 @@ header h1 {
 .obj-stage-status-в-процессе::before { background: #4AC9C4; }
 .obj-stage-status-готово { background: rgba(93,214,44,0.16); color: #5DD62C; }
 .obj-stage-status-готово::before { background: #5DD62C; }
-.obj-stage-complete-btn { display: block; margin-top: 0.5rem; padding: 0.5rem 1rem; border-radius: var(--radius-sm); border: none; background: var(--c-accent, var(--green)); color: #fff; font-size: 0.85rem; cursor: pointer; }
-.obj-stage-move-col { display: flex; flex-direction: column; gap: 0.2rem; flex-shrink: 0; align-self: flex-start; margin-top: 0.2rem; }
-.obj-stage-move-btn { width: 32px; height: 28px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.75rem; cursor: pointer; }
-.obj-stage-move-btn:disabled { opacity: 0.3; cursor: default; }
+.obj-stage-chevron { flex-shrink: 0; color: rgba(245,241,232,0.5); transition: transform 220ms cubic-bezier(.22,1,.36,1); font-size: 0.9rem; }
+.obj-stage-node.expanded .obj-stage-chevron { transform: rotate(180deg); }
+/* 28.07: аккордеон через grid-template-rows 0fr/1fr -- плавнее чем max-height (не нужно
+   знать точную итоговую высоту заранее, работает с динамическим текстом любой длины). */
+.obj-stage-description-wrap {
+  display: grid; grid-template-rows: 0fr; transition: grid-template-rows 260ms cubic-bezier(.22,1,.36,1);
+  margin-top: 0.4rem;
+}
+.obj-stage-node.expanded .obj-stage-description-wrap { grid-template-rows: 1fr; }
+.obj-stage-description-wrap > * { overflow: hidden; }
+.obj-stage-description-text { font-size: 0.9rem; line-height: 1.5; color: rgba(245,241,232,0.8); padding-top: 0.2rem; }
+.obj-stage-description-empty { color: rgba(245,241,232,0.4); font-style: italic; }
+.obj-stage-description-input {
+  width: 100%; box-sizing: border-box; min-height: 80px; resize: vertical;
+  background: rgba(245,241,232,0.06); border: 1px solid rgba(245,241,232,0.15); border-radius: var(--radius-sm);
+  color: #F5F1E8; font-family: var(--font-body); font-size: 0.9rem; padding: 0.6rem; line-height: 1.5;
+}
+.obj-stage-description-input:focus { outline: none; border-color: var(--c-accent, var(--green)); }
+.obj-stage-description-save { margin-top: 0.4rem; padding: 0.4rem 0.9rem; border-radius: var(--radius-sm); border: none; background: var(--c-accent, var(--green)); color: #0F0F0F; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.obj-stage-complete-btn { display: block; margin-top: 0.6rem; padding: 0.5rem 1rem; border-radius: var(--radius-sm); border: none; background: var(--c-accent, var(--green)); color: #fff; font-size: 0.85rem; cursor: pointer; }
+/* 28.07: drag handle заменил up/down-кнопки (owner request -- "перетаскивая один над
+   другим"), тот же pointer-capture паттерн, что bubble-assign.js уже использует. */
+.obj-stage-drag-handle {
+  flex-shrink: 0; align-self: flex-start; margin-top: 0.2rem; width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center; color: rgba(245,241,232,0.35);
+  font-size: 1.1rem; cursor: grab; touch-action: none; border-radius: 8px; transition: background 150ms;
+}
+.obj-stage-drag-handle:active { cursor: grabbing; background: rgba(245,241,232,0.08); }
+.obj-stage-node.obj-stage-dragging { opacity: 0.9; box-shadow: 0 8px 24px -8px rgba(0,0,0,0.5); background: rgba(245,241,232,0.04); border-radius: var(--radius-md); }
+.obj-stage-node.obj-stage-drop-target .obj-stage-body { outline: 2px dashed var(--c-accent, var(--green)); outline-offset: 4px; border-radius: var(--radius-sm); }
 
 .stage-clickable { cursor: pointer; align-items: center; }
 .stage-edit-icon { font-size: 0.75rem; margin-left: 4px; opacity: 0.6; }

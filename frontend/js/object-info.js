@@ -658,11 +658,21 @@ async function _loadObjStages(objectId) {
     const currentIdx = stages.findIndex(s => s['Статус'] === 'в процессе');
     wrap.innerHTML = stages.map((s, i) => _renderStageRoadmapNode(s, i, stages.length, i === currentIdx)).join('');
     _attachObjStagesHandlers(objectId, stages);
+    // 28.07: лёгкий stagger fade-in на первую отрисовку списка -- та же "красивая
+    // анимация" просьба, что уже применена в других местах приложения (bubble float,
+    // radio carousel dots), не тяжёлый JS-animation-engine.
+    wrap.querySelectorAll('.obj-stage-node').forEach((node, i) => {
+      node.style.animationDelay = `${i * 60}ms`;
+      node.classList.add('obj-stage-node-enter');
+    });
   } catch (e) {
     wrap.innerHTML = `<div class="obj-info-empty">Ошибка: ${esc(e.message)}</div>`;
   }
 }
 
+// 28.07: owner request -- roadmap, каждый этап раскрывается (аккордеон), внутри --
+// текстовое описание того что делать ("заклеить опасные места, подготовить под
+// демонтаж, взять инструмент, обрезать металл" и т.п.), можно отметить выполненным.
 function _renderStageRoadmapNode(s, idx, total, isCurrent) {
   const status = s['Статус'] || 'предстоит';
   const dotClass = status === 'готово' ? 'done' : status === 'в процессе' ? 'active' : '';
@@ -670,48 +680,81 @@ function _renderStageRoadmapNode(s, idx, total, isCurrent) {
   // не должен становиться частью class list (та же логика что renderStageRow в objects.js).
   const statusSlug = /^[a-zA-Zа-яА-Я0-9\-]+$/.test(status.replace(/\s/g, '-'))
     ? status.replace(/\s/g, '-') : 'unknown';
-  const canMoveUp = currentRole === 'owner' && idx > 0;
-  const canMoveDown = currentRole === 'owner' && idx < total - 1;
   const canWorkerComplete = currentRole !== 'owner' && isCurrent;
+  const description = s['Описание'] || '';
+  const canEditDescription = currentRole === 'owner';
   return `
-  <div class="obj-stage-node" data-row="${s['_row']}" data-num="${s['№ этапа']}">
+  <div class="obj-stage-node" data-row="${s['_row']}" data-num="${s['№ этапа']}" draggable="false">
+    <div class="obj-stage-drag-handle" title="Перетащить для смены порядка">⠿</div>
     <div class="obj-stage-line">
       <div class="obj-stage-dot ${dotClass}"></div>
       ${idx < total - 1 ? '<div class="obj-stage-connector"></div>' : ''}
     </div>
     <div class="obj-stage-body">
-      <div class="obj-stage-name">${esc(s['Название этапа'] || '')}</div>
-      <div class="obj-stage-status-label obj-stage-status-${statusSlug}">${esc(OBJ_STAGE_STATUS_LABEL[status] || status)}</div>
-      ${canWorkerComplete ? `<button class="obj-stage-complete-btn" data-row="${s['_row']}" type="button">Готово</button>` : ''}
+      <div class="obj-stage-header" data-toggle-row="${s['_row']}">
+        <div class="obj-stage-name">${esc(s['Название этапа'] || '')}</div>
+        <div class="obj-stage-status-label obj-stage-status-${statusSlug}">${esc(OBJ_STAGE_STATUS_LABEL[status] || status)}</div>
+        <span class="obj-stage-chevron">▾</span>
+      </div>
+      <div class="obj-stage-description-wrap" id="obj-stage-desc-${s['_row']}">
+        ${canEditDescription
+          ? `<textarea class="obj-stage-description-input" data-row="${s['_row']}" placeholder="Что нужно сделать на этом этапе: например, заклеить опасные места, подготовить под демонтаж, взять нужный инструмент…">${esc(description)}</textarea>
+             <button class="obj-stage-description-save" data-row="${s['_row']}" type="button" style="display:none;">Сохранить</button>`
+          : (description
+              ? `<div class="obj-stage-description-text">${esc(description)}</div>`
+              : `<div class="obj-stage-description-text obj-stage-description-empty">Описание пока не добавлено</div>`)
+        }
+        ${canWorkerComplete ? `<button class="obj-stage-complete-btn" data-row="${s['_row']}" type="button">Готово</button>` : ''}
+      </div>
     </div>
-    ${currentRole === 'owner' ? `
-    <div class="obj-stage-move-col">
-      <button class="obj-stage-move-btn" data-dir="up" data-row="${s['_row']}" type="button" ${canMoveUp ? '' : 'disabled'}>▲</button>
-      <button class="obj-stage-move-btn" data-dir="down" data-row="${s['_row']}" type="button" ${canMoveDown ? '' : 'disabled'}>▼</button>
-    </div>` : ''}
   </div>`;
 }
 
 function _attachObjStagesHandlers(objectId, stages) {
-  document.querySelectorAll('.obj-stage-move-btn:not([disabled])').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const rowNum = parseInt(btn.dataset.row, 10);
-      const idx = stages.findIndex(s => s['_row'] === rowNum);
-      const targetIdx = btn.dataset.dir === 'up' ? idx - 1 : idx + 1;
-      if (targetIdx < 0 || targetIdx >= stages.length) return;
-      const rowNumB = stages[targetIdx]['_row'];
+  // 28.07: аккордеон -- тап по заголовку этапа раскрывает/сворачивает описание.
+  // max-height transition вместо display:none/block -- плавная анимация без JS-таймера.
+  document.querySelectorAll('.obj-stage-header[data-toggle-row]').forEach(header => {
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('.obj-stage-description-input, .obj-stage-description-save')) return;
+      const node = header.closest('.obj-stage-node');
+      node.classList.toggle('expanded');
+    });
+  });
+
+  document.querySelectorAll('.obj-stage-description-input').forEach(textarea => {
+    textarea.addEventListener('input', () => {
+      const saveBtn = document.querySelector(`.obj-stage-description-save[data-row="${textarea.dataset.row}"]`);
+      if (saveBtn) saveBtn.style.display = 'inline-block';
+    });
+    // Не закрывать аккордеон тапом внутри textarea.
+    textarea.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  document.querySelectorAll('.obj-stage-description-save').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const textarea = document.querySelector(`.obj-stage-description-input[data-row="${btn.dataset.row}"]`);
+      btn.disabled = true;
+      btn.textContent = 'Сохраняю…';
       try {
-        await api(`/api/objects/${objectId}/stages/${rowNum}/swap`, { method: 'PATCH', body: JSON.stringify({ row_num_b: rowNumB }) });
+        await api(`/api/objects/${objectId}/stages/${btn.dataset.row}/description`, {
+          method: 'PATCH',
+          body: JSON.stringify({ description: textarea.value }),
+        });
         hapticImpact('light');
-        await _loadObjStages(objectId);
-      } catch (e) {
-        showToast('Ошибка: ' + e.message, 'error');
+        btn.style.display = 'none';
+      } catch (err) {
+        showToast('Ошибка: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Сохранить';
       }
     });
   });
 
   document.querySelectorAll('.obj-stage-complete-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       if (!confirm('Отметить этап завершённым?')) return;
       btn.disabled = true;
       try {
@@ -724,6 +767,84 @@ function _attachObjStagesHandlers(objectId, stages) {
       }
     });
   });
+
+  // 28.07: заменили up/down-кнопки на реальный touch drag (owner request) -- тот же
+  // pointerdown/pointermove/pointerup паттерн, что уже проверен в bubble-assign.js,
+  // только вертикальная ось и swap с соседом по позиции курсора вместо drop-зоны.
+  if (currentRole === 'owner') _attachStageDragHandlers(objectId, stages);
+}
+
+let _stageDragEl = null;
+let _stageDragStartY = 0;
+let _stageDragStartTop = 0;
+
+function _attachStageDragHandlers(objectId, stages) {
+  document.querySelectorAll('.obj-stage-drag-handle').forEach(handle => {
+    handle.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const node = handle.closest('.obj-stage-node');
+      _stageDragEl = node;
+      _stageDragStartY = e.clientY;
+      _stageDragStartTop = node.offsetTop;
+      node.classList.add('obj-stage-dragging');
+      node.style.zIndex = '10';
+      node.setPointerCapture(e.pointerId);
+      node.addEventListener('pointermove', _stageDragMove);
+      node.addEventListener('pointerup', () => _stageDragEnd(objectId, stages));
+    });
+  });
+}
+
+function _stageDragMove(e) {
+  if (!_stageDragEl) return;
+  const dy = e.clientY - _stageDragStartY;
+  _stageDragEl.style.transform = `translateY(${dy}px)`;
+  _stageDragEl.style.transition = 'none';
+
+  // Определяем, над каким соседним узлом сейчас находится курсор -- визуальная
+  // подсказка (highlight), реальный swap считается на pointerup по финальной позиции.
+  const wrap = document.getElementById('obj-stages-roadmap');
+  const nodes = Array.from(wrap.querySelectorAll('.obj-stage-node'));
+  const draggedRect = _stageDragEl.getBoundingClientRect();
+  const draggedMidY = draggedRect.top + draggedRect.height / 2;
+  nodes.forEach(n => n.classList.remove('obj-stage-drop-target'));
+  for (const n of nodes) {
+    if (n === _stageDragEl) continue;
+    const r = n.getBoundingClientRect();
+    if (draggedMidY >= r.top && draggedMidY <= r.bottom) {
+      n.classList.add('obj-stage-drop-target');
+      break;
+    }
+  }
+}
+
+async function _stageDragEnd(objectId, stages) {
+  if (!_stageDragEl) return;
+  const draggedEl = _stageDragEl;
+  const wrap = document.getElementById('obj-stages-roadmap');
+  const target = wrap.querySelector('.obj-stage-drop-target');
+  draggedEl.removeEventListener('pointermove', _stageDragMove);
+  draggedEl.classList.remove('obj-stage-dragging');
+  draggedEl.style.zIndex = '';
+  draggedEl.style.transform = '';
+  draggedEl.style.transition = '';
+  wrap.querySelectorAll('.obj-stage-drop-target').forEach(n => n.classList.remove('obj-stage-drop-target'));
+  _stageDragEl = null;
+
+  if (!target) return; // отпустили на своём же месте -- ничего не меняем
+
+  const rowA = parseInt(draggedEl.dataset.row, 10);
+  const rowB = parseInt(target.dataset.row, 10);
+  if (rowA === rowB) return;
+
+  try {
+    await api(`/api/objects/${objectId}/stages/${rowA}/swap`, { method: 'PATCH', body: JSON.stringify({ row_num_b: rowB }) });
+    hapticImpact('medium');
+    await _loadObjStages(objectId);
+  } catch (e) {
+    showToast('Ошибка: ' + e.message, 'error');
+    await _loadObjStages(objectId); // откат визуального состояния к реальным данным с сервера
+  }
 }
 
 // ═══════════ Встроенный чат объекта — Step 2 v2 (24.07) ═══════════
