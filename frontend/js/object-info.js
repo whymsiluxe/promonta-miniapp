@@ -766,6 +766,13 @@ async function embedObjectChat(objectId, objectName) {
   // тут). nav-hide (chat-dialog-open) добавлен отдельно (25.07) -- composer иначе делил
   // экран с bottom-nav, юзер явно попросил единообразие с обычным полноэкранным чатом.
   document.body.classList.add('chat-dialog-open');
+  // 28.07: owner report -- встроенный чат объекта (position:fixed на всю оставшуюся
+  // высоту) "плыл" относительно заголовка/табов при протяжке, потому что весь
+  // #view-object-detail скроллится обычным document/body-flow, а офсет чата не
+  // пересчитывался на scroll (только на resize). Правильнее не гнаться пересчётом
+  // offset вслед за скроллом, а вообще не давать body скроллиться, пока чат активен --
+  // тот же view-locked механизм, что root-табы Чат/ИИ уже используют для той же цели.
+  document.body.classList.add('view-locked');
   _chatActiveThread = null;
   _chatActiveThreadKey = `obj:${objectId}`;
   _chatReturnToView = null;
@@ -777,6 +784,7 @@ async function embedObjectChat(objectId, objectName) {
 
 function unembedObjectChat() {
   document.body.classList.remove('chat-dialog-open');
+  document.body.classList.remove('view-locked');
   const panel = document.getElementById('obj-detail-panel-chat');
   const chatView = document.getElementById('chat-thread-detail-view');
   if (!panel || !chatView || !_objChatHomeParent) return;

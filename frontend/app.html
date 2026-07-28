@@ -4583,6 +4583,16 @@ async function initApp() {
     requestAnimationFrame(() => {
       const activeView = document.querySelector('.view.active');
       if (activeView) activeView.classList.toggle('header-scrolled', window.scrollY > 24);
+      // 28.07: owner report -- встроенный чат объекта (#obj-detail-panel-chat.obj-chat-active,
+      // position:fixed) "наезжал" на заголовок/табы при протяжке экрана. Root cause: --obj-detail-
+      // chat-offset пересчитывался только через ResizeObserver на #obj-detail-tabs (изменение
+      // РАЗМЕРА), не на body-level scroll (изменение ПОЗИЦИИ) -- сам #view-object-detail скроллится
+      // обычным document-flow (см. комментарий выше), табы физически уезжают вместе со скроллом,
+      // а top у зафиксированного чата остаётся приклеен к устаревшей координате. Пересчитываем
+      // offset тем же throttled rAF, что уже используется здесь для header-scrolled.
+      if (typeof _updateObjChatOffset === 'function' && document.getElementById('obj-detail-panel-chat')?.classList.contains('obj-chat-active')) {
+        _updateObjChatOffset();
+      }
       _headerScrollTicking = false;
     });
   }, { passive: true });
