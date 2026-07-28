@@ -980,9 +980,51 @@ header h1 {
 .modal-btn.secondary { background: var(--bg-card); color: var(--text-main); }
 .modal-btn.primary { background: var(--primary); color: white; }
 
-/* ── Полноэкранная форма (Новый объект) ── */
-#new-object-view { display: none; padding-bottom: 6rem; }
-#new-object-view.open { display: block; }
+/* ── Bottom sheet overlay (28.07, Phase 04 remainder item 5) — заменяет старую
+   полноэкранную форму "Новый объект" (раньше прятала весь objects-list-view вместо
+   себя). Переиспользуемый паттерн: overlay backdrop + панель снизу, близко к уже
+   существующему .worker-picker-inner, но с opacity/transform-переходом и регистрацией
+   в NavigationManager.overlayStack (см. openNewObjectView/closeNewObjectView в objects.js). ── */
+.bottom-sheet-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 1300;
+  align-items: flex-end;
+  background: rgba(10,10,10,0.55);
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+.bottom-sheet-overlay.open { opacity: 1; }
+.bottom-sheet-panel {
+  width: 100%; max-height: 86vh; overflow-y: auto;
+  background: var(--bg-card);
+  border-radius: 22px 22px 0 0;
+  padding-bottom: calc(1rem + max(10px, env(safe-area-inset-bottom)));
+  transform: translateY(28px);
+  transition: transform 240ms cubic-bezier(.22,.7,.32,1);
+}
+.bottom-sheet-overlay.open .bottom-sheet-panel { transform: translateY(0); }
+.bottom-sheet-handle { width: 36px; height: 4px; border-radius: 999px; background: var(--border-color); margin: 0.65rem auto 0; }
+.bottom-sheet-panel .form-header { padding: 0.75rem 1rem 0.5rem; }
+.bottom-sheet-panel .form-header h1 { font-size: 1.3rem; }
+.bottom-sheet-close-btn {
+  width: 36px; height: 36px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-app); border: none; color: var(--text-main); font-size: 1.1rem; cursor: pointer;
+  margin-left: auto;
+}
+.bottom-sheet-close-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
+/* .form-submit-bar по умолчанию position:fixed для полноэкранных форм (bottom: 7.5rem
+   "над нижним меню") -- внутри ограниченного/скроллящегося bottom sheet это оторвало бы
+   кнопку от контента и приклеило к реальному viewport вместо панели. Возвращаем в normal flow. */
+.bottom-sheet-panel .form-submit-bar {
+  position: static;
+  transform: none;
+  max-width: none;
+  box-shadow: none;
+  border-top: none;
+  background: transparent;
+  padding: 0.5rem 1rem 0.25rem;
+}
 
 #stages-view { display: none; padding-bottom: 2rem; }
 #stages-view.open { display: block; }
@@ -2459,6 +2501,33 @@ body.view-locked {
 .nav-start-fab.active-session { background: var(--red); box-shadow: 0 6px 18px rgba(248,113,113,0.4); }
 body.view-locked .nav-item-start { display: none; } /* не мешать клавиатуре в чате/ИИ, тот же паттерн что radio-fab */
 
+/* ── Objects "+" FAB (28.07, Phase 04 remainder item 1) — squircle, forest-green/ivory,
+   позиция через реально измеренную --app-bottom-nav-height (JS: _applyBottomNavHeight()),
+   не magic pixel offset (в отличие от .nav-item-start выше, оставленного как есть).
+   Appear: opacity+translateY+scale за 220ms без bounce (cubic-bezier без overshoot).
+   Press: scale(0.92), спека owner. ── */
+.objects-fab {
+  position: fixed;
+  right: max(18px, calc(env(safe-area-inset-right, 0px) + 12px));
+  bottom: calc(var(--app-bottom-nav-height, 70px) + max(12px, env(safe-area-inset-bottom)) + 14px);
+  width: 60px; height: 60px;
+  border-radius: 21px;
+  background: var(--c-forest, #1F513E);
+  color: #F5F1E8;
+  border: none;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 10px 24px -8px rgba(15,20,15,0.45), 0 2px 6px -2px rgba(15,20,15,0.3);
+  cursor: pointer;
+  z-index: 60;
+  opacity: 0;
+  transform: translateY(16px) scale(0.9);
+  transition: transform 220ms cubic-bezier(.22,.7,.32,1), opacity 220ms ease, box-shadow 140ms ease;
+  pointer-events: none;
+}
+.objects-fab.visible { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+.objects-fab.visible:active { transform: scale(0.92); }
+body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; }
+
 /* ── Worker object picker modal (Фаза 10.14) ── */
 #worker-object-picker-modal { position: fixed; inset: 0; z-index: 1400; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; }
 .worker-picker-inner { width: 100%; background: var(--bg-card); border-radius: 20px 20px 0 0; padding: 1rem; max-height: 70vh; display: flex; flex-direction: column; }
@@ -3035,7 +3104,6 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
   <div id="objects-list-view">
     <header>
       <h1>Объекты</h1>
-      <button class="fab" id="add-object" style="display:none">+</button>
     </header>
     <div class="obj-toolbar">
       <input type="search" id="obj-search" class="obj-search-input" placeholder="Поиск по названию или адресу…">
@@ -3062,40 +3130,8 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     </div>
   </div>
 
-  <div id="new-object-view">
-    <div class="form-header">
-      <button class="back-btn" id="new-obj-back">←</button>
-      <h1>Новый объект</h1>
-    </div>
-    <div class="form-section">
-      <div class="form-field">
-        <label>Название</label>
-        <input type="text" id="new-obj-name" placeholder="напр. Дом Шульц">
-      </div>
-      <div class="form-field">
-        <label>Адрес</label>
-        <input type="text" id="new-obj-adresse" placeholder="Straße, PLZ Ort">
-      </div>
-      <div class="form-field">
-        <label>Бюджет €</label>
-        <input type="number" step="0.01" id="new-obj-budget" placeholder="10000">
-      </div>
-      <div class="form-row">
-        <div class="form-field">
-          <label>Дата старта</label>
-          <input type="date" id="new-obj-start">
-        </div>
-        <div class="form-field">
-          <label>Дата окончания (план)</label>
-          <input type="date" id="new-obj-end">
-        </div>
-      </div>
-    </div>
-    <div id="new-obj-error"></div>
-    <div class="form-submit-bar">
-      <button class="form-submit-btn" id="new-obj-submit">Создать объект</button>
-    </div>
-  </div>
+  <!-- new-object-view вынесен в bottom sheet на верхний уровень DOM (28.07, Phase 04
+       remainder item 5) -- см. #new-object-sheet рядом с остальными top-level модалками. -->
 
   <!-- ═══════════ ДЕТАЛИ ОБЪЕКТА (24.07, 6 табов) ═══════════ -->
   <div id="view-object-detail" style="display:none;">
@@ -3385,6 +3421,48 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
     <div id="checkin-status-body"></div>
   </div>
 </div>
+<!-- Новый объект — bottom sheet (28.07, Phase 04 remainder item 5). Раньше форма открывалась
+     inline вместо списка объектов (objects-list-view прятался целиком) -- теперь управляемый
+     bottom sheet поверх списка, открывается FAB'ом (#add-object), закрывается ✕/тапом по
+     фону/NavigationManager.back() (зарегистрирован как overlay). -->
+<div class="bottom-sheet-overlay" id="new-object-sheet" style="display:none;" data-no-swipe>
+  <div class="bottom-sheet-panel" id="new-object-view">
+    <div class="bottom-sheet-handle"></div>
+    <div class="form-header">
+      <h1>Новый объект</h1>
+      <button class="bottom-sheet-close-btn" id="new-obj-back" type="button" aria-label="Закрыть">✕</button>
+    </div>
+    <div class="form-section">
+      <div class="form-field">
+        <label>Название</label>
+        <input type="text" id="new-obj-name" placeholder="напр. Дом Шульц">
+      </div>
+      <div class="form-field">
+        <label>Адрес</label>
+        <input type="text" id="new-obj-adresse" placeholder="Straße, PLZ Ort">
+      </div>
+      <div class="form-field">
+        <label>Бюджет €</label>
+        <input type="number" step="0.01" id="new-obj-budget" placeholder="10000">
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>Дата старта</label>
+          <input type="date" id="new-obj-start">
+        </div>
+        <div class="form-field">
+          <label>Дата окончания (план)</label>
+          <input type="date" id="new-obj-end">
+        </div>
+      </div>
+    </div>
+    <div id="new-obj-error"></div>
+    <div class="form-submit-bar">
+      <button class="form-submit-btn" id="new-obj-submit">Создать объект</button>
+    </div>
+  </div>
+</div>
+
 <div id="checkin-preview-modal" style="display:none;">
   <div class="checkin-preview-inner">
     <div class="checkin-preview-header">
@@ -3682,6 +3760,14 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
   </div>
 </div>
 
+<!-- Objects "+" FAB (28.07, Phase 04 remainder item 1) — вынесен из шапки экрана Объекты
+     (там перекрывал Telegram menu-кнопку справа), теперь плавает над bottom-nav как
+     Check-in FAB выше. Owner-only, видим только пока активен список объектов (не в
+     new-object-sheet/детейле/этапах) -- см. refreshObjectsFabVisibility() в objects.js. -->
+<button class="objects-fab" id="add-object" type="button" aria-label="Новый объект">
+  <svg viewBox="0 0 24 24" width="26" height="26"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+</button>
+
 <script src="js/theme.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/ui/navigation-manager.js"></script>
@@ -3790,6 +3876,10 @@ function switchView(viewName, opts = {}) {
   // Home dashboard flow + RadioMiniPlayer над bottom-nav). RadioMiniPlayer сам решает
   // свою видимость (играет ли радио + не на Home ли мы) при каждой смене экрана.
   if (typeof refreshRadioMiniPlayerVisibility === 'function') refreshRadioMiniPlayerVisibility();
+  // 28.07 (Phase 04 remainder, item 1): Objects FAB виден только пока сам таб активен --
+  // objects-list-view хранит своё display независимо от .view.active, поэтому уходя с
+  // таба Объекты нужно явно пересчитать видимость, иначе FAB остаётся висеть поверх Home/Chat/etc.
+  if (typeof refreshObjectsFabVisibility === 'function') refreshObjectsFabVisibility();
 
   const isFullView = viewName === 'chat' || viewName === 'ai';
   // 24.07: nav-bar больше НЕ скрывается в чате — юзер явно попросил видеть его на всех
@@ -3861,6 +3951,17 @@ function applyRoleNav() {
     workerNav.style.display = 'none';
     if (checkinFab) checkinFab.style.display = 'none';
   }
+  _applyBottomNavHeight();
+}
+
+// 28.07 (Phase 04 remainder, item 1): реально измеренная высота bottom-nav вместо
+// захардкоженного числа -- читают RadioMiniPlayer (уже был на fallback 70px) и новый
+// Objects FAB (см. .objects-fab), оба позиционируются через --app-bottom-nav-height.
+function _applyBottomNavHeight() {
+  const navs = document.querySelectorAll('.bottom-nav');
+  let h = 0;
+  navs.forEach(n => { if (n.offsetParent !== null) h = n.offsetHeight; });
+  if (h > 0) document.documentElement.style.setProperty('--app-bottom-nav-height', h + 'px');
 }
 
 function showSplash() {
@@ -4046,6 +4147,8 @@ async function initApp() {
     window.visualViewport.addEventListener('scroll', _applyViewportHeight);
   }
   window.addEventListener('resize', _applyViewportHeight);
+  window.addEventListener('resize', _applyBottomNavHeight);
+  window.addEventListener('orientationchange', _applyBottomNavHeight);
 
   // 23.07: sticky header компактное состояние — body-level scroll (обычные view scroll'ятся
   // вместе с document, не имеют собственного overflow-контейнера, в отличие от chat/ai fullscreen)

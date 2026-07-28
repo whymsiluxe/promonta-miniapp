@@ -322,18 +322,58 @@ function attachObjectsHandlers() {
 
 }
 
+// 28.07 (Phase 04 remainder, item 5): "Новый объект" -- управляемый bottom sheet поверх
+// списка (objects-list-view больше не прячется) вместо полноэкранной формы в произвольном
+// месте. Зарегистрирован в NavigationManager.overlayStack тем же паттерном, что
+// photo-comments-modal в feed.js -- иначе Telegram BackButton не закроет sheet, а провалится
+// на предыдущий route.
+let _newObjSheetOverlayUnregister = null;
+
 function openNewObjectView() {
-  document.getElementById('objects-list-view').style.display = 'none';
-  document.getElementById('new-object-view').classList.add('open');
   document.getElementById('new-obj-error').innerHTML = '';
   ['new-obj-name', 'new-obj-adresse', 'new-obj-budget', 'new-obj-start', 'new-obj-end'].forEach(id => {
     document.getElementById(id).value = '';
   });
+  const sheet = document.getElementById('new-object-sheet');
+  sheet.style.display = 'flex';
+  requestAnimationFrame(() => sheet.classList.add('open'));
+  if (typeof NavigationManager !== 'undefined' && !_newObjSheetOverlayUnregister) {
+    _newObjSheetOverlayUnregister = NavigationManager.registerOverlay(() => _closeNewObjectViewInternal());
+  }
+  refreshObjectsFabVisibility();
 }
 
+// Общая анимация закрытия -- вызывается и вручную (крестик/тап по фону), и из
+// NavigationManager (overlay уже popped на этот момент).
+function _animateCloseNewObjectSheet() {
+  const sheet = document.getElementById('new-object-sheet');
+  sheet.classList.remove('open');
+  setTimeout(() => { sheet.style.display = 'none'; }, 240);
+  refreshObjectsFabVisibility();
+}
+
+// Вызывается ТОЛЬКО из NavigationManager (top.close()) — overlay уже popped, повторный
+// unregister тут не нужен (тот же паттерн что _closePhotoCommentsInternal в feed.js).
+function _closeNewObjectViewInternal() {
+  _newObjSheetOverlayUnregister = null;
+  _animateCloseNewObjectSheet();
+}
+
+// Вызывается при ручном закрытии (крестик/тап по фону/после submit) — overlay ещё
+// в стеке, нужно явно снять, иначе следующий Back попытается закрыть уже закрытый sheet.
 function closeNewObjectView() {
-  document.getElementById('new-object-view').classList.remove('open');
-  document.getElementById('objects-list-view').style.display = '';
+  if (_newObjSheetOverlayUnregister) { _newObjSheetOverlayUnregister(); _newObjSheetOverlayUnregister = null; }
+  _animateCloseNewObjectSheet();
+}
+
+// 28.07 (Phase 04 remainder, item 1): FAB виден только когда активен таб Объекты И
+// показан список (не bottom sheet/детейл объекта/этапы), и роль -- owner.
+function refreshObjectsFabVisibility() {
+  const fab = document.getElementById('add-object');
+  if (!fab) return;
+  const objectsActive = document.getElementById('view-objects')?.classList.contains('active');
+  const listVisible = document.getElementById('objects-list-view')?.style.display !== 'none';
+  fab.classList.toggle('visible', !!(objectsActive && listVisible && currentRole === 'owner'));
 }
 
 async function submitNewObject() {
@@ -532,6 +572,7 @@ async function openStagesView(objectId, objectName) {
   _stagesCurrentObjectId = objectId;
   _stagesCurrentObjectName = objectName || objectId;
   document.getElementById('objects-list-view').style.display = 'none';
+  refreshObjectsFabVisibility();
   document.getElementById('stages-view').classList.add('open');
   await loadStagesWithRowNumbers();
   if (typeof initCheckinControls === 'function') initCheckinControls();
@@ -568,6 +609,7 @@ async function loadStagesWithRowNumbers() {
 function closeStagesView() {
   document.getElementById('stages-view').classList.remove('open');
   document.getElementById('objects-list-view').style.display = '';
+  refreshObjectsFabVisibility();
   loadObjects();
 }
 
@@ -589,16 +631,19 @@ async function addNewStage() {
 }
 
 function initObjectsView() {
-  document.getElementById('add-object').style.display = currentRole === 'owner' ? 'flex' : 'none';
   document.getElementById('add-object').addEventListener('click', () => {
     if (currentRole !== 'owner') return;
     openNewObjectView();
   });
   document.getElementById('new-obj-back').addEventListener('click', closeNewObjectView);
+  document.getElementById('new-object-sheet').addEventListener('click', (e) => {
+    if (e.target.id === 'new-object-sheet') closeNewObjectView(); // тап по фону закрывает
+  });
   document.getElementById('new-obj-submit').addEventListener('click', submitNewObject);
   document.getElementById('stages-back').addEventListener('click', closeStagesView);
   document.getElementById('add-stage-btn').addEventListener('click', addNewStage);
   initObjectsToolbar();
+  refreshObjectsFabVisibility();
   loadObjects();
 }
 
@@ -617,6 +662,7 @@ function openObjectDetail(objectId, objectName, initialTab, objectStatus) {
   _objDetailCurrentStatus = objectStatus || '';
   _objDetailLoadedTabs.clear();
   document.getElementById('objects-list-view').style.display = 'none';
+  refreshObjectsFabVisibility();
   const view = document.getElementById('view-object-detail');
   view.style.display = 'block';
   document.getElementById('obj-detail-title').textContent = _objDetailCurrentName;
@@ -642,6 +688,7 @@ function closeObjectDetail() {
   if (typeof unembedObjectChat === 'function') unembedObjectChat();
   document.getElementById('view-object-detail').style.display = 'none';
   document.getElementById('objects-list-view').style.display = '';
+  refreshObjectsFabVisibility();
   _objDetailCurrentId = null;
   loadObjects();
 }
