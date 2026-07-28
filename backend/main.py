@@ -40,8 +40,15 @@ AUDIT_LOCK = __import__('threading').Lock()
 
 @app.middleware("http")
 async def audit_log_middleware(request, call_next):
-    body_bytes = b""
-    if request.method in ("POST", "PATCH", "DELETE"):
+    # 28.07 (real bug found by external audit, ТЗ п.25): было await request.body() для
+    # ЛЮБОГО POST/PATCH/DELETE, включая multipart file upload (photo/voice/document) --
+    # тело файла дублировалось в памяти дважды (readable once, buffered here + re-injected
+    # via _receive override for the real handler below). Логируемая entry ниже НЕ включает
+    # тело файла и никогда не включала -- этот буфер существовал только чтобы вернуть body
+    # обратно эндпоинту, не для самого лога. Для multipart пропускаем чтение целиком: не
+    # трогаем request._receive, FastAPI/Starlette читают upload stream штатно сами.
+    is_multipart = request.headers.get("content-type", "").startswith("multipart/form-data")
+    if request.method in ("POST", "PATCH", "DELETE") and not is_multipart:
         body_bytes = await request.body()
 
         async def receive():
