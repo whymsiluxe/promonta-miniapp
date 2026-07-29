@@ -24,7 +24,7 @@ async function initHomeView() {
     <div id="home-kpi-bar" class="home-kpi-bar">
       <div class="kpi-tile" id="kpi-objects" onclick="switchView('objects')"><span class="kpi-num">—</span><span class="kpi-label">Объекты</span></div>
       <div class="kpi-tile" id="kpi-working" onclick="switchView('working-objects')">
-        <span class="kpi-num" id="kpi-working-count">—</span><span class="kpi-label">Рабочие</span>
+        <span class="kpi-num" id="kpi-working-count">—</span><span class="kpi-label">Команда</span>
       </div>
     </div>
 
@@ -35,30 +35,6 @@ async function initHomeView() {
       <div class="kpi-tile kpi-alert" id="kpi-alerts" onclick="openAlertsView()">
         <span class="kpi-num" id="kpi-alerts-count">—</span><span class="kpi-label">Алерты</span>
         <span class="quick-primary-badge" id="alerts-badge" style="display:none">0</span>
-      </div>
-    </div>
-
-    <div id="home-team-section" class="home-team-section">
-      <div class="home-section-header">
-        <span class="home-section-title">Команда</span>
-      </div>
-
-      <div id="home-attention-section" class="home-team-block" style="display:none;">
-        <div class="home-team-block-title">Требует внимания</div>
-        <div id="home-shifts-not-started"></div>
-        <div id="home-shifts-awaiting"></div>
-      </div>
-
-      <div class="home-team-block">
-        <div class="home-team-block-title">Смены и назначения</div>
-        <div id="home-shifts-working-now"></div>
-        <div id="home-team-available"></div>
-      </div>
-
-      <div id="home-team-hours-block" class="home-team-block" style="display:none;">
-        <div class="home-team-block-title">Часы команды</div>
-        <div id="home-team-hours-summary" class="home-team-hours-summary"></div>
-        <div id="home-team-hours-list"></div>
       </div>
     </div>
 
@@ -121,107 +97,6 @@ async function _loadHomeData() {
   _loadHomeAlerts();
   _loadHomeAbwesenheitSummary();
   _loadHomeChatSummary();
-  if (currentRole === 'owner') {
-    // Часы команды читают DOM working-now, посчитанный сменами -- последовательно,
-    // не параллельно (await), иначе счётчик "сейчас работают" в сводке будет 0.
-    await _loadHomeShiftsToday();
-    _loadHomeTeamHours();
-  }
-}
-
-// 27.07 (B5) → 30.07 v2 (спек: блок "Команда"): единый оперативный раздел с
-// "Требует внимания" (not_started+awaiting -- то, что ждёт действия owner'а),
-// "Смены и назначения" (working_now + available_today) и tap-карточками, ведущими
-// в существующую user-card modal (не в объект -- спек явно требует именно это).
-// Приоритет групп (один worker -- только в одной) уже реализован backend'ом.
-async function _loadHomeShiftsToday() {
-  const attentionSection = document.getElementById('home-attention-section');
-  const workingEl = document.getElementById('home-shifts-working-now');
-  const notStartedEl = document.getElementById('home-shifts-not-started');
-  const awaitingEl = document.getElementById('home-shifts-awaiting');
-  const availableEl = document.getElementById('home-team-available');
-  if (!attentionSection || !workingEl) return;
-  try {
-    const data = await api('/api/dashboard/shifts-today');
-    const working = data.working_now || [];
-    const notStarted = data.not_started || [];
-    const awaiting = data.awaiting_response || [];
-    const available = data.available_today || [];
-
-    attentionSection.style.display = (notStarted.length || awaiting.length) ? '' : 'none';
-
-    // Компактная многострочная карточка: имя / объект·этап / период / task_note /
-    // статус назначения+смены. Пустые строки не рендерятся вообще.
-    const card = (w, opts) => {
-      const lines = [];
-      const objStage = [w.object_name, w.stage_id].filter(Boolean).join(' · ');
-      if (objStage) lines.push(esc(objStage));
-      if (w.date_from || w.date_to) lines.push(`${esc(w.date_from || '')} — ${esc(w.date_to || '')}`);
-      if (w.task_note) lines.push(esc(w.task_note));
-      return `
-      <div class="home-shift-row" data-uid="${esc(w.user_id)}">
-        <div class="home-shift-dot ${opts.dotClass}"></div>
-        <div class="home-shift-info">
-          <div class="home-shift-name">${esc(w.worker_name)}</div>
-          ${lines.length ? `<div class="home-shift-object">${lines.join(' · ')}</div>` : ''}
-          <div class="home-shift-status">${opts.statusLabel}</div>
-        </div>
-      </div>`;
-    };
-
-    awaitingEl.innerHTML = awaiting.map(w => card(w, { dotClass: 'home-shift-dot-idle', statusLabel: 'Ожидает подтверждения' })).join('');
-    notStartedEl.innerHTML = notStarted.map(w => card(w, { dotClass: 'home-shift-dot-idle', statusLabel: 'Назначен · смена не начата' })).join('');
-
-    workingEl.innerHTML = working.map(w => {
-      const mins = w.start_at ? Math.round((Date.now() / 1000 - w.start_at) / 60) : 0;
-      const durationLabel = mins >= 60 ? `${Math.floor(mins / 60)} ч ${mins % 60} мин` : `${mins} мин`;
-      return card(w, { dotClass: 'home-shift-dot-active', statusLabel: `Смена идёт · ${durationLabel}` });
-    }).join('');
-
-    availableEl.innerHTML = available.length
-      ? available.map(w => `
-        <div class="home-shift-row" data-uid="${esc(w.user_id)}">
-          <div class="home-shift-dot home-shift-dot-idle"></div>
-          <div class="home-shift-info">
-            <div class="home-shift-name">${esc(w.worker_name)}</div>
-            <div class="home-shift-status">Доступен сегодня</div>
-          </div>
-        </div>`).join('')
-      : '';
-
-    document.querySelectorAll('#home-team-section .home-shift-row').forEach(row => {
-      row.addEventListener('click', () => {
-        if (typeof openUserCard === 'function') openUserCard(row.dataset.uid);
-      });
-    });
-  } catch (e) {
-    attentionSection.style.display = 'none';
-  }
-}
-
-// 30.07 (спек п.6): "Часы команды" -- переиспользует существующий team_hours
-// из /api/profile/stats (self-view owner без user_id), не новая аналитика.
-async function _loadHomeTeamHours() {
-  const block = document.getElementById('home-team-hours-block');
-  const summaryEl = document.getElementById('home-team-hours-summary');
-  const listEl = document.getElementById('home-team-hours-list');
-  if (!block) return;
-  try {
-    const stats = await api('/api/profile/stats');
-    const teamHours = stats.team_hours || [];
-    if (!teamHours.length) { block.style.display = 'none'; return; }
-    block.style.display = '';
-    const weekTotal = teamHours.reduce((sum, t) => sum + (t.hours || 0), 0);
-    const workingNow = document.querySelectorAll('#home-shifts-working-now .home-shift-row').length;
-    summaryEl.textContent = `За неделю: ${weekTotal.toFixed(1)} ч · сейчас работают: ${workingNow}`;
-    listEl.innerHTML = teamHours.slice(0, 5).map(t => `
-      <div class="home-team-hours-row">
-        <span class="home-team-hours-name">${esc(t.name)}</span>
-        <span class="home-team-hours-value">${t.hours.toFixed(1)} ч</span>
-      </div>`).join('');
-  } catch (e) {
-    block.style.display = 'none';
-  }
 }
 
 // 10.11: Abwesenheit-плашка на Home — сводка вместо мелкой строки в Profile→Ещё.
@@ -510,12 +385,20 @@ async function _loadHomeObjectsRings() {
     const kpiNum = kpiEl.querySelector('.kpi-num');
     if (kpiNum) kpiNum.textContent = active.length;
 
-    // 23.07: "Рабочие" на дашборде — число уникальных воркеров, назначенных хоть на один объект
+    // 30.07 v4 (спек): KPI "Команда" -- реально работающих ПРЯМО СЕЙЧАС (working_now.length
+    // из существующего /api/dashboard/shifts-today, тот же источник что и экран "Команда"),
+    // не "назначен хоть на один объект" как раньше. Только счётчик, без рендера списка --
+    // полный список живёт на отдельном экране working-objects.
     const workingCountEl = document.getElementById('kpi-working-count');
-    if (workingCountEl) {
-      const uniqueWorkers = new Set();
-      (data.objects || []).forEach(o => (o.assigned_users || []).forEach(u => uniqueWorkers.add(u.user_id)));
-      workingCountEl.textContent = uniqueWorkers.size;
+    if (workingCountEl && currentRole === 'owner') {
+      try {
+        const shifts = await api('/api/dashboard/shifts-today');
+        workingCountEl.textContent = (shifts.working_now || []).length;
+      } catch (e) {
+        const uniqueWorkers = new Set();
+        (data.objects || []).forEach(o => (o.assigned_users || []).forEach(u => uniqueWorkers.add(u.user_id)));
+        workingCountEl.textContent = uniqueWorkers.size;
+      }
     }
 
     if (!active.length) {
@@ -821,8 +704,13 @@ function _setWorkerBadge(elId, count) {
 }
 
 
-// ═══════════ "Объекты рабочие" (23.07) — owner-экран: без объекта / по объектам / отсутствуют.
-// Данные полностью из существующих /api/workers, /api/objects, /api/abwesenheit/all — без нового backend.
+// ═══════════ "Команда" (23.07 "Объекты рабочие" → 30.07 v3 переименовано и расширено
+// по спеку): оперативный owner-экран -- Требует внимания / Смены и назначения (4 группы,
+// приоритет уже реализован backend'ом в /api/dashboard/shifts-today) / Часы команды
+// (существующий /api/profile/stats team_hours) / без объекта / по объектам / отсутствуют.
+// Данные из существующих /api/workers, /api/objects, /api/abwesenheit/all,
+// /api/dashboard/shifts-today, /api/profile/stats — без нового backend кроме
+// точечных добавленных полей (specialty/hours_today_total) в уже существующем ответе.
 
 async function initWorkingObjectsView() {
   const slot = document.getElementById('working-objects-slot');
@@ -830,10 +718,13 @@ async function initWorkingObjectsView() {
   slot.innerHTML = '<div style="padding:1rem;color:var(--text-light)">Загрузка…</div>';
 
   try {
-    const [workersData, objectsData, absenceData] = await Promise.all([
+    const [workersData, objectsData, absenceData, shifts, stats, blockersData] = await Promise.all([
       api('/api/workers'),
       api('/api/objects'),
       api('/api/abwesenheit/all').catch(() => ({ entries: [] })),
+      api('/api/dashboard/shifts-today').catch(() => null),
+      api('/api/profile/stats').catch(() => null),
+      api('/api/dashboard/active-blockers').catch(() => ({ blockers: [] })),
     ]);
 
     const workers = (workersData.workers || []).filter(w => w.role === 'worker');
@@ -850,7 +741,142 @@ async function initWorkingObjectsView() {
     const withoutObject = workers.filter(w => !assignedIds.has(String(w.user_id)) && !absentIds.has(String(w.user_id)));
     const activeObjects = objects.filter(o => (o.assigned_users || []).length > 0);
 
+    // 30.07 v4 (спек): карточка адаптируется под тип -- не впихиваем все поля разом.
+    // "Не вышел"/"Ждёт" несут объект·этап/период/task_note; "Активная смена" несёт
+    // объект·этап/начало+длительность (без периода/task_note -- спек явно просит
+    // не перегружать); "Доступен" -- только специальность, без пустых полей.
+    const notStartedCard = w => {
+      const lines = [];
+      const objStage = [w.object_name, w.stage_id].filter(Boolean).join(' · ');
+      if (objStage) lines.push(esc(objStage));
+      if (w.date_from || w.date_to) lines.push(`${esc(w.date_from || '')} — ${esc(w.date_to || '')}`);
+      if (w.task_note) lines.push(esc(w.task_note));
+      return `
+      <div class="wo-team-card" data-uid="${esc(w.user_id)}">
+        <div class="wo-team-card-name">${esc(w.worker_name)}</div>
+        ${lines.length ? `<div class="wo-team-card-detail">${lines.join(' · ')}</div>` : ''}
+        <div class="wo-team-card-status wo-status-idle">Назначен сегодня · смена не начата</div>
+      </div>`;
+    };
+    const awaitingCard = w => {
+      const lines = [];
+      const objStage = [w.object_name, w.stage_id].filter(Boolean).join(' · ');
+      if (objStage) lines.push(esc(objStage));
+      if (w.date_from || w.date_to) lines.push(`${esc(w.date_from || '')} — ${esc(w.date_to || '')}`);
+      if (w.task_note) lines.push(esc(w.task_note));
+      return `
+      <div class="wo-team-card" data-uid="${esc(w.user_id)}">
+        <div class="wo-team-card-name">${esc(w.worker_name)}</div>
+        ${lines.length ? `<div class="wo-team-card-detail">${lines.join(' · ')}</div>` : ''}
+        <div class="wo-team-card-status wo-status-idle">Ожидает подтверждения</div>
+      </div>`;
+    };
+    const activeCard = w => {
+      const objStage = [w.object_name, w.stage_id || w.stage_name].filter(Boolean).join(' · ');
+      const startLabel = w.start_at ? new Date(w.start_at * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+      const mins = w.start_at ? Math.round((Date.now() / 1000 - w.start_at) / 60) : 0;
+      const durationLabel = mins >= 60 ? `${Math.floor(mins / 60)} ч ${mins % 60} мин` : `${mins} мин`;
+      return `
+      <div class="wo-team-card" data-uid="${esc(w.user_id)}">
+        <div class="wo-team-card-name">${esc(w.worker_name)}${w.specialty ? ` · ${esc(w.specialty)}` : ''}</div>
+        ${objStage ? `<div class="wo-team-card-detail">${esc(objStage)}</div>` : ''}
+        <div class="wo-team-card-detail">${startLabel ? `Начал в ${startLabel} · ` : ''}работает ${durationLabel}</div>
+        <div class="wo-team-card-status wo-status-active">● Смена идёт</div>
+      </div>`;
+    };
+    const availableCard = w => `
+      <div class="wo-team-card" data-uid="${esc(w.user_id)}">
+        <div class="wo-team-card-name">${esc(w.worker_name)}${w.specialty ? ` · ${esc(w.specialty)}` : ''}</div>
+        <div class="wo-team-card-status wo-status-available">Доступен сегодня</div>
+      </div>`;
+
+    let teamHtml = '';
+    if (shifts) {
+      const working = shifts.working_now || [];
+      const notStarted = shifts.not_started || [];
+      const awaiting = shifts.awaiting_response || [];
+      const available = shifts.available_today || [];
+
+      // 3. Краткая сводка -- счётчики строго из API length, не DOM.
+      const summaryHtml = `
+        <div class="wo-summary-bar">
+          <div class="wo-summary-tile"><span class="wo-summary-num">${working.length}</span><span class="wo-summary-label">работают</span></div>
+          <div class="wo-summary-tile"><span class="wo-summary-num">${notStarted.length}</span><span class="wo-summary-label">не вышли</span></div>
+          <div class="wo-summary-tile"><span class="wo-summary-num">${awaiting.length}</span><span class="wo-summary-label">ждут</span></div>
+          <div class="wo-summary-tile"><span class="wo-summary-num">${available.length}</span><span class="wo-summary-label">доступны</span></div>
+        </div>`;
+
+      // 4. Требует внимания -- ЕДИНСТВЕННОЕ место, где рендерятся not_started/awaiting
+      // карточками, + активные stage-blocker'ы ("Сообщил о проблеме"). "План на сегодня"
+      // ниже НЕ дублирует not_started/awaiting -- только якорь-счётчик.
+      const blockers = (blockersData && blockersData.blockers) || [];
+      const blockerCard = b => `
+        <div class="wo-team-card wo-blocker-card" data-object="${esc(b.object_id)}" data-row="${esc(b.row_num)}">
+          <div class="wo-team-card-name">${esc(b.reported_by_name)}</div>
+          <div class="wo-team-card-detail">${esc(b.object_name)}${b.stage_name ? ' · ' + esc(b.stage_name) : ''}${b.reason ? ' · ' + esc(b.reason) : ''}</div>
+          <div class="wo-team-card-status wo-status-problem">Требуется решение</div>
+          <button type="button" class="wo-blocker-resolve-btn" data-object="${esc(b.object_id)}" data-row="${esc(b.row_num)}">Проблема решена</button>
+        </div>`;
+      const attentionCount = notStarted.length + awaiting.length + blockers.length;
+      const attentionHtml = attentionCount
+        ? [...notStarted.map(notStartedCard), ...awaiting.map(awaitingCard), ...blockers.map(blockerCard)].join('')
+        : '<div class="wo-empty">Всё в порядке</div>';
+
+      // 5. Активные смены -- отдельный заметный блок.
+      const workingHtml = working.length ? working.map(activeCard).join('') : '<div class="wo-empty">Сейчас никто не работает</div>';
+
+      // 6. План на сегодня -- компактные счётчики-якоря на "Требует внимания" (не
+      // повторные карточки) + полный рендер только "Доступны сегодня".
+      const availableHtml = available.length ? available.map(availableCard).join('') : '<div class="wo-empty">Никого</div>';
+      const planHtml = `
+        <div class="wo-section">
+          <div class="wo-section-title">План на сегодня</div>
+          ${(notStarted.length || awaiting.length) ? `
+            <div class="wo-plan-anchor" data-anchor="attention">
+              ${notStarted.length ? `<span>${notStarted.length} назначены, смена не начата</span>` : ''}
+              ${awaiting.length ? `<span>${awaiting.length} ожидают подтверждения</span>` : ''}
+            </div>` : ''}
+          <div class="wo-team-block-title">Доступны сегодня${available.length ? ` (${available.length})` : ''}</div>
+          ${availableHtml}
+        </div>`;
+
+      // 10. Часы команды -- только week-агрегат (существующий team_hours), честно
+      // не подписываем как "сегодня" отдельным числом, если backend не даёт totals
+      // помимо hours_today_total (который есть -- используем как есть).
+      const teamHours = (stats && stats.team_hours) || [];
+      const weekTotal = teamHours.reduce((sum, t) => sum + (t.hours || 0), 0);
+      const hoursHtml = teamHours.length ? `
+        <div class="wo-section">
+          <div class="wo-section-title">Часы команды</div>
+          <div class="wo-hours-summary">Работают сейчас: ${working.length} · сегодня: ${(shifts.hours_today_total || 0).toFixed(1)} ч · за неделю: ${weekTotal.toFixed(1)} ч</div>
+          ${teamHours.slice(0, 8).map(t => `
+            <div class="wo-hours-row">
+              <span class="wo-hours-name">${esc(t.name)}</span>
+              <span class="wo-hours-value">${t.hours.toFixed(1)} ч</span>
+            </div>`).join('')}
+        </div>` : '';
+
+      teamHtml = `
+        ${summaryHtml}
+
+        <div class="wo-section" id="wo-anchor-attention">
+          <div class="wo-section-title">Требует внимания${attentionCount ? ` (${attentionCount})` : ''}</div>
+          ${attentionHtml}
+        </div>
+
+        <div class="wo-section">
+          <div class="wo-section-title">Активные смены${working.length ? ` (${working.length})` : ''}</div>
+          ${workingHtml}
+        </div>
+
+        ${planHtml}
+        ${hoursHtml}
+      `;
+    }
+
     slot.innerHTML = `
+      ${teamHtml}
+
       <div class="wo-section">
         <div class="wo-section-title">Без объекта${withoutObject.length ? ` (${withoutObject.length})` : ''}</div>
         ${withoutObject.length ? withoutObject.map(w => `
@@ -881,6 +907,30 @@ async function initWorkingObjectsView() {
 
     slot.querySelectorAll('.wo-assign-btn').forEach(btn => {
       btn.addEventListener('click', () => _openWorkingObjectsAssignSheet(btn.dataset.uid, btn.dataset.name, objects));
+    });
+    // 30.07 v4 (спек п.8): tap по всей карточке -- существующая user-card, не объект.
+    slot.querySelectorAll('.wo-team-card[data-uid]').forEach(card => {
+      card.addEventListener('click', () => {
+        if (typeof openUserCard === 'function') openUserCard(card.dataset.uid);
+      });
+    });
+    slot.querySelector('.wo-plan-anchor')?.addEventListener('click', () => {
+      document.getElementById('wo-anchor-attention')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    slot.querySelectorAll('.wo-blocker-resolve-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        btn.disabled = true;
+        try {
+          await api(`/api/objects/${btn.dataset.object}/stages/${btn.dataset.row}/blocker`, { method: 'DELETE' });
+          hapticImpact('light');
+          loadedViews.delete('working-objects');
+          initWorkingObjectsView();
+        } catch (err) {
+          showToast('Ошибка: ' + err.message, 'error');
+          btn.disabled = false;
+        }
+      });
     });
   } catch (e) {
     slot.innerHTML = '<div style="padding:1rem;color:var(--text-light)">Ошибка загрузки</div>';

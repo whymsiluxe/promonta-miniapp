@@ -1259,12 +1259,17 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
     def _worker_name(uid):
         return _sanitize_display_name(profiles.get(str(uid), {}).get('name'), str(uid))
 
+    def _worker_specialty(uid):
+        skills = profiles.get(str(uid), {}).get('skills') or []
+        return skills[0] if skills else ''
+
     working_now = []
     finished_today = []
     for s in today_sessions:
         entry = {
             "user_id": str(s['user_id']),
             "worker_name": _worker_name(s['user_id']),
+            "specialty": _worker_specialty(s['user_id']),
             "object_id": s['object_id'],
             "object_name": object_names.get(s['object_id'], s['object_id']),
             "start_at": s.get('start_at'),
@@ -1295,7 +1300,7 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
 
     def _entry(uid, oid, a):
         return {
-            "user_id": uid, "worker_name": _worker_name(uid),
+            "user_id": uid, "worker_name": _worker_name(uid), "specialty": _worker_specialty(uid),
             "object_id": oid, "object_name": object_names.get(oid, oid),
             "stage_id": a.get('stage_id', ''), "date_from": a.get('date_from', ''),
             "date_to": a.get('date_to', ''), "task_note": a.get('task_note', ''),
@@ -1325,7 +1330,7 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
     }
     roles = _load_roles()
     available_today = [
-        {"user_id": uid, "worker_name": _worker_name(uid)}
+        {"user_id": uid, "worker_name": _worker_name(uid), "specialty": _worker_specialty(uid)}
         for uid in profiles
         if roles.get(uid, 'worker') != 'owner' and uid not in busy_uids and uid not in absent_uids
     ]
@@ -1336,14 +1341,66 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
         s = next((s for s in today_sessions if str(s.get('user_id')) == e['user_id'] and s.get('finish_at') is None), None)
         e['stage_name'] = (s or {}).get('stage_name') or ''
 
+    # 30.07 v3 (спек: "Часы команды" на экране Команда) -- сумма часов за СЕГОДНЯ по
+    # всем today_sessions (включая ещё идущие -- _hours_from_session на open-сессии
+    # без finish_at даёт 0, отдельно досчитываем текущим временем как условный "конец").
+    hours_today_total = 0.0
+    for s in today_sessions:
+        if s.get('finish_at') is not None or s.get('manual_entry'):
+            hours_today_total += _hours_from_session(s)
+        elif s.get('start_at'):
+            elapsed = (time.time() - s['start_at'] - (s.get('pause_accumulated_seconds') or 0)) / 3600.0
+            hours_today_total += max(0.0, elapsed)
+
     return {
         "date": today,
         "working_now": working_now,
+        "hours_today_total": round(hours_today_total, 1),
         "not_started": not_started,
         "finished_today": finished_today,
         "awaiting_response": awaiting_response,
         "available_today": available_today,
     }
+
+
+@app.get("/api/dashboard/active-blockers")
+def get_active_blockers(user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    """30.07 (спек: "Команда"→"Требует внимания", тип 3 -- "Сообщил о проблеме").
+    stage_blocks в roadmap.json хранится по stage_key (='ID строки этапа' в Sheets),
+    без object_id/stage_name -- матчим через all_stages_grouped() (один batch-запрос,
+    не N+1 по каждому объекту). owner-only, та же чувствительность что shifts-today."""
+    import objekte_lib as o
+    import roadmap_lib as rl
+    store = _safe_load_json(rl.ROADMAP_FILE, rl._default_store())
+    stage_blocks = store.get('stage_blocks', {})
+    if not stage_blocks:
+        return {"blockers": []}
+    rows = _cached_get_used_range('Объекты')
+    object_names = {}
+    if rows:
+        header, data = rows[0], rows[1:]
+        for r in data:
+            obj = dict(zip(header, r))
+            object_names[str(obj.get('ID объекта', ''))] = obj.get('Объект', '')
+    profiles = _load_worker_profiles()
+    grouped = o.all_stages_grouped()
+    result = []
+    for oid, stages in grouped.items():
+        for s in stages:
+            stage_key = s.get('ID строки этапа')
+            meta = stage_blocks.get(stage_key)
+            if not meta:
+                continue
+            blocked_by = str(meta.get('blocked_by', ''))
+            result.append({
+                "object_id": oid, "object_name": object_names.get(oid, oid),
+                "stage_name": s.get('Название этапа', ''), "row_num": s.get('_row'),
+                "reason": meta.get('quick_reason') or meta.get('comment') or '',
+                "reported_by_name": _sanitize_display_name(profiles.get(blocked_by, {}).get('name'), blocked_by),
+                "blocked_at": meta.get('blocked_at'),
+            })
+    result.sort(key=lambda b: b.get('blocked_at') or 0, reverse=True)
+    return {"blockers": result}
 
 
 # ---------- Alerts inbox — role-aware агрегация (Фаза 2g, восстановлено после инцидента Фазы 3) ----------

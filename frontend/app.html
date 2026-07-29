@@ -2765,6 +2765,26 @@ body.view-locked {
 .wo-absence-reason { font-size: 0.82rem; color: var(--warning-text); }
 .wo-assign-btn { width: auto; padding: 0.4rem 0.9rem; font-size: 0.85rem; }
 .wo-empty { color: var(--text-light); font-size: 0.85rem; padding: 0.5rem 0; }
+/* 30.07 v4: экран "Команда" (спек) -- сводка / карточки сотрудников / часы команды */
+.wo-summary-bar { display: flex; gap: 0.5rem; padding: 0.75rem; }
+.wo-summary-tile { flex: 1; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.6rem 0.4rem; text-align: center; }
+.wo-summary-num { display: block; font-size: 1.3rem; font-weight: 700; color: var(--text-main); }
+.wo-summary-label { display: block; font-size: 0.7rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.02em; }
+.wo-team-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.65rem 0.85rem; margin-bottom: 0.5rem; cursor: pointer; }
+.wo-team-card-name { font-weight: 600; font-size: 0.95rem; color: var(--text-main); }
+.wo-team-card-detail { font-size: 0.8rem; color: var(--text-light); margin-top: 0.15rem; }
+.wo-team-card-status { font-size: 0.75rem; margin-top: 0.25rem; }
+.wo-status-idle { color: var(--warning-text); }
+.wo-status-active { color: var(--accent); }
+.wo-status-available { color: var(--text-light); }
+.wo-status-problem { color: var(--red); }
+.wo-blocker-resolve-btn { margin-top: 0.4rem; background: var(--bg-card-raised); border: none; border-radius: 8px; padding: 0.35rem 0.7rem; font-size: 0.78rem; color: var(--text-main); cursor: pointer; }
+.wo-plan-anchor { display: flex; flex-direction: column; gap: 0.2rem; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.6rem 0.85rem; margin-bottom: 0.75rem; font-size: 0.82rem; color: var(--text-light); cursor: pointer; }
+.wo-team-block-title { font-size: 0.78rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.02em; margin: 0.5rem 0 0.3rem; }
+.wo-hours-summary { font-size: 0.82rem; color: var(--text-light); margin-bottom: 0.4rem; }
+.wo-hours-row { display: flex; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem; }
+.wo-hours-row:last-child { border-bottom: none; }
+.wo-hours-value { color: var(--accent-gold); font-weight: 600; }
 
 /* 23.07: единый error-state — было 8+ разных стилей одного смысла (text-light/red/без стиля
    в home.js/objects.js/tools.js/profile.js). Новый класс, старые места не трогаем (риск
@@ -4081,13 +4101,15 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
 </div>
 
 <!-- ═══════════ HOME (Фаза 1: содержит существующую Ленту как под-вкладку; полный dashboard — Фаза 2) ═══════════ -->
-<!-- ═══════════ РАБОЧИЕ ОБЪЕКТЫ (10.32, заглушка — прорабатывается отдельно) ═══════════ -->
+<!-- ═══════════ КОМАНДА (10.32 "Объекты рабочие" → 30.07 v3 переименовано в "Команда" по спеку:
+     существующий блок/показатель "Работники" -- это и есть главный оперативный экран,
+     не новый блок посреди Home-ленты) ═══════════ -->
 <div class="view" id="view-working-objects">
   <header>
     <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
-    <h1>Объекты рабочие</h1>
+    <h1>Команда</h1>
   </header>
-  <div id="working-objects-slot"><!-- 23.07: без объекта / по объектам / отсутствуют --></div>
+  <div id="working-objects-slot"><!-- Требует внимания / Смены и назначения / Часы команды / без объекта / по объектам / отсутствуют --></div>
 </div>
 
 <div class="view active" id="view-home">
