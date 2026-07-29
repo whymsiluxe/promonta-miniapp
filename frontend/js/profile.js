@@ -15,7 +15,7 @@ function initProfileView() {
   const tabsHtml = currentRole === 'owner'
     ? `<div class="profile-tabs" id="profile-tabs">
         <div class="profile-tab active" data-tab="me">Мой профиль</div>
-        <div class="profile-tab" data-tab="team">Команда</div>
+        <div class="profile-tab" data-tab="team">Доступ и роли</div>
         <div class="profile-tab" data-tab="settings">Настройки</div>
       </div>`
     : `<div class="profile-tabs" id="profile-tabs">
@@ -187,53 +187,17 @@ async function _loadProfileAvailabilitySummary() {
   } catch (e) {}
 }
 
-// 21.07: owner — управление whitelist прямо из Профиля (backend /api/roles уже готов, только UI не было)
-// 30.07 (спек): + 4-группная разбивка по активности сегодня (Работают сейчас / Назначены
-// но не вышли / Ожидают подтверждения / Доступны сегодня) поверх whitelist-списка ниже --
-// whitelist остаётся источником правды для доступа, группы -- только для видимости "где кто".
+// 21.07: owner — управление whitelist прямо из Профиля (backend /api/roles уже готов).
+// 30.07 v2 (спек): 4-группная оперативная разбивка переехала в Dashboard→"Команда" --
+// эта вкладка ("Доступ и роли") теперь ЧИСТО административная: дать/убрать доступ,
+// список ролей. Не дублирует Dashboard, чтобы не было двух разных "Команда" с разным
+// содержимым под одинаковым названием (путаница, которую явно исправляет этот спек).
 async function _loadProfileTeam() {
   const listEl = document.getElementById('profile-team-list');
   if (!listEl) return;
   try {
-    const [data, shifts] = await Promise.all([
-      api('/api/roles'),
-      api('/api/dashboard/shifts-today').catch(() => null),
-    ]);
+    const data = await api('/api/roles');
     const teamAvatar = (uid, name) => `<span class="profile-team-avatar" style="background:hsl(${_chatAvatarHue(uid)} 45% 42%)" onclick="openUserCard('${esc(uid)}')">${(name || '?')[0].toUpperCase()}</span>`;
-
-    let groupsHtml = '';
-    if (shifts) {
-      // 30.07 (аудит п.3): компактный многострочный контекст в существующей
-      // profile-team-row -- объект·этап / период / task_note (если есть) / статус.
-      // Пустой task_note не показываем строкой вообще, не "Задание не указано".
-      const detailLine = (w) => {
-        const lines = [];
-        const objStage = [w.object_name, w.stage_id].filter(Boolean).join(' · ');
-        if (objStage) lines.push(esc(objStage));
-        if (w.date_from || w.date_to) lines.push(`${esc(w.date_from || '')} — ${esc(w.date_to || '')}`);
-        if (w.task_note) lines.push(esc(w.task_note));
-        return lines.length ? `<div class="profile-team-detail">${lines.join('<br>')}</div>` : '';
-      };
-      const group = (title, items, statusLabel, withDetail) => !items.length ? '' : `
-        <div class="profile-team-group">
-          <div class="profile-team-group-title">${title} (${items.length})</div>
-          ${items.map(w => `
-            <div class="profile-team-row profile-team-row-multiline">
-              ${teamAvatar(w.user_id, w.worker_name)}
-              <div class="profile-team-info">
-                <span class="profile-team-name">${esc(w.worker_name)}</span>
-                ${withDetail ? detailLine(w) : (w.object_name ? `<div class="profile-team-detail">${esc(w.object_name)}${w.stage_name ? ' · ' + esc(w.stage_name) : ''}</div>` : '')}
-                <span class="profile-team-status">${statusLabel}</span>
-              </div>
-            </div>`).join('')}
-        </div>`;
-      groupsHtml = [
-        group('Работают сейчас', shifts.working_now || [], 'Смена идёт', false),
-        group('Назначены сегодня, но не вышли', shifts.not_started || [], 'Назначен, смена не начата', true),
-        group('Ожидают подтверждения', shifts.awaiting_response || [], 'Ожидает подтверждения', true),
-        group('Доступны сегодня', shifts.available_today || [], 'Доступен сегодня', false),
-      ].join('');
-    }
 
     const rows = (data.roles || []).map(r => `
       <div class="profile-team-row">
@@ -247,7 +211,7 @@ async function _loadProfileTeam() {
         <span class="profile-team-name">${esc(p.name)} <span style="color:var(--warning);font-size:0.75rem">(ожидает доступа)</span></span>
         <button class="profile-team-grant-btn" data-uid="${esc(p.user_id)}">Дать доступ</button>
       </div>`).join('');
-    listEl.innerHTML = groupsHtml + `<div class="profile-team-group-title">Все</div>` + ((rows || '') + (pendingRows || '') || 'Пока никого нет.');
+    listEl.innerHTML = (rows || '') + (pendingRows || '') || 'Пока никого нет.';
     listEl.querySelectorAll('.profile-team-revoke-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('Убрать доступ этому работнику?')) return;

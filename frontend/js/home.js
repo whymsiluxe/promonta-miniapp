@@ -17,14 +17,10 @@ async function initHomeView() {
   if (_homeLoaded) return;
   _homeLoaded = true;
 
+  // 30.07 v2 (откат вкладок): Dashboard снова одна цельная лента, не 3 таба.
+  // Главный оперативный блок "Команда" объединяет: Требует внимания / Смены и
+  // назначения (4 группы) / Часы команды -- вместо разрозненных секций как раньше.
   slot.innerHTML = `
-    <div class="home-dash-tabs" id="home-dash-tabs">
-      <div class="home-dash-tab active" data-dash-tab="today">Сегодня</div>
-      <div class="home-dash-tab" data-dash-tab="objects">Объекты</div>
-      <div class="home-dash-tab" data-dash-tab="tools">Инструмент</div>
-    </div>
-
-    <div class="home-dash-panel" data-dash-panel="today">
     <div id="home-kpi-bar" class="home-kpi-bar">
       <div class="kpi-tile" id="kpi-objects" onclick="switchView('objects')"><span class="kpi-num">—</span><span class="kpi-label">Объекты</span></div>
       <div class="kpi-tile" id="kpi-working" onclick="switchView('working-objects')">
@@ -42,19 +38,28 @@ async function initHomeView() {
       </div>
     </div>
 
-    <div id="home-attention-section" class="home-shifts-section" style="display:none;">
+    <div id="home-team-section" class="home-team-section">
       <div class="home-section-header">
-        <span class="home-section-title">Требует внимания</span>
+        <span class="home-section-title">Команда</span>
       </div>
-      <div id="home-shifts-not-started"></div>
-      <div id="home-shifts-awaiting"></div>
-    </div>
 
-    <div id="home-shifts-today-section" class="home-shifts-section" style="display:none;">
-      <div class="home-section-header">
-        <span class="home-section-title">Работают сейчас</span>
+      <div id="home-attention-section" class="home-team-block" style="display:none;">
+        <div class="home-team-block-title">Требует внимания</div>
+        <div id="home-shifts-not-started"></div>
+        <div id="home-shifts-awaiting"></div>
       </div>
-      <div id="home-shifts-working-now"></div>
+
+      <div class="home-team-block">
+        <div class="home-team-block-title">Смены и назначения</div>
+        <div id="home-shifts-working-now"></div>
+        <div id="home-team-available"></div>
+      </div>
+
+      <div id="home-team-hours-block" class="home-team-block" style="display:none;">
+        <div class="home-team-block-title">Часы команды</div>
+        <div id="home-team-hours-summary" class="home-team-hours-summary"></div>
+        <div id="home-team-hours-list"></div>
+      </div>
     </div>
 
     <div id="home-radio-player-mount"></div>
@@ -76,6 +81,10 @@ async function initHomeView() {
           <div class="quick-primary-sub" id="abwesenheit-quick-sub">Календарь недоступностей</div>
         </div>
       </div>
+      <div class="quick-primary-item" onclick="switchView('tools')">
+        <div class="quick-primary-icon-wrap qp-icon qp-icon-tools-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-wrench"></div></div>
+        <div class="quick-primary-text"><div class="quick-primary-title">Инструменты</div></div>
+      </div>
       <div class="quick-primary-item" onclick="switchView('documents')">
         <div class="quick-primary-icon-wrap qp-icon qp-icon-docs-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-lines-wide"><span></span><span></span><span></span></div></div>
         <div class="quick-primary-text"><div class="quick-primary-title">Документы</div></div>
@@ -85,9 +94,7 @@ async function initHomeView() {
         <div class="quick-primary-text"><div class="quick-primary-title">ИИ-ассистент</div></div>
       </div>
     </div>
-    </div>
 
-    <div class="home-dash-panel" data-dash-panel="objects" style="display:none">
     <div id="home-rings-section" class="home-rings-section">
       <div class="home-section-header">
         <span class="home-section-title">Объекты</span>
@@ -101,25 +108,7 @@ async function initHomeView() {
     <div id="home-weather-card" class="weather-card">
       <div class="weather-card-loading">Загрузка погоды...</div>
     </div>
-    </div>
-
-    <div class="home-dash-panel" data-dash-panel="tools" style="display:none">
-      <div class="quick-primary-item" onclick="switchView('tools')" style="margin-top:0.5rem">
-        <div class="quick-primary-icon-wrap qp-icon qp-icon-tools-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-wrench"></div></div>
-        <div class="quick-primary-text"><div class="quick-primary-title">Открыть Инструменты</div></div>
-      </div>
-    </div>
   `;
-
-  document.getElementById('home-dash-tabs').addEventListener('click', (e) => {
-    const tab = e.target.closest('.home-dash-tab');
-    if (!tab) return;
-    document.querySelectorAll('#home-dash-tabs .home-dash-tab').forEach(t => t.classList.toggle('active', t === tab));
-    document.querySelectorAll('.home-dash-panel').forEach(p => {
-      p.style.display = p.dataset.dashPanel === tab.dataset.dashTab ? '' : 'none';
-    });
-    hapticImpact('light');
-  });
 
   _loadHomeData();
   initFeedTabs(); // суб-табы Инфо/Фото/Новости под dashboard (feed.js)
@@ -132,79 +121,106 @@ async function _loadHomeData() {
   _loadHomeAlerts();
   _loadHomeAbwesenheitSummary();
   _loadHomeChatSummary();
-  if (currentRole === 'owner') _loadHomeShiftsToday();
+  if (currentRole === 'owner') {
+    // Часы команды читают DOM working-now, посчитанный сменами -- последовательно,
+    // не параллельно (await), иначе счётчик "сейчас работают" в сводке будет 0.
+    await _loadHomeShiftsToday();
+    _loadHomeTeamHours();
+  }
 }
 
-// 27.07 (B5): "Кто сейчас работает" + "Кто не начал смену" -- owner не должен
-// искать проблему вручную, dashboard сам показывает где нужно внимание.
-// 30.07 (спек): разделено на "Требует внимания" (not_started + awaiting_response --
-// то, что ждёт действия owner'а) и отдельно "Работают сейчас" (просто статус, без действия).
+// 27.07 (B5) → 30.07 v2 (спек: блок "Команда"): единый оперативный раздел с
+// "Требует внимания" (not_started+awaiting -- то, что ждёт действия owner'а),
+// "Смены и назначения" (working_now + available_today) и tap-карточками, ведущими
+// в существующую user-card modal (не в объект -- спек явно требует именно это).
+// Приоритет групп (один worker -- только в одной) уже реализован backend'ом.
 async function _loadHomeShiftsToday() {
   const attentionSection = document.getElementById('home-attention-section');
-  const section = document.getElementById('home-shifts-today-section');
   const workingEl = document.getElementById('home-shifts-working-now');
   const notStartedEl = document.getElementById('home-shifts-not-started');
   const awaitingEl = document.getElementById('home-shifts-awaiting');
-  if (!section || !attentionSection) return;
+  const availableEl = document.getElementById('home-team-available');
+  if (!attentionSection || !workingEl) return;
   try {
     const data = await api('/api/dashboard/shifts-today');
     const working = data.working_now || [];
     const notStarted = data.not_started || [];
     const awaiting = data.awaiting_response || [];
+    const available = data.available_today || [];
 
-    attentionSection.style.display = (notStarted.length || awaiting.length) ? 'block' : 'none';
-    section.style.display = working.length ? 'block' : 'none';
+    attentionSection.style.display = (notStarted.length || awaiting.length) ? '' : 'none';
 
-    awaitingEl.innerHTML = awaiting.map(w => `
-      <div class="home-shift-row home-shift-row-pending" data-uid="${esc(w.user_id)}" data-oid="${esc(w.object_id)}">
-        <div class="home-shift-dot home-shift-dot-idle"></div>
+    // Компактная многострочная карточка: имя / объект·этап / период / task_note /
+    // статус назначения+смены. Пустые строки не рендерятся вообще.
+    const card = (w, opts) => {
+      const lines = [];
+      const objStage = [w.object_name, w.stage_id].filter(Boolean).join(' · ');
+      if (objStage) lines.push(esc(objStage));
+      if (w.date_from || w.date_to) lines.push(`${esc(w.date_from || '')} — ${esc(w.date_to || '')}`);
+      if (w.task_note) lines.push(esc(w.task_note));
+      return `
+      <div class="home-shift-row" data-uid="${esc(w.user_id)}">
+        <div class="home-shift-dot ${opts.dotClass}"></div>
         <div class="home-shift-info">
           <div class="home-shift-name">${esc(w.worker_name)}</div>
-          <div class="home-shift-object">${esc(w.object_name)} · ждёт подтверждения</div>
+          ${lines.length ? `<div class="home-shift-object">${lines.join(' · ')}</div>` : ''}
+          <div class="home-shift-status">${opts.statusLabel}</div>
         </div>
-      </div>`).join('');
+      </div>`;
+    };
+
+    awaitingEl.innerHTML = awaiting.map(w => card(w, { dotClass: 'home-shift-dot-idle', statusLabel: 'Ожидает подтверждения' })).join('');
+    notStartedEl.innerHTML = notStarted.map(w => card(w, { dotClass: 'home-shift-dot-idle', statusLabel: 'Назначен · смена не начата' })).join('');
 
     workingEl.innerHTML = working.map(w => {
       const mins = w.start_at ? Math.round((Date.now() / 1000 - w.start_at) / 60) : 0;
       const durationLabel = mins >= 60 ? `${Math.floor(mins / 60)} ч ${mins % 60} мин` : `${mins} мин`;
-      return `
-      <div class="home-shift-row home-shift-row-working" data-uid="${esc(w.user_id)}" data-oid="${esc(w.object_id)}">
-        <div class="home-shift-dot home-shift-dot-active"></div>
-        <div class="home-shift-info">
-          <div class="home-shift-name">${esc(w.worker_name)}</div>
-          <div class="home-shift-object">${esc(w.object_name)} · ${durationLabel}</div>
-        </div>
-        <button class="home-shift-chat-btn" data-shift-chat="${esc(w.user_id)}" data-shift-name="${esc(w.worker_name)}" type="button">💬</button>
-      </div>`;
+      return card(w, { dotClass: 'home-shift-dot-active', statusLabel: `Смена идёт · ${durationLabel}` });
     }).join('');
 
-    notStartedEl.innerHTML = notStarted.map(w => `
-      <div class="home-shift-row home-shift-row-notstarted" data-uid="${esc(w.user_id)}" data-oid="${esc(w.object_id)}">
-        <div class="home-shift-dot home-shift-dot-idle"></div>
-        <div class="home-shift-info">
-          <div class="home-shift-name">${esc(w.worker_name)}</div>
-          <div class="home-shift-object">${esc(w.object_name)} · не начал смену</div>
-        </div>
-        <button class="home-shift-chat-btn" data-shift-chat="${esc(w.user_id)}" data-shift-name="${esc(w.worker_name)}" type="button">Напомнить</button>
-      </div>`).join('');
+    availableEl.innerHTML = available.length
+      ? available.map(w => `
+        <div class="home-shift-row" data-uid="${esc(w.user_id)}">
+          <div class="home-shift-dot home-shift-dot-idle"></div>
+          <div class="home-shift-info">
+            <div class="home-shift-name">${esc(w.worker_name)}</div>
+            <div class="home-shift-status">Доступен сегодня</div>
+          </div>
+        </div>`).join('')
+      : '';
 
-    section.querySelectorAll('[data-shift-chat]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        switchView('chat');
-        setTimeout(() => {
-          if (typeof openChatThread === 'function') openChatThread(btn.dataset.shiftChat, btn.dataset.shiftName);
-        }, 250);
-      });
-    });
-    section.querySelectorAll('.home-shift-row').forEach(row => {
+    document.querySelectorAll('#home-team-section .home-shift-row').forEach(row => {
       row.addEventListener('click', () => {
-        switchView('objects');
-        if (typeof openStagesView === 'function') openStagesView(row.dataset.oid, '');
+        if (typeof openUserCard === 'function') openUserCard(row.dataset.uid);
       });
     });
   } catch (e) {
-    section.style.display = 'none';
+    attentionSection.style.display = 'none';
+  }
+}
+
+// 30.07 (спек п.6): "Часы команды" -- переиспользует существующий team_hours
+// из /api/profile/stats (self-view owner без user_id), не новая аналитика.
+async function _loadHomeTeamHours() {
+  const block = document.getElementById('home-team-hours-block');
+  const summaryEl = document.getElementById('home-team-hours-summary');
+  const listEl = document.getElementById('home-team-hours-list');
+  if (!block) return;
+  try {
+    const stats = await api('/api/profile/stats');
+    const teamHours = stats.team_hours || [];
+    if (!teamHours.length) { block.style.display = 'none'; return; }
+    block.style.display = '';
+    const weekTotal = teamHours.reduce((sum, t) => sum + (t.hours || 0), 0);
+    const workingNow = document.querySelectorAll('#home-shifts-working-now .home-shift-row').length;
+    summaryEl.textContent = `За неделю: ${weekTotal.toFixed(1)} ч · сейчас работают: ${workingNow}`;
+    listEl.innerHTML = teamHours.slice(0, 5).map(t => `
+      <div class="home-team-hours-row">
+        <span class="home-team-hours-name">${esc(t.name)}</span>
+        <span class="home-team-hours-value">${t.hours.toFixed(1)} ч</span>
+      </div>`).join('');
+  } catch (e) {
+    block.style.display = 'none';
   }
 }
 
