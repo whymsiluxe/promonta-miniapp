@@ -529,22 +529,46 @@ def get_my_profile(user: dict = Depends(get_current_user)):
 
 
 @app.get("/api/users/{target_id}/card")
-def get_user_card(target_id: str, user: dict = Depends(get_current_user)):
+def get_user_card(target_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     """Публичная карточка (10.10) — доступна любому авторизованному пользователю,
     в отличие от /api/profile/stats (там чужой профиль видит только owner).
-    Только неконфиденциальные поля: имя, роль, навыки. Без часов/истории объектов/бюджета."""
+    Только неконфиденциальные поля: имя, роль, навыки. Без часов/истории объектов/бюджета.
+
+    30.07 (спек: expanded user-card): текущий объект/статус смены -- это МЕСТОПОЛОЖЕНИЕ
+    работника, та же чувствительность что у /api/dashboard/shifts-today (уже owner-only).
+    Не добавляем эти поля для worker-to-worker просмотра (нарушило бы существующий явный
+    privacy-дизайн этого endpoint'а) -- только когда card смотрит owner."""
     roles = _load_roles()
     if target_id not in roles:
         raise HTTPException(404, "Пользователь не найден")
     profile = _get_worker_profile(target_id)
     has_avatar = bool(profile.get('avatar'))
-    return {
+    card = {
         "user_id": target_id,
         "name": _sanitize_display_name(profile.get('name'), target_id),
         "role": roles[target_id],
         "skills": profile.get('skills', []),
         "has_avatar": has_avatar,
     }
+    if role == 'owner' and roles[target_id] != 'owner':
+        today = datetime.now().strftime('%Y-%m-%d')
+        sessions = [s for s in _load_checkin_meta() if str(s.get('user_id')) == target_id and s.get('date') == today]
+        open_session = next((s for s in sessions if s.get('finish_at') is None), None)
+        rows = _cached_get_used_range('Объекты')
+        object_names = {}
+        if rows:
+            header, data = rows[0], rows[1:]
+            for r in data:
+                obj = dict(zip(header, r))
+                object_names[str(obj.get('ID объекта', ''))] = obj.get('Объект', '')
+        if open_session:
+            card["shift_status"] = "working"
+            card["object_name"] = object_names.get(open_session['object_id'], open_session['object_id'])
+            card["stage_name"] = open_session.get('stage_name') or ''
+            card["start_at"] = open_session.get('start_at')
+        else:
+            card["shift_status"] = "idle"
+    return card
 
 
 class ProfileUpdateBody(BaseModel):

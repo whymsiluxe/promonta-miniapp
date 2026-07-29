@@ -209,10 +209,21 @@ async function openUserCard(userId) {
     const skillsHtml = (card.skills || []).length
       ? `<div class="user-card-skills">${card.skills.map(s => `<span class="user-card-skill-chip">${esc(s)}</span>`).join('')}</div>`
       : '<div style="color:var(--text-light);font-size:0.85rem">Навыки не указаны</div>';
+    // 30.07 (спек: expanded user-card) -- shift_status/object_name только для owner
+    // (backend отдаёт их только owner'у, worker-to-worker card этих полей не видит).
+    let statusHtml = '';
+    if (card.shift_status === 'working') {
+      const mins = card.start_at ? Math.round((Date.now() / 1000 - card.start_at) / 60) : 0;
+      const durationLabel = mins >= 60 ? `${Math.floor(mins / 60)} ч ${mins % 60} мин` : `${mins} мин`;
+      statusHtml = `<div class="user-card-status user-card-status-active">Смена идёт · ${esc(card.object_name)}${card.stage_name ? ' · ' + esc(card.stage_name) : ''} · ${durationLabel}</div>`;
+    } else if (card.shift_status === 'idle') {
+      statusHtml = `<div class="user-card-status">Смена не начата сегодня</div>`;
+    }
     body.innerHTML = `
       ${avatarHtml}
       <div class="user-card-name">${esc(card.name)}</div>
       <div class="user-card-role">${card.role === 'owner' ? 'Владелец' : 'Работник'}</div>
+      ${statusHtml}
       ${skillsHtml}
     `;
     if (card.has_avatar) authImg(document.getElementById('user-card-avatar-img'), `/api/profile/${userId}/avatar`);
