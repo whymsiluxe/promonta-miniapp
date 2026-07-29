@@ -131,11 +131,31 @@ function initProfileView() {
   _bindProfileTabs();
   _bindProfileHandlers();
   _loadProfileStats();
+  _syncProfileViewingMode();
   if (currentRole === 'owner') {
     _renderWorkerPicker();
     _loadProfileTeam();
   } else {
     _loadProfileAvailabilitySummary();
+  }
+}
+
+// 30.07 (аудит): owner, просматривающий чужого Worker (_profileStatsUserId заполнен),
+// не должен видеть вкладку "Настройки" -- иначе "Сохранить имя"/навыки/размеры
+// уходят в PATCH /api/profile/me, т.е. в СОБСТВЕННЫЙ профиль owner'а, молча затирая
+// его данные значениями, которые он вводил глядя на чужую карточку. Вызывается после
+// каждой смены _profileStatsUserId (openWorkerFullProfile, worker picker, возврат к себе).
+function _syncProfileViewingMode() {
+  const viewingOther = !!_profileStatsUserId;
+  const settingsTab = document.querySelector('#profile-tabs .profile-tab[data-tab="settings"]');
+  const settingsPanel = document.querySelector('.profile-tab-panel[data-panel="settings"]');
+  if (settingsTab) settingsTab.style.display = viewingOther ? 'none' : '';
+  if (viewingOther && settingsPanel && settingsPanel.style.display !== 'none') {
+    settingsPanel.style.display = 'none';
+    const meTab = document.querySelector('#profile-tabs .profile-tab[data-tab="me"]');
+    const mePanel = document.querySelector('.profile-tab-panel[data-panel="me"]');
+    document.querySelectorAll('#profile-tabs .profile-tab').forEach(t => t.classList.toggle('active', t === meTab));
+    if (mePanel) mePanel.style.display = '';
   }
 }
 
@@ -525,6 +545,7 @@ async function _renderWorkerPicker() {
       _profileStatsUserId = e.target.value;
       assignBtn.style.display = _profileStatsUserId ? 'block' : 'none';
       _loadProfileStats();
+      _syncProfileViewingMode();
     });
     assignBtn.addEventListener('click', () => {
       const worker = workers.find(w => String(w.user_id) === String(_profileStatsUserId));
@@ -546,6 +567,7 @@ function openWorkerFullProfile(uid) {
   document.querySelectorAll('.profile-tab-panel').forEach(p => { p.style.display = p.dataset.panel === 'me' ? '' : 'none'; });
   _profileStatsUserId = String(uid);
   _loadProfileStats();
+  _syncProfileViewingMode();
   setTimeout(() => {
     const select = document.getElementById('profile-worker-select');
     if (select) select.value = _profileStatsUserId;
@@ -557,6 +579,9 @@ function openWorkerFullProfile(uid) {
 let _skillsEditOpen = false;
 
 async function _toggleSkillsEdit() {
+  // 30.07 (аудит): defensive guard -- защищает даже если кнопка по ошибке
+  // осталась в DOM/видима, пока owner смотрит чужой профиль.
+  if (_profileStatsUserId) return;
   const editEl = document.getElementById('profile-skills-edit');
   const btn = document.getElementById('profile-skills-edit-btn');
   const chips = document.getElementById('profile-skills-chips');
@@ -597,6 +622,9 @@ async function _toggleSkillsEdit() {
 }
 
 async function _saveName() {
+  // 30.07 (аудит): без этого owner, глядя на чужой профиль, мог отправить имя
+  // Worker'а в PATCH /api/profile/me -- т.е. в СВОЙ СОБСТВЕННЫЙ профиль.
+  if (_profileStatsUserId) return;
   const input = document.getElementById('profile-name-input');
   const statusEl = document.getElementById('profile-name-status');
   const name = input.value.trim();
@@ -623,6 +651,7 @@ async function _saveName() {
 }
 
 async function _saveSizes() {
+  if (_profileStatsUserId) return;
   const statusEl = document.getElementById('profile-sizes-status');
   try {
     await api('/api/profile/me', {

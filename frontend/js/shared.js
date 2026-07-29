@@ -217,7 +217,7 @@ async function openUserCard(userId) {
       const durationLabel = mins >= 60 ? `${Math.floor(mins / 60)} ч ${mins % 60} мин` : `${mins} мин`;
       statusHtml = `<div class="user-card-status user-card-status-active">Смена идёт · ${esc(card.object_name)}${card.stage_name ? ' · ' + esc(card.stage_name) : ''} · ${durationLabel}</div>`;
     } else if (card.shift_status === 'idle') {
-      statusHtml = `<div class="user-card-status">Смена не начата сегодня</div>`;
+      statusHtml = `<div class="user-card-status">Смена сейчас не идёт</div>`;
     }
     // 30.07 (спек: полный Worker profile) -- кнопка перехода из карточки в полный
     // профиль (часы/навыки/размеры/объекты, существующий Profile→"Мой профиль" вид
