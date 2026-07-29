@@ -283,7 +283,7 @@ function _returnBubbleToArena(dragEl) {
 // Обратный поток к drag-and-drop: тут уже известен работник, выбирается объект (select,
 // не drag-зона -- на этом экране нет карты объектов чтобы перетаскивать). Переиспользует
 // тот же confirm-flow/тот же POST /api/objects/{id}/assign, что и bubble-drag путь.
-async function openAssignFromProfile(userId, userName) {
+async function openAssignFromProfile(userId, userName, initialDate = '') {
   let objects = [];
   try {
     const data = await api('/api/objects');
@@ -312,9 +312,9 @@ async function openAssignFromProfile(userId, userName) {
       </select>
       <label class="bubble-confirm-label">Период (необязательно)</label>
       <div class="bubble-confirm-dates">
-        <input type="date" id="bubble-confirm-from" class="bubble-confirm-date">
+        <input type="date" id="bubble-confirm-from" class="bubble-confirm-date" value="${esc(initialDate)}">
         <span>—</span>
-        <input type="date" id="bubble-confirm-to" class="bubble-confirm-date">
+        <input type="date" id="bubble-confirm-to" class="bubble-confirm-date" value="${esc(initialDate)}">
       </div>
       <label class="bubble-confirm-label">Что должен сделать работник (необязательно)</label>
       <textarea id="bubble-confirm-task-note" class="bubble-confirm-textarea" rows="2" maxlength="500" placeholder="Например: залить фундамент под гараж"></textarea>
@@ -344,6 +344,11 @@ async function openAssignFromProfile(userId, userName) {
       hapticImpact('medium');
       showToast('Назначено', 'success');
       _closeBubbleConfirmPopup();
+      // 30.07 v5: если назначение создано из вкладки "План" (Команда), список плана
+      // на выбранную дату должен обновиться -- та же данные, что и назначение затронуло.
+      if (typeof _loadWorkingObjectsPlanContent === 'function' && document.getElementById('working-objects-plan-slot')?.style.display !== 'none') {
+        _loadWorkingObjectsPlanContent();
+      }
     } catch (err) {
       showToast('Ошибка назначения: ' + err.message, 'error');
       okBtn.disabled = false;

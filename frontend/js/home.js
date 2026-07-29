@@ -705,14 +705,36 @@ function _setWorkerBadge(elId, count) {
 
 
 // ═══════════ "Команда" (23.07 "Объекты рабочие" → 30.07 v3 переименовано и расширено
-// по спеку): оперативный owner-экран -- Требует внимания / Смены и назначения (4 группы,
-// приоритет уже реализован backend'ом в /api/dashboard/shifts-today) / Часы команды
-// (существующий /api/profile/stats team_hours) / без объекта / по объектам / отсутствуют.
-// Данные из существующих /api/workers, /api/objects, /api/abwesenheit/all,
-// /api/dashboard/shifts-today, /api/profile/stats — без нового backend кроме
-// точечных добавленных полей (specialty/hours_today_total) в уже существующем ответе.
+// по спеку): оперативный owner-экран, две внутренние вкладки -- "Сводка" (Требует внимания /
+// Активные смены / Часы команды / без объекта / отсутствуют / по объектам) и "План"
+// (кто запланирован на дату, по объектам). Данные из существующих /api/workers,
+// /api/objects, /api/abwesenheit/all, /api/dashboard/shifts-today, /api/profile/stats,
+// /api/dashboard/active-blockers + новый read-only /api/dashboard/team-plan.
+
+let _woMode = 'summary';
+
+function _initWorkingObjectsModeSwitch() {
+  const sw = document.getElementById('wo-mode-switch');
+  if (!sw || sw.dataset.bound) return;
+  sw.dataset.bound = '1';
+  sw.querySelectorAll('[data-wo-mode]').forEach(opt => {
+    opt.addEventListener('click', () => {
+      const mode = opt.dataset.woMode;
+      if (mode === _woMode) return;
+      _woMode = mode;
+      sw.querySelectorAll('[data-wo-mode]').forEach(o => o.classList.toggle('active', o === opt));
+      document.getElementById('working-objects-slot').style.display = mode === 'summary' ? '' : 'none';
+      document.getElementById('working-objects-plan-slot').style.display = mode === 'plan' ? '' : 'none';
+      if (mode === 'plan' && !_woPlanLoaded) {
+        _woPlanLoaded = true;
+        _initWorkingObjectsPlanTab();
+      }
+    });
+  });
+}
 
 async function initWorkingObjectsView() {
+  _initWorkingObjectsModeSwitch();
   const slot = document.getElementById('working-objects-slot');
   if (!slot) return;
   slot.innerHTML = '<div style="padding:1rem;color:var(--text-light)">Загрузка…</div>';
@@ -771,8 +793,11 @@ async function initWorkingObjectsView() {
         <div class="wo-team-card-status wo-status-idle">Ожидает подтверждения</div>
       </div>`;
     };
+    // 30.07 v5 (аудит): было stage_id||stage_name -- stage_id тут вид работ по
+    // умолчанию (может быть пустым/техническим), stage_name -- реальное название
+    // этапа объекта из чекина. Показываем нормальное название первым приоритетом.
     const activeCard = w => {
-      const objStage = [w.object_name, w.stage_id || w.stage_name].filter(Boolean).join(' · ');
+      const objStage = [w.object_name, w.stage_name || w.stage_id].filter(Boolean).join(' · ');
       const startLabel = w.start_at ? new Date(w.start_at * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
       const mins = w.start_at ? Math.round((Date.now() / 1000 - w.start_at) / 60) : 0;
       const durationLabel = mins >= 60 ? `${Math.floor(mins / 60)} ч ${mins % 60} мин` : `${mins} мин`;
@@ -784,11 +809,6 @@ async function initWorkingObjectsView() {
         <div class="wo-team-card-status wo-status-active">● Смена идёт</div>
       </div>`;
     };
-    const availableCard = w => `
-      <div class="wo-team-card" data-uid="${esc(w.user_id)}">
-        <div class="wo-team-card-name">${esc(w.worker_name)}${w.specialty ? ` · ${esc(w.specialty)}` : ''}</div>
-        <div class="wo-team-card-status wo-status-available">Доступен сегодня</div>
-      </div>`;
 
     let teamHtml = '';
     if (shifts) {
@@ -797,24 +817,24 @@ async function initWorkingObjectsView() {
       const awaiting = shifts.awaiting_response || [];
       const available = shifts.available_today || [];
 
-      // 3. Краткая сводка -- счётчики строго из API length, не DOM.
+      // Краткая сводка -- счётчики строго из API length, не DOM. Кликабельны --
+      // плавная прокрутка к соответствующему блоку (спек: не отдельные фильтры/экраны).
       const summaryHtml = `
         <div class="wo-summary-bar">
-          <div class="wo-summary-tile"><span class="wo-summary-num">${working.length}</span><span class="wo-summary-label">работают</span></div>
-          <div class="wo-summary-tile"><span class="wo-summary-num">${notStarted.length}</span><span class="wo-summary-label">не вышли</span></div>
-          <div class="wo-summary-tile"><span class="wo-summary-num">${awaiting.length}</span><span class="wo-summary-label">ждут</span></div>
-          <div class="wo-summary-tile"><span class="wo-summary-num">${available.length}</span><span class="wo-summary-label">доступны</span></div>
+          <div class="wo-summary-tile" data-scroll-target="wo-anchor-working"><span class="wo-summary-num">${working.length}</span><span class="wo-summary-label">работают</span></div>
+          <div class="wo-summary-tile" data-scroll-target="wo-anchor-attention"><span class="wo-summary-num">${notStarted.length}</span><span class="wo-summary-label">не вышли</span></div>
+          <div class="wo-summary-tile" data-scroll-target="wo-anchor-attention"><span class="wo-summary-num">${awaiting.length}</span><span class="wo-summary-label">ждут</span></div>
+          <div class="wo-summary-tile" data-scroll-target="wo-anchor-without-object"><span class="wo-summary-num">${available.length}</span><span class="wo-summary-label">доступны</span></div>
         </div>`;
 
-      // 4. Требует внимания -- ЕДИНСТВЕННОЕ место, где рендерятся not_started/awaiting
-      // карточками, + активные stage-blocker'ы ("Сообщил о проблеме"). "План на сегодня"
-      // ниже НЕ дублирует not_started/awaiting -- только якорь-счётчик.
+      // Требует внимания -- ЕДИНСТВЕННОЕ место, где рендерятся not_started/awaiting
+      // карточками, + активные stage-blocker'ы ("Сообщил о проблеме").
       const blockers = (blockersData && blockersData.blockers) || [];
       const blockerCard = b => `
         <div class="wo-team-card wo-blocker-card" data-object="${esc(b.object_id)}" data-row="${esc(b.row_num)}">
           <div class="wo-team-card-name">${esc(b.reported_by_name)}</div>
           <div class="wo-team-card-detail">${esc(b.object_name)}${b.stage_name ? ' · ' + esc(b.stage_name) : ''}${b.reason ? ' · ' + esc(b.reason) : ''}</div>
-          <div class="wo-team-card-status wo-status-problem">Требуется решение</div>
+          <div class="wo-team-card-status wo-status-problem">Сообщил о проблеме</div>
           <button type="button" class="wo-blocker-resolve-btn" data-object="${esc(b.object_id)}" data-row="${esc(b.row_num)}">Проблема решена</button>
         </div>`;
       const attentionCount = notStarted.length + awaiting.length + blockers.length;
@@ -822,38 +842,25 @@ async function initWorkingObjectsView() {
         ? [...notStarted.map(notStartedCard), ...awaiting.map(awaitingCard), ...blockers.map(blockerCard)].join('')
         : '<div class="wo-empty">Всё в порядке</div>';
 
-      // 5. Активные смены -- отдельный заметный блок.
+      // Активные смены -- отдельный заметный блок.
       const workingHtml = working.length ? working.map(activeCard).join('') : '<div class="wo-empty">Сейчас никто не работает</div>';
 
-      // 6. План на сегодня -- компактные счётчики-якоря на "Требует внимания" (не
-      // повторные карточки) + полный рендер только "Доступны сегодня".
-      const availableHtml = available.length ? available.map(availableCard).join('') : '<div class="wo-empty">Никого</div>';
-      const planHtml = `
-        <div class="wo-section">
-          <div class="wo-section-title">План на сегодня</div>
-          ${(notStarted.length || awaiting.length) ? `
-            <div class="wo-plan-anchor" data-anchor="attention">
-              ${notStarted.length ? `<span>${notStarted.length} назначены, смена не начата</span>` : ''}
-              ${awaiting.length ? `<span>${awaiting.length} ожидают подтверждения</span>` : ''}
-            </div>` : ''}
-          <div class="wo-team-block-title">Доступны сегодня${available.length ? ` (${available.length})` : ''}</div>
-          ${availableHtml}
-        </div>`;
-
-      // 10. Часы команды -- только week-агрегат (существующий team_hours), честно
-      // не подписываем как "сегодня" отдельным числом, если backend не даёт totals
-      // помимо hours_today_total (который есть -- используем как есть).
+      // Часы команды -- компактный список: максимум 5, ненулевые сначала, без ID
+      // как главного имени (team_hours[].name уже через _sanitize_display_name,
+      // но fallback на числовой ID возможен -- такие записи не главные, просто
+      // не подсвечиваем их отдельно; спек просит НЕ показывать нулевые часы вовсе).
       const teamHours = (stats && stats.team_hours) || [];
       const weekTotal = teamHours.reduce((sum, t) => sum + (t.hours || 0), 0);
+      const nonZeroHours = teamHours.filter(t => t.hours > 0).slice(0, 5);
       const hoursHtml = teamHours.length ? `
         <div class="wo-section">
           <div class="wo-section-title">Часы команды</div>
           <div class="wo-hours-summary">Работают сейчас: ${working.length} · сегодня: ${(shifts.hours_today_total || 0).toFixed(1)} ч · за неделю: ${weekTotal.toFixed(1)} ч</div>
-          ${teamHours.slice(0, 8).map(t => `
+          ${nonZeroHours.length ? nonZeroHours.map(t => `
             <div class="wo-hours-row">
               <span class="wo-hours-name">${esc(t.name)}</span>
               <span class="wo-hours-value">${t.hours.toFixed(1)} ч</span>
-            </div>`).join('')}
+            </div>`).join('') : '<div class="wo-empty">На этой неделе часов пока нет</div>'}
         </div>` : '';
 
       teamHtml = `
@@ -864,12 +871,11 @@ async function initWorkingObjectsView() {
           ${attentionHtml}
         </div>
 
-        <div class="wo-section">
+        <div class="wo-section" id="wo-anchor-working">
           <div class="wo-section-title">Активные смены${working.length ? ` (${working.length})` : ''}</div>
           ${workingHtml}
         </div>
 
-        ${planHtml}
         ${hoursHtml}
       `;
     }
@@ -877,7 +883,7 @@ async function initWorkingObjectsView() {
     slot.innerHTML = `
       ${teamHtml}
 
-      <div class="wo-section">
+      <div class="wo-section" id="wo-anchor-without-object">
         <div class="wo-section-title">Без объекта${withoutObject.length ? ` (${withoutObject.length})` : ''}</div>
         ${withoutObject.length ? withoutObject.map(w => `
           <div class="wo-worker-row" data-uid="${esc(w.user_id)}">
@@ -887,21 +893,31 @@ async function initWorkingObjectsView() {
       </div>
 
       <div class="wo-section">
-        <div class="wo-section-title">Отсутствуют сегодня${absentToday.length ? ` (${absentToday.length})` : ''}</div>
-        ${absentToday.length ? absentToday.map(e => `
-          <div class="wo-worker-row">
-            <span class="wo-worker-name">${esc(e.name)}</span>
-            <span class="wo-absence-reason">${esc(e.reason || '')}</span>
-          </div>`).join('') : '<div class="wo-empty">Все на месте</div>'}
+        <div class="wo-collapsible-header" data-collapsible="absent">
+          <div class="wo-section-title">Отсутствуют сегодня${absentToday.length ? ` · ${absentToday.length}` : ''}</div>
+          <span class="wo-collapsible-chevron">▾</span>
+        </div>
+        <div class="wo-collapsible-body">
+          ${absentToday.length ? absentToday.map(e => `
+            <div class="wo-worker-row">
+              <span class="wo-worker-name">${esc(e.name)}</span>
+              <span class="wo-absence-reason">${esc(e.reason || '')}${e.date_from ? ` · ${esc(e.date_from)} — ${esc(e.date_to || '')}` : ''}</span>
+            </div>`).join('') : '<div class="wo-empty">Все на месте</div>'}
+        </div>
       </div>
 
       <div class="wo-section">
-        <div class="wo-section-title">По объектам</div>
-        ${activeObjects.length ? activeObjects.map(o => `
-          <div class="wo-object-block">
-            <div class="wo-object-name">${esc(o['Объект'] || '')}</div>
-            ${(o.assigned_users || []).map(u => `<div class="wo-worker-row wo-worker-row-nested"><span class="wo-worker-name">${esc(u.name)}</span></div>`).join('')}
-          </div>`).join('') : '<div class="wo-empty">Нет назначений</div>'}
+        <div class="wo-collapsible-header" data-collapsible="by-object">
+          <div class="wo-section-title">Распределение по объектам</div>
+          <span class="wo-collapsible-chevron">▾</span>
+        </div>
+        <div class="wo-collapsible-body">
+          ${activeObjects.length ? activeObjects.map(o => `
+            <div class="wo-object-block">
+              <div class="wo-object-name">${esc(o['Объект'] || '')}</div>
+              ${(o.assigned_users || []).map(u => `<div class="wo-worker-row wo-worker-row-nested"><span class="wo-worker-name">${esc(u.name)}</span></div>`).join('')}
+            </div>`).join('') : '<div class="wo-empty">Нет назначений</div>'}
+        </div>
       </div>
     `;
 
@@ -914,8 +930,15 @@ async function initWorkingObjectsView() {
         if (typeof openUserCard === 'function') openUserCard(card.dataset.uid);
       });
     });
-    slot.querySelector('.wo-plan-anchor')?.addEventListener('click', () => {
-      document.getElementById('wo-anchor-attention')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    slot.querySelectorAll('.wo-summary-tile[data-scroll-target]').forEach(tile => {
+      tile.addEventListener('click', () => {
+        document.getElementById(tile.dataset.scrollTarget)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    slot.querySelectorAll('.wo-collapsible-header').forEach(header => {
+      header.addEventListener('click', () => {
+        header.parentElement.classList.toggle('wo-collapsible-open');
+      });
     });
     slot.querySelectorAll('.wo-blocker-resolve-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
@@ -974,6 +997,167 @@ function _openWorkingObjectsAssignSheet(userId, userName, objects) {
       } catch (e) {
         showToast('Ошибка: ' + e.message, 'error');
       }
+    });
+  });
+}
+
+// ═══════════ "Команда" → вкладка "План" (30.07 v5, спек): отвечает только "кто
+// запланирован на дату и на каком объекте" из существующих назначений. Источник --
+// новый read-only GET /api/dashboard/team-plan?date=, "Добавить назначение" переиспользует
+// существующий полный flow openAssignFromProfile (стадия/период/task_note уже там),
+// добавлен только worker-picker шаг перед ним (там worker уже известен, тут — нет). ═══════════
+
+let _woPlanLoaded = false;
+let _woPlanDate = '';
+
+// Локальная дата без ошибки UTC через toISOString() (тот сдвигает дату у пользователей
+// восточнее UTC вечером/западнее UTC утром).
+function _localISODate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function _woPlanDateOptions() {
+  const labels = ['Сегодня', 'Завтра', 'Послезавтра'];
+  const opts = [];
+  for (let i = 0; i < 3; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    opts.push({ date: _localISODate(d), label: labels[i] });
+  }
+  for (let i = 3; i < 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    opts.push({ date: _localISODate(d), label: d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) });
+  }
+  return opts;
+}
+
+async function _initWorkingObjectsPlanTab() {
+  _woPlanDate = _localISODate(new Date());
+  const slot = document.getElementById('working-objects-plan-slot');
+  if (!slot) return;
+
+  const dateOpts = _woPlanDateOptions();
+  slot.innerHTML = `
+    <div class="wo-plan-dates" id="wo-plan-dates">
+      ${dateOpts.map(o => `<div class="wo-plan-date-opt${o.date === _woPlanDate ? ' active' : ''}" data-date="${esc(o.date)}">${esc(o.label)}</div>`).join('')}
+      <div class="wo-plan-date-opt" data-date-picker="1">📅</div>
+    </div>
+    <input type="date" id="wo-plan-date-input" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;">
+    <button class="submit-btn wo-plan-add-btn" id="wo-plan-add-btn" type="button">Добавить назначение</button>
+    <div id="wo-plan-content"></div>
+  `;
+
+  slot.querySelectorAll('.wo-plan-date-opt[data-date]').forEach(opt => {
+    opt.addEventListener('click', () => _woPlanSelectDate(opt.dataset.date));
+  });
+  slot.querySelector('[data-date-picker]')?.addEventListener('click', () => {
+    document.getElementById('wo-plan-date-input')?.showPicker?.() || document.getElementById('wo-plan-date-input').click();
+  });
+  document.getElementById('wo-plan-date-input')?.addEventListener('change', (e) => {
+    if (e.target.value) _woPlanSelectDate(e.target.value, true);
+  });
+  document.getElementById('wo-plan-add-btn')?.addEventListener('click', () => _openWorkingObjectsPlanAddSheet());
+
+  await _loadWorkingObjectsPlanContent();
+}
+
+function _woPlanSelectDate(date, isCustom) {
+  _woPlanDate = date;
+  const dateOpts = _woPlanDateOptions();
+  const isKnown = dateOpts.some(o => o.date === date);
+  const container = document.getElementById('wo-plan-dates');
+  if (container) {
+    if (isCustom && !isKnown) {
+      container.innerHTML = dateOpts.map(o => `<div class="wo-plan-date-opt" data-date="${esc(o.date)}">${esc(o.label)}</div>`).join('')
+        + `<div class="wo-plan-date-opt active" data-date="${esc(date)}">${esc(date)}</div>`
+        + `<div class="wo-plan-date-opt" data-date-picker="1">📅</div>`;
+      container.querySelectorAll('.wo-plan-date-opt[data-date]').forEach(opt => {
+        opt.addEventListener('click', () => _woPlanSelectDate(opt.dataset.date));
+      });
+      container.querySelector('[data-date-picker]')?.addEventListener('click', () => {
+        document.getElementById('wo-plan-date-input')?.showPicker?.() || document.getElementById('wo-plan-date-input').click();
+      });
+    } else {
+      container.querySelectorAll('.wo-plan-date-opt[data-date]').forEach(opt => {
+        opt.classList.toggle('active', opt.dataset.date === date);
+      });
+    }
+  }
+  _loadWorkingObjectsPlanContent();
+}
+
+const WO_PLAN_STATUS_LABEL = { accepted: 'Принято', pending: 'Ожидает подтверждения', declined: 'Отклонено' };
+const WO_PLAN_SHIFT_LABEL = { active: 'Смена идёт', not_started: 'Смена не начата', finished: 'Смена завершена' };
+
+async function _loadWorkingObjectsPlanContent() {
+  const content = document.getElementById('wo-plan-content');
+  if (!content) return;
+  content.innerHTML = '<div style="padding:1rem;color:var(--text-light)">Загрузка…</div>';
+  try {
+    const data = await api(`/api/dashboard/team-plan?date=${encodeURIComponent(_woPlanDate)}`);
+    const objects = data.objects || [];
+    if (!objects.length) {
+      content.innerHTML = '<div class="wo-empty" style="padding:0.75rem;">На эту дату назначений нет</div>';
+      return;
+    }
+    content.innerHTML = objects.map(o => `
+      <div class="wo-plan-object-block">
+        <div class="wo-plan-object-name">${esc(o.object_name)}</div>
+        ${o.assignments.map(a => `
+          <div class="wo-plan-row" data-uid="${esc(a.user_id)}">
+            <div class="wo-plan-row-top">
+              <span class="wo-plan-row-name">${esc(a.worker_name)}${a.stage_id ? ` — <span class="wo-plan-row-stage">${esc(a.stage_id)}</span>` : ''}</span>
+              <span class="wo-plan-status wo-plan-status-${a.assignment_status}">${esc(WO_PLAN_STATUS_LABEL[a.assignment_status] || a.assignment_status)}</span>
+            </div>
+            ${a.task_note ? `<div class="wo-plan-row-detail">${esc(a.task_note)}</div>` : ''}
+            <div class="wo-plan-row-detail">${esc(a.date_from)} — ${esc(a.date_to)}</div>
+            ${a.shift_state ? `<div class="wo-plan-status-shift">${esc(WO_PLAN_SHIFT_LABEL[a.shift_state] || a.shift_state)}</div>` : ''}
+          </div>`).join('')}
+      </div>`).join('');
+    content.querySelectorAll('.wo-plan-row[data-uid]').forEach(row => {
+      row.addEventListener('click', () => {
+        if (typeof openUserCard === 'function') openUserCard(row.dataset.uid);
+      });
+    });
+  } catch (e) {
+    content.innerHTML = '<div class="js-error-state">Ошибка загрузки</div>';
+  }
+}
+
+// Worker-picker перед существующим openAssignFromProfile -- там воркер уже известен,
+// тут его сначала нужно выбрать. Выбранная в "Плане" дата подставляется как
+// date_from/date_to (юзер может поменять внутри самого openAssignFromProfile popup).
+async function _openWorkingObjectsPlanAddSheet() {
+  let workers = [];
+  try {
+    const data = await api('/api/workers');
+    workers = (data.workers || []).filter(w => w.role === 'worker');
+  } catch (e) {
+    showToast('Не удалось загрузить работников: ' + e.message, 'error');
+    return;
+  }
+  const existing = document.getElementById('wo-assign-sheet');
+  if (existing) existing.remove();
+
+  const sheet = document.createElement('div');
+  sheet.id = 'wo-assign-sheet';
+  sheet.className = 'wo-assign-sheet';
+  sheet.innerHTML = `
+    <div class="wo-assign-sheet-inner">
+      <div class="wo-assign-sheet-title">Выберите работника</div>
+      ${workers.length ? workers.map(w => `
+        <div class="wo-assign-sheet-opt" data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}">${esc(w.name)}</div>
+      `).join('') : '<div class="wo-empty">Нет работников</div>'}
+      <button class="submit-btn wo-assign-sheet-cancel" type="button">Отмена</button>
+    </div>
+  `;
+  document.body.appendChild(sheet);
+  sheet.querySelector('.wo-assign-sheet-cancel').addEventListener('click', () => sheet.remove());
+  sheet.querySelectorAll('.wo-assign-sheet-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      sheet.remove();
+      openAssignFromProfile(opt.dataset.uid, opt.dataset.name, _woPlanDate);
     });
   });
 }

@@ -1403,6 +1403,73 @@ def get_active_blockers(user: dict = Depends(get_current_user), _: None = Depend
     return {"blockers": result}
 
 
+@app.get("/api/dashboard/team-plan")
+def get_team_plan(date: str = '', user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    """30.07 (спек: экран "Команда" → вкладка "План"). Отвечает только "кто запланирован
+    на дату и на каком объекте" -- читает существующие assignments, ничего не хранит
+    отдельно. Для date == сегодня дополнительно отдаёт фактический статус смены
+    (идёт/не начата/завершена) из checkin_meta; для будущих дат факт не считается --
+    его физически ещё не может быть."""
+    from datetime import date as date_cls
+    target_date = date or date_cls.today().isoformat()
+
+    rows = _cached_get_used_range('Объекты')
+    object_names = {}
+    if rows:
+        header, data = rows[0], rows[1:]
+        for r in data:
+            obj = dict(zip(header, r))
+            object_names[str(obj.get('ID объекта', ''))] = obj.get('Объект', '')
+
+    profiles = _load_worker_profiles()
+
+    def _worker_name(uid):
+        return _sanitize_display_name(profiles.get(str(uid), {}).get('name'), str(uid))
+
+    is_today = target_date == date_cls.today().isoformat()
+    sessions_by_uid = {}
+    if is_today:
+        for s in _load_checkin_meta():
+            if s.get('date') == target_date:
+                sessions_by_uid.setdefault(str(s.get('user_id')), []).append(s)
+
+    assignments = _load_assignments()
+    by_object = {}
+    for oid, lst in assignments.items():
+        for a in lst:
+            date_from, date_to = a.get('date_from', ''), a.get('date_to', '')
+            if not (date_from and date_to and date_from <= target_date <= date_to):
+                continue
+            status = _assignment_status(a)
+            if status == 'declined':
+                continue
+            uid = str(a.get('user_id', ''))
+            entry = {
+                "user_id": uid,
+                "worker_name": _worker_name(uid),
+                "stage_id": a.get('stage_id', ''),
+                "task_note": a.get('task_note', ''),
+                "date_from": date_from,
+                "date_to": date_to,
+                "assignment_status": status,
+            }
+            if is_today:
+                uid_sessions = sessions_by_uid.get(uid, [])
+                active = next((s for s in uid_sessions if s.get('object_id') == oid and s.get('finish_at') is None), None)
+                finished = next((s for s in uid_sessions if s.get('object_id') == oid and s.get('finish_at') is not None), None)
+                if active:
+                    entry['shift_state'] = 'active'
+                elif finished:
+                    entry['shift_state'] = 'finished'
+                else:
+                    entry['shift_state'] = 'not_started'
+            by_object.setdefault(oid, {"object_id": oid, "object_name": object_names.get(oid, oid), "assignments": []})
+            by_object[oid]["assignments"].append(entry)
+
+    objects_plan = sorted(by_object.values(), key=lambda o: o['object_name'] or o['object_id'])
+    return {"date": target_date, "objects": objects_plan}
+
+
 # ---------- Alerts inbox — role-aware агрегация (Фаза 2g, восстановлено после инцидента Фазы 3) ----------
 @app.get("/api/alerts")
 def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_role)):

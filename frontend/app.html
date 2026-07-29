@@ -2756,18 +2756,22 @@ body.view-locked {
 .home-ring-item { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; cursor: pointer; min-width: 70px; }
 .home-ring-label { font-size: 0.7rem; color: var(--text-light); text-align: center; max-width: 72px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
-/* ── "Объекты рабочие" (23.07) ── */
-.wo-section { padding: 0.75rem; }
-.wo-section-title { font-family: var(--font-heading); font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.04em; }
+/* ── "Команда" (23.07, 30.07 v3/v4/v5 -- см. спеки) ── */
+.wo-mode-switch { margin: 0 0.75rem 0.25rem; }
+#working-objects-slot, #working-objects-plan-slot { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
+.wo-section { padding: 0.9rem 0.75rem; border-bottom: 1px solid var(--border-color); }
+.wo-section:last-child { border-bottom: none; }
+.wo-section-title { font-family: var(--font-heading); font-size: 1rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.55rem; }
 .wo-worker-row { display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.65rem 0.85rem; margin-bottom: 0.5rem; }
 .wo-worker-row-nested { margin-left: 0.5rem; background: var(--bg-card-raised); }
 .wo-worker-name { font-weight: 600; font-size: 0.95rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .wo-absence-reason { font-size: 0.82rem; color: var(--warning-text); }
 .wo-assign-btn { width: auto; padding: 0.4rem 0.9rem; font-size: 0.85rem; }
 .wo-empty { color: var(--text-light); font-size: 0.85rem; padding: 0.5rem 0; }
-/* 30.07 v4: экран "Команда" (спек) -- сводка / карточки сотрудников / часы команды */
-.wo-summary-bar { display: flex; gap: 0.5rem; padding: 0.75rem; }
-.wo-summary-tile { flex: 1; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.6rem 0.4rem; text-align: center; }
+/* 30.07 v4/v5: экран "Команда" -- сводка / карточки сотрудников / часы команды */
+.wo-summary-bar { display: flex; gap: 0.5rem; padding: 0.9rem 0.75rem; border-bottom: 1px solid var(--border-color); }
+.wo-summary-tile { flex: 1; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.65rem 0.4rem; text-align: center; cursor: pointer; transition: transform 0.1s; }
+.wo-summary-tile:active { transform: scale(0.96); background: var(--bg-card-raised); }
 .wo-summary-num { display: block; font-size: 1.3rem; font-weight: 700; color: var(--text-main); }
 .wo-summary-label { display: block; font-size: 0.7rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.02em; }
 .wo-team-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.65rem 0.85rem; margin-bottom: 0.5rem; cursor: pointer; }
@@ -2779,12 +2783,35 @@ body.view-locked {
 .wo-status-available { color: var(--text-light); }
 .wo-status-problem { color: var(--red); }
 .wo-blocker-resolve-btn { margin-top: 0.4rem; background: var(--bg-card-raised); border: none; border-radius: 8px; padding: 0.35rem 0.7rem; font-size: 0.78rem; color: var(--text-main); cursor: pointer; }
-.wo-plan-anchor { display: flex; flex-direction: column; gap: 0.2rem; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.6rem 0.85rem; margin-bottom: 0.75rem; font-size: 0.82rem; color: var(--text-light); cursor: pointer; }
 .wo-team-block-title { font-size: 0.78rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.02em; margin: 0.5rem 0 0.3rem; }
 .wo-hours-summary { font-size: 0.82rem; color: var(--text-light); margin-bottom: 0.4rem; }
 .wo-hours-row { display: flex; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem; }
 .wo-hours-row:last-child { border-bottom: none; }
 .wo-hours-value { color: var(--accent-gold); font-weight: 600; }
+/* 30.07 v5: сворачиваемые секции (Отсутствуют/По объектам) */
+.wo-collapsible-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.wo-collapsible-header .wo-section-title { margin-bottom: 0; }
+.wo-collapsible-chevron { font-size: 0.8rem; color: var(--text-light); transition: transform 0.15s; }
+.wo-collapsible-open .wo-collapsible-chevron { transform: rotate(180deg); }
+.wo-collapsible-body { display: none; margin-top: 0.6rem; }
+.wo-collapsible-open .wo-collapsible-body { display: block; }
+/* 30.07 v5: вкладка "План" */
+.wo-plan-dates { display: flex; gap: 0.4rem; padding: 0.75rem; overflow-x: auto; }
+.wo-plan-date-opt { flex-shrink: 0; padding: 0.45rem 0.8rem; border-radius: 999px; background: var(--bg-card); font-size: 0.82rem; font-weight: 600; color: var(--text-light); cursor: pointer; white-space: nowrap; }
+.wo-plan-date-opt.active { background: var(--primary); color: #fff; }
+.wo-plan-add-btn { margin: 0 0.75rem 0.75rem; width: calc(100% - 1.5rem); }
+.wo-plan-object-block { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.75rem; margin: 0 0.75rem 0.6rem; }
+.wo-plan-object-name { font-family: var(--font-heading); font-weight: 700; margin-bottom: 0.5rem; color: var(--text-main); }
+.wo-plan-row { padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
+.wo-plan-row:last-child { border-bottom: none; }
+.wo-plan-row-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.wo-plan-row-name { font-weight: 600; font-size: 0.9rem; color: var(--text-main); }
+.wo-plan-row-stage { font-size: 0.8rem; color: var(--text-light); }
+.wo-plan-row-detail { font-size: 0.78rem; color: var(--text-light); margin-top: 0.2rem; }
+.wo-plan-status { font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; white-space: nowrap; }
+.wo-plan-status-accepted { background: rgba(90,150,90,0.15); color: var(--accent); }
+.wo-plan-status-pending { background: rgba(200,150,50,0.15); color: var(--warning-text); }
+.wo-plan-status-shift { font-size: 0.72rem; color: var(--text-light); margin-top: 0.2rem; }
 
 /* 23.07: единый error-state — было 8+ разных стилей одного смысла (text-light/red/без стиля
    в home.js/objects.js/tools.js/profile.js). Новый класс, старые места не трогаем (риск
@@ -4109,7 +4136,12 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
     <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>Команда</h1>
   </header>
-  <div id="working-objects-slot"><!-- Требует внимания / Смены и назначения / Часы команды / без объекта / по объектам / отсутствуют --></div>
+  <div class="doc-type-switch wo-mode-switch" id="wo-mode-switch">
+    <div class="doc-type-opt active" data-wo-mode="summary">Сводка</div>
+    <div class="doc-type-opt" data-wo-mode="plan">План</div>
+  </div>
+  <div id="working-objects-slot"><!-- Сводка: Требует внимания / Активные смены / Часы команды / без объекта / по объектам / отсутствуют --></div>
+  <div id="working-objects-plan-slot" style="display:none"><!-- План: даты + назначения по объектам на дату --></div>
 </div>
 
 <div class="view active" id="view-home">
