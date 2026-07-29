@@ -35,12 +35,19 @@ async function initHomeView() {
       </div>
     </div>
 
+    <div id="home-attention-section" class="home-shifts-section" style="display:none;">
+      <div class="home-section-header">
+        <span class="home-section-title">Требует внимания</span>
+      </div>
+      <div id="home-shifts-not-started"></div>
+      <div id="home-shifts-awaiting"></div>
+    </div>
+
     <div id="home-shifts-today-section" class="home-shifts-section" style="display:none;">
       <div class="home-section-header">
-        <span class="home-section-title">Смены сегодня</span>
+        <span class="home-section-title">Работают сейчас</span>
       </div>
       <div id="home-shifts-working-now"></div>
-      <div id="home-shifts-not-started"></div>
     </div>
 
     <div id="home-radio-player-mount"></div>
@@ -107,20 +114,32 @@ async function _loadHomeData() {
 
 // 27.07 (B5): "Кто сейчас работает" + "Кто не начал смену" -- owner не должен
 // искать проблему вручную, dashboard сам показывает где нужно внимание.
+// 30.07 (спек): разделено на "Требует внимания" (not_started + awaiting_response --
+// то, что ждёт действия owner'а) и отдельно "Работают сейчас" (просто статус, без действия).
 async function _loadHomeShiftsToday() {
+  const attentionSection = document.getElementById('home-attention-section');
   const section = document.getElementById('home-shifts-today-section');
   const workingEl = document.getElementById('home-shifts-working-now');
   const notStartedEl = document.getElementById('home-shifts-not-started');
-  if (!section) return;
+  const awaitingEl = document.getElementById('home-shifts-awaiting');
+  if (!section || !attentionSection) return;
   try {
     const data = await api('/api/dashboard/shifts-today');
     const working = data.working_now || [];
     const notStarted = data.not_started || [];
-    if (!working.length && !notStarted.length) {
-      section.style.display = 'none';
-      return;
-    }
-    section.style.display = 'block';
+    const awaiting = data.awaiting_response || [];
+
+    attentionSection.style.display = (notStarted.length || awaiting.length) ? 'block' : 'none';
+    section.style.display = working.length ? 'block' : 'none';
+
+    awaitingEl.innerHTML = awaiting.map(w => `
+      <div class="home-shift-row home-shift-row-pending" data-uid="${esc(w.user_id)}" data-oid="${esc(w.object_id)}">
+        <div class="home-shift-dot home-shift-dot-idle"></div>
+        <div class="home-shift-info">
+          <div class="home-shift-name">${esc(w.worker_name)}</div>
+          <div class="home-shift-object">${esc(w.object_name)} · ждёт подтверждения</div>
+        </div>
+      </div>`).join('');
 
     workingEl.innerHTML = working.map(w => {
       const mins = w.start_at ? Math.round((Date.now() / 1000 - w.start_at) / 60) : 0;

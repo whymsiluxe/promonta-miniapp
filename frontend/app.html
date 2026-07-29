@@ -478,6 +478,8 @@ header h1 {
 .my-task-card-title { font-family: var(--font-heading); font-weight: 700; font-size: 0.95rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .my-task-card-stage { margin-top: 0.2rem; font-size: 0.8rem; color: var(--text-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .my-task-card-dates { margin-top: 0.35rem; font-size: 0.75rem; color: var(--accent-gold); }
+.my-task-card-note { margin-top: 0.35rem; font-size: 0.8rem; color: var(--text-main); background: var(--bg-body); border-radius: var(--radius-sm); padding: 0.4rem 0.55rem; }
+.my-task-decline-summary { margin-bottom: 0.9rem; padding: 0.6rem 0.7rem; border-radius: var(--radius-sm); background: var(--bg-body); color: var(--text-light); font-size: 0.82rem; line-height: 1.5; }
 .my-task-chat-btn { flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%; border: none; background: linear-gradient(155deg, var(--bg-card) 0%, var(--bg-card-raised) 100%); box-shadow: var(--c-shadow-control, var(--shadow-sm)), inset 0 1px 0 rgba(255,255,255,0.06); color: var(--accent); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease; position: relative; }
 .my-task-chat-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .my-task-chat-btn:active { transform: scale(0.93); box-shadow: var(--c-shadow-pressed, inset 0 1px 3px rgba(0,0,0,0.3)); }
@@ -1443,11 +1445,46 @@ header h1 {
 }
 .obj-blocker-meta-row { font-size: 0.82rem; color: var(--text-light); margin-top: 0.3rem; }
 .obj-blocker-meta-row strong { color: var(--text-main); }
-.obj-roadmap-item-unblock-btn {
-  margin-top: 0.3rem; padding: 0.3rem 0.7rem; border-radius: 10px;
-  border: 1px solid var(--primary); background: none; color: var(--primary);
-  font-size: 0.78rem; font-weight: 600; cursor: pointer; font-family: inherit;
+/* 29.07 v2 (feature freeze): blocker -- badge на уровне ЭТАПА, не статус. */
+.obj-stage-actions-row {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.6rem 0;
 }
+.obj-stage-actions-row button {
+  flex: 1 1 auto; min-width: 120px; padding: 0.55rem 0.8rem; border-radius: 12px;
+  font-size: 0.85rem; font-weight: 600; font-family: inherit; cursor: pointer; border: none;
+}
+.obj-stage-report-problem-btn {
+  background: none; color: var(--danger, #b3403a); border: 1px solid var(--danger, #b3403a) !important;
+}
+.obj-stage-block-banner {
+  margin: 0.4rem 0 0.7rem; padding: 0.6rem 0.8rem; border-radius: 12px;
+  background: color-mix(in srgb, var(--danger, #b3403a) 10%, transparent);
+  color: var(--danger, #b3403a); font-size: 0.85rem;
+}
+.obj-stage-block-banner strong { display: block; margin-bottom: 0.2rem; }
+.obj-stage-block-banner div { color: var(--text-light); font-size: 0.8rem; margin-top: 0.15rem; }
+.obj-stage-resolve-problem-btn {
+  margin-top: 0.4rem; padding: 0.4rem 0.9rem; border-radius: 10px;
+  border: 1px solid var(--danger, #b3403a); background: none; color: var(--danger, #b3403a);
+  font-size: 0.8rem; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+/* Фото в blocker sheet */
+.obj-blocker-photo-preview {
+  display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem;
+}
+.obj-blocker-photo-preview img {
+  width: 64px; height: 64px; border-radius: 10px; object-fit: cover; border: 1px solid var(--border-color);
+}
+.obj-blocker-photo-remove {
+  padding: 0.35rem 0.7rem; border-radius: 10px; border: 1px solid var(--border-color);
+  background: none; color: var(--text-main); font-size: 0.78rem; cursor: pointer; font-family: inherit;
+}
+.obj-blocker-photo-add-btn {
+  padding: 0.55rem 0.8rem; border-radius: 12px; border: 1px dashed var(--border-color);
+  background: var(--bg-app); color: var(--text-light); font-size: 0.85rem; cursor: pointer;
+  font-family: inherit; width: 100%;
+}
+.obj-blocker-photo-status { font-size: 0.78rem; color: var(--text-light); margin-top: 0.3rem; }
 /* Пустой Roadmap (owner ТЗ п.38/58) -- компактная строка + действие, не большая тёмная
    карточка со статичным текстом (был прежний "Этапов пока нет" в #1B1B1F карточке). */
 .obj-stages-empty { padding: 1.2rem 0.9rem; text-align: center; color: var(--text-light); font-size: 0.9rem; }
@@ -2904,6 +2941,7 @@ body.view-locked {
 .bubble-confirm-select { width: 100%; box-sizing: border-box; padding: 0.6rem 0.7rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9rem; }
 .bubble-confirm-dates { display: flex; align-items: center; gap: 0.5rem; color: var(--text-light); }
 .bubble-confirm-date { flex: 1; min-width: 0; box-sizing: border-box; padding: 0.55rem 0.6rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.85rem; }
+.bubble-confirm-textarea { width: 100%; box-sizing: border-box; padding: 0.6rem 0.7rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.85rem; font-family: inherit; resize: vertical; }
 .bubble-confirm-actions { display: flex; gap: 0.6rem; margin-top: 1.1rem; }
 .bubble-confirm-cancel, .bubble-confirm-ok { flex: 1; padding: 0.65rem; border-radius: var(--radius-md); border: none; font-weight: 700; font-size: 0.9rem; cursor: pointer; }
 .bubble-confirm-cancel { background: var(--bg-card); color: var(--text-main); }
@@ -3035,6 +3073,8 @@ body.view-locked {
 .profile-object-row { padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
 .profile-object-row:last-child { border-bottom: none; }
 .profile-team-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.9rem; }
+.profile-team-group { margin-bottom: 0.6rem; }
+.profile-team-group-title { font-size: 0.78rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.02em; margin: 0.8rem 0 0.3rem; }
 .profile-team-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-team-row:last-child { border-bottom: none; }
 .profile-team-avatar { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
@@ -4308,26 +4348,6 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
 <div class="view" id="view-profile">
   <header><h1>Профиль</h1></header>
   <div id="profile-content"><!-- рендерится js/profile.js (Фаза 8) --></div>
-  <div class="accordion-section" data-section="more">
-    <div class="accordion-header"><span class="accordion-icon" style="background:var(--accent)">⚙</span><span class="accordion-title">Ещё</span><span class="accordion-chevron">▾</span></div>
-    <div class="accordion-body collapsed"><div class="accordion-body-inner">
-      <div class="more-menu-item" onclick="switchView('tools')">
-        <span class="more-menu-icon" style="background:var(--icon-bg-1)">🔧</span>
-        <span class="more-menu-label">Инструмент</span>
-        <span class="more-menu-chevron">▾</span>
-      </div>
-      <div class="more-menu-item" id="profile-more-documents" onclick="switchView('documents')">
-        <span class="more-menu-icon" style="background:var(--icon-bg-3)">📄</span>
-        <span class="more-menu-label">Документы</span>
-        <span class="more-menu-chevron">▾</span>
-      </div>
-      <div class="more-menu-item" onclick="switchView('ai')">
-        <span class="more-menu-icon" style="background:var(--icon-bg-4)">✨</span>
-        <span class="more-menu-label">ИИ-ассистент</span>
-        <span class="more-menu-chevron">▾</span>
-      </div>
-    </div></div>
-  </div>
 </div>
 
 <!-- ═══════════ ABWESENHEIT (Фаза 5) ═══════════ -->

@@ -676,7 +676,13 @@ function initObjectsToolbar() {
   });
 }
 
-const STAGE_STATUS_LABEL = { 'предстоит': 'Предстоит', 'в процессе': 'В процессе', 'готово': 'Готово' };
+// 29.07 (аудит, п.3): полный набор лейблов -- этот экран теперь read-only просмотр,
+// но должен корректно ПОКАЗЫВАТЬ все 7 статусов workflow, не только старые 3.
+const STAGE_STATUS_LABEL = {
+  'предстоит': 'Предстоит', 'готово к началу': 'Готово к началу', 'в процессе': 'В работе',
+  'заблокирован': 'Заблокирован', 'на проверке': 'На проверке', 'на доработке': 'На доработке',
+  'готово': 'Завершён',
+};
 const STAGE_STATUS_CYCLE = ['предстоит', 'в процессе', 'готово'];
 let _stagesCurrentObjectId = null;
 
@@ -691,29 +697,37 @@ function renderStageRow(stage) {
   return `
   <div class="stage-row" data-num="${esc(stage['№ этапа'])}">
     <div class="stage-row-name">${esc(stage['Название этапа'])}</div>
-    <div class="stage-row-status stage-status-${statusSlug}${isOwner ? '' : ' stage-row-status-readonly'}" data-status="${esc(status)}">${esc(STAGE_STATUS_LABEL[status] || status)}</div>
+    <div class="stage-row-status stage-status-${statusSlug} stage-row-status-readonly" data-status="${esc(status)}">${esc(STAGE_STATUS_LABEL[status] || status)}</div>
     ${isOwner ? `<button class="stage-row-delete" data-num="${esc(stage['№ этапа'])}">×</button>` : ''}
   </div>`;
 }
 
 function attachStagesRowHandlers(stages) {
   if (currentRole !== 'owner') return;
-  document.querySelectorAll('.stage-row-status').forEach(el => {
-    el.addEventListener('click', async () => {
-      const stageNum = el.closest('.stage-row').dataset.num;
-      const rowNum = _stageRowIndexMap[stageNum];
-      const current = el.dataset.status;
-      const idx = STAGE_STATUS_CYCLE.indexOf(current);
-      const next = STAGE_STATUS_CYCLE[(idx + 1) % STAGE_STATUS_CYCLE.length];
-      try {
-        await api(`/api/objects/${_stagesCurrentObjectId}/stages/${rowNum}`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
-        hapticImpact('light');
-        await loadStagesWithRowNumbers();
-      } catch (e) {
-        showToast('Ошибка: ' + e.message, 'error');
-      }
-    });
-  });
+  // 29.07 (аудит, п.3): click-to-cycle статуса убран -- этот старый экран (использует
+  // прямой PATCH /stages/{row}, в обход review/blocker workflow) мог случайным тапом
+  // сбросить заблокированный/на-проверке этап на "предстоит" (idx=indexOf вернул бы -1
+  // для новых статусов, (−1+1)%3=0 -> всегда откатывало на первый статус цикла).
+  // Статус теперь read-only здесь; реальные переходы -- только через Объект → План
+  // работ (object-info.js: submit-review/approve/rework/block/unblock).
+  // Старый цикл оставлен закомментированным для отката, если понадобится:
+  //
+  // document.querySelectorAll('.stage-row-status').forEach(el => {
+  //   el.addEventListener('click', async () => {
+  //     const stageNum = el.closest('.stage-row').dataset.num;
+  //     const rowNum = _stageRowIndexMap[stageNum];
+  //     const current = el.dataset.status;
+  //     const idx = STAGE_STATUS_CYCLE.indexOf(current);
+  //     const next = STAGE_STATUS_CYCLE[(idx + 1) % STAGE_STATUS_CYCLE.length];
+  //     try {
+  //       await api(`/api/objects/${_stagesCurrentObjectId}/stages/${rowNum}`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
+  //       hapticImpact('light');
+  //       await loadStagesWithRowNumbers();
+  //     } catch (e) {
+  //       showToast('Ошибка: ' + e.message, 'error');
+  //     }
+  //   });
+  // });
 
   document.querySelectorAll('.stage-row-delete').forEach(btn => {
     btn.addEventListener('click', async () => {

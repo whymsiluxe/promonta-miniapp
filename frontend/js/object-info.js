@@ -200,8 +200,21 @@ async function _renderObjTeamAndShifts(objectId) {
             ${u.assignment_status === 'declined' ? '<span class="obj-info-team-chip-badge obj-info-team-chip-badge-declined">✕</span>' : ''}
           </div>`).join('')}</div>`
       : '<div class="obj-info-empty-row"><span>Никто не назначен</span></div>';
+    // 29.07 (аудит): причина отказа раньше была видна только в HTML title-атрибуте
+    // (бесполезно в мобильном Telegram WebView -- нет hover). Tap на pending/declined
+    // чип теперь явно показывает статус+причину, не проваливается сразу в карточку
+    // воркера (та доступна отдельным долгим тапом не нужна была -- статус важнее здесь).
     teamEl.querySelectorAll('.obj-info-team-chip').forEach(chip => {
       chip.addEventListener('click', () => {
+        const u = team.find(t => String(t.user_id) === chip.dataset.uid);
+        if (u?.assignment_status === 'declined') {
+          showToast(`${u.name}: отклонил — ${u.decline_reason || 'причина не указана'}`, 'error');
+          return;
+        }
+        if (u?.assignment_status === 'pending') {
+          showToast(`${u.name}: ожидает подтверждения назначения`);
+          return;
+        }
         if (typeof openUserCard === 'function') openUserCard(chip.dataset.uid);
       });
     });
@@ -727,7 +740,12 @@ async function _loadObjNeeds(objectId) {
 // (per plan: "decide after a quick spike" -- спайк показал, что Sheets-swap безопаснее
 // как two-button move, не drag). Worker видит кнопку "Готово" только на своём текущем
 // этапе (backend worker_complete_stage сам это перепроверяет, фронт не единственная защита).
-const OBJ_STAGE_STATUS_LABEL = { 'предстоит': 'Предстоит', 'в процессе': 'В процессе', 'готово': 'Готово' };
+// 29.07 (аудит, п.3): полный workflow вместо прямого Worker "Готово" -- submit-review
+// (worker) -> approve/rework (owner). Заблокировать/Проблема решена -- на уровне ЭТАПА
+// (не пункта чек-листа, у того своя отдельная item-level блокировка).
+// 29.07 v2 (feature freeze -- откат review/rework): 3 статуса, Worker сам жмёт
+// "Готово". Blocker -- отдельный badge "Сообщить о проблеме", не статус.
+const OBJ_STAGE_STATUS_LABEL = { 'предстоит': 'Предстоит', 'в процессе': 'В работе', 'готово': 'Завершён' };
 
 
 async function _appendCheckinShortcut(panel, objectId) {
@@ -810,6 +828,7 @@ function _renderStageRoadmapNode(s, idx, total, isCurrent) {
   const statusSlug = /^[a-zA-Zа-яА-Я0-9\-]+$/.test(status.replace(/\s/g, '-'))
     ? status.replace(/\s/g, '-') : 'unknown';
   const canWorkerComplete = currentRole !== 'owner' && isCurrent;
+  const canReportProblem = isCurrent && status !== 'готово';
   const description = s['Описание'] || '';
   const canEditDescription = currentRole === 'owner';
   // 29.07 v2: owner screenshot report -- textarea была ПОСТОЯННО видна в режиме просмотра
@@ -843,7 +862,11 @@ function _renderStageRoadmapNode(s, idx, total, isCurrent) {
             <button class="obj-stage-description-save" data-row="${s['_row']}" type="button">Сохранить</button>
           </div>
         </div>` : ''}
-        ${canWorkerComplete ? `<button class="obj-stage-complete-btn" data-row="${s['_row']}" type="button">Готово</button>` : ''}
+        <div class="obj-stage-block-banner-wrap" id="obj-stage-block-banner-${s['_row']}"></div>
+        <div class="obj-stage-actions-row">
+          ${canWorkerComplete ? `<button class="obj-stage-complete-btn" data-row="${s['_row']}" type="button">Готово</button>` : ''}
+          ${canReportProblem ? `<button class="obj-stage-report-problem-btn" data-row="${s['_row']}" type="button">Сообщить о проблеме</button>` : ''}
+        </div>
         <div class="obj-stage-roadmap-wrap" id="obj-stage-roadmap-${s['_row']}" data-loaded="0"></div>
       </div>
     </div>
@@ -934,6 +957,7 @@ function _attachObjStagesHandlers(objectId, stages) {
     });
   });
 
+  // 29.07 v2 (feature freeze -- откат review/rework): Worker снова сам завершает этап.
   document.querySelectorAll('.obj-stage-complete-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -950,6 +974,24 @@ function _attachObjStagesHandlers(objectId, stages) {
     });
   });
 
+  // Blocker -- badge, НЕ статус этапа. Видимая кнопка, не спрятана за long-press.
+  document.querySelectorAll('.obj-stage-report-problem-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const row = btn.dataset.row;
+      _openBlockerSheet(async (payload) => {
+        await api(`/api/objects/${objectId}/stages/${row}/blocker`, {
+          method: 'POST', body: JSON.stringify(payload),
+        });
+        hapticImpact('medium');
+        await _loadObjStages(objectId);
+      }, { title: 'Сообщить о проблеме', submitLabel: 'Отправить', objectId, triggerEl: btn });
+    });
+  });
+
+  // "Проблема решена" -- подключается динамически в _loadStageRoadmap() (кнопка
+  // рендерится только при раскрытии этапа, её нет в DOM на момент этого вызова).
+
   // 28.07: заменили up/down-кнопки на реальный touch drag (owner request) -- тот же
   // pointerdown/pointermove/pointerup паттерн, что уже проверен в bubble-assign.js,
   // только вертикальная ось и swap с соседом по позиции курсора вместо drop-зоны.
@@ -957,10 +999,10 @@ function _attachObjStagesHandlers(objectId, stages) {
 }
 
 // ═══════════ Roadmap Этап 2 — чек-лист категорий/пунктов внутри этапа (29.07) ═══════════
-// Owner создаёт/удаляет структуру (категории, пункты), worker и owner оба чекают статус
-// пункта. Тап = toggle open/done, long-press = мини-меню blocked/skip (owner-approved UX,
-// не перегружаем список постоянно видимой строкой из 5 кнопок-статусов на пункт).
-const ROADMAP_STATUS_ICON = { open: '○', in_progress: '◐', done: '●', blocked: '⛔', skipped: '⤫' };
+// 29.07 v2 (feature freeze): упрощено до open/done, тап = toggle. Никакого long-press
+// меню и item-level блокировки -- проблема сообщается на уровне ЭТАПА (кнопка
+// "Сообщить о проблеме" в _renderStageRoadmapNode выше).
+const ROADMAP_STATUS_ICON = { open: '○', done: '●' };
 
 async function _loadStageRoadmap(objectId, row) {
   const wrap = document.getElementById(`obj-stage-roadmap-${row}`);
@@ -970,6 +1012,30 @@ async function _loadStageRoadmap(objectId, row) {
     const snapshot = await api(`/api/objects/${objectId}/stages/${row}/roadmap`);
     wrap.innerHTML = _renderStageRoadmapChecklist(row, snapshot);
     _attachStageRoadmapHandlers(objectId, row);
+    const bannerWrap = document.getElementById(`obj-stage-block-banner-${row}`);
+    if (bannerWrap && snapshot.stage_block) {
+      const b = snapshot.stage_block;
+      bannerWrap.innerHTML = `<div class="obj-stage-block-banner">
+        <strong>Есть проблема${b.quick_reason ? ': ' + esc(b.quick_reason) : ''}</strong>
+        ${b.who_decides ? `<div><strong>Решает:</strong> ${esc(b.who_decides)}</div>` : ''}
+        ${b.expected_date ? `<div><strong>Ожидается:</strong> ${esc(b.expected_date)}</div>` : ''}
+        ${b.comment ? `<div>${esc(b.comment)}</div>` : ''}
+        <button type="button" class="obj-stage-resolve-problem-btn" data-row="${row}">Проблема решена</button>
+      </div>`;
+      bannerWrap.querySelector('.obj-stage-resolve-problem-btn')?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const resolveBtn = e.currentTarget;
+        resolveBtn.disabled = true;
+        try {
+          await api(`/api/objects/${objectId}/stages/${row}/blocker`, { method: 'DELETE' });
+          hapticImpact('light');
+          await _loadObjStages(objectId);
+        } catch (err) {
+          showToast('Ошибка: ' + err.message, 'error');
+          resolveBtn.disabled = false;
+        }
+      });
+    }
   } catch (e) {
     wrap.innerHTML = `<div class="obj-roadmap-loading">Ошибка: ${esc(e.message)}</div>`;
   }
@@ -997,11 +1063,6 @@ function _renderStageRoadmapChecklist(row, snapshot) {
       <div class="obj-roadmap-item-check" data-item-id="${i.id}">${ROADMAP_STATUS_ICON[i.status] || '○'}</div>
       <div class="obj-roadmap-item-body">
         <div class="obj-roadmap-item-title${i.status === 'done' ? ' obj-roadmap-item-done-text' : ''}">${esc(i.title)}${i.required ? '' : ' <span class="obj-roadmap-item-optional">· необязательно</span>'}</div>
-        ${i.status === 'blocked' && i.blocked_reason ? `<div class="obj-roadmap-item-blocked-reason">${esc(i.blocked_reason)}</div>` : ''}
-        ${i.status === 'blocked' && i.blocked_who_decides ? `<div class="obj-blocker-meta-row"><strong>Решает:</strong> ${esc(i.blocked_who_decides)}</div>` : ''}
-        ${i.status === 'blocked' && i.blocked_expected_date ? `<div class="obj-blocker-meta-row"><strong>Ожидается:</strong> ${esc(i.blocked_expected_date)}</div>` : ''}
-        ${i.status === 'blocked' && i.blocked_comment ? `<div class="obj-blocker-meta-row">${esc(i.blocked_comment)}</div>` : ''}
-        ${i.status === 'blocked' ? `<button type="button" class="obj-roadmap-item-unblock-btn" data-item-id="${i.id}">Проблема решена</button>` : ''}
       </div>
       ${isOwner ? `<div class="obj-roadmap-item-delete" data-item-id="${i.id}" title="Удалить пункт">✕</div>` : ''}
     </div>`;
@@ -1035,67 +1096,28 @@ function _attachStageRoadmapHandlers(objectId, row) {
 
   const reload = () => _loadStageRoadmap(objectId, row);
 
-  // Тап по чекбоксу -- toggle open<->done. Long-press (450ms) открывает мини-меню
-  // blocked/skip -- не перегружаем сам пункт постоянно видимыми 5 кнопками статусов.
+  // 29.07 v2 (feature freeze): простой тап = toggle open<->done, никакого long-press.
+  // 30.07 (аудит): легаси-пункты со status='blocked' (из отменённого 5-статусного
+  // workflow) НЕ должны обычным tap улетать сразу в done -- обычный toggle работает
+  // только между open/done, blocked требует явного решения (сначала снять блокировку).
   wrap.querySelectorAll('.obj-roadmap-item-check').forEach(check => {
-    let pressTimer = null;
-    let longPressFired = false;
     const itemId = check.dataset.itemId;
-
-    // blocked прокидывает meta из blocker sheet и ПРОБРАСЫВАЕТ ошибку дальше -- sheet
-    // сама показывает network-error+retry и не закрывается при сбое (тот же паттерн,
-    // что и Add Stage sheet: не терять введённые пользователем данные на ошибке сети).
-    const setStatus = async (status, blockedReason = '', meta = null) => {
+    check.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const node = check.closest('.obj-roadmap-item');
+      if (node.classList.contains('obj-roadmap-item-blocked')) {
+        showToast('Пункт заблокирован -- сначала решите проблему', 'error');
+        return;
+      }
+      const isDone = node.classList.contains('obj-roadmap-item-done');
       try {
         await api(`/api/objects/${objectId}/stages/${row}/roadmap/items/${itemId}/status`, {
-          method: 'POST',
-          body: JSON.stringify({ status, blocked_reason: blockedReason, ...(meta || {}) }),
+          method: 'POST', body: JSON.stringify({ status: isDone ? 'open' : 'done' }),
         });
-        hapticImpact('light');
-        reload();
-      } catch (e) {
-        if (status === 'blocked') throw e;
-        showToast('Ошибка: ' + e.message, 'error');
-      }
-    };
-
-    check.addEventListener('pointerdown', (e) => {
-      longPressFired = false;
-      pressTimer = setTimeout(() => {
-        longPressFired = true;
-        hapticImpact('medium');
-        // Реальный баг, найденный через Playwright: пока палец/курсор физически не
-        // отпущен, чекбокс держит implicit pointer capture -- клик по пункту меню
-        // (даже отдельным, следующим тапом) продолжал таргетиться на чекбокс, а не
-        // на элемент под курсором, и статус вообще никогда не менялся. Явно снимаем
-        // capture, как только меню открылось -- дальше это обычный, отдельный тап.
-        try { check.releasePointerCapture(e.pointerId); } catch (err) {}
-        _openRoadmapItemStatusMenu(check, setStatus);
-      }, 450);
-    });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(evt => {
-      check.addEventListener(evt, () => clearTimeout(pressTimer));
-    });
-    check.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (longPressFired) return; // long-press уже обработал тап через меню
-      const node = check.closest('.obj-roadmap-item');
-      const isDone = node.classList.contains('obj-roadmap-item-done');
-      setStatus(isDone ? 'open' : 'done');
-    });
-  });
-
-  wrap.querySelectorAll('.obj-roadmap-item-unblock-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      btn.disabled = true;
-      try {
-        await api(`/api/objects/${objectId}/stages/${row}/roadmap/items/${btn.dataset.itemId}/unblock`, { method: 'POST' });
         hapticImpact('light');
         reload();
       } catch (err) {
         showToast('Ошибка: ' + err.message, 'error');
-        btn.disabled = false;
       }
     });
   });
@@ -1168,51 +1190,6 @@ function _attachStageRoadmapHandlers(objectId, row) {
   }
 }
 
-// Мини-меню blocked/skip -- открывается long-press'ом на чекбоксе пункта, закрывается
-// тапом вне себя. Не отдельный bottom sheet -- маленькое contextual-меню у самого пункта.
-function _openRoadmapItemStatusMenu(anchorEl, setStatus) {
-  document.querySelector('.obj-roadmap-status-menu')?.remove();
-  const menu = document.createElement('div');
-  menu.className = 'obj-roadmap-status-menu';
-  menu.innerHTML = `
-    <button type="button" data-action="in_progress">◐ В процессе</button>
-    <button type="button" data-action="blocked">⛔ Заблокировано</button>
-    <button type="button" data-action="skipped">⤫ Пропустить</button>
-    <button type="button" data-action="open">○ Сбросить</button>
-  `;
-  document.body.appendChild(menu);
-  const rect = anchorEl.getBoundingClientRect();
-  menu.style.top = `${rect.bottom + window.scrollY + 4}px`;
-  menu.style.left = `${Math.max(8, rect.left + window.scrollX - 4)}px`;
-
-  // Реальный баг, найденный через Playwright: тап (mousedown/pointerdown), который
-  // САМ ЗАПУСТИЛ long-press, ещё не отпущен в момент открытия меню -- palец/курсор
-  // всё ещё "захвачен" чекбоксом (implicit pointer capture), поэтому его отпускание
-  // синтезирует click С ЦЕЛЬЮ=чекбокс, даже если курсор физически уже над пунктом меню.
-  // Этот клик не должен закрывать меню -- иначе пункт меню НИКОГДА не успевает
-  // получить свой собственный клик (реальный тест: item3 навсегда оставался open).
-  // Ждём отдельного, следующего клика вне меню, прежде чем начинать его слушать.
-  const close = () => { menu.remove(); document.removeEventListener('click', onDocClick, true); };
-  const onDocClick = (e) => { if (!menu.contains(e.target)) close(); };
-  const armDocClickListener = () => {
-    document.removeEventListener('click', armDocClickListener, true);
-    setTimeout(() => document.addEventListener('click', onDocClick, true), 0);
-  };
-  document.addEventListener('click', armDocClickListener, true);
-
-  menu.querySelectorAll('button[data-action]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const action = btn.dataset.action;
-      close();
-      if (action === 'blocked') {
-        _openBlockerSheet(setStatus);
-      } else {
-        setStatus(action);
-      }
-    });
-  });
-}
-
 // ── Blocker workflow (29.07 п.4) -- bottom sheet вместо prompt(): обязательная
 // причина (quick-reason кнопки ИЛИ свой текст), опциональные комментарий/кто решает/
 // ожидаемая дата. Тот же lifecycle-паттерн что и Add Stage sheet (header/body/sticky
@@ -1224,10 +1201,15 @@ const BLOCKER_QUICK_REASONS = [
 
 let _blockerSheetUnregisterOverlay = null;
 
-function _openBlockerSheet(setStatus) {
+// 29.07 (аудит): universal -- вызывается и для item-level blocker (roadmap чек-лист),
+// и для STAGE-level blocker (кнопка "Заблокировать этап"). onSubmit(payload) сам решает
+// куда и как отправить {quick_reason, comment, who_decides, expected_date, photo_url}.
+// triggerEl сохраняется для focus restore при закрытии (аудит: ранее заявлен, не реализован).
+function _openBlockerSheet(onSubmit, { title = 'Сообщить о проблеме', submitLabel = 'Отправить', objectId = null, triggerEl = null } = {}) {
   document.getElementById('obj-blocker-sheet')?.remove();
   if (_blockerSheetUnregisterOverlay) { _blockerSheetUnregisterOverlay(); _blockerSheetUnregisterOverlay = null; }
 
+  const activeTrigger = triggerEl || document.activeElement;
   const sheet = document.createElement('div');
   sheet.id = 'obj-blocker-sheet';
   sheet.className = 'obj-stage-add-sheet';
@@ -1238,7 +1220,7 @@ function _openBlockerSheet(setStatus) {
     <div class="obj-stage-add-sheet-inner">
       <div class="obj-stage-add-sheet-handle"></div>
       <div class="obj-stage-add-sheet-header">
-        <div class="obj-stage-add-sheet-title">Заблокировано</div>
+        <div class="obj-stage-add-sheet-title">${esc(title)}</div>
         <div class="obj-stage-add-sheet-close" id="obj-blocker-close-btn" role="button" aria-label="Закрыть" tabindex="0">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 1L15 15M15 1L1 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </div>
@@ -1264,6 +1246,16 @@ function _openBlockerSheet(setStatus) {
           <label class="obj-stage-field-label" for="obj-blocker-date">Ожидаемая дата решения (необязательно)</label>
           <input type="date" id="obj-blocker-date">
         </div>
+        <div class="obj-stage-field">
+          <label class="obj-stage-field-label">Фото (необязательно)</label>
+          <div id="obj-blocker-photo-preview" class="obj-blocker-photo-preview" style="display:none;">
+            <img id="obj-blocker-photo-img" alt="Фото блокировки">
+            <button type="button" class="obj-blocker-photo-remove" id="obj-blocker-photo-remove">Убрать</button>
+          </div>
+          <button type="button" class="obj-blocker-photo-add-btn" id="obj-blocker-photo-add-btn">+ Добавить фото</button>
+          <input type="file" accept="image/*" id="obj-blocker-photo-input" style="display:none;">
+          <div class="obj-blocker-photo-status" id="obj-blocker-photo-status" style="display:none;"></div>
+        </div>
         <div class="obj-stage-add-sheet-network-error" id="obj-blocker-network-error" style="display:none;">
           <strong>Не удалось сохранить</strong>
           <span>Введённые данные сохранены</span>
@@ -1272,7 +1264,7 @@ function _openBlockerSheet(setStatus) {
       </div>
       <div class="obj-stage-add-sheet-footer">
         <button class="obj-confirm-cancel" id="obj-blocker-cancel-btn" type="button">Отмена</button>
-        <button class="obj-confirm-ok" id="obj-blocker-ok-btn" type="button">Заблокировать</button>
+        <button class="obj-confirm-ok" id="obj-blocker-ok-btn" type="button">${esc(submitLabel)}</button>
       </div>
     </div>`;
   document.body.appendChild(sheet);
@@ -1283,6 +1275,7 @@ function _openBlockerSheet(setStatus) {
   const okBtn = document.getElementById('obj-blocker-ok-btn');
   const grid = document.getElementById('obj-blocker-quick-grid');
   let selectedQuick = '';
+  let uploadedPhotoUrl = '';
 
   grid.querySelectorAll('.obj-blocker-quick-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1298,6 +1291,49 @@ function _openBlockerSheet(setStatus) {
     if (customInput.value.trim()) errorEl.style.display = 'none';
   });
 
+  // Фото -- upload сразу при выборе файла (не ждём submit всей формы), тот же паттерн,
+  // что и obj-info-photo-input выше в этом файле (fetch+FormData+X-Telegram-Init-Data).
+  const photoAddBtn = document.getElementById('obj-blocker-photo-add-btn');
+  const photoInput = document.getElementById('obj-blocker-photo-input');
+  const photoPreview = document.getElementById('obj-blocker-photo-preview');
+  const photoImg = document.getElementById('obj-blocker-photo-img');
+  const photoStatus = document.getElementById('obj-blocker-photo-status');
+  const photoRemoveBtn = document.getElementById('obj-blocker-photo-remove');
+
+  photoAddBtn?.addEventListener('click', () => photoInput.click());
+  photoInput?.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file || !objectId) return;
+    photoStatus.style.display = 'block';
+    photoStatus.textContent = 'Загрузка фото…';
+    photoAddBtn.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const resp = await fetch(`${API_BASE}/api/objects/${encodeURIComponent(objectId)}/blocker-photo`, {
+        method: 'POST', headers: { 'X-Telegram-Init-Data': initData }, body: fd,
+      });
+      if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).detail || `HTTP ${resp.status}`);
+      const data = await resp.json();
+      uploadedPhotoUrl = data.photo_url;
+      photoImg.src = `${API_BASE}${uploadedPhotoUrl}`;
+      photoPreview.style.display = 'flex';
+      photoAddBtn.style.display = 'none';
+      photoStatus.style.display = 'none';
+      hapticImpact('light');
+    } catch (err) {
+      photoStatus.textContent = 'Ошибка загрузки: ' + err.message;
+    } finally {
+      photoAddBtn.disabled = false;
+    }
+  });
+  photoRemoveBtn?.addEventListener('click', () => {
+    uploadedPhotoUrl = '';
+    photoPreview.style.display = 'none';
+    photoAddBtn.style.display = 'block';
+  });
+
   const prevBodyOverflow = document.body.style.overflow;
   document.body.style.overflow = 'hidden';
 
@@ -1309,6 +1345,10 @@ function _openBlockerSheet(setStatus) {
     document.body.style.overflow = prevBodyOverflow;
     document.removeEventListener('keydown', onKeydown);
     if (_blockerSheetUnregisterOverlay) { _blockerSheetUnregisterOverlay(); _blockerSheetUnregisterOverlay = null; }
+    // Focus restore (аудит: заявлено в комментарии раньше, реально не делалось) --
+    // возвращаем фокус на элемент, с которого sheet была открыта (long-press чекбокс
+    // или кнопка "Заблокировать этап"), тот же принцип что и Add Stage sheet.
+    if (activeTrigger && typeof activeTrigger.focus === 'function') activeTrigger.focus();
   };
   const onKeydown = (e) => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKeydown);
@@ -1331,16 +1371,17 @@ function _openBlockerSheet(setStatus) {
     okBtn.disabled = true;
     okBtn.textContent = 'Сохраняю…';
     try {
-      await setStatus('blocked', customReason || quickReason, {
+      await onSubmit({
         quick_reason: quickReason, comment: document.getElementById('obj-blocker-comment').value.trim(),
         who_decides: document.getElementById('obj-blocker-who').value.trim(),
         expected_date: document.getElementById('obj-blocker-date').value,
+        photo_url: uploadedPhotoUrl,
       });
       close();
     } catch (e) {
       networkErrorEl.style.display = 'block';
       okBtn.disabled = false;
-      okBtn.textContent = 'Заблокировать';
+      okBtn.textContent = submitLabel;
     }
   };
   okBtn.addEventListener('click', submit);

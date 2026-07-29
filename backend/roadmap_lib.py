@@ -19,17 +19,21 @@ ROADMAP_FILE = '/home/promonta/agent/miniapp/roadmap.json'
 
 
 def _default_store():
-    return {"categories": {}, "items": {}, "notes": {}}
-    # categories: stage_key -> [ {id, title, order} ]
-    # items:      stage_key -> [ {id, category_id, title, description, status, required,
-    #                             safety_critical, weight, order, assigned_user_id,
-    #                             completed_by, completed_at, blocked_reason,
-    #                             created_at, updated_at} ]
-    # notes:      stage_key -> [ {id, item_id (nullable -- null = stage-level note),
-    #                             author_id, author_name, text, created_at} ]
+    return {"categories": {}, "items": {}, "notes": {}, "stage_blocks": {}}
+    # categories:   stage_key -> [ {id, title, order} ]
+    # items:        stage_key -> [ {id, category_id, title, description, status, required,
+    #                               safety_critical, weight, order, assigned_user_id,
+    #                               completed_by, completed_at, created_at, updated_at} ]
+    # notes:        stage_key -> [ {id, item_id (nullable -- null = stage-level note),
+    #                               author_id, author_name, text, created_at} ]
+    # stage_blocks: stage_key -> {quick_reason, comment, photo_url, who_decides,
+    #                             expected_date, blocked_at, blocked_by} -- этап-level
+    #               "Сообщить о проблеме" badge, НЕ влияет на статус этапа/пункта.
 
 
-ITEM_STATUSES = ('open', 'in_progress', 'done', 'blocked', 'skipped')
+# 29.07 v2 (feature freeze): checklist упрощён до open/done -- никакого blocked/skipped
+# на уровне пункта, blocker -- только stage-level badge (см. stage_blocks выше).
+ITEM_STATUSES = ('open', 'done')
 
 
 def new_category(store: dict, stage_key: str, title: str) -> dict:
@@ -72,9 +76,6 @@ def new_item(store: dict, stage_key: str, title: str, category_id: str | None = 
         "description": description, "status": "open", "required": required,
         "safety_critical": safety_critical, "weight": max(1, int(weight)), "order": order,
         "assigned_user_id": None, "completed_by": None, "completed_at": None,
-        "blocked_reason": None, "blocked_quick_reason": None, "blocked_comment": None,
-        "blocked_photo_url": None, "blocked_who_decides": None, "blocked_expected_date": None,
-        "blocked_at": None, "previous_status": None,
         "created_at": now, "updated_at": now,
     }
     items.append(item)
@@ -85,64 +86,25 @@ def _find_item(store: dict, stage_key: str, item_id: str) -> dict | None:
     return next((i for i in store['items'].get(stage_key, []) if i['id'] == item_id), None)
 
 
-def _clear_blocked_meta(item: dict) -> None:
-    for k in ('blocked_reason', 'blocked_quick_reason', 'blocked_comment', 'blocked_photo_url',
-              'blocked_who_decides', 'blocked_expected_date', 'blocked_at'):
-        item[k] = None
-
-
-def update_item_status(store: dict, stage_key: str, item_id: str, status: str,
-                        user_id: str, blocked_reason: str = '', blocked_meta: dict | None = None) -> dict | None:
+def update_item_status(store: dict, stage_key: str, item_id: str, status: str, user_id: str) -> dict | None:
     if status not in ITEM_STATUSES:
         raise ValueError(f'недопустимый статус пункта: {status}')
     item = _find_item(store, stage_key, item_id)
     if not item:
         return None
+    # 30.07 (аудит): легаси-пункты со status='blocked' (из отменённого 5-статусного
+    # workflow, ITEM_STATUSES с тех пор сузился до open/done) нельзя обычным
+    # open/done-переходом смахнуть в done -- сперва нужно снять blocked явно.
+    if item.get('status') == 'blocked' and status == 'done':
+        raise ValueError('пункт заблокирован -- сначала снимите блокировку')
     item['updated_at'] = int(time.time())
+    item['status'] = status
     if status == 'done':
-        item['status'] = status
         item['completed_by'] = user_id
         item['completed_at'] = int(time.time())
-        item['previous_status'] = None
-        _clear_blocked_meta(item)
-    elif status == 'open':
-        item['status'] = status
+    else:
         item['completed_by'] = None
         item['completed_at'] = None
-        item['previous_status'] = None
-        _clear_blocked_meta(item)
-    elif status == 'blocked':
-        # previous_status запоминается ОДИН раз -- если пункт уже был blocked и его
-        # правят повторно (сменили причину), не затираем изначальный статус до блокировки,
-        # иначе "Проблема решена" восстановит 'blocked' вместо реального пред. статуса.
-        if item['status'] != 'blocked':
-            item['previous_status'] = item['status']
-        item['status'] = status
-        meta = blocked_meta or {}
-        item['blocked_reason'] = (blocked_reason or meta.get('quick_reason') or '').strip()[:500] or 'Не указана причина'
-        item['blocked_quick_reason'] = (meta.get('quick_reason') or '').strip()[:200] or None
-        item['blocked_comment'] = (meta.get('comment') or '').strip()[:1000] or None
-        item['blocked_photo_url'] = meta.get('photo_url') or None
-        item['blocked_who_decides'] = (meta.get('who_decides') or '').strip()[:200] or None
-        item['blocked_expected_date'] = meta.get('expected_date') or None
-        item['blocked_at'] = int(time.time())
-    else:  # skipped
-        item['status'] = status
-        item['previous_status'] = None
-        _clear_blocked_meta(item)
-    return item
-
-
-def unblock_item(store: dict, stage_key: str, item_id: str) -> dict | None:
-    """Проблема решена -- восстанавливает статус, который был у пункта ДО блокировки
-    (не хардкод 'open'), сохраняя факт блокировки в истории (blocked_* поля остаются,
-    только очищается активный статус, чтобы можно было понять что пункт был blocked)."""
-    item = _find_item(store, stage_key, item_id)
-    if not item or item['status'] != 'blocked':
-        return None
-    item['status'] = item.get('previous_status') or 'open'
-    item['previous_status'] = None
-    item['updated_at'] = int(time.time())
     return item
 
 
@@ -167,10 +129,8 @@ def edit_item(store: dict, stage_key: str, item_id: str, **fields) -> dict | Non
 
 
 def stage_progress(store: dict, stage_key: str) -> dict:
-    """Weighted progress -- completed weight / total active weight, skipped items excluded
-    per ТЗ п.15 ('не учитывать... skipped, если owner исключил их из расчёта' -- simplified
-    here to always exclude skipped, since there is no separate owner toggle for this yet)."""
-    items = [i for i in store['items'].get(stage_key, []) if i['status'] != 'skipped']
+    """Weighted progress -- completed weight / total weight по всем пунктам чек-листа."""
+    items = store['items'].get(stage_key, [])
     if not items:
         return {"completed_weight": 0, "total_weight": 0, "percent": 0,
                 "required_open": 0, "required_total": 0}
@@ -196,6 +156,33 @@ def new_note(store: dict, stage_key: str, author_id: str, author_name: str, text
     return note
 
 
+def set_stage_block_meta(store: dict, stage_key: str, previous_status: str, blocked_by: str,
+                          quick_reason: str = '', comment: str = '', photo_url: str = '',
+                          who_decides: str = '', expected_date: str = '') -> dict:
+    """Сохраняет meta STAGE-блокировки (не item). previous_status приходит из
+    objekte_lib.stage_block() -- та же причина, что и в roadmap-item unblock: нужно
+    восстановить РЕАЛЬНЫЙ статус до блокировки, не хардкод."""
+    meta = {
+        "previous_status": previous_status, "blocked_by": str(blocked_by),
+        "quick_reason": (quick_reason or '').strip()[:200] or None,
+        "comment": (comment or '').strip()[:1000] or None,
+        "photo_url": photo_url or None,
+        "who_decides": (who_decides or '').strip()[:200] or None,
+        "expected_date": expected_date or None,
+        "blocked_at": int(time.time()),
+    }
+    store['stage_blocks'][stage_key] = meta
+    return meta
+
+
+def get_stage_block_meta(store: dict, stage_key: str) -> dict | None:
+    return store['stage_blocks'].get(stage_key)
+
+
+def clear_stage_block_meta(store: dict, stage_key: str) -> None:
+    store['stage_blocks'].pop(stage_key, None)
+
+
 def stage_notes(store: dict, stage_key: str, item_id: str | None = None) -> list:
     notes = store['notes'].get(stage_key, [])
     if item_id is not None:
@@ -212,6 +199,7 @@ def stage_snapshot(store: dict, stage_key: str) -> dict:
         "items": sorted(store['items'].get(stage_key, []), key=lambda i: i['order']),
         "notes_count": len(store['notes'].get(stage_key, [])),
         "progress": stage_progress(store, stage_key),
+        "stage_block": store['stage_blocks'].get(stage_key),
     }
 
 

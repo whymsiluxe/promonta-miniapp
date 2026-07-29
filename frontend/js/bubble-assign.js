@@ -247,6 +247,8 @@ function _openBubbleConfirmPopup(dragEl) {
         <span>—</span>
         <input type="date" id="bubble-confirm-to" class="bubble-confirm-date">
       </div>
+      <label class="bubble-confirm-label">Что должен сделать работник (необязательно)</label>
+      <textarea id="bubble-confirm-task-note" class="bubble-confirm-textarea" rows="2" maxlength="500" placeholder="Например: залить фундамент под гараж"></textarea>
       <div class="bubble-confirm-actions">
         <button class="bubble-confirm-cancel" id="bubble-confirm-cancel-btn">Отмена</button>
         <button class="bubble-confirm-ok" id="bubble-confirm-ok-btn">Назначить</button>
@@ -314,6 +316,8 @@ async function openAssignFromProfile(userId, userName) {
         <span>—</span>
         <input type="date" id="bubble-confirm-to" class="bubble-confirm-date">
       </div>
+      <label class="bubble-confirm-label">Что должен сделать работник (необязательно)</label>
+      <textarea id="bubble-confirm-task-note" class="bubble-confirm-textarea" rows="2" maxlength="500" placeholder="Например: залить фундамент под гараж"></textarea>
       <div class="bubble-confirm-actions">
         <button class="bubble-confirm-cancel" id="bubble-confirm-cancel-btn">Отмена</button>
         <button class="bubble-confirm-ok" id="assign-profile-ok-btn">Назначить</button>
@@ -328,13 +332,14 @@ async function openAssignFromProfile(userId, userName) {
     const stageId = document.getElementById('bubble-confirm-stage').value;
     const dateFrom = document.getElementById('bubble-confirm-from').value;
     const dateTo = document.getElementById('bubble-confirm-to').value;
+    const taskNote = document.getElementById('bubble-confirm-task-note').value;
     const okBtn = document.getElementById('assign-profile-ok-btn');
     okBtn.disabled = true;
     okBtn.textContent = 'Назначаю…';
     try {
       await api(`/api/objects/${objectId}/assign`, {
         method: 'POST',
-        body: JSON.stringify({ user_id: userId, stage_id: stageId, date_from: dateFrom, date_to: dateTo })
+        body: JSON.stringify({ user_id: userId, stage_id: stageId, date_from: dateFrom, date_to: dateTo, task_note: taskNote })
       });
       hapticImpact('medium');
       showToast('Назначено', 'success');
@@ -354,6 +359,7 @@ async function _confirmBubbleAssign() {
   const stageId = document.getElementById('bubble-confirm-stage').value;
   const dateFrom = document.getElementById('bubble-confirm-from').value;
   const dateTo = document.getElementById('bubble-confirm-to').value;
+  const taskNote = document.getElementById('bubble-confirm-task-note').value;
   const userId = dragEl.dataset.uid;
 
   const okBtn = document.getElementById('bubble-confirm-ok-btn');
@@ -363,7 +369,7 @@ async function _confirmBubbleAssign() {
     await api(`/api/objects/${_bubbleObjectId}/assign`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, stage_id: stageId, date_from: dateFrom, date_to: dateTo })
+      body: JSON.stringify({ user_id: userId, stage_id: stageId, date_from: dateFrom, date_to: dateTo, task_note: taskNote })
     });
     hapticImpact('medium');
     _closeBubbleConfirmPopup();

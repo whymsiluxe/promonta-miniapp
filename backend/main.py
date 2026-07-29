@@ -998,6 +998,7 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
             # владелец не узнаёт об отказе иначе как случайно спросив у worker'а лично.
             info["assignment_status"] = _assignment_status(assignment)
             info["decline_reason"] = assignment.get('decline_reason', '')
+            info["task_note"] = assignment.get('task_note', '')
         return info
 
     def _stage_summary(oid: str) -> dict | None:
@@ -1052,6 +1053,7 @@ def my_assignments(user: dict = Depends(get_current_user)):
             if a.get('user_id') != uid:
                 continue
             result.append({
+                "id": a.get('id', ''),  # 29.07 (аудит): фронт передаёт это в /respond
                 "object_id": oid,
                 "object_name": names.get(oid, oid),
                 "stage_id": a.get('stage_id', ''),
@@ -1060,6 +1062,7 @@ def my_assignments(user: dict = Depends(get_current_user)):
                 "assigned_at": a.get('assigned_at', ''),
                 "status": _assignment_status(a),
                 "decline_reason": a.get('decline_reason', ''),
+                "task_note": a.get('task_note', ''),
             })
     result.sort(key=lambda r: r['date_from'] or '', reverse=True)
     return {"assignments": result}
@@ -1070,6 +1073,7 @@ class AssignBody(BaseModel):
     stage_id: str = ''
     date_from: str = ''
     date_to: str = ''
+    task_note: str = ''
 
 
 def _dates_overlap(a_from: str, a_to: str, b_from: str, b_to: str) -> bool:
@@ -1090,12 +1094,16 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
     def _mutator(assignments):
         if key not in assignments:
             assignments[key] = []
+        # 29.07 (аудит): declined-назначение НЕ должно считаться дубликатом -- иначе
+        # повторное назначение того же worker'а на тот же этап после отказа молча
+        # не создавало новую запись (endpoint возвращал успех, но ничего не менялось).
         already = any(
             a['user_id'] == str(body.user_id) and a.get('stage_id', '') == body.stage_id
+            and _assignment_status(a) != 'declined'
             for a in assignments[key]
         )
         if already:
-            return
+            raise HTTPException(409, "Это назначение уже существует")
         # 22.07: одобренный отпуск/больничный блокирует назначение — жёсткая проверка,
         # не просто цветовая подсказка в календаре (юзер подтвердил явно).
         for e in _load_abwesenheit():
@@ -1107,11 +1115,14 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
                     f"Работник недоступен ({e.get('reason', 'отсутствие')}) "
                     f"{e.get('date_from')} — {e.get('date_to')}"
                 )
+        # 29.07 (аудит): declined-назначения на ДРУГИХ объектах не должны участвовать
+        # в проверке пересечений периодов -- worker, отклонивший объект А, не должен
+        # быть заблокирован от назначения на объект Б в те же даты.
         for other_oid, other_list in assignments.items():
             if other_oid == key:
                 continue
             for a in other_list:
-                if a['user_id'] != str(body.user_id):
+                if a['user_id'] != str(body.user_id) or _assignment_status(a) == 'declined':
                     continue
                 if _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', '')):
                     raise HTTPException(
@@ -1120,6 +1131,10 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
                         f"на период {a.get('date_from')} — {a.get('date_to')}"
                     )
         assignments[key].append({
+            # 29.07 (аудит): уникальный assignment_id -- respond-endpoint раньше искал
+            # "первый pending этого worker'а на объект", что ломалось при нескольких
+            # назначениях одного worker'а на разные этапы/периоды одного объекта.
+            'id': uuid.uuid4().hex,
             'user_id': str(body.user_id),
             'stage_id': body.stage_id,
             'date_from': body.date_from,
@@ -1133,6 +1148,7 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
             'status': 'pending',
             'decline_reason': '',
             'responded_at': '',
+            'task_note': body.task_note.strip()[:500],
         })
 
     update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
@@ -1161,6 +1177,11 @@ def _assignment_status(a: dict) -> str:
 class AssignmentRespondBody(BaseModel):
     accept: bool
     decline_reason: str = ''
+    # 29.07 (аудит): assignment_id -- убирает неоднозначность "первый pending" при
+    # нескольких назначениях одного worker'а на разные этапы/периоды одного объекта.
+    # Опционально (не required=True): легаси-записи, созданные ДО этого фикса, не
+    # имеют поля 'id' вообще -- для них остаётся старый fallback ниже.
+    assignment_id: str = ''
 
 
 @app.post("/api/objects/{object_id}/assign/{user_id}/respond")
@@ -1175,7 +1196,13 @@ def respond_to_assignment(object_id: str, user_id: str, body: AssignmentRespondB
 
     def _mutator(assignments):
         lst = assignments.get(key, [])
-        target = next((a for a in lst if a['user_id'] == str(user_id) and _assignment_status(a) == 'pending'), None)
+        if body.assignment_id:
+            target = next((a for a in lst if a.get('id') == body.assignment_id
+                           and a['user_id'] == str(user_id) and _assignment_status(a) == 'pending'), None)
+        else:
+            # Легаси-путь для записей без 'id' -- тот же риск неоднозначности, что и раньше,
+            # но такие записи существуют только до этого фикса и естественно вымрут.
+            target = next((a for a in lst if a['user_id'] == str(user_id) and _assignment_status(a) == 'pending'), None)
         if not target:
             raise HTTPException(404, "Ожидающее назначение не найдено")
         target['status'] = 'accepted' if body.accept else 'declined'
@@ -1227,31 +1254,59 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
     working_uids = {e['user_id'] for e in working_now}
     finished_uids = {e['user_id'] for e in finished_today}
 
-    # "Назначен сегодня, но не начал" -- assignment date_from/date_to охватывает today,
-    # и юзер ни разу не появился в today_sessions (ни работает, ни уже закончил).
+    # 30.07 (спек: Команда -- 4 группы). "Назначен сегодня, но не начал" -- только
+    # accepted-назначения, чей date_from/date_to охватывает today, юзер ни разу не
+    # появился в today_sessions. "Ожидают подтверждения" -- pending-назначения на
+    # today. Обе группы взаимоисключающие по uid (assigned/pending разделены статусом).
     assignments = _load_assignments()
     not_started = []
-    seen_uids = set()
+    awaiting_response = []
+    assigned_today_uids = set()
     for oid, lst in assignments.items():
         for a in lst:
             uid = str(a.get('user_id', ''))
-            if not uid or uid in working_uids or uid in finished_uids or uid in seen_uids:
-                continue
             date_from, date_to = a.get('date_from', ''), a.get('date_to', '')
-            if date_from and date_to and date_from <= today <= date_to:
-                seen_uids.add(uid)
+            if not uid or not (date_from and date_to and date_from <= today <= date_to):
+                continue
+            status = _assignment_status(a)
+            if status == 'accepted':
+                assigned_today_uids.add(uid)
+                if uid in working_uids or uid in finished_uids or uid in {e['user_id'] for e in not_started}:
+                    continue
                 not_started.append({
-                    "user_id": uid,
-                    "worker_name": _worker_name(uid),
-                    "object_id": oid,
-                    "object_name": object_names.get(oid, oid),
+                    "user_id": uid, "worker_name": _worker_name(uid),
+                    "object_id": oid, "object_name": object_names.get(oid, oid),
                 })
+            elif status == 'pending':
+                assigned_today_uids.add(uid)
+                if uid in {e['user_id'] for e in awaiting_response}:
+                    continue
+                awaiting_response.append({
+                    "user_id": uid, "worker_name": _worker_name(uid),
+                    "object_id": oid, "object_name": object_names.get(oid, oid),
+                })
+
+    # "Доступны сегодня" -- все остальные работники (роль worker в профилях), не
+    # занятые ни в одной из групп выше и без approved-отсутствия на сегодня.
+    busy_uids = working_uids | finished_uids | assigned_today_uids
+    absent_uids = {
+        str(e.get('user_id')) for e in _load_abwesenheit()
+        if e.get('status') == 'approved' and e.get('date_from', '') <= today <= e.get('date_to', '')
+    }
+    roles = _load_roles()
+    available_today = [
+        {"user_id": uid, "worker_name": _worker_name(uid)}
+        for uid in profiles
+        if roles.get(uid, 'worker') != 'owner' and uid not in busy_uids and uid not in absent_uids
+    ]
 
     return {
         "date": today,
         "working_now": working_now,
         "not_started": not_started,
         "finished_today": finished_today,
+        "awaiting_response": awaiting_response,
+        "available_today": available_today,
     }
 
 
@@ -3600,6 +3655,9 @@ def swap_stage(object_id: str, row_num: int, body: StageSwapBody, user: dict = D
     return {"status": "ok"}
 
 
+# 29.07 v2 (feature freeze -- откат review/rework): /complete восстановлен, worker
+# снова сам жмёт "Готово". Blocker остаётся, но НЕ меняет статус этапа -- отдельный
+# badge поверх (см. /stages/{row}/blocker ниже).
 @app.post("/api/objects/{object_id}/stages/{row_num}/complete")
 def worker_complete_stage(object_id: str, row_num: int, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     import objekte_lib as o
@@ -3609,6 +3667,45 @@ def worker_complete_stage(object_id: str, row_num: int, user: dict = Depends(get
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"status": "ok"}
+
+
+class StageBlockerBody(BaseModel):
+    quick_reason: str = ''
+    comment: str = ''
+    photo_url: str = ''
+    who_decides: str = ''
+    expected_date: str = ''
+
+
+@app.post("/api/objects/{object_id}/stages/{row_num}/blocker")
+def set_stage_blocker(object_id: str, row_num: int, body: StageBlockerBody,
+                       user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
+    # 29.07 v2: "Сообщить о проблеме" -- badge, НЕ статус этапа. Статус остаётся
+    # предстоит/в процессе/готово независимо от наличия blocker.
+    if not (body.quick_reason.strip() or body.comment.strip()):
+        raise HTTPException(400, "Укажите причину")
+    stage = _find_stage_by_row(object_id, row_num)
+    stage_key = stage['ID строки этапа']
+
+    def _mutate(store):
+        return rl.set_stage_block_meta(
+            store, stage_key, None, str(user['id']),
+            quick_reason=body.quick_reason, comment=body.comment, photo_url=body.photo_url,
+            who_decides=body.who_decides, expected_date=body.expected_date,
+        )
+    meta = update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
+    return {"status": "ok", "meta": meta}
+
+
+@app.delete("/api/objects/{object_id}/stages/{row_num}/blocker")
+def clear_stage_blocker(object_id: str, row_num: int, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
+    stage = _find_stage_by_row(object_id, row_num)
+    stage_key = stage['ID строки этапа']
+
+    def _mutate(store):
+        rl.clear_stage_block_meta(store, stage_key)
+        return {"status": "ok"}
+    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
 
 
 # ---------- План работ (Roadmap) — 29.07, Этап 1 ----------
@@ -3641,6 +3738,41 @@ def _find_stage_by_row(object_id: str, row_num: int) -> dict:
     if not stage:
         raise HTTPException(404, "Этап не найден")
     return stage
+
+
+BLOCKER_PHOTO_DIR = '/home/promonta/agent/miniapp/blocker_photos'
+os.makedirs(BLOCKER_PHOTO_DIR, exist_ok=True)
+
+
+@app.post("/api/objects/{object_id}/blocker-photo")
+async def upload_blocker_photo(object_id: str, file: UploadFile = File(...),
+                                user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
+    # 29.07 (аудит): blocker sheet заявлял поле фото, но реального upload не было --
+    # тот же паттерн, что и остальные фото-эндпоинты (sniff_image, размер-лимит).
+    # photo_url -- относительный путь к get_blocker_photo ниже, не прямая файловая ссылка
+    # (доступ к самому файлу тоже идёт через require_object_access, не голый static serve).
+    raw = await file.read()
+    if len(raw) > PHOTO_MAX_BYTES:
+        raise HTTPException(400, "Фото слишком большое (макс. 8 МБ)")
+    detected = sniff_image(raw)
+    if not detected:
+        raise HTTPException(400, "Файл должен быть изображением")
+    ext = _ALLOWED_IMAGE_MIME_EXT[detected]
+    fname = f"{uuid.uuid4().hex}.{ext}"
+    with open(os.path.join(BLOCKER_PHOTO_DIR, fname), 'wb') as out:
+        out.write(raw)
+    return {"photo_url": f"/api/objects/{object_id}/blocker-photo/{fname}"}
+
+
+@app.get("/api/objects/{object_id}/blocker-photo/{fname}")
+def get_blocker_photo(object_id: str, fname: str, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
+    if '/' in fname or '..' in fname:
+        raise HTTPException(400, "Некорректное имя файла")
+    path = os.path.join(BLOCKER_PHOTO_DIR, fname)
+    if not os.path.exists(path):
+        raise HTTPException(404, "Файл отсутствует")
+    from fastapi.responses import FileResponse
+    return FileResponse(path)
 
 
 @app.get("/api/objects/{object_id}/stages/{row_num}/roadmap")
@@ -3760,59 +3892,25 @@ def delete_roadmap_item(object_id: str, row_num: int, item_id: str,
     return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
 
 
+# 29.07 v2 (feature freeze): checklist упрощён до open/done, никакого blocker на
+# уровне пункта -- только простой toggle.
 class RoadmapItemStatusBody(BaseModel):
     status: str
-    blocked_reason: str = ''
-    # 29.07 п.4 (blocker workflow): доп. поля bottom sheet'а блокировки. quick_reason --
-    # выбранная быстрая причина, comment/photo_url/who_decides/expected_date опциональны.
-    quick_reason: str = ''
-    comment: str = ''
-    photo_url: str = ''
-    who_decides: str = ''
-    expected_date: str = ''
 
 
 @app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/items/{item_id}/status")
 def update_roadmap_item_status(object_id: str, row_num: int, item_id: str, body: RoadmapItemStatusBody,
                                 user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    # 29.07: и owner и worker могут отмечать пункты (worker -- своя основная задача
-    # по ТЗ "roadmap:item_complete"), require_object_access -- не require_owner.
-    if body.status == 'blocked' and not (body.quick_reason.strip() or body.blocked_reason.strip()):
-        raise HTTPException(400, "Укажите причину блокировки")
     stage = _find_stage_by_row(object_id, row_num)
     stage_key = stage['ID строки этапа']
 
     def _mutate(store):
         try:
-            item = rl.update_item_status(
-                store, stage_key, item_id, body.status, str(user['id']), body.blocked_reason,
-                blocked_meta={
-                    "quick_reason": body.quick_reason, "comment": body.comment,
-                    "photo_url": body.photo_url, "who_decides": body.who_decides,
-                    "expected_date": body.expected_date,
-                },
-            )
+            item = rl.update_item_status(store, stage_key, item_id, body.status, str(user['id']))
         except ValueError as e:
             raise HTTPException(400, str(e))
         if not item:
             raise HTTPException(404, "Пункт не найден")
-        return item
-
-    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
-
-
-@app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/items/{item_id}/unblock")
-def unblock_roadmap_item(object_id: str, row_num: int, item_id: str,
-                          user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    # "Проблема решена" -- восстанавливает статус ДО блокировки (previous_status),
-    # не хардкод 'open' (ТЗ п.4: unblock должен вернуть реальный предыдущий статус).
-    stage = _find_stage_by_row(object_id, row_num)
-    stage_key = stage['ID строки этапа']
-
-    def _mutate(store):
-        item = rl.unblock_item(store, stage_key, item_id)
-        if not item:
-            raise HTTPException(404, "Пункт не найден или не заблокирован")
         return item
 
     return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
@@ -4325,6 +4423,40 @@ async def _save_checkin_photos(files: list, object_id: str, date_str: str) -> li
     return saved
 
 
+def _get_active_assignment_for_checkin(user_id: str, object_id: str, today: str) -> str:
+    """Единая проверка для /api/checkin/start (30.07, аудит п.5) -- owner вызывающий
+    код не проверяет вообще (owner проходит can_access_object безусловно), эта функция
+    только для worker-пути. Возвращает assignment_id при успехе, иначе бросает 403
+    с конкретным сообщением (pending/declined/вне периода/нет назначения -- разные
+    тексты, не один общий "нет доступа"). Backward compat: назначение без 'status'
+    трактуется как accepted (_assignment_status), без date_from/date_to -- не блокируется."""
+    candidates = [a for a in _load_assignments().get(object_id, []) if str(a.get('user_id')) == str(user_id)]
+    if not candidates:
+        raise HTTPException(403, "У вас нет принятого назначения на этот объект")
+
+    # Если есть хоть одно accepted в периоде -- оно и есть искомое (наиболее частый путь).
+    accepted = [a for a in candidates if _assignment_status(a) == 'accepted']
+    for a in accepted:
+        d_from, d_to = a.get('date_from', ''), a.get('date_to', '')
+        if not (d_from and d_to):
+            return a.get('id', '')
+        if d_from <= today <= d_to:
+            return a.get('id', '')
+    if accepted:
+        # Есть accepted, но ни один не покрывает today датами -- сообщаем по ближайшему.
+        a = accepted[0]
+        d_from, d_to = a.get('date_from', ''), a.get('date_to', '')
+        if today < d_from:
+            raise HTTPException(403, f"Смена доступна с {d_from}")
+        raise HTTPException(403, f"Период назначения завершён {d_to}")
+
+    if any(_assignment_status(a) == 'pending' for a in candidates):
+        raise HTTPException(403, "Сначала подтвердите назначение")
+    if any(_assignment_status(a) == 'declined' for a in candidates):
+        raise HTTPException(403, "Назначение отклонено")
+    raise HTTPException(403, "У вас нет принятого назначения на этот объект")
+
+
 @app.post("/api/checkin/start")
 async def checkin_start(
     object_id: str = Form(''),
@@ -4333,6 +4465,7 @@ async def checkin_start(
     stage_name: str = Form(''),
     files: list[UploadFile] = File(default=[]),
     user: dict = Depends(get_current_user),
+    role: str = Depends(get_role),
     idempotency_key: str = Header(default='', alias='Idempotency-Key'),
 ):
     cached = _idempotency_get(idempotency_key)
@@ -4344,6 +4477,16 @@ async def checkin_start(
     if not lat.strip() or not lon.strip():
         raise HTTPException(400, "Включи геолокацию, чтобы начать смену")
     date_str = datetime.now().strftime('%Y-%m-%d')
+
+    # 30.07 (аудит п.5): единая проверка ДО сохранения фото/создания сессии -- нельзя
+    # сначала записать файлы, а потом вернуть 403. Owner не назначается вообще
+    # (can_access_object пропускает owner безусловно), для него assignment_id пуст.
+    assignment_id = ''
+    if role == 'owner':
+        if not can_access_object(user, role, object_id.strip()):
+            raise HTTPException(403, "Нет доступа к этому объекту")
+    else:
+        assignment_id = _get_active_assignment_for_checkin(str(user['id']), object_id.strip(), date_str)
 
     with _checkin_lock:
         # 10.29 (Fable-аудит): раньше можно было создать сколько угодно параллельных
@@ -4359,6 +4502,7 @@ async def checkin_start(
     entry = {
         "id": uuid.uuid4().hex,
         "object_id": object_id.strip()[:100],
+        "assignment_id": assignment_id,
         "date": date_str,
         "user_id": user['id'],
         "start_at": int(time.time()),
