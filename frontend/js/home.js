@@ -18,6 +18,13 @@ async function initHomeView() {
   _homeLoaded = true;
 
   slot.innerHTML = `
+    <div class="home-dash-tabs" id="home-dash-tabs">
+      <div class="home-dash-tab active" data-dash-tab="today">Сегодня</div>
+      <div class="home-dash-tab" data-dash-tab="objects">Объекты</div>
+      <div class="home-dash-tab" data-dash-tab="tools">Инструмент</div>
+    </div>
+
+    <div class="home-dash-panel" data-dash-panel="today">
     <div id="home-kpi-bar" class="home-kpi-bar">
       <div class="kpi-tile" id="kpi-objects" onclick="switchView('objects')"><span class="kpi-num">—</span><span class="kpi-label">Объекты</span></div>
       <div class="kpi-tile" id="kpi-working" onclick="switchView('working-objects')">
@@ -69,10 +76,6 @@ async function initHomeView() {
           <div class="quick-primary-sub" id="abwesenheit-quick-sub">Календарь недоступностей</div>
         </div>
       </div>
-      <div class="quick-primary-item" onclick="switchView('tools')">
-        <div class="quick-primary-icon-wrap qp-icon qp-icon-tools-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-wrench"></div></div>
-        <div class="quick-primary-text"><div class="quick-primary-title">Инструменты</div></div>
-      </div>
       <div class="quick-primary-item" onclick="switchView('documents')">
         <div class="quick-primary-icon-wrap qp-icon qp-icon-docs-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-lines-wide"><span></span><span></span><span></span></div></div>
         <div class="quick-primary-text"><div class="quick-primary-title">Документы</div></div>
@@ -82,7 +85,9 @@ async function initHomeView() {
         <div class="quick-primary-text"><div class="quick-primary-title">ИИ-ассистент</div></div>
       </div>
     </div>
+    </div>
 
+    <div class="home-dash-panel" data-dash-panel="objects" style="display:none">
     <div id="home-rings-section" class="home-rings-section">
       <div class="home-section-header">
         <span class="home-section-title">Объекты</span>
@@ -96,7 +101,25 @@ async function initHomeView() {
     <div id="home-weather-card" class="weather-card">
       <div class="weather-card-loading">Загрузка погоды...</div>
     </div>
+    </div>
+
+    <div class="home-dash-panel" data-dash-panel="tools" style="display:none">
+      <div class="quick-primary-item" onclick="switchView('tools')" style="margin-top:0.5rem">
+        <div class="quick-primary-icon-wrap qp-icon qp-icon-tools-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-wrench"></div></div>
+        <div class="quick-primary-text"><div class="quick-primary-title">Открыть Инструменты</div></div>
+      </div>
+    </div>
   `;
+
+  document.getElementById('home-dash-tabs').addEventListener('click', (e) => {
+    const tab = e.target.closest('.home-dash-tab');
+    if (!tab) return;
+    document.querySelectorAll('#home-dash-tabs .home-dash-tab').forEach(t => t.classList.toggle('active', t === tab));
+    document.querySelectorAll('.home-dash-panel').forEach(p => {
+      p.style.display = p.dataset.dashPanel === tab.dataset.dashTab ? '' : 'none';
+    });
+    hapticImpact('light');
+  });
 
   _loadHomeData();
   initFeedTabs(); // суб-табы Инфо/Фото/Новости под dashboard (feed.js)
