@@ -322,7 +322,15 @@ def can_access_object(user: dict, role: str, object_id: str) -> bool:
     if role == 'owner':
         return True
     assignments = _load_assignments()
-    return any(str(a.get('user_id')) == str(user['id']) for a in assignments.get(str(object_id), []))
+    # 29.07 fix: назначение с status='pending'/'declined' НЕ даёт доступа -- иначе
+    # worker, ещё не подтвердивший или отклонивший выход на объект, всё равно мог бы
+    # писать в его roadmap/чат через require_object_access (реальная дыра, найденная
+    # при аудите после добавления assignment acknowledgement -- _assignment_status()
+    # уже существовал для UI, но не был подключён к контролю доступа).
+    return any(
+        str(a.get('user_id')) == str(user['id']) and _assignment_status(a) == 'accepted'
+        for a in assignments.get(str(object_id), [])
+    )
 
 
 def require_object_access(object_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
