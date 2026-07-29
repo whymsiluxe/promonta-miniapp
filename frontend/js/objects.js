@@ -676,18 +676,28 @@ function initObjectsToolbar() {
   });
 }
 
-// 29.07 (аудит, п.3): полный набор лейблов -- этот экран теперь read-only просмотр,
-// но должен корректно ПОКАЗЫВАТЬ все 7 статусов workflow, не только старые 3.
-const STAGE_STATUS_LABEL = {
-  'предстоит': 'Предстоит', 'готово к началу': 'Готово к началу', 'в процессе': 'В работе',
-  'заблокирован': 'Заблокирован', 'на проверке': 'На проверке', 'на доработке': 'На доработке',
-  'готово': 'Завершён',
-};
+// 30.07 (аудит): только 3 канонических статуса, feature freeze -- review/rework
+// workflow отменён. _normalizeStageStatus() сводит любые легаси/экспериментальные
+// значения (готово к началу/заблокирован/на проверке/на доработке и англ. эквиваленты)
+// к одному из трёх при ЧТЕНИИ -- Sheets не мигрируются массово, только отображение.
+const STAGE_STATUS_LABEL = { 'предстоит': 'Предстоит', 'в процессе': 'В работе', 'готово': 'Завершён' };
 const STAGE_STATUS_CYCLE = ['предстоит', 'в процессе', 'готово'];
+const _STAGE_STATUS_COMPAT = {
+  'не начат': 'предстоит', 'not_started': 'предстоит', 'ready': 'предстоит',
+  'ready_to_start': 'предстоит', 'готово к началу': 'предстоит',
+  'in_progress': 'в процессе', 'blocked': 'в процессе', 'заблокирован': 'в процессе',
+  'pending_review': 'в процессе', 'review': 'в процессе', 'на проверке': 'в процессе',
+  'rework': 'в процессе', 'на доработке': 'в процессе',
+  'completed': 'готово', 'done': 'готово',
+};
+function _normalizeStageStatus(raw) {
+  if (raw in STAGE_STATUS_LABEL) return raw;
+  return _STAGE_STATUS_COMPAT[raw] || 'предстоит';
+}
 let _stagesCurrentObjectId = null;
 
 function renderStageRow(stage) {
-  const status = stage['Статус'] || 'предстоит';
+  const status = _normalizeStageStatus(stage['Статус'] || 'предстоит');
   const isOwner = currentRole === 'owner';
   // CSS class -- whitelist, не просто esc(): статус из Sheets, произвольный текст
   // не должен становиться частью class list. Только буквы/цифры/дефис проходят,
@@ -704,12 +714,10 @@ function renderStageRow(stage) {
 
 function attachStagesRowHandlers(stages) {
   if (currentRole !== 'owner') return;
-  // 29.07 (аудит, п.3): click-to-cycle статуса убран -- этот старый экран (использует
-  // прямой PATCH /stages/{row}, в обход review/blocker workflow) мог случайным тапом
-  // сбросить заблокированный/на-проверке этап на "предстоит" (idx=indexOf вернул бы -1
-  // для новых статусов, (−1+1)%3=0 -> всегда откатывало на первый статус цикла).
-  // Статус теперь read-only здесь; реальные переходы -- только через Объект → План
-  // работ (object-info.js: submit-review/approve/rework/block/unblock).
+  // 30.07 (feature freeze): click-to-cycle статуса убран -- этот старый экран
+  // использовал прямой PATCH /stages/{row} в обход текущей логики. Статус
+  // read-only здесь; реальный переход в "готово" -- только через Объект → План
+  // работ (object-info.js: кнопка "Готово" + отдельный blocker badge).
   // Старый цикл оставлен закомментированным для отката, если понадобится:
   //
   // document.querySelectorAll('.stage-row-status').forEach(el => {

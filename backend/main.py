@@ -1254,41 +1254,47 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
     working_uids = {e['user_id'] for e in working_now}
     finished_uids = {e['user_id'] for e in finished_today}
 
-    # 30.07 (спек: Команда -- 4 группы). "Назначен сегодня, но не начал" -- только
-    # accepted-назначения, чей date_from/date_to охватывает today, юзер ни разу не
-    # появился в today_sessions. "Ожидают подтверждения" -- pending-назначения на
-    # today. Обе группы взаимоисключающие по uid (assigned/pending разделены статусом).
+    # 30.07 v2 (аудит): собираем ВСЕ назначения на сегодня по user_id СНАЧАЛА, потом
+    # одна итоговая группа на worker по строгому приоритету -- чинит реальный баг,
+    # где worker с accepted на одном объекте И pending на другом мог одновременно
+    # попасть и в "не вышел", и в "ожидает подтверждения" (прошлая версия группировала
+    # per-(object, assignment) в одном проходе, не per-worker).
     assignments = _load_assignments()
-    not_started = []
-    awaiting_response = []
-    assigned_today_uids = set()
+    by_uid = {}  # uid -> list of (oid, assignment) на сегодня
     for oid, lst in assignments.items():
         for a in lst:
             uid = str(a.get('user_id', ''))
             date_from, date_to = a.get('date_from', ''), a.get('date_to', '')
             if not uid or not (date_from and date_to and date_from <= today <= date_to):
                 continue
-            status = _assignment_status(a)
-            if status == 'accepted':
-                assigned_today_uids.add(uid)
-                if uid in working_uids or uid in finished_uids or uid in {e['user_id'] for e in not_started}:
-                    continue
-                not_started.append({
-                    "user_id": uid, "worker_name": _worker_name(uid),
-                    "object_id": oid, "object_name": object_names.get(oid, oid),
-                })
-            elif status == 'pending':
-                assigned_today_uids.add(uid)
-                if uid in {e['user_id'] for e in awaiting_response}:
-                    continue
-                awaiting_response.append({
-                    "user_id": uid, "worker_name": _worker_name(uid),
-                    "object_id": oid, "object_name": object_names.get(oid, oid),
-                })
+            by_uid.setdefault(uid, []).append((oid, a))
 
-    # "Доступны сегодня" -- все остальные работники (роль worker в профилях), не
-    # занятые ни в одной из групп выше и без approved-отсутствия на сегодня.
-    busy_uids = working_uids | finished_uids | assigned_today_uids
+    def _entry(uid, oid, a):
+        return {
+            "user_id": uid, "worker_name": _worker_name(uid),
+            "object_id": oid, "object_name": object_names.get(oid, oid),
+            "stage_id": a.get('stage_id', ''), "date_from": a.get('date_from', ''),
+            "date_to": a.get('date_to', ''), "task_note": a.get('task_note', ''),
+            "assignment_status": _assignment_status(a),
+        }
+
+    not_started = []
+    awaiting_response = []
+    for uid, pairs in by_uid.items():
+        if uid in working_uids or uid in finished_uids:
+            continue  # приоритет 1/готово сегодня -- уже показан там, здесь не дублируем
+        accepted_pair = next((p for p in pairs if _assignment_status(p[1]) == 'accepted'), None)
+        if accepted_pair:
+            not_started.append(_entry(uid, *accepted_pair))
+            continue
+        pending_pair = next((p for p in pairs if _assignment_status(p[1]) == 'pending'), None)
+        if pending_pair:
+            awaiting_response.append(_entry(uid, *pending_pair))
+
+    # "Доступны сегодня" -- все остальные работники, не занятые ни в одной из групп
+    # выше (включая тех, у кого только declined-назначения -- declined не занимает)
+    # и без approved-отсутствия на сегодня.
+    busy_uids = working_uids | finished_uids | {e['user_id'] for e in not_started} | {e['user_id'] for e in awaiting_response}
     absent_uids = {
         str(e.get('user_id')) for e in _load_abwesenheit()
         if e.get('status') == 'approved' and e.get('date_from', '') <= today <= e.get('date_to', '')
@@ -1299,6 +1305,12 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
         for uid in profiles
         if roles.get(uid, 'worker') != 'owner' and uid not in busy_uids and uid not in absent_uids
     ]
+
+    # 30.07 v2: "Работают сейчас" тоже несёт stage_name (если известен из checkin) --
+    # аудит просит этот контекст для группы 1 наравне с 2/3.
+    for e in working_now:
+        s = next((s for s in today_sessions if str(s.get('user_id')) == e['user_id'] and s.get('finish_at') is None), None)
+        e['stage_name'] = (s or {}).get('stage_name') or ''
 
     return {
         "date": today,
