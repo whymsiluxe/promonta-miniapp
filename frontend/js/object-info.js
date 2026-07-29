@@ -341,43 +341,130 @@ async function renderObjectStagesTab(objectId) {
   document.getElementById('obj-stages-tab-add-trigger')?.addEventListener('click', () => _openAddStageSheet(objectId));
 }
 
+// 29.07 v5: полная пересборка lifecycle (owner ТЗ) -- Telegram Back закрывает sheet
+// (не выходит из Object Detail), background scroll блокируется, focus возвращается на
+// кнопку-триггер после закрытия, ошибка сети не стирает введённое, повторное открытие
+// не плодит дублирующиеся document-level listeners (единственный source этого бага --
+// keydown/overlay-unregister, оба явно снимаются в close()).
+let _stageAddSheetUnregisterOverlay = null;
+
 function _openAddStageSheet(objectId) {
   const existing = document.getElementById('obj-stage-add-sheet');
   if (existing) existing.remove();
+  if (_stageAddSheetUnregisterOverlay) { _stageAddSheetUnregisterOverlay(); _stageAddSheetUnregisterOverlay = null; }
+
+  const triggerBtn = document.getElementById('obj-stages-tab-add-trigger');
   const sheet = document.createElement('div');
   sheet.id = 'obj-stage-add-sheet';
   sheet.className = 'obj-stage-add-sheet';
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-modal', 'true');
+  sheet.setAttribute('aria-labelledby', 'obj-stage-add-sheet-title-el');
   sheet.innerHTML = `
     <div class="obj-stage-add-sheet-backdrop"></div>
     <div class="obj-stage-add-sheet-inner">
-      <div class="obj-stage-add-sheet-title">Добавить этап</div>
-      <input type="text" id="obj-stages-tab-new-name" class="obj-info-input" placeholder="напр. Фасад, Стяжка пола" autofocus>
-      <div class="obj-stage-add-sheet-actions">
+      <div class="obj-stage-add-sheet-handle"></div>
+      <div class="obj-stage-add-sheet-header">
+        <div class="obj-stage-add-sheet-title" id="obj-stage-add-sheet-title-el">Новый этап</div>
+        <div class="obj-stage-add-sheet-close" id="obj-stage-add-close-btn" role="button" aria-label="Закрыть" tabindex="0">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 1L15 15M15 1L1 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </div>
+      </div>
+      <div class="obj-stage-add-sheet-body">
+        <div class="obj-stage-field">
+          <label class="obj-stage-field-label" for="obj-stages-tab-new-name">Название этапа</label>
+          <input type="text" id="obj-stages-tab-new-name" placeholder="например: Стяжка пола" maxlength="120">
+          <div class="obj-stage-field-error" id="obj-stage-add-name-error" style="display:none;">Введите название этапа</div>
+        </div>
+        <div class="obj-stage-field">
+          <label class="obj-stage-field-label" for="obj-stages-tab-new-desc">Описание (необязательно)</label>
+          <textarea id="obj-stages-tab-new-desc" placeholder="Что нужно сделать на этом этапе" maxlength="2000"></textarea>
+        </div>
+        <div class="obj-stage-add-sheet-network-error" id="obj-stage-add-network-error" style="display:none;">
+          <strong>Не удалось создать этап</strong>
+          <span>Введённые данные сохранены</span>
+          <button class="obj-stage-add-retry-btn" id="obj-stage-add-retry-btn" type="button">Повторить</button>
+        </div>
+      </div>
+      <div class="obj-stage-add-sheet-footer">
         <button class="obj-confirm-cancel" id="obj-stage-add-cancel-btn" type="button">Отмена</button>
-        <button class="obj-confirm-ok" id="obj-stage-add-ok-btn" type="button">Добавить</button>
+        <button class="obj-confirm-ok" id="obj-stage-add-ok-btn" type="button">Создать этап</button>
       </div>
     </div>`;
   document.body.appendChild(sheet);
-  const close = () => sheet.remove();
+
+  // fix 29.07 v4: sheet больше НЕ вызывает focus() при открытии -- раньше это сразу
+  // поднимало клавиатуру и прятало заголовок/поле под ней ещё до того как пользователь
+  // успел увидеть форму (owner report). Пользователь сам решает когда открыть клавиатуру,
+  // тапнув по полю.
+  const nameInput = document.getElementById('obj-stages-tab-new-name');
+  const descInput = document.getElementById('obj-stages-tab-new-desc');
+  const errorEl = document.getElementById('obj-stage-add-name-error');
+  const networkErrorEl = document.getElementById('obj-stage-add-network-error');
+  const okBtn = document.getElementById('obj-stage-add-ok-btn');
+
+  const prevBodyOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    sheet.remove();
+    document.body.style.overflow = prevBodyOverflow;
+    document.removeEventListener('keydown', onKeydown);
+    if (_stageAddSheetUnregisterOverlay) { _stageAddSheetUnregisterOverlay(); _stageAddSheetUnregisterOverlay = null; }
+    if (triggerBtn && triggerBtn.focus) triggerBtn.focus();
+  };
+  const onKeydown = (e) => {
+    if (e.key === 'Escape') close();
+  };
+  document.addEventListener('keydown', onKeydown);
+
+  // Telegram Back: тот же overlay-стек, что уже использует photo-comments-modal
+  // (feed.js) -- закрывает верхний overlay первым приоритетом, не выходит из
+  // Object Detail и не переключает вкладку.
+  if (typeof NavigationManager !== 'undefined') {
+    _stageAddSheetUnregisterOverlay = NavigationManager.registerOverlay(close);
+  }
+
   sheet.querySelector('.obj-stage-add-sheet-backdrop').addEventListener('click', close);
   document.getElementById('obj-stage-add-cancel-btn').addEventListener('click', close);
-  document.getElementById('obj-stages-tab-new-name').focus();
-  document.getElementById('obj-stage-add-ok-btn').addEventListener('click', async () => {
-    const input = document.getElementById('obj-stages-tab-new-name');
-    const name = input.value.trim();
-    if (!name) return;
-    const okBtn = document.getElementById('obj-stage-add-ok-btn');
+  document.getElementById('obj-stage-add-close-btn').addEventListener('click', close);
+
+  nameInput.addEventListener('input', () => {
+    if (nameInput.value.trim()) errorEl.style.display = 'none';
+  });
+
+  const submit = async () => {
+    const name = nameInput.value.trim();
+    if (!name) {
+      errorEl.style.display = 'block';
+      nameInput.focus();
+      return;
+    }
+    networkErrorEl.style.display = 'none';
     okBtn.disabled = true;
+    okBtn.textContent = 'Создаю…';
     try {
-      await api(`/api/objects/${objectId}/stages`, { method: 'POST', body: JSON.stringify({ name }) });
+      await api(`/api/objects/${objectId}/stages`, {
+        method: 'POST',
+        body: JSON.stringify({ name, description: descInput.value.trim() }),
+      });
       hapticImpact('light');
       close();
-      await _loadObjStages(objectId);
+      await _loadObjStages(objectId, { highlightName: name });
+      showToast(`Этап «${name}» добавлен`, 'success');
     } catch (e) {
-      showToast('Ошибка: ' + e.message, 'error');
+      // Название/описание НЕ очищаются -- владелец не должен перепечатывать текст
+      // после сбоя сети (owner ТЗ п.14/4).
+      networkErrorEl.style.display = 'block';
       okBtn.disabled = false;
+      okBtn.textContent = 'Создать этап';
     }
-  });
+  };
+  okBtn.addEventListener('click', submit);
+  document.getElementById('obj-stage-add-retry-btn').addEventListener('click', submit);
 }
 
 // ── Дефекты (компактная сводка) ──
@@ -670,7 +757,7 @@ async function _appendCheckinShortcut(panel, objectId) {
   });
 }
 
-async function _loadObjStages(objectId) {
+async function _loadObjStages(objectId, opts = {}) {
   const wrap = document.getElementById('obj-stages-roadmap');
   if (!wrap) return;
   try {
@@ -689,6 +776,20 @@ async function _loadObjStages(objectId) {
       node.style.animationDelay = `${i * 60}ms`;
       node.classList.add('obj-stage-node-enter');
     });
+    // 29.07 v5: owner ТЗ п.15 -- после создания этапа scrollIntoView + короткая подсветка
+    // ИМЕННО новой карточки, чтобы владелец видел где она появилась (список этапов уже
+    // отсортирован по '№ этапа', новый этап -- всегда последний с этим именем).
+    if (opts.highlightName) {
+      const newStage = [...stages].reverse().find(s => (s['Название этапа'] || '') === opts.highlightName);
+      if (newStage) {
+        const node = wrap.querySelector(`.obj-stage-node[data-row="${newStage['_row']}"]`);
+        if (node) {
+          node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          node.classList.add('obj-stage-just-added');
+          setTimeout(() => node.classList.remove('obj-stage-just-added'), 1700);
+        }
+      }
+    }
   } catch (e) {
     wrap.innerHTML = `<div class="obj-info-empty">Ошибка: ${esc(e.message)}</div>`;
   }

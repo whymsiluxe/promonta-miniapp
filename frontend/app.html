@@ -1054,9 +1054,30 @@ header h1 {
 
 /* ── Детали объекта (24.07, 6-таб экран) ── */
 #view-object-detail { padding-bottom: 2rem; min-height: 100vh; background: var(--bg-app); }
-#obj-detail-tabs { overflow-x: auto; scrollbar-width: none; margin-top: 12px; }
-#obj-detail-tabs::-webkit-scrollbar { display: none; }
-#obj-detail-tabs .doc-type-opt { flex-shrink: 0; padding: 0.5rem 0.9rem; }
+/* 29.07 v5: было overflow-x:auto + flex-shrink:0 фиксированной ширины -- на узких
+   экранах (360px) три таба с "План работ" не помещались и вылезали за правую границу
+   контейнера (owner screenshot). Табов всегда ровно 3 и они не скроллятся -- grid
+   с равными колонками гарантирует что контейнер никогда не растягивается шире экрана. */
+#obj-detail-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+  width: calc(100% - 1.5rem);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+#obj-detail-tabs .doc-type-opt {
+  min-width: 0;
+  padding: 0.5rem 0.4rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 370px) {
+  #obj-detail-tabs .doc-type-opt { font-size: 0.78rem; padding: 0.5rem 0.25rem; }
+}
 .obj-detail-panel { display: none; padding: 0 0.75rem; min-height: 40vh; }
 /* 29.07 v4: default display:none заменяет удалённый inline style="display:block" на
    #obj-detail-panel-chat -- JS всегда явно ставит 'block'/'none' на каждое переключение
@@ -1230,14 +1251,111 @@ header h1 {
   font-size: 0.88rem; font-weight: 600; cursor: pointer;
 }
 .obj-stage-add-trigger:active { background: color-mix(in srgb, var(--text-main) 4%, transparent); }
-.obj-stage-add-sheet { position: fixed; inset: 0; z-index: 8200; display: flex; align-items: flex-end; }
-.obj-stage-add-sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
-.obj-stage-add-sheet-inner {
-  position: relative; width: 100%; background: var(--bg-card); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  padding: 1.1rem 1rem calc(1.1rem + env(safe-area-inset-bottom)); box-sizing: border-box;
+/* 29.07 v5: короткая подсветка новой карточки этапа после создания -- владелец видит
+   ГДЕ появился новый этап, не только что список чем-то дополнился. */
+.obj-stage-node.obj-stage-just-added { animation: objStageJustAdded 1.6s ease; }
+@keyframes objStageJustAdded {
+  0% { background: color-mix(in srgb, var(--primary) 14%, transparent); }
+  100% { background: transparent; }
 }
-.obj-stage-add-sheet-title { font-weight: 700; font-size: 1.05rem; color: var(--text-main); margin-bottom: 0.8rem; }
-.obj-stage-add-sheet-actions { display: flex; gap: 0.6rem; margin-top: 0.9rem; }
+@media (prefers-reduced-motion: reduce) {
+  .obj-stage-node.obj-stage-just-added { animation: none; }
+}
+/* 29.07 v4: полная пересборка (owner report -- "он телепатически поймёт что нужно
+   добавить??", "какого оно размера тебя не смущает"). Проблема была не только в высоте:
+   один голый input без label, без сообщения о результате действия, кнопка создания
+   визуально не отличалась от системного popup. Новая структура -- header (всегда
+   сверху) / body (растягивается, скроллится) / footer (sticky, всегда над клавиатурой,
+   не часть скроллящегося контента) -- тот же принцип, что и в остальных bottom sheet
+   этого проекта, plus var(--tg-vp-height) вместо голого inset:0 для учёта клавиатуры. */
+.obj-stage-add-sheet {
+  position: fixed; inset: 0; height: var(--tg-vp-height, 100dvh);
+  z-index: 8200; display: flex; align-items: flex-end;
+}
+.obj-stage-add-sheet-backdrop {
+  position: absolute; inset: 0; background: rgba(30, 26, 20, 0.4);
+}
+.obj-stage-add-sheet-inner {
+  position: relative; width: 100%;
+  max-height: min(78vh, calc(var(--tg-vp-height, 100dvh) - 32px));
+  display: flex; flex-direction: column;
+  background: var(--bg-card); border-radius: 20px 20px 0 0;
+  box-shadow: 0 -8px 28px rgba(30, 26, 20, 0.16);
+  box-sizing: border-box;
+  animation: objStageSheetUp 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .obj-stage-add-sheet-inner { animation: none; }
+}
+@keyframes objStageSheetUp {
+  from { transform: translateY(24px); opacity: 0.4; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.obj-stage-add-sheet-handle {
+  width: 36px; height: 4px; border-radius: 999px;
+  background: var(--border-color); margin: 10px auto 2px;
+  flex: 0 0 auto;
+}
+.obj-stage-add-sheet-header {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+  padding: 0.7rem 1.1rem 0.6rem;
+}
+.obj-stage-add-sheet-title { font-weight: 700; font-size: 1.15rem; color: var(--text-main); }
+.obj-stage-add-sheet-close {
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  border-radius: 999px; color: var(--text-light); cursor: pointer; flex: 0 0 auto;
+}
+.obj-stage-add-sheet-close:active { background: color-mix(in srgb, var(--text-main) 6%, transparent); }
+.obj-stage-add-sheet-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  padding: 0.2rem 1.1rem 0.9rem;
+}
+.obj-stage-field { margin-bottom: 0.9rem; }
+.obj-stage-field-label {
+  display: block; font-size: 0.82rem; font-weight: 600;
+  color: var(--text-light); margin-bottom: 0.4rem;
+}
+.obj-stage-field input, .obj-stage-field textarea {
+  width: 100%; box-sizing: border-box; font-size: 16px;
+  padding: 0.75rem 0.85rem; border-radius: 14px;
+  border: 1px solid var(--border-color); background: var(--bg-app);
+  color: var(--text-main); font-family: inherit;
+}
+.obj-stage-field input:focus, .obj-stage-field textarea:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+.obj-stage-field textarea { resize: vertical; min-height: 64px; }
+.obj-stage-field-error { color: var(--danger, #b3403a); font-size: 0.8rem; margin-top: 0.35rem; }
+.obj-stage-add-sheet-footer {
+  flex: 0 0 auto; display: flex; gap: 0.6rem;
+  padding: 0.8rem 1.1rem calc(0.8rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-card);
+}
+.obj-stage-add-sheet-footer button {
+  flex: 1; height: 52px; border-radius: 16px; font-size: 1rem; font-weight: 650;
+  font-family: inherit; cursor: pointer; border: none;
+}
+.obj-stage-add-sheet-footer .obj-confirm-cancel {
+  background: var(--bg-app); color: var(--text-main); border: 1px solid var(--border-color);
+}
+.obj-stage-add-sheet-footer .obj-confirm-ok {
+  background: var(--primary); color: var(--ivory, #fff);
+}
+.obj-stage-add-sheet-footer .obj-confirm-ok:disabled { opacity: 0.6; }
+.obj-stage-add-sheet-network-error {
+  margin: 0 1.1rem 0.7rem; padding: 0.7rem 0.85rem; border-radius: 12px;
+  background: color-mix(in srgb, var(--danger, #b3403a) 10%, transparent);
+  color: var(--danger, #b3403a); font-size: 0.85rem;
+}
+.obj-stage-add-sheet-network-error strong { display: block; margin-bottom: 0.15rem; }
+.obj-stage-add-sheet-network-error span { color: var(--text-light); font-size: 0.8rem; }
+.obj-stage-add-retry-btn {
+  display: block; margin-top: 0.5rem; padding: 0.4rem 0.9rem; border-radius: 10px;
+  border: 1px solid currentColor; background: none; color: inherit;
+  font-size: 0.82rem; font-weight: 600; cursor: pointer;
+}
 /* Пустой Roadmap (owner ТЗ п.38/58) -- компактная строка + действие, не большая тёмная
    карточка со статичным текстом (был прежний "Этапов пока нет" в #1B1B1F карточке). */
 .obj-stages-empty { padding: 1.2rem 0.9rem; text-align: center; color: var(--text-light); font-size: 0.9rem; }
