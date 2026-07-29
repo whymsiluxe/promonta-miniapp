@@ -533,6 +533,27 @@ async function _renderWorkerPicker() {
   } catch (e) {}
 }
 
+// 30.07 (спек: полный Worker profile) -- переиспользует существующий механизм
+// _profileStatsUserId + worker picker (часы/навыки/размеры/объекты уже показываются
+// там для чужого профиля), просто открывает его напрямую по uid вместо dropdown-выбора.
+// Не создаём отдельный новый экран -- Profile→"Мой профиль" уже умеет показывать
+// чужого работника, не хватало только прямого входа извне (Team-группы/user-card).
+function openWorkerFullProfile(uid) {
+  if (currentRole !== 'owner') return;
+  switchView('profile');
+  const tabs = document.getElementById('profile-tabs');
+  tabs?.querySelectorAll('.profile-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'me'));
+  document.querySelectorAll('.profile-tab-panel').forEach(p => { p.style.display = p.dataset.panel === 'me' ? '' : 'none'; });
+  _profileStatsUserId = String(uid);
+  _loadProfileStats();
+  setTimeout(() => {
+    const select = document.getElementById('profile-worker-select');
+    if (select) select.value = _profileStatsUserId;
+    const assignBtn = document.getElementById('profile-assign-object-btn');
+    if (assignBtn) assignBtn.style.display = 'block';
+  }, 300);
+}
+
 let _skillsEditOpen = false;
 
 async function _toggleSkillsEdit() {

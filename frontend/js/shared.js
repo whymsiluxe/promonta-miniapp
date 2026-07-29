@@ -219,14 +219,25 @@ async function openUserCard(userId) {
     } else if (card.shift_status === 'idle') {
       statusHtml = `<div class="user-card-status">Смена не начата сегодня</div>`;
     }
+    // 30.07 (спек: полный Worker profile) -- кнопка перехода из карточки в полный
+    // профиль (часы/навыки/размеры/объекты, существующий Profile→"Мой профиль" вид
+    // для чужого работника). owner-only, свою же карточку открыть некуда вести.
+    const fullProfileBtn = (currentRole === 'owner' && card.role !== 'owner' && typeof openWorkerFullProfile === 'function')
+      ? `<button class="submit-btn profile-inline-btn" id="user-card-full-profile-btn" type="button" style="margin-top:0.5rem">Открыть профиль →</button>`
+      : '';
     body.innerHTML = `
       ${avatarHtml}
       <div class="user-card-name">${esc(card.name)}</div>
       <div class="user-card-role">${card.role === 'owner' ? 'Владелец' : 'Работник'}</div>
       ${statusHtml}
       ${skillsHtml}
+      ${fullProfileBtn}
     `;
     if (card.has_avatar) authImg(document.getElementById('user-card-avatar-img'), `/api/profile/${userId}/avatar`);
+    document.getElementById('user-card-full-profile-btn')?.addEventListener('click', () => {
+      closeUserCard();
+      openWorkerFullProfile(userId);
+    });
   } catch (e) {
     body.innerHTML = `<div style="color:var(--red)">Ошибка: ${esc(e.message)}</div>`;
   }
