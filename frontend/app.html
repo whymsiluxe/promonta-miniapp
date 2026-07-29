@@ -481,6 +481,19 @@ header h1 {
 .my-task-chat-btn { flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%; border: none; background: linear-gradient(155deg, var(--bg-card) 0%, var(--bg-card-raised) 100%); box-shadow: var(--c-shadow-control, var(--shadow-sm)), inset 0 1px 0 rgba(255,255,255,0.06); color: var(--accent); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease; position: relative; }
 .my-task-chat-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .my-task-chat-btn:active { transform: scale(0.93); box-shadow: var(--c-shadow-pressed, inset 0 1px 3px rgba(0,0,0,0.3)); }
+/* 29.07 ТЗ п.9 -- подтверждение назначения worker'ом */
+.my-task-card-pending { border: 1px solid color-mix(in srgb, var(--accent-gold, var(--primary)) 40%, transparent); }
+.my-task-card-badge { display: inline-block; margin-top: 0.4rem; padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+.my-task-badge-pending { background: color-mix(in srgb, var(--accent-gold, var(--primary)) 16%, transparent); color: var(--accent-gold, var(--primary)); }
+.my-task-badge-declined { background: color-mix(in srgb, var(--danger, #b3403a) 12%, transparent); color: var(--danger, #b3403a); }
+.my-task-card-actions { display: flex; flex-direction: column; gap: 0.4rem; flex-shrink: 0; }
+.my-task-accept-btn, .my-task-decline-btn {
+  padding: 0.45rem 0.8rem; border-radius: var(--radius-sm); border: none; font-size: 0.82rem;
+  font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.my-task-accept-btn { background: var(--primary); color: #fff; }
+.my-task-decline-btn { background: var(--bg-app); border: 1px solid var(--border-color); color: var(--text-main); }
+.my-task-accept-btn:disabled, .my-task-decline-btn:disabled { opacity: 0.6; }
 .mangel-card-photo { width: 100%; height: 90px; border-radius: var(--radius-sm); background-size: cover; background-position: center; margin-bottom: 0.4rem; }
 .mangel-card-desc { font-size: 1rem; font-weight: 600; margin-bottom: 0.3rem; }
 .mangel-card-meta { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-light); }
@@ -1152,7 +1165,15 @@ header h1 {
 .obj-info-section-title-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem; }
 .obj-info-count-badge { font-size: 0.8rem; color: var(--text-light); font-weight: 500; }
 .obj-info-team-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
-.obj-info-team-chip { width: 36px; height: 36px; border-radius: 50%; background: var(--bg-card-raised); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; color: var(--text-main); }
+.obj-info-team-chip { width: 36px; height: 36px; border-radius: 50%; background: var(--bg-card-raised); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; color: var(--text-main); position: relative; }
+.obj-info-team-chip-pending { opacity: 0.75; border: 1.5px dashed color-mix(in srgb, var(--accent-gold, var(--primary)) 50%, transparent); }
+.obj-info-team-chip-declined { opacity: 0.6; }
+.obj-info-team-chip-badge {
+  position: absolute; top: -3px; right: -3px; width: 15px; height: 15px; border-radius: 50%;
+  background: var(--accent-gold, var(--primary)); color: #fff; font-size: 0.6rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; line-height: 1;
+}
+.obj-info-team-chip-badge-declined { background: var(--danger, #b3403a); }
 .obj-info-description-text { padding: 0.7rem 0.8rem; background: var(--bg-card); border-radius: var(--radius-sm); font-size: 0.9rem; color: var(--text-main); line-height: 1.5; white-space: pre-wrap; }
 .obj-info-subtabs { margin: 0; }
 .obj-info-subtabs .doc-type-opt { padding: 0.35rem 0.7rem; font-size: 0.82rem; }
@@ -1233,6 +1254,55 @@ header h1 {
 .obj-stage-description-save { background: var(--c-accent, var(--green)); color: #fff; }
 .obj-stage-description-cancel { background: var(--bg-app); border: 1px solid var(--border-color); color: var(--text-main); }
 .obj-stage-complete-btn { display: block; margin-top: 0.6rem; padding: 0.5rem 1rem; border-radius: var(--radius-sm); border: none; background: var(--c-accent, var(--green)); color: #fff; font-size: 0.85rem; cursor: pointer; }
+
+/* 29.07 Roadmap Этап 2 -- чек-лист категорий/пунктов внутри раскрытого этапа. */
+.obj-roadmap-loading { padding: 0.6rem 0; color: var(--text-light); font-size: 0.85rem; }
+.obj-roadmap-progress { display: flex; align-items: center; gap: 0.6rem; margin: 0.7rem 0 0.5rem; }
+.obj-roadmap-progress-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--bg-app); overflow: hidden; }
+.obj-roadmap-progress-fill { height: 100%; background: var(--c-accent, var(--green)); border-radius: 999px; transition: width 0.3s ease; }
+.obj-roadmap-progress-label { font-size: 0.78rem; color: var(--text-light); white-space: nowrap; }
+.obj-roadmap-categories { margin-top: 0.3rem; }
+.obj-roadmap-category { margin-bottom: 0.7rem; }
+.obj-roadmap-category-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.3rem; }
+.obj-roadmap-category-title { font-size: 0.8rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.02em; }
+.obj-roadmap-category-delete { color: var(--text-light); cursor: pointer; padding: 0.2rem 0.4rem; font-size: 0.85rem; }
+.obj-roadmap-item {
+  display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.obj-roadmap-item:last-of-type { border-bottom: none; }
+.obj-roadmap-item-check {
+  flex: 0 0 auto; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  border-radius: 999px; border: 1.5px solid var(--border-color); font-size: 0.85rem; cursor: pointer;
+  user-select: none; -webkit-user-select: none; touch-action: manipulation;
+}
+.obj-roadmap-item-done .obj-roadmap-item-check { background: var(--c-accent, var(--green)); color: #fff; border-color: var(--c-accent, var(--green)); }
+.obj-roadmap-item-blocked .obj-roadmap-item-check { background: var(--danger, #b3403a); color: #fff; border-color: var(--danger, #b3403a); }
+.obj-roadmap-item-skipped .obj-roadmap-item-check { opacity: 0.5; }
+.obj-roadmap-item-in_progress .obj-roadmap-item-check { border-color: var(--c-accent, var(--green)); color: var(--c-accent, var(--green)); }
+.obj-roadmap-item-body { flex: 1; min-width: 0; }
+.obj-roadmap-item-title { font-size: 0.9rem; color: var(--text-main); }
+.obj-roadmap-item-done-text { color: var(--text-light); text-decoration: line-through; }
+.obj-roadmap-item-optional { font-weight: 400; color: var(--text-light); }
+.obj-roadmap-item-blocked-reason { font-size: 0.78rem; color: var(--danger, #b3403a); margin-top: 0.15rem; }
+.obj-roadmap-item-delete { flex: 0 0 auto; color: var(--text-light); cursor: pointer; padding: 0.2rem 0.3rem; }
+.obj-roadmap-add-item-btn, .obj-roadmap-add-category-btn {
+  width: 100%; margin-top: 0.3rem; padding: 0.5rem; border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-color); background: none; color: var(--text-light);
+  font-size: 0.82rem; cursor: pointer;
+}
+.obj-roadmap-add-category-btn { margin-top: 0.6rem; }
+.obj-roadmap-empty { padding: 0.5rem 0; color: var(--text-light); font-size: 0.85rem; }
+.obj-roadmap-status-menu {
+  position: absolute; z-index: 9000; background: var(--bg-card); border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(30,26,20,0.18); padding: 4px; display: flex; flex-direction: column;
+  min-width: 170px;
+}
+.obj-roadmap-status-menu button {
+  text-align: left; padding: 0.5rem 0.7rem; border: none; background: none; border-radius: 8px;
+  font-size: 0.85rem; color: var(--text-main); cursor: pointer;
+}
+.obj-roadmap-status-menu button:active { background: var(--bg-app); }
 /* 28.07: drag handle заменил up/down-кнопки (owner request -- "перетаскивая один над
    другим"), тот же pointer-capture паттерн, что bubble-assign.js уже использует. */
 .obj-stage-drag-handle {
@@ -1355,6 +1425,28 @@ header h1 {
   display: block; margin-top: 0.5rem; padding: 0.4rem 0.9rem; border-radius: 10px;
   border: 1px solid currentColor; background: none; color: inherit;
   font-size: 0.82rem; font-weight: 600; cursor: pointer;
+}
+/* 29.07 п.4 (blocker workflow) -- переиспользует структуру .obj-stage-add-sheet*
+   (header/body/sticky-footer, тот же lifecycle), доп. только quick-reason сетка и
+   отображение уже сохранённых meta-полей блокировки. */
+.obj-blocker-quick-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.3rem;
+}
+.obj-blocker-quick-btn {
+  padding: 0.6rem 0.5rem; border-radius: 12px; border: 1px solid var(--border-color);
+  background: var(--bg-app); color: var(--text-main); font-size: 0.82rem; font-family: inherit;
+  cursor: pointer; text-align: left; line-height: 1.25;
+}
+.obj-blocker-quick-btn.obj-blocker-quick-selected {
+  border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, var(--bg-app));
+  font-weight: 600;
+}
+.obj-blocker-meta-row { font-size: 0.82rem; color: var(--text-light); margin-top: 0.3rem; }
+.obj-blocker-meta-row strong { color: var(--text-main); }
+.obj-roadmap-item-unblock-btn {
+  margin-top: 0.3rem; padding: 0.3rem 0.7rem; border-radius: 10px;
+  border: 1px solid var(--primary); background: none; color: var(--primary);
+  font-size: 0.78rem; font-weight: 600; cursor: pointer; font-family: inherit;
 }
 /* Пустой Roadmap (owner ТЗ п.38/58) -- компактная строка + действие, не большая тёмная
    карточка со статичным текстом (был прежний "Этапов пока нет" в #1B1B1F карточке). */

@@ -17,16 +17,26 @@ async function initMyTasksView() {
       list.innerHTML = '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Нет активных назначений</div>';
       return;
     }
+    // 29.07 ТЗ п.9: назначение теперь требует подтверждения worker'а -- pending
+    // показывает Принять/Не могу выйти вместо кнопки чата, declined -- причину отказа
+    // как есть (owner уже видел её сам факт отказа, тут просто прозрачность для worker'а).
     list.innerHTML = items.map(a => `
-      <div class="my-task-card" style="margin-bottom:0.6rem;">
+      <div class="my-task-card${a.status === 'pending' ? ' my-task-card-pending' : ''}" style="margin-bottom:0.6rem;">
         <div class="my-task-card-body">
           <div class="my-task-card-title">${esc(a.object_name)}</div>
           ${a.stage_id ? `<div class="my-task-card-stage">${esc(a.stage_id)}</div>` : ''}
           ${(a.date_from || a.date_to) ? `<div class="my-task-card-dates">${esc(a.date_from)} — ${esc(a.date_to)}</div>` : ''}
+          ${a.status === 'pending' ? `<div class="my-task-card-badge my-task-badge-pending">Ожидает подтверждения</div>` : ''}
+          ${a.status === 'declined' ? `<div class="my-task-card-badge my-task-badge-declined">Отклонено${a.decline_reason ? `: ${esc(a.decline_reason)}` : ''}</div>` : ''}
         </div>
+        ${a.status === 'pending' ? `
+        <div class="my-task-card-actions">
+          <button type="button" class="my-task-decline-btn" data-my-task-object="${esc(a.object_id)}">Не могу выйти</button>
+          <button type="button" class="my-task-accept-btn" data-my-task-object="${esc(a.object_id)}">Принять</button>
+        </div>` : `
         <button type="button" class="my-task-chat-btn" data-my-task-chat="${esc(a.object_id)}" data-my-task-title="${esc(a.object_name)}" aria-label="Чат по объекту">
           ${MY_TASK_CHAT_ICON}
-        </button>
+        </button>`}
       </div>
     `).join('');
 
@@ -36,6 +46,42 @@ async function initMyTasksView() {
           openObjectOrMangelChat(`obj:${btn.dataset.myTaskChat}`, `Чат: ${btn.dataset.myTaskTitle}`, 'my-tasks');
         }
         hapticImpact('light');
+      });
+    });
+
+    list.querySelectorAll('.my-task-accept-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          await api(`/api/objects/${btn.dataset.myTaskObject}/assign/${currentUserId}/respond`, {
+            method: 'POST',
+            body: JSON.stringify({ accept: true }),
+          });
+          hapticImpact('light');
+          initMyTasksView();
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, 'error');
+          btn.disabled = false;
+        }
+      });
+    });
+
+    list.querySelectorAll('.my-task-decline-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const reason = prompt('Почему вы не можете выйти на этот объект?');
+        if (!reason || !reason.trim()) return;
+        btn.disabled = true;
+        try {
+          await api(`/api/objects/${btn.dataset.myTaskObject}/assign/${currentUserId}/respond`, {
+            method: 'POST',
+            body: JSON.stringify({ accept: false, decline_reason: reason.trim() }),
+          });
+          hapticImpact('light');
+          initMyTasksView();
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, 'error');
+          btn.disabled = false;
+        }
       });
     });
   } catch (e) {

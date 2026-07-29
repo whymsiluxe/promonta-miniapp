@@ -72,7 +72,10 @@ def new_item(store: dict, stage_key: str, title: str, category_id: str | None = 
         "description": description, "status": "open", "required": required,
         "safety_critical": safety_critical, "weight": max(1, int(weight)), "order": order,
         "assigned_user_id": None, "completed_by": None, "completed_at": None,
-        "blocked_reason": None, "created_at": now, "updated_at": now,
+        "blocked_reason": None, "blocked_quick_reason": None, "blocked_comment": None,
+        "blocked_photo_url": None, "blocked_who_decides": None, "blocked_expected_date": None,
+        "blocked_at": None, "previous_status": None,
+        "created_at": now, "updated_at": now,
     }
     items.append(item)
     return item
@@ -82,25 +85,64 @@ def _find_item(store: dict, stage_key: str, item_id: str) -> dict | None:
     return next((i for i in store['items'].get(stage_key, []) if i['id'] == item_id), None)
 
 
+def _clear_blocked_meta(item: dict) -> None:
+    for k in ('blocked_reason', 'blocked_quick_reason', 'blocked_comment', 'blocked_photo_url',
+              'blocked_who_decides', 'blocked_expected_date', 'blocked_at'):
+        item[k] = None
+
+
 def update_item_status(store: dict, stage_key: str, item_id: str, status: str,
-                        user_id: str, blocked_reason: str = '') -> dict | None:
+                        user_id: str, blocked_reason: str = '', blocked_meta: dict | None = None) -> dict | None:
     if status not in ITEM_STATUSES:
         raise ValueError(f'недопустимый статус пункта: {status}')
     item = _find_item(store, stage_key, item_id)
     if not item:
         return None
-    item['status'] = status
     item['updated_at'] = int(time.time())
     if status == 'done':
+        item['status'] = status
         item['completed_by'] = user_id
         item['completed_at'] = int(time.time())
-        item['blocked_reason'] = None
+        item['previous_status'] = None
+        _clear_blocked_meta(item)
     elif status == 'open':
+        item['status'] = status
         item['completed_by'] = None
         item['completed_at'] = None
-        item['blocked_reason'] = None
+        item['previous_status'] = None
+        _clear_blocked_meta(item)
     elif status == 'blocked':
-        item['blocked_reason'] = blocked_reason.strip()[:500] or 'Не указана причина'
+        # previous_status запоминается ОДИН раз -- если пункт уже был blocked и его
+        # правят повторно (сменили причину), не затираем изначальный статус до блокировки,
+        # иначе "Проблема решена" восстановит 'blocked' вместо реального пред. статуса.
+        if item['status'] != 'blocked':
+            item['previous_status'] = item['status']
+        item['status'] = status
+        meta = blocked_meta or {}
+        item['blocked_reason'] = (blocked_reason or meta.get('quick_reason') or '').strip()[:500] or 'Не указана причина'
+        item['blocked_quick_reason'] = (meta.get('quick_reason') or '').strip()[:200] or None
+        item['blocked_comment'] = (meta.get('comment') or '').strip()[:1000] or None
+        item['blocked_photo_url'] = meta.get('photo_url') or None
+        item['blocked_who_decides'] = (meta.get('who_decides') or '').strip()[:200] or None
+        item['blocked_expected_date'] = meta.get('expected_date') or None
+        item['blocked_at'] = int(time.time())
+    else:  # skipped
+        item['status'] = status
+        item['previous_status'] = None
+        _clear_blocked_meta(item)
+    return item
+
+
+def unblock_item(store: dict, stage_key: str, item_id: str) -> dict | None:
+    """Проблема решена -- восстанавливает статус, который был у пункта ДО блокировки
+    (не хардкод 'open'), сохраняя факт блокировки в истории (blocked_* поля остаются,
+    только очищается активный статус, чтобы можно было понять что пункт был blocked)."""
+    item = _find_item(store, stage_key, item_id)
+    if not item or item['status'] != 'blocked':
+        return None
+    item['status'] = item.get('previous_status') or 'open'
+    item['previous_status'] = None
+    item['updated_at'] = int(time.time())
     return item
 
 

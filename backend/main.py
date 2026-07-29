@@ -975,16 +975,22 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
     import objekte_lib as o
     stages_by_object = o.all_stages_grouped()
 
-    def _user_info(uid: str) -> dict:
+    def _user_info(uid: str, assignment: dict | None = None) -> dict:
         p = profiles.get(str(uid), {})
         # 28.07 (external audit ТЗ п.21): реальная аватарка вместо только инициалов,
         # если работник её загрузил (has_avatar уже трекается профилем, /api/profile
         # avatar endpoint уже существует -- переиспользуем, не строим параллельный).
-        return {
+        info = {
             "user_id": str(uid),
             "name": _sanitize_display_name(p.get('name'), str(uid)),
             "has_avatar": bool(p.get('avatar')),
         }
+        if assignment is not None:
+            # 29.07 ТЗ п.9: owner видит, принял ли worker назначение -- без этого
+            # владелец не узнаёт об отказе иначе как случайно спросив у worker'а лично.
+            info["assignment_status"] = _assignment_status(assignment)
+            info["decline_reason"] = assignment.get('decline_reason', '')
+        return info
 
     def _stage_summary(oid: str) -> dict | None:
         stages = stages_by_object.get(oid.upper())
@@ -1006,7 +1012,7 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
     for r in data:
         obj = dict(zip(header, r))
         oid = str(obj.get('ID объекта', ''))
-        obj['assigned_users'] = [_user_info(a['user_id']) for a in assignments.get(oid, [])]
+        obj['assigned_users'] = [_user_info(a['user_id'], a) for a in assignments.get(oid, [])]
         obj['photo_count'] = len(images.get(oid) or [])
         obj['stage_summary'] = _stage_summary(oid)
         if role != 'owner':
@@ -1044,6 +1050,8 @@ def my_assignments(user: dict = Depends(get_current_user)):
                 "date_from": a.get('date_from', ''),
                 "date_to": a.get('date_to', ''),
                 "assigned_at": a.get('assigned_at', ''),
+                "status": _assignment_status(a),
+                "decline_reason": a.get('decline_reason', ''),
             })
     result.sort(key=lambda r: r['date_from'] or '', reverse=True)
     return {"assignments": result}
@@ -1108,7 +1116,15 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
             'stage_id': body.stage_id,
             'date_from': body.date_from,
             'date_to': body.date_to,
-            'assigned_at': datetime.utcnow().isoformat()
+            'assigned_at': datetime.utcnow().isoformat(),
+            # 29.07 ТЗ п.9: назначение теперь требует подтверждения worker'а -- новые
+            # назначения стартуют pending, worker явно принимает/отклоняет. Старые записи
+            # без этого поля (созданные до этой правки) трактуются как 'accepted' везде,
+            # где статус читается (см. _assignment_status() ниже) -- compatibility rule,
+            # не полная миграция файла, чтобы не трогать данные, которые и так работали.
+            'status': 'pending',
+            'decline_reason': '',
+            'responded_at': '',
         })
 
     update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
@@ -1125,6 +1141,41 @@ def unassign_user(object_id: str, user_id: str, user: dict = Depends(get_current
 
     update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
     return {"status": "ok"}
+
+
+def _assignment_status(a: dict) -> str:
+    """Compatibility rule (ТЗ п.9): назначения, созданные до введения поля status,
+    трактуются как уже принятые -- иначе Worker Home у всех существующих объектов
+    внезапно показал бы "ожидает подтверждения" для того, что реально уже идёт."""
+    return a.get('status') or 'accepted'
+
+
+class AssignmentRespondBody(BaseModel):
+    accept: bool
+    decline_reason: str = ''
+
+
+@app.post("/api/objects/{object_id}/assign/{user_id}/respond")
+def respond_to_assignment(object_id: str, user_id: str, body: AssignmentRespondBody,
+                           user: dict = Depends(get_current_user)):
+    # Worker подтверждает СВОЁ собственное назначение -- не owner, не чужое user_id.
+    if str(user['id']) != str(user_id):
+        raise HTTPException(403, "Можно отвечать только на собственное назначение")
+    if not body.accept and not body.decline_reason.strip():
+        raise HTTPException(400, "Укажите причину отказа")
+    key = str(object_id)
+
+    def _mutator(assignments):
+        lst = assignments.get(key, [])
+        target = next((a for a in lst if a['user_id'] == str(user_id) and _assignment_status(a) == 'pending'), None)
+        if not target:
+            raise HTTPException(404, "Ожидающее назначение не найдено")
+        target['status'] = 'accepted' if body.accept else 'declined'
+        target['decline_reason'] = body.decline_reason.strip()[:500] if not body.accept else ''
+        target['responded_at'] = datetime.utcnow().isoformat()
+        return target
+
+    return update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
 
 
 # ---------- Owner dashboard: смены сегодня (B5, 27.07) ----------
@@ -3704,6 +3755,13 @@ def delete_roadmap_item(object_id: str, row_num: int, item_id: str,
 class RoadmapItemStatusBody(BaseModel):
     status: str
     blocked_reason: str = ''
+    # 29.07 п.4 (blocker workflow): доп. поля bottom sheet'а блокировки. quick_reason --
+    # выбранная быстрая причина, comment/photo_url/who_decides/expected_date опциональны.
+    quick_reason: str = ''
+    comment: str = ''
+    photo_url: str = ''
+    who_decides: str = ''
+    expected_date: str = ''
 
 
 @app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/items/{item_id}/status")
@@ -3711,17 +3769,42 @@ def update_roadmap_item_status(object_id: str, row_num: int, item_id: str, body:
                                 user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     # 29.07: и owner и worker могут отмечать пункты (worker -- своя основная задача
     # по ТЗ "roadmap:item_complete"), require_object_access -- не require_owner.
+    if body.status == 'blocked' and not (body.quick_reason.strip() or body.blocked_reason.strip()):
+        raise HTTPException(400, "Укажите причину блокировки")
     stage = _find_stage_by_row(object_id, row_num)
     stage_key = stage['ID строки этапа']
 
     def _mutate(store):
         try:
-            item = rl.update_item_status(store, stage_key, item_id, body.status,
-                                          str(user['id']), body.blocked_reason)
+            item = rl.update_item_status(
+                store, stage_key, item_id, body.status, str(user['id']), body.blocked_reason,
+                blocked_meta={
+                    "quick_reason": body.quick_reason, "comment": body.comment,
+                    "photo_url": body.photo_url, "who_decides": body.who_decides,
+                    "expected_date": body.expected_date,
+                },
+            )
         except ValueError as e:
             raise HTTPException(400, str(e))
         if not item:
             raise HTTPException(404, "Пункт не найден")
+        return item
+
+    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
+
+
+@app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/items/{item_id}/unblock")
+def unblock_roadmap_item(object_id: str, row_num: int, item_id: str,
+                          user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
+    # "Проблема решена" -- восстанавливает статус ДО блокировки (previous_status),
+    # не хардкод 'open' (ТЗ п.4: unblock должен вернуть реальный предыдущий статус).
+    stage = _find_stage_by_row(object_id, row_num)
+    stage_key = stage['ID строки этапа']
+
+    def _mutate(store):
+        item = rl.unblock_item(store, stage_key, item_id)
+        if not item:
+            raise HTTPException(404, "Пункт не найден или не заблокирован")
         return item
 
     return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)

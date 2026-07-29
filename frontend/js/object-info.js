@@ -190,10 +190,14 @@ async function _renderObjTeamAndShifts(objectId) {
     ]);
     const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(objectId));
     const team = obj?.assigned_users || [];
+    // 29.07 ТЗ п.9: owner видит статус подтверждения назначения прямо на чипе --
+    // pending/declined получают маленький индикатор поверх обычных инициалов.
     teamEl.innerHTML = team.length
       ? `<div class="obj-info-team-row">${team.map(u => `
-          <div class="obj-info-team-chip" data-uid="${esc(u.user_id)}" title="${esc(u.name)}">
+          <div class="obj-info-team-chip obj-info-team-chip-${u.assignment_status || 'accepted'}" data-uid="${esc(u.user_id)}" title="${esc(u.name)}${u.assignment_status === 'pending' ? ' — ожидает подтверждения' : ''}${u.assignment_status === 'declined' ? ` — отклонил: ${esc(u.decline_reason || '')}` : ''}">
             ${esc((u.name || '?').split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase())}
+            ${u.assignment_status === 'pending' ? '<span class="obj-info-team-chip-badge">?</span>' : ''}
+            ${u.assignment_status === 'declined' ? '<span class="obj-info-team-chip-badge obj-info-team-chip-badge-declined">✕</span>' : ''}
           </div>`).join('')}</div>`
       : '<div class="obj-info-empty-row"><span>Никто не назначен</span></div>';
     teamEl.querySelectorAll('.obj-info-team-chip').forEach(chip => {
@@ -840,6 +844,7 @@ function _renderStageRoadmapNode(s, idx, total, isCurrent) {
           </div>
         </div>` : ''}
         ${canWorkerComplete ? `<button class="obj-stage-complete-btn" data-row="${s['_row']}" type="button">Готово</button>` : ''}
+        <div class="obj-stage-roadmap-wrap" id="obj-stage-roadmap-${s['_row']}" data-loaded="0"></div>
       </div>
     </div>
   </div>`;
@@ -848,11 +853,23 @@ function _renderStageRoadmapNode(s, idx, total, isCurrent) {
 function _attachObjStagesHandlers(objectId, stages) {
   // 28.07: аккордеон -- тап по заголовку этапа раскрывает/сворачивает описание.
   // max-height transition вместо display:none/block -- плавная анимация без JS-таймера.
+  // 29.07 Этап 2: первое раскрытие также лениво грузит чек-лист (категории+пункты) --
+  // не тянем roadmap для всех этапов сразу при отрисовке списка (N+1 не нужен, этапов
+  // на объекте может быть 10+, чек-лист интересен только раскрытому).
   document.querySelectorAll('.obj-stage-header[data-toggle-row]').forEach(header => {
     header.addEventListener('click', (e) => {
       if (e.target.closest('.obj-stage-description-input, .obj-stage-description-edit-btn, .obj-stage-description-save, .obj-stage-description-cancel')) return;
       const node = header.closest('.obj-stage-node');
+      const wasExpanded = node.classList.contains('expanded');
       node.classList.toggle('expanded');
+      if (!wasExpanded) {
+        const row = header.dataset.toggleRow;
+        const wrap = document.getElementById(`obj-stage-roadmap-${row}`);
+        if (wrap && wrap.dataset.loaded === '0') {
+          wrap.dataset.loaded = '1';
+          _loadStageRoadmap(objectId, row);
+        }
+      }
     });
   });
 
@@ -937,6 +954,397 @@ function _attachObjStagesHandlers(objectId, stages) {
   // pointerdown/pointermove/pointerup паттерн, что уже проверен в bubble-assign.js,
   // только вертикальная ось и swap с соседом по позиции курсора вместо drop-зоны.
   if (currentRole === 'owner') _attachStageDragHandlers(objectId, stages);
+}
+
+// ═══════════ Roadmap Этап 2 — чек-лист категорий/пунктов внутри этапа (29.07) ═══════════
+// Owner создаёт/удаляет структуру (категории, пункты), worker и owner оба чекают статус
+// пункта. Тап = toggle open/done, long-press = мини-меню blocked/skip (owner-approved UX,
+// не перегружаем список постоянно видимой строкой из 5 кнопок-статусов на пункт).
+const ROADMAP_STATUS_ICON = { open: '○', in_progress: '◐', done: '●', blocked: '⛔', skipped: '⤫' };
+
+async function _loadStageRoadmap(objectId, row) {
+  const wrap = document.getElementById(`obj-stage-roadmap-${row}`);
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="obj-roadmap-loading">Загрузка чек-листа…</div>`;
+  try {
+    const snapshot = await api(`/api/objects/${objectId}/stages/${row}/roadmap`);
+    wrap.innerHTML = _renderStageRoadmapChecklist(row, snapshot);
+    _attachStageRoadmapHandlers(objectId, row);
+  } catch (e) {
+    wrap.innerHTML = `<div class="obj-roadmap-loading">Ошибка: ${esc(e.message)}</div>`;
+  }
+}
+
+function _renderStageRoadmapChecklist(row, snapshot) {
+  const { categories, items, progress } = snapshot;
+  const isOwner = currentRole === 'owner';
+  const byCategory = new Map();
+  byCategory.set(null, []); // без категории
+  categories.forEach(c => byCategory.set(c.id, []));
+  items.forEach(i => {
+    if (!byCategory.has(i.category_id)) byCategory.set(i.category_id, []);
+    byCategory.get(i.category_id).push(i);
+  });
+
+  const progressHtml = progress.total_weight > 0 ? `
+    <div class="obj-roadmap-progress">
+      <div class="obj-roadmap-progress-bar"><div class="obj-roadmap-progress-fill" style="width:${progress.percent}%"></div></div>
+      <span class="obj-roadmap-progress-label">${progress.percent}%${progress.required_total ? ` · обязательных осталось: ${progress.required_open}` : ''}</span>
+    </div>` : '';
+
+  const renderItem = (i) => `
+    <div class="obj-roadmap-item obj-roadmap-item-${i.status}" data-item-id="${i.id}" data-row="${row}">
+      <div class="obj-roadmap-item-check" data-item-id="${i.id}">${ROADMAP_STATUS_ICON[i.status] || '○'}</div>
+      <div class="obj-roadmap-item-body">
+        <div class="obj-roadmap-item-title${i.status === 'done' ? ' obj-roadmap-item-done-text' : ''}">${esc(i.title)}${i.required ? '' : ' <span class="obj-roadmap-item-optional">· необязательно</span>'}</div>
+        ${i.status === 'blocked' && i.blocked_reason ? `<div class="obj-roadmap-item-blocked-reason">${esc(i.blocked_reason)}</div>` : ''}
+        ${i.status === 'blocked' && i.blocked_who_decides ? `<div class="obj-blocker-meta-row"><strong>Решает:</strong> ${esc(i.blocked_who_decides)}</div>` : ''}
+        ${i.status === 'blocked' && i.blocked_expected_date ? `<div class="obj-blocker-meta-row"><strong>Ожидается:</strong> ${esc(i.blocked_expected_date)}</div>` : ''}
+        ${i.status === 'blocked' && i.blocked_comment ? `<div class="obj-blocker-meta-row">${esc(i.blocked_comment)}</div>` : ''}
+        ${i.status === 'blocked' ? `<button type="button" class="obj-roadmap-item-unblock-btn" data-item-id="${i.id}">Проблема решена</button>` : ''}
+      </div>
+      ${isOwner ? `<div class="obj-roadmap-item-delete" data-item-id="${i.id}" title="Удалить пункт">✕</div>` : ''}
+    </div>`;
+
+  const renderCategory = (catId, catTitle) => {
+    const catItems = byCategory.get(catId) || [];
+    return `
+    <div class="obj-roadmap-category" data-category-id="${catId || ''}">
+      <div class="obj-roadmap-category-header">
+        <span class="obj-roadmap-category-title">${catTitle}</span>
+        ${isOwner && catId ? `<span class="obj-roadmap-category-delete" data-category-id="${catId}" title="Удалить категорию">✕</span>` : ''}
+      </div>
+      ${catItems.map(renderItem).join('')}
+      ${isOwner ? `<button class="obj-roadmap-add-item-btn" data-category-id="${catId || ''}" type="button">+ Пункт</button>` : ''}
+    </div>`;
+  };
+
+  const categoriesHtml = categories.map(c => renderCategory(c.id, esc(c.title))).join('')
+    + (byCategory.get(null).length || isOwner ? renderCategory(null, 'Без категории') : '');
+
+  return `
+    ${progressHtml}
+    <div class="obj-roadmap-categories">${categoriesHtml || '<div class="obj-roadmap-empty">Чек-лист пока пуст</div>'}</div>
+    ${isOwner ? `<button class="obj-roadmap-add-category-btn" data-row="${row}" type="button">+ Категория</button>` : ''}
+  `;
+}
+
+function _attachStageRoadmapHandlers(objectId, row) {
+  const wrap = document.getElementById(`obj-stage-roadmap-${row}`);
+  if (!wrap) return;
+
+  const reload = () => _loadStageRoadmap(objectId, row);
+
+  // Тап по чекбоксу -- toggle open<->done. Long-press (450ms) открывает мини-меню
+  // blocked/skip -- не перегружаем сам пункт постоянно видимыми 5 кнопками статусов.
+  wrap.querySelectorAll('.obj-roadmap-item-check').forEach(check => {
+    let pressTimer = null;
+    let longPressFired = false;
+    const itemId = check.dataset.itemId;
+
+    // blocked прокидывает meta из blocker sheet и ПРОБРАСЫВАЕТ ошибку дальше -- sheet
+    // сама показывает network-error+retry и не закрывается при сбое (тот же паттерн,
+    // что и Add Stage sheet: не терять введённые пользователем данные на ошибке сети).
+    const setStatus = async (status, blockedReason = '', meta = null) => {
+      try {
+        await api(`/api/objects/${objectId}/stages/${row}/roadmap/items/${itemId}/status`, {
+          method: 'POST',
+          body: JSON.stringify({ status, blocked_reason: blockedReason, ...(meta || {}) }),
+        });
+        hapticImpact('light');
+        reload();
+      } catch (e) {
+        if (status === 'blocked') throw e;
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    };
+
+    check.addEventListener('pointerdown', (e) => {
+      longPressFired = false;
+      pressTimer = setTimeout(() => {
+        longPressFired = true;
+        hapticImpact('medium');
+        // Реальный баг, найденный через Playwright: пока палец/курсор физически не
+        // отпущен, чекбокс держит implicit pointer capture -- клик по пункту меню
+        // (даже отдельным, следующим тапом) продолжал таргетиться на чекбокс, а не
+        // на элемент под курсором, и статус вообще никогда не менялся. Явно снимаем
+        // capture, как только меню открылось -- дальше это обычный, отдельный тап.
+        try { check.releasePointerCapture(e.pointerId); } catch (err) {}
+        _openRoadmapItemStatusMenu(check, setStatus);
+      }, 450);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(evt => {
+      check.addEventListener(evt, () => clearTimeout(pressTimer));
+    });
+    check.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (longPressFired) return; // long-press уже обработал тап через меню
+      const node = check.closest('.obj-roadmap-item');
+      const isDone = node.classList.contains('obj-roadmap-item-done');
+      setStatus(isDone ? 'open' : 'done');
+    });
+  });
+
+  wrap.querySelectorAll('.obj-roadmap-item-unblock-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      btn.disabled = true;
+      try {
+        await api(`/api/objects/${objectId}/stages/${row}/roadmap/items/${btn.dataset.itemId}/unblock`, { method: 'POST' });
+        hapticImpact('light');
+        reload();
+      } catch (err) {
+        showToast('Ошибка: ' + err.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+
+  if (currentRole !== 'owner') return; // ниже -- только owner-контролы структуры
+
+  wrap.querySelectorAll('.obj-roadmap-item-delete').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Удалить этот пункт чек-листа?')) return;
+      try {
+        await api(`/api/objects/${objectId}/stages/${row}/roadmap/items/${btn.dataset.itemId}`, { method: 'DELETE' });
+        hapticImpact('light');
+        reload();
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  });
+
+  wrap.querySelectorAll('.obj-roadmap-category-delete').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Удалить эту категорию? (только если в ней нет пунктов)')) return;
+      try {
+        await api(`/api/objects/${objectId}/stages/${row}/roadmap/categories/${btn.dataset.categoryId}`, { method: 'DELETE' });
+        hapticImpact('light');
+        reload();
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  });
+
+  wrap.querySelectorAll('.obj-roadmap-add-item-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const title = prompt('Название пункта чек-листа:');
+      if (!title || !title.trim()) return;
+      try {
+        await api(`/api/objects/${objectId}/stages/${row}/roadmap/items`, {
+          method: 'POST',
+          body: JSON.stringify({ title: title.trim(), category_id: btn.dataset.categoryId || null }),
+        });
+        hapticImpact('light');
+        reload();
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  });
+
+  const addCategoryBtn = wrap.querySelector('.obj-roadmap-add-category-btn');
+  if (addCategoryBtn) {
+    addCategoryBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const title = prompt('Название категории:');
+      if (!title || !title.trim()) return;
+      try {
+        await api(`/api/objects/${objectId}/stages/${row}/roadmap/categories`, {
+          method: 'POST',
+          body: JSON.stringify({ title: title.trim() }),
+        });
+        hapticImpact('light');
+        reload();
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  }
+}
+
+// Мини-меню blocked/skip -- открывается long-press'ом на чекбоксе пункта, закрывается
+// тапом вне себя. Не отдельный bottom sheet -- маленькое contextual-меню у самого пункта.
+function _openRoadmapItemStatusMenu(anchorEl, setStatus) {
+  document.querySelector('.obj-roadmap-status-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.className = 'obj-roadmap-status-menu';
+  menu.innerHTML = `
+    <button type="button" data-action="in_progress">◐ В процессе</button>
+    <button type="button" data-action="blocked">⛔ Заблокировано</button>
+    <button type="button" data-action="skipped">⤫ Пропустить</button>
+    <button type="button" data-action="open">○ Сбросить</button>
+  `;
+  document.body.appendChild(menu);
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + window.scrollY + 4}px`;
+  menu.style.left = `${Math.max(8, rect.left + window.scrollX - 4)}px`;
+
+  // Реальный баг, найденный через Playwright: тап (mousedown/pointerdown), который
+  // САМ ЗАПУСТИЛ long-press, ещё не отпущен в момент открытия меню -- palец/курсор
+  // всё ещё "захвачен" чекбоксом (implicit pointer capture), поэтому его отпускание
+  // синтезирует click С ЦЕЛЬЮ=чекбокс, даже если курсор физически уже над пунктом меню.
+  // Этот клик не должен закрывать меню -- иначе пункт меню НИКОГДА не успевает
+  // получить свой собственный клик (реальный тест: item3 навсегда оставался open).
+  // Ждём отдельного, следующего клика вне меню, прежде чем начинать его слушать.
+  const close = () => { menu.remove(); document.removeEventListener('click', onDocClick, true); };
+  const onDocClick = (e) => { if (!menu.contains(e.target)) close(); };
+  const armDocClickListener = () => {
+    document.removeEventListener('click', armDocClickListener, true);
+    setTimeout(() => document.addEventListener('click', onDocClick, true), 0);
+  };
+  document.addEventListener('click', armDocClickListener, true);
+
+  menu.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.action;
+      close();
+      if (action === 'blocked') {
+        _openBlockerSheet(setStatus);
+      } else {
+        setStatus(action);
+      }
+    });
+  });
+}
+
+// ── Blocker workflow (29.07 п.4) -- bottom sheet вместо prompt(): обязательная
+// причина (quick-reason кнопки ИЛИ свой текст), опциональные комментарий/кто решает/
+// ожидаемая дата. Тот же lifecycle-паттерн что и Add Stage sheet (header/body/sticky
+// footer, NavigationManager overlay, no autofocus, scroll lock, focus restore). ──
+const BLOCKER_QUICK_REASONS = [
+  'Нет материала', 'Нет инструмента', 'Ждём другую бригаду', 'Проблема с основанием',
+  'Изменение от заказчика', 'Нет доступа', 'Техническая проблема', 'Погода',
+];
+
+let _blockerSheetUnregisterOverlay = null;
+
+function _openBlockerSheet(setStatus) {
+  document.getElementById('obj-blocker-sheet')?.remove();
+  if (_blockerSheetUnregisterOverlay) { _blockerSheetUnregisterOverlay(); _blockerSheetUnregisterOverlay = null; }
+
+  const sheet = document.createElement('div');
+  sheet.id = 'obj-blocker-sheet';
+  sheet.className = 'obj-stage-add-sheet';
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-modal', 'true');
+  sheet.innerHTML = `
+    <div class="obj-stage-add-sheet-backdrop"></div>
+    <div class="obj-stage-add-sheet-inner">
+      <div class="obj-stage-add-sheet-handle"></div>
+      <div class="obj-stage-add-sheet-header">
+        <div class="obj-stage-add-sheet-title">Заблокировано</div>
+        <div class="obj-stage-add-sheet-close" id="obj-blocker-close-btn" role="button" aria-label="Закрыть" tabindex="0">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 1L15 15M15 1L1 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </div>
+      </div>
+      <div class="obj-stage-add-sheet-body">
+        <div class="obj-stage-field">
+          <label class="obj-stage-field-label">Причина</label>
+          <div class="obj-blocker-quick-grid" id="obj-blocker-quick-grid">
+            ${BLOCKER_QUICK_REASONS.map(r => `<button type="button" class="obj-blocker-quick-btn" data-reason="${esc(r)}">${esc(r)}</button>`).join('')}
+          </div>
+          <input type="text" id="obj-blocker-custom-reason" placeholder="Другое — своя причина" maxlength="200">
+          <div class="obj-stage-field-error" id="obj-blocker-reason-error" style="display:none;">Выберите или укажите причину</div>
+        </div>
+        <div class="obj-stage-field">
+          <label class="obj-stage-field-label" for="obj-blocker-comment">Комментарий (необязательно)</label>
+          <textarea id="obj-blocker-comment" placeholder="Подробности" maxlength="1000"></textarea>
+        </div>
+        <div class="obj-stage-field">
+          <label class="obj-stage-field-label" for="obj-blocker-who">Кто должен решить (необязательно)</label>
+          <input type="text" id="obj-blocker-who" placeholder="например: прораб" maxlength="200">
+        </div>
+        <div class="obj-stage-field">
+          <label class="obj-stage-field-label" for="obj-blocker-date">Ожидаемая дата решения (необязательно)</label>
+          <input type="date" id="obj-blocker-date">
+        </div>
+        <div class="obj-stage-add-sheet-network-error" id="obj-blocker-network-error" style="display:none;">
+          <strong>Не удалось сохранить</strong>
+          <span>Введённые данные сохранены</span>
+          <button class="obj-stage-add-retry-btn" id="obj-blocker-retry-btn" type="button">Повторить</button>
+        </div>
+      </div>
+      <div class="obj-stage-add-sheet-footer">
+        <button class="obj-confirm-cancel" id="obj-blocker-cancel-btn" type="button">Отмена</button>
+        <button class="obj-confirm-ok" id="obj-blocker-ok-btn" type="button">Заблокировать</button>
+      </div>
+    </div>`;
+  document.body.appendChild(sheet);
+
+  const customInput = document.getElementById('obj-blocker-custom-reason');
+  const errorEl = document.getElementById('obj-blocker-reason-error');
+  const networkErrorEl = document.getElementById('obj-blocker-network-error');
+  const okBtn = document.getElementById('obj-blocker-ok-btn');
+  const grid = document.getElementById('obj-blocker-quick-grid');
+  let selectedQuick = '';
+
+  grid.querySelectorAll('.obj-blocker-quick-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const already = btn.classList.contains('obj-blocker-quick-selected');
+      grid.querySelectorAll('.obj-blocker-quick-btn').forEach(b => b.classList.remove('obj-blocker-quick-selected'));
+      selectedQuick = already ? '' : btn.dataset.reason;
+      if (selectedQuick) btn.classList.add('obj-blocker-quick-selected');
+      errorEl.style.display = 'none';
+      hapticImpact('light');
+    });
+  });
+  customInput.addEventListener('input', () => {
+    if (customInput.value.trim()) errorEl.style.display = 'none';
+  });
+
+  const prevBodyOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    sheet.remove();
+    document.body.style.overflow = prevBodyOverflow;
+    document.removeEventListener('keydown', onKeydown);
+    if (_blockerSheetUnregisterOverlay) { _blockerSheetUnregisterOverlay(); _blockerSheetUnregisterOverlay = null; }
+  };
+  const onKeydown = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKeydown);
+  if (typeof NavigationManager !== 'undefined') {
+    _blockerSheetUnregisterOverlay = NavigationManager.registerOverlay(close);
+  }
+
+  sheet.querySelector('.obj-stage-add-sheet-backdrop').addEventListener('click', close);
+  document.getElementById('obj-blocker-cancel-btn').addEventListener('click', close);
+  document.getElementById('obj-blocker-close-btn').addEventListener('click', close);
+
+  const submit = async () => {
+    const quickReason = selectedQuick;
+    const customReason = customInput.value.trim();
+    if (!quickReason && !customReason) {
+      errorEl.style.display = 'block';
+      return;
+    }
+    networkErrorEl.style.display = 'none';
+    okBtn.disabled = true;
+    okBtn.textContent = 'Сохраняю…';
+    try {
+      await setStatus('blocked', customReason || quickReason, {
+        quick_reason: quickReason, comment: document.getElementById('obj-blocker-comment').value.trim(),
+        who_decides: document.getElementById('obj-blocker-who').value.trim(),
+        expected_date: document.getElementById('obj-blocker-date').value,
+      });
+      close();
+    } catch (e) {
+      networkErrorEl.style.display = 'block';
+      okBtn.disabled = false;
+      okBtn.textContent = 'Заблокировать';
+    }
+  };
+  okBtn.addEventListener('click', submit);
+  document.getElementById('obj-blocker-retry-btn').addEventListener('click', submit);
 }
 
 let _stageDragEl = null;
