@@ -3552,6 +3552,321 @@ def worker_complete_stage(object_id: str, row_num: int, user: dict = Depends(get
     return {"status": "ok"}
 
 
+# ---------- План работ (Roadmap) — 29.07, Этап 1 ----------
+# Stage identity/order/status/description остаются в Google Sheets (objekte_lib.py) --
+# roadmap_lib.py добавляет только то, чего там нет: чек-лист категорий/пунктов, заметки,
+# и очередь запросов worker->owner на структурные изменения существующего этапа.
+import roadmap_lib as rl
+
+
+def _load_roadmap_store() -> dict:
+    """Read-only helper -- ТОЛЬКО для GET-эндпоинтов ниже. Любая мутация store должна
+    идти через update_json_transaction(rl.ROADMAP_FILE, ...), не через эту функцию +
+    отдельный _atomic_write_json (та же read-modify-write гонка, что update_json_transaction
+    существует чтобы закрыть -- см. его docstring выше)."""
+    return _safe_load_json(rl.ROADMAP_FILE, rl._default_store())
+
+
+def _load_stage_requests() -> list:
+    """Read-only helper -- см. предупреждение у _load_roadmap_store() выше, тот же принцип."""
+    return _safe_load_json(rl.STAGE_REQUESTS_FILE, rl._default_requests())
+
+
+def _find_stage_by_row(object_id: str, row_num: int) -> dict:
+    """Общая проверка для все roadmap-эндпоинтов ниже -- этап должен реально
+    существовать и принадлежать этому объекту, иначе 404 (не создаём roadmap-данные
+    для несуществующего/чужого этапа)."""
+    import objekte_lib as o
+    stages = o.all_stages(object_id)
+    stage = next((s for s in stages if s['_row'] == row_num), None)
+    if not stage:
+        raise HTTPException(404, "Этап не найден")
+    return stage
+
+
+@app.get("/api/objects/{object_id}/stages/{row_num}/roadmap")
+def get_stage_roadmap(object_id: str, row_num: int, user: dict = Depends(get_current_user)):
+    """Полный чек-лист (категории+пункты+прогресс) одного этапа одним запросом --
+    не N+1 (ТЗ п.47). Доступ: та же политика, что у get_stages -- любой авторизованный
+    воркер может просматривать (owner request 28.07), не только назначенный на объект."""
+    stage = _find_stage_by_row(object_id, row_num)
+    store = _load_roadmap_store()
+    snapshot = rl.stage_snapshot(store, stage['ID строки этапа'])
+    snapshot['stage'] = stage
+    return snapshot
+
+
+class RoadmapCategoryBody(BaseModel):
+    title: str
+
+
+@app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/categories")
+def create_roadmap_category(object_id: str, row_num: int, body: RoadmapCategoryBody,
+                             user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    # 29.07: только owner меняет структуру (категории/reorder) -- worker-approval-flow
+    # ниже касается delete/status-change СУЩЕСТВУЮЩЕГО этапа, не категорий/пунктов внутри
+    # него (владелец не просил approval для этого уровня, только для самого этапа).
+    stage = _find_stage_by_row(object_id, row_num)
+    if not body.title.strip():
+        raise HTTPException(400, "Название категории обязательно")
+    # 29.07: read-modify-write под одним локом (update_json_transaction) -- та же гонка,
+    # что уже закрыта для object photo upload/assign в этом файле (28.07, real bug found
+    # by external audit). Два owner'а/два запроса одновременно не должны затирать
+    # изменения друг друга в roadmap.json.
+    return update_json_transaction(
+        rl.ROADMAP_FILE, rl._default_store,
+        lambda store: rl.new_category(store, stage['ID строки этапа'], body.title.strip()[:100]),
+    )
+
+
+@app.delete("/api/objects/{object_id}/stages/{row_num}/roadmap/categories/{category_id}")
+def delete_roadmap_category(object_id: str, row_num: int, category_id: str,
+                             user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    stage = _find_stage_by_row(object_id, row_num)
+    stage_key = stage['ID строки этапа']
+
+    def _mutate(store):
+        has_items = any(i.get('category_id') == category_id for i in store['items'].get(stage_key, []))
+        if has_items:
+            raise HTTPException(400, "Нельзя удалить категорию с пунктами -- сначала перенесите или удалите их")
+        if not rl.delete_category(store, stage_key, category_id):
+            raise HTTPException(404, "Категория не найдена")
+        return {"status": "ok"}
+
+    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
+
+
+class RoadmapItemCreateBody(BaseModel):
+    title: str
+    category_id: str | None = None
+    description: str = ''
+    required: bool = True
+    safety_critical: bool = False
+    weight: int = 1
+
+
+@app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/items")
+def create_roadmap_item(object_id: str, row_num: int, body: RoadmapItemCreateBody,
+                         user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    stage = _find_stage_by_row(object_id, row_num)
+    if not body.title.strip():
+        raise HTTPException(400, "Название пункта обязательно")
+    stage_key = stage['ID строки этапа']
+    return update_json_transaction(
+        rl.ROADMAP_FILE, rl._default_store,
+        lambda store: rl.new_item(
+            store, stage_key, body.title.strip()[:200], category_id=body.category_id,
+            description=body.description.strip()[:1000], required=body.required,
+            safety_critical=body.safety_critical, weight=body.weight,
+        ),
+    )
+
+
+class RoadmapItemEditBody(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    required: bool | None = None
+    safety_critical: bool | None = None
+    weight: int | None = None
+    category_id: str | None = None
+
+
+@app.patch("/api/objects/{object_id}/stages/{row_num}/roadmap/items/{item_id}")
+def edit_roadmap_item(object_id: str, row_num: int, item_id: str, body: RoadmapItemEditBody,
+                       user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    stage = _find_stage_by_row(object_id, row_num)
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    stage_key = stage['ID строки этапа']
+
+    def _mutate(store):
+        item = rl.edit_item(store, stage_key, item_id, **fields)
+        if not item:
+            raise HTTPException(404, "Пункт не найден")
+        return item
+
+    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
+
+
+@app.delete("/api/objects/{object_id}/stages/{row_num}/roadmap/items/{item_id}")
+def delete_roadmap_item(object_id: str, row_num: int, item_id: str,
+                         user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    stage = _find_stage_by_row(object_id, row_num)
+    stage_key = stage['ID строки этапа']
+
+    def _mutate(store):
+        if not rl.delete_item(store, stage_key, item_id):
+            raise HTTPException(404, "Пункт не найден")
+        return {"status": "ok"}
+
+    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
+
+
+class RoadmapItemStatusBody(BaseModel):
+    status: str
+    blocked_reason: str = ''
+
+
+@app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/items/{item_id}/status")
+def update_roadmap_item_status(object_id: str, row_num: int, item_id: str, body: RoadmapItemStatusBody,
+                                user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
+    # 29.07: и owner и worker могут отмечать пункты (worker -- своя основная задача
+    # по ТЗ "roadmap:item_complete"), require_object_access -- не require_owner.
+    stage = _find_stage_by_row(object_id, row_num)
+    stage_key = stage['ID строки этапа']
+
+    def _mutate(store):
+        try:
+            item = rl.update_item_status(store, stage_key, item_id, body.status,
+                                          str(user['id']), body.blocked_reason)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if not item:
+            raise HTTPException(404, "Пункт не найден")
+        return item
+
+    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
+
+
+class RoadmapNoteBody(BaseModel):
+    text: str
+    item_id: str | None = None
+
+
+@app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/notes")
+def create_roadmap_note(object_id: str, row_num: int, body: RoadmapNoteBody,
+                         user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
+    stage = _find_stage_by_row(object_id, row_num)
+    if not body.text.strip():
+        raise HTTPException(400, "Текст заметки обязателен")
+    profile = _get_worker_profile(user['id'])
+    author_name = _sanitize_display_name(profile.get('name'), str(user['id']))
+    stage_key = stage['ID строки этапа']
+    return update_json_transaction(
+        rl.ROADMAP_FILE, rl._default_store,
+        lambda store: rl.new_note(store, stage_key, str(user['id']), author_name, body.text, item_id=body.item_id),
+    )
+
+
+@app.get("/api/objects/{object_id}/stages/{row_num}/roadmap/notes")
+def list_roadmap_notes(object_id: str, row_num: int, item_id: str = '', user: dict = Depends(get_current_user)):
+    stage = _find_stage_by_row(object_id, row_num)
+    store = _load_roadmap_store()
+    notes = rl.stage_notes(store, stage['ID строки этапа'], item_id=item_id or None)
+    return {"notes": sorted(notes, key=lambda n: n['created_at'])}
+
+
+# ── Stage change requests -- worker→owner approval для delete/change-status этапа ──
+# Owner decision (29.07): worker свободно создаёт этапы (как сейчас), но delete/смена
+# статуса существующего этапа теперь идёт через запрос, который owner подтверждает --
+# "через алерт", переиспользуем существующий critical_alerts push+ack механизм, не
+# строим новый UI-канал.
+class StageRequestBody(BaseModel):
+    kind: str
+    new_status: str = ''  # только для kind='change_status'
+
+
+@app.post("/api/objects/{object_id}/stages/{row_num}/request")
+def create_stage_request(object_id: str, row_num: int, body: StageRequestBody,
+                          user: dict = Depends(get_current_user), role: str = Depends(get_role),
+                          _: None = Depends(require_object_access)):
+    import objekte_lib as o
+    if role == 'owner':
+        raise HTTPException(400, "Owner меняет этапы напрямую, без запроса")
+    stage = _find_stage_by_row(object_id, row_num)
+    if body.kind not in rl.REQUEST_KINDS:
+        raise HTTPException(400, "Недопустимый тип запроса")
+    payload = {}
+    if body.kind == 'change_status':
+        if body.new_status not in o.VALID_STAGE_STATUS:
+            raise HTTPException(400, "Недопустимый статус")
+        payload['new_status'] = body.new_status
+
+    profile = _get_worker_profile(user['id'])
+    requester_name = _sanitize_display_name(profile.get('name'), str(user['id']))
+    stage_key = stage['ID строки этапа']
+    req = update_json_transaction(
+        rl.STAGE_REQUESTS_FILE, rl._default_requests,
+        lambda requests: rl.new_stage_request(
+            requests, object_id, stage_key, row_num, body.kind,
+            str(user['id']), requester_name, payload=payload,
+        ),
+    )
+
+    roles = _load_roles()
+    owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
+    if owner_id:
+        kind_label = 'удаление этапа' if body.kind == 'delete_stage' else f"смену статуса на «{payload.get('new_status', '')}»"
+        alert = _create_critical_alert(
+            target_user_id=owner_id, kind='stage_request',
+            title=f"{requester_name} просит {kind_label}",
+            subtitle=stage.get('Название этапа', ''), ref_id=req['id'],
+        )
+        req['critical_alert_id'] = alert['id']
+
+        def _attach_alert(requests):
+            r = rl.find_stage_request(requests, req['id'])
+            if r:
+                r['critical_alert_id'] = alert['id']
+            return r
+        update_json_transaction(rl.STAGE_REQUESTS_FILE, rl._default_requests, _attach_alert)
+    return req
+
+
+@app.get("/api/objects/{object_id}/stages/requests")
+def list_stage_requests(object_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    requests = _load_stage_requests()
+    return {"requests": rl.pending_requests_for_object(requests, object_id)}
+
+
+class StageRequestDecisionBody(BaseModel):
+    approve: bool
+
+
+@app.post("/api/objects/{object_id}/stages/requests/{request_id}/decide")
+def decide_stage_request_endpoint(object_id: str, request_id: str, body: StageRequestDecisionBody,
+                                   user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    import objekte_lib as o
+    from datetime import date
+
+    # Проверка существования/принадлежности -- read-only, до транзакции (тот же паттерн,
+    # что _find_stage_by_row -- отдельно от самой мутации).
+    existing = _load_stage_requests()
+    pre_check = rl.find_stage_request(existing, request_id)
+    if not pre_check or pre_check['object_id'] != object_id:
+        raise HTTPException(404, "Запрос не найден")
+
+    def _mutate(requests):
+        decided = rl.decide_stage_request(requests, request_id, body.approve, str(user['id']))
+        if not decided:
+            raise HTTPException(400, "Запрос уже обработан")
+        return decided
+
+    decided = update_json_transaction(rl.STAGE_REQUESTS_FILE, rl._default_requests, _mutate)
+
+    # Google Sheets запись -- НАМЕРЕННО вне JSON-лока выше (сетевой вызов, не должен
+    # держать файловый лок дольше необходимого). Если статус запроса уже помечен approved,
+    # но эта часть упадёт -- запрос не откатывается автоматически (best-effort, тот же
+    # trade-off что и остальные Sheets-зеркала в этом файле), owner увидит ошибку и может
+    # применить изменение вручную через обычный owner-only stage endpoint.
+    if body.approve:
+        try:
+            if decided['kind'] == 'delete_stage':
+                o.delete_stage(decided['object_id'], decided['stage_row'])
+                o.sync_current_stage(decided['object_id'])
+            elif decided['kind'] == 'change_status':
+                o.update_stage_status(decided['stage_row'], decided['payload']['new_status'], date.today().isoformat())
+                o.sync_current_stage(decided['object_id'])
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    try:
+        send_telegram_message(int(decided['requested_by']),
+                               f"{'Одобрено' if body.approve else 'Отклонено'}: ваш запрос по этапу «{decided.get('stage_row')}»")
+    except Exception:
+        pass
+    return decided
+
+
 # ---------- Потребности (10.33) — worker → owner запросы (инструмент/материалы/защита) ----------
 TASKS_FILE = '/home/promonta/agent/miniapp/tasks.json'
 
