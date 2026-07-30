@@ -6,6 +6,7 @@ import copy
 import csv
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import re
@@ -20,15 +21,36 @@ import base64
 import magic
 from pydantic import BaseModel
 
-# 30.07 (Инструменты cleanup, п.9): порядок важен -- модуль рядом с main.py (deploy'ится
-# из backend/ вместе с main.py, версионируется в git: roadmap_lib.py, tools_lib.py)
-# должен резолвиться РАНЬШЕ /home/promonta/agent -- иначе import tools_lib внутри
-# checkout_tool/return_tool молча находил бы untracked-копию на диске сервера вместо
-# репозиторной, даже если её содержимое разошлось. /home/promonta/agent остаётся
-# fallback-путём для модулей, которые НАМЕРЕННО общие с Telegram-ботом и не мигрируют
-# в репо (objekte_lib.py, roadmap_lib.py уже дублируется в обоих местах).
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(1, '/home/promonta/agent')
+sys.path.insert(0, '/home/promonta/agent')
+
+# 30.07 (Инструменты cleanup, изолированный фикс): sys.path выше -- ГЛОБАЛЬНЫЙ и
+# специально ставит /home/promonta/agent первым, чтобы roadmap_lib/objekte_lib/другие
+# shared runtime-модули резолвились так же, как всегда (изменение этого порядка в
+# предыдущем коммите сломало 2 roadmap-теста -- откачено). tools_lib.py тем не менее
+# должен гарантированно грузиться из репозитория (backend/tools_lib.py), не из
+# untracked /home/promonta/agent/tools_lib.py -- решение точечное: загрузка по явному
+# пути к файлу через importlib.util, без малейшего влияния на глобальный sys.path.
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+TOOLS_LIB_PATH = os.path.join(BACKEND_DIR, 'tools_lib.py')
+_repo_tools_lib = None
+
+
+def _load_repo_tools_lib():
+    """Загружает backend/tools_lib.py под уникальным внутренним именем модуля --
+    не 'tools_lib' (чтобы не столкнуться с/не подменить то, что уже могло быть
+    закэшировано в sys.modules из-за глобального /home/promonta/agent в sys.path).
+    Загружается один раз, дальше отдаётся закэшированный экземпляр."""
+    global _repo_tools_lib
+    if _repo_tools_lib is not None:
+        return _repo_tools_lib
+    spec = importlib.util.spec_from_file_location('promonta_repo_tools_lib', TOOLS_LIB_PATH)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'не удалось загрузить tools_lib.py из {TOOLS_LIB_PATH}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _repo_tools_lib = module
+    return _repo_tools_lib
+
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
 ROLES_FILE = '/home/promonta/agent/miniapp/roles.json'
@@ -1533,7 +1555,7 @@ def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_r
 
     # Tool issues (owner) — красный при ремонте/не найден
     try:
-        import tools_lib as tl
+        tl = _load_repo_tools_lib()
         tools_list = tl.list_tools()
         for t in tools_list:
             raw_st = (t.get('Статус') or '').strip().lower()
@@ -1630,13 +1652,13 @@ def dismiss_alerts(body: AlertDismissBody, user: dict = Depends(get_current_user
 
 @app.get("/api/tools")
 def list_tools(user: dict = Depends(get_current_user)):
-    import tools_lib as tl
+    tl = _load_repo_tools_lib()
     return {"tools": tl.list_tools()}
 
 
 @app.get("/api/tools/{serial}/history")
 def tool_history(serial: str, user: dict = Depends(get_current_user)):
-    import tools_lib as tl
+    tl = _load_repo_tools_lib()
     return {"history": tl.tool_history(serial)}
 
 
@@ -1665,7 +1687,7 @@ def _holder_name_from_user(user: dict) -> str:
 
 @app.patch("/api/tools/{serial}/checkout")
 def checkout_tool(serial: str, body: CheckoutBody, user: dict = Depends(get_current_user)):
-    import tools_lib as tl
+    tl = _load_repo_tools_lib()
     if not body.object_name.strip():
         raise HTTPException(400, "Укажи объект")
     tool = tl.get_tool(serial)
@@ -1687,7 +1709,7 @@ def return_tool(serial: str, user: dict = Depends(get_current_user), role: str =
     пишет holder_id текущего юзера безусловно, так что "возврат" на деле мог сделать
     держателем СВОБОДНОГО инструмента того, кто на самом деле его не брал. Отдельный
     endpoint: текущий держатель или owner -- разрешено, посторонний worker -- 403."""
-    import tools_lib as tl
+    tl = _load_repo_tools_lib()
     tool = tl.get_tool(serial)
     if tool is None:
         raise HTTPException(404, f'инструмент {serial} не найден')
@@ -1710,7 +1732,7 @@ class ToolUpdateBody(BaseModel):
 
 @app.patch("/api/tools/{serial}")
 def update_tool(serial: str, body: ToolUpdateBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    import tools_lib as tl
+    tl = _load_repo_tools_lib()
     try:
         tl.update_tool_status(serial, body.status, body.holder, body.object_name,
                                user.get('first_name', str(user['id'])), holder_id=body.holder_id)
@@ -1726,7 +1748,7 @@ class NewToolBody(BaseModel):
 
 @app.post("/api/tools")
 def create_tool(body: NewToolBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    import tools_lib as tl
+    tl = _load_repo_tools_lib()
     serial = tl.add_tool(body.name, body.category, user.get('first_name', str(user['id'])))
     return {"serial": serial}
 
