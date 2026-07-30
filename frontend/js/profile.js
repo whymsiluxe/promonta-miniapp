@@ -83,6 +83,11 @@ function initProfileView() {
         <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-5)">🏗️</span><span class="accordion-title">Объекты</span><span class="accordion-chevron">▾</span></div>
         <div class="accordion-body collapsed"><div class="accordion-body-inner"><div id="profile-objects-list"></div></div></div>
       </div>
+
+      <div class="accordion-section">
+        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-2)">🛠️</span><span class="accordion-title">Инструменты на руках</span><span class="accordion-chevron">▾</span></div>
+        <div class="accordion-body collapsed"><div class="accordion-body-inner"><div id="profile-tools-widget"></div></div></div>
+      </div>
     </div>
 
     ${currentRole === 'owner' ? `
@@ -465,6 +470,12 @@ async function _loadProfileStats() {
           </div>
         </div>`).join('')
     : '<div style="font-size:0.85rem;color:var(--text-light)">Пока нет ни смен, ни назначений на объекты.</div>';
+
+  // Инструменты на руках (30.07: Tool-модуль, п.3 -- Worker profile). holderId = тот, чей
+  // профиль сейчас смотрят (stats.user_id уже учитывает owner-просмотр чужого через ?user_id=).
+  if (typeof renderToolWidgetForWorker === 'function') {
+    renderToolWidgetForWorker('profile-tools-widget', stats.user_id);
+  }
 
   // Навыки
   const chips = document.getElementById('profile-skills-chips');
