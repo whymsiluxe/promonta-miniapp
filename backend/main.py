@@ -20,7 +20,15 @@ import base64
 import magic
 from pydantic import BaseModel
 
-sys.path.insert(0, '/home/promonta/agent')
+# 30.07 (Инструменты cleanup, п.9): порядок важен -- модуль рядом с main.py (deploy'ится
+# из backend/ вместе с main.py, версионируется в git: roadmap_lib.py, tools_lib.py)
+# должен резолвиться РАНЬШЕ /home/promonta/agent -- иначе import tools_lib внутри
+# checkout_tool/return_tool молча находил бы untracked-копию на диске сервера вместо
+# репозиторной, даже если её содержимое разошлось. /home/promonta/agent остаётся
+# fallback-путём для модулей, которые НАМЕРЕННО общие с Telegram-ботом и не мигрируют
+# в репо (objekte_lib.py, roadmap_lib.py уже дублируется в обоих местах).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(1, '/home/promonta/agent')
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
 ROLES_FILE = '/home/promonta/agent/miniapp/roles.json'
@@ -1633,20 +1641,42 @@ def tool_history(serial: str, user: dict = Depends(get_current_user)):
 
 
 class CheckoutBody(BaseModel):
-    holder: str
     object_name: str
+    # 30.07 (Инструменты cleanup): optional только для обратной совместимости --
+    # backend больше НЕ доверяет holder от клиента (реальный найденный баг: Worker
+    # мог вписать чужое имя, "Кто взял" и "ID держателя" относились бы к разным людям).
+    # Держатель всегда определяется из авторизованного Telegram user ниже.
+    holder: str = ''
+
+
+def _holder_name_from_user(user: dict) -> str:
+    """Порядок: first_name+last_name -> first_name -> username -> str(id).
+    Единственный источник имени держателя для self-checkout -- клиентский holder
+    из CheckoutBody игнорируется целиком, не подмешивается ни в каком виде."""
+    first_name = (user.get('first_name') or '').strip()
+    last_name = (user.get('last_name') or '').strip()
+    holder_name = ' '.join(v for v in [first_name, last_name] if v).strip()
+    if not holder_name:
+        holder_name = (user.get('username') or '').strip()
+    if not holder_name:
+        holder_name = str(user['id'])
+    return holder_name
 
 
 @app.patch("/api/tools/{serial}/checkout")
 def checkout_tool(serial: str, body: CheckoutBody, user: dict = Depends(get_current_user)):
     import tools_lib as tl
-    try:
-        # 22.07: worker сам оформляет checkout — user['id'] это и есть реальный держатель,
-        # пишем как holder_id чтобы avatar на карточке инструмента был кликабельным (openUserCard).
-        tl.checkout_tool(serial, body.holder, body.object_name, user.get('first_name', str(user['id'])),
-                          holder_id=str(user['id']))
-    except ValueError as e:
-        raise HTTPException(404, str(e))
+    if not body.object_name.strip():
+        raise HTTPException(400, "Укажи объект")
+    tool = tl.get_tool(serial)
+    if tool is None:
+        raise HTTPException(404, f'инструмент {serial} не найден')
+    if tl.mapped_status(tool) != 'free':
+        raise HTTPException(409, "Инструмент уже выдан или недоступен")
+    # 22.07: worker сам оформляет checkout — user['id'] это и есть реальный держатель,
+    # пишем как holder_id чтобы avatar на карточке инструмента был кликабельным (openUserCard).
+    holder_name = _holder_name_from_user(user)
+    tl.checkout_tool(serial, holder_name, body.object_name, holder_name, holder_id=str(user['id']))
     return {"status": "ok"}
 
 

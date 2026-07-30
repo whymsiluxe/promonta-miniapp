@@ -176,8 +176,10 @@ async function openToolDetail(toolId) {
   }
 }
 
-// Worker берёт свободный инструмент -- то же поведение что раньше (простая форма
-// объект+имя), но объекты теперь реальные (TOOLS_ACTIVE_OBJECTS), не хардкод.
+// Worker берёт свободный инструмент -- выбирает только объект. Имя держателя больше
+// НЕ вводится вручную (баг: Worker мог вписать чужое имя -- "Кто взял" и "ID держателя"
+// относились бы к разным людям): backend сам определяет holder_name из авторизованного
+// Telegram user (см. checkout_tool в main.py), frontend отправляет только object_name.
 function _takeToolQuick(toolId) {
   const tool = TOOLS.find(t => t.id === toolId);
   if (!tool) return;
@@ -195,8 +197,6 @@ function _takeToolQuick(toolId) {
         ${objectOptions}
         <option value="${PERSONAL_USE}">${PERSONAL_USE}</option>
       </select>
-      <label class="modal-label">Кто взял</label>
-      <input class="modal-input" id="modal-holder" type="text" placeholder="Имя">
       <div class="modal-actions">
         <button class="modal-btn secondary" id="modal-cancel">Отмена</button>
         <button class="modal-btn primary" id="modal-save">Взять</button>
@@ -209,16 +209,15 @@ function _takeToolQuick(toolId) {
 
   overlay.querySelector('#modal-save').addEventListener('click', async () => {
     const object = overlay.querySelector('#modal-object').value;
-    const holder = overlay.querySelector('#modal-holder').value.trim();
     const saveBtn = overlay.querySelector('#modal-save');
-    if (!holder || !object) {
-      showToast('Укажи объект и кто взял.', 'error');
+    if (!object) {
+      showToast('Укажи объект.', 'error');
       return;
     }
     saveBtn.disabled = true;
     saveBtn.textContent = 'Сохранение...';
     try {
-      await api(`/api/tools/${toolId}/checkout`, { method: 'PATCH', body: JSON.stringify({ holder, object_name: object }) });
+      await api(`/api/tools/${toolId}/checkout`, { method: 'PATCH', body: JSON.stringify({ object_name: object }) });
       overlay.remove();
       hapticImpact('medium');
       showToast('Инструмент взят', 'success');
