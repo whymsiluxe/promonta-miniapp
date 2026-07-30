@@ -105,7 +105,13 @@ async def audit_log_middleware(request, call_next):
 
     response = await call_next(request)
 
-    if request.method in ("POST", "PATCH", "DELETE") and response.status_code < 400:
+    # 30.07 (Release-аудит Этап 6): раньше логировались только успешные мутации
+    # (status < 400) -- отклонения (400/403/404/413 на upload, 401 на auth) не
+    # попадали в audit.log вообще, только в разрозненные print() в отдельных
+    # местах кода. Теперь пишем обе категории отдельными полями -- rejection не
+    # включает тело запроса/файла (тот же принцип, что и раньше: НЕ initData,
+    # НЕ BOT_TOKEN, НЕ содержимое сообщений/GPS, только method/path/status/user_id).
+    if request.method in ("POST", "PATCH", "DELETE"):
         user_id = None
         try:
             init_data = request.headers.get("x-telegram-init-data", "")
@@ -119,6 +125,7 @@ async def audit_log_middleware(request, call_next):
             "method": request.method,
             "path": request.url.path,
             "status": response.status_code,
+            "rejected": response.status_code >= 400,
         }
         with AUDIT_LOCK:
             with open(AUDIT_FILE, "a", encoding="utf-8") as f:
@@ -478,9 +485,88 @@ def revoke_role(target_user_id: str, user: dict = Depends(get_current_user), _: 
     return {"status": "ok"}
 
 
+# 30.07 (Release-аудит Этап 6): commit SHA для /api/health читается из файла рядом
+# с main.py, который пишет deploy-скрипт при выкладке -- НЕ subprocess'ом git на
+# каждый health-запрос (дорого, плюс serving-путь /home/promonta/agent/miniapp/
+# не является git-репозиторием, git там просто не сработает). Файл опционален --
+# если деплой был сделан вручную без записи VERSION, health всё равно отвечает,
+# просто без SHA.
+APP_VERSION_FILE = os.path.join(BACKEND_DIR, 'VERSION')
+
+
+def _read_app_version() -> dict:
+    if not os.path.isfile(APP_VERSION_FILE):
+        return {"version": "unknown", "commit": "unknown"}
+    try:
+        with open(APP_VERSION_FILE, encoding='utf-8') as f:
+            data = json.load(f)
+        return {"version": data.get('version', 'unknown'), "commit": data.get('commit', 'unknown')}
+    except (json.JSONDecodeError, OSError):
+        return {"version": "unknown", "commit": "unknown"}
+
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    """Лёгкая liveness-проверка -- процесс жив, отвечает. Не трогает диск/сеть
+    (кроме чтения маленького локального VERSION-файла) -- безопасно дёргать часто
+    из мониторинга. Никаких токенов/секретов/путей к credentials/персональных
+    данных в ответе (30.07, Release-аудит Этап 6)."""
+    version_info = _read_app_version()
+    return {
+        "status": "ok",
+        "service": "promonta-miniapp",
+        "version": version_info["version"],
+        "commit": version_info["commit"],
+        "time": datetime.utcnow().isoformat() + 'Z',
+    }
+
+
+@app.get("/api/health/ready")
+def health_ready(user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    """Readiness-проверка для Owner/внутреннего мониторинга -- owner-only (в отличие
+    от /api/health): проверяет реальную готовность обслуживать запросы, не только
+    "процесс жив". Каждая проверка дешёвая (stat/os.access), НЕ дорогой сетевой
+    запрос к Google Sheets на каждый вызов -- иначе readiness сам стал бы точкой
+    перегрузки при частом опросе мониторингом."""
+    checks = {}
+
+    # storage: базовые директории для загрузок существуют и доступны для записи.
+    storage_dirs = [
+        ('object_photos', OBJECT_PHOTO_DIR),
+        ('chat_attachments', CHAT_ATTACH_DIR),
+    ]
+    storage_ok = True
+    for name, path in storage_dirs:
+        if not (os.path.isdir(path) and os.access(path, os.W_OK)):
+            storage_ok = False
+            break
+    checks['storage'] = 'ok' if storage_ok else 'error'
+
+    # uploads: реальная проверка записи -- временный файл создаётся и сразу удаляется
+    # (не просто os.access, который может соврать про эффективные права на некоторых ФС).
+    try:
+        probe_path = os.path.join(OBJECT_PHOTO_DIR, f'.health-probe-{os.getpid()}')
+        with open(probe_path, 'wb') as f:
+            f.write(b'ok')
+        os.remove(probe_path)
+        checks['uploads'] = 'ok'
+    except OSError:
+        checks['uploads'] = 'error'
+
+    # tools_lib.py -- наличие рядом с main.py (Release-аудит: изолированный
+    # importlib-loader должен находить файл по TOOLS_LIB_PATH).
+    checks['tools_lib'] = 'ok' if os.path.isfile(TOOLS_LIB_PATH) else 'missing'
+    checks['mangel_lib'] = 'ok' if os.path.isfile(MANGEL_LIB_PATH) else 'missing'
+
+    # runtime JSON -- ROLES_FILE обязателен для работы whitelist-авторизации,
+    # его отсутствие -- реальный readiness-блокер (не просто "пусто").
+    checks['roles_file'] = 'ok' if os.path.isfile(ROLES_FILE) else 'missing'
+
+    overall_ok = all(v == 'ok' for v in checks.values())
+    return {
+        "status": "ready" if overall_ok else "degraded",
+        "checks": checks,
+    }
 
 
 @app.get("/api/me")
