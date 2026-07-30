@@ -3022,21 +3022,45 @@ def _thread_last_read(reads: dict, my_id: str, thread_key: str) -> int:
 
 
 @app.get("/api/chat/unread_count")
-def get_unread_count(user: dict = Depends(get_current_user)):
+def get_unread_count(user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """30.07 (Release-аудит Этап 5): раньше цикл вообще не учитывал thread_key
+    (obj:/mangel:/task: треды) -- фильтровал только по to_user_id, поэтому любое
+    сообщение с thread_key (thread_key истинный, to_user_id всегда None у таких
+    сообщений) попадало в ветку "group" и считалось непрочитанным ДЛЯ ЛЮБОГО
+    пользователя против его group-last-read, независимо от того, участник ли он
+    вообще этого конкретного object/mangel/task-треда -- общий nav-badge был
+    завышен и не гас после прочтения конкретного треда. Логика приведена к тому
+    же паттерну, что уже верно работает в get_unread_by_thread ниже: явная
+    проверка _check_thread_access для thread_key-сообщений + собственный ключ
+    last-read на каждый thread_key (не смешивается с general group-веткой)."""
     with _chat_lock:
         messages = _load_chat()
         reads = _load_reads()
+    meta = _load_chat_thread_meta()
     me = str(user['id'])
     count = 0
     for m in messages:
         if str(m.get('user_id')) == me:
             continue
-        to_uid = m.get('to_user_id')
-        if to_uid and str(to_uid) != me:
-            continue  # чужой DM
-        thread_key = 'group' if not to_uid else str(m['user_id'])
-        if m.get('ts', 0) > _thread_last_read(reads, me, thread_key):
-            count += 1
+        tkey = m.get('thread_key')
+        if tkey:
+            try:
+                _check_thread_access(tkey, me, role)
+            except HTTPException:
+                continue
+            thread_key = tkey
+            prefs_id = tkey
+        else:
+            to_uid = m.get('to_user_id')
+            if to_uid and str(to_uid) != me:
+                continue  # чужой DM
+            thread_key = 'group' if not to_uid else str(m['user_id'])
+            prefs_id = thread_key if not to_uid else _chat_thread_id(me, thread_key)
+        if m.get('ts', 0) <= _thread_last_read(reads, me, thread_key):
+            continue
+        if _thread_user_prefs(meta, prefs_id, me).get('muted'):
+            continue
+        count += 1
     return {"unread": count}
 
 
@@ -3052,9 +3076,9 @@ def get_unread_by_thread(user: dict = Depends(get_current_user), role: str = Dep
     во frontend была бы декоративной, а не реальным подавлением уведомлений. prefs_id
     для DM отличается от display-ключа thread_key (тот -- id собеседника, prefs хранятся
     под отсортированной парой _chat_thread_id, см. set_chat_thread_prefs) -- не перепутать.
-    Аналогичный fix НЕ внесён в /api/chat/unread_count (общий nav-badge): тот вообще
-    не различает thread_key-треды (obj:/mangel:/task:) от group -- отдельный, более
-    старый и более рискованный для правки баг, задокументирован отдельно, не в этом проходе."""
+    30.07 (Release-аудит Этап 5): та же thread_key/prefs/muted-логика теперь приведена
+    в соответствие и в /api/chat/unread_count (общий nav-badge) выше -- раньше тот
+    вообще не различал thread_key-треды (obj:/mangel:/task:) от group."""
     with _chat_lock:
         messages = _load_chat()
         reads = _load_reads()
