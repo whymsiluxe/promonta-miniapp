@@ -232,10 +232,11 @@ function _takeToolQuick(toolId) {
 }
 
 // Worker возвращает СВОЙ инструмент (holderId === currentUserId, проверено до вызова
-// в _toolMainActionLabel) -- очищает держателя/holderId/объект, статус становится free.
+// в _toolMainActionLabel) -- настоящий /return endpoint, НЕ /checkout с пустыми полями
+// (тот всё равно писал бы holder_id текущего юзера на свободный инструмент).
 async function _returnTool(toolId) {
   try {
-    await api(`/api/tools/${toolId}/checkout`, { method: 'PATCH', body: JSON.stringify({ holder: '', object_name: '' }) });
+    await api(`/api/tools/${toolId}/return`, { method: 'PATCH' });
     hapticImpact('light');
     showToast('Инструмент возвращён', 'success');
     await loadTools();
@@ -310,7 +311,7 @@ async function openManageModal(toolId) {
     const holderMode = holderModeSelect.value;
     const saveBtn = overlay.querySelector('#modal-save');
 
-    let holder = '', holderId = '';
+    let holder = '', holderId = '', objectName = object;
     if (holderMode === 'other') {
       holder = holderOtherInput.value.trim();
     } else if (holderMode.startsWith('worker:')) {
@@ -319,14 +320,19 @@ async function openManageModal(toolId) {
       holder = w ? w.name : '';
       holderId = wid;
     }
-    // "Никто" -- holder/holderId остаются пустыми, инструмент возвращается в свободное состояние.
+    // "Никто" -- holder/holderId остаются пустыми. Статус "Свободен" (пустая строка в select)
+    // тоже обязан очистить holder/holderId/object -- иначе получится противоречивое состояние
+    // "свободный инструмент с держателем".
+    if (holderMode === 'none' || status === '') {
+      holder = ''; holderId = ''; objectName = '';
+    }
 
     saveBtn.disabled = true;
     saveBtn.textContent = 'Сохранение...';
     try {
       await api(`/api/tools/${tool.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status, holder, object_name: holderMode === 'none' ? '' : object, holder_id: holderId }),
+        body: JSON.stringify({ status, holder, object_name: objectName, holder_id: holderId }),
       });
       overlay.remove();
       hapticImpact('medium');
@@ -484,117 +490,4 @@ function initToolsView() {
 
   loadToolsObjects();
   loadTools();
-}
-
-// ═══════════ Общий компактный виджет "Инструменты" (30.07): переиспользуется в Object Info,
-// Worker profile, Dashboard -- каждый вызывающий сам фильтрует список из /api/tools и передаёт
-// сюда только контекст рендера. Взять/вернуть используют существующие checkout/PATCH endpoints,
-// без нового backend. История и добавление нового инструмента -- НЕ доступны отсюда (только
-// на полном экране "Инструменты" по дизайну этого виджета). ═══════════
-
-// mode: 'object' (виджет на объекте -- toolObjectName фиксирован, значит "взять" = checkout
-// сюда же) | 'worker' (виджет в профиле работника -- список того, что уже на руках, действие
-// только "вернуть", "взять" тут не имеет смысла без выбора объекта).
-function renderToolWidgetList(tools, mode) {
-  if (!tools.length) {
-    return '<div class="wo-empty">Нет инструментов</div>';
-  }
-  return tools.map(t => {
-    const statusColor = t.status === 'free' ? 'var(--accent)' : t.status === 'in-use' ? 'var(--warning)' : 'var(--red)';
-    let actionBtn = '';
-    if (mode === 'worker') {
-      actionBtn = `<button type="button" class="wo-assign-btn tool-widget-return-btn" data-serial="${esc(t.id)}">Вернуть</button>`;
-    } else if (mode === 'object' && t.status === 'free') {
-      actionBtn = `<button type="button" class="wo-assign-btn tool-widget-take-btn" data-serial="${esc(t.id)}">Взять</button>`;
-    }
-    return `
-    <div class="wo-worker-row tool-widget-row" data-serial="${esc(t.id)}">
-      <span class="wo-worker-name">${esc(t.name)}<span class="tool-widget-status" style="color:${statusColor}">${esc(STATUS_LABEL[t.status] || t.status)}</span></span>
-      ${actionBtn}
-    </div>`;
-  }).join('');
-}
-
-// object mode: toolObjectName -- строка "Обьект/Адрес" в таблице инструментов (не object_id,
-// там свободный текст, задаётся тем же значением что уже показывается на карточках объектов).
-async function renderToolWidgetForObject(containerId, toolObjectName) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  el.innerHTML = '<div class="wo-empty">Загрузка…</div>';
-  try {
-    const data = await api('/api/tools');
-    const tools = (data.tools || []).map(mapTool).filter(t => t.object === toolObjectName);
-    el.innerHTML = renderToolWidgetList(tools, 'object');
-    el.querySelectorAll('.tool-widget-take-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        btn.disabled = true;
-        try {
-          // checkout_tool (backend) требует holder-строку явно -- не выводит имя сам,
-          // тот же контракт что и у существующей кнопки "Взять" на полном tools-экране.
-          const stats = await api('/api/profile/stats').catch(() => null);
-          const holderName = (stats && stats.name) || '';
-          await api(`/api/tools/${btn.dataset.serial}/checkout`, {
-            method: 'PATCH',
-            body: JSON.stringify({ holder: holderName, object_name: toolObjectName }),
-          });
-          hapticImpact('medium');
-          showToast('Инструмент взят', 'success');
-          renderToolWidgetForObject(containerId, toolObjectName);
-        } catch (e) {
-          showToast('Ошибка: ' + e.message, 'error');
-          btn.disabled = false;
-        }
-      });
-    });
-  } catch (e) {
-    el.innerHTML = '<div class="js-error-state">Ошибка загрузки</div>';
-  }
-}
-
-// worker mode: holderId -- user_id работника, чей профиль сейчас смотрят (owner или сам worker).
-async function renderToolWidgetForWorker(containerId, holderId) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  el.innerHTML = '<div class="wo-empty">Загрузка…</div>';
-  try {
-    const data = await api('/api/tools');
-    const tools = (data.tools || []).map(mapTool).filter(t => String(t.holderId || '') === String(holderId));
-    el.innerHTML = renderToolWidgetList(tools, 'worker');
-    el.querySelectorAll('.tool-widget-return-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        btn.disabled = true;
-        try {
-          await api(`/api/tools/${btn.dataset.serial}/checkout`, {
-            method: 'PATCH',
-            body: JSON.stringify({ holder: '', object_name: '' }),
-          });
-          hapticImpact('light');
-          showToast('Инструмент возвращён', 'success');
-          renderToolWidgetForWorker(containerId, holderId);
-        } catch (e) {
-          showToast('Ошибка: ' + e.message, 'error');
-          btn.disabled = false;
-        }
-      });
-    });
-  } catch (e) {
-    el.innerHTML = '<div class="js-error-state">Ошибка загрузки</div>';
-  }
-}
-
-// Dashboard mode: только проблемные (ремонт/не найден) -- owner-обзор без перехода в tools-экран.
-async function renderToolWidgetDashboard(containerId) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  el.innerHTML = '<div class="wo-empty">Загрузка…</div>';
-  try {
-    const data = await api('/api/tools');
-    const tools = (data.tools || []).map(mapTool).filter(t => t.status === 'repair' || t.status === 'missing');
-    el.innerHTML = tools.length ? tools.map(t => `
-      <div class="wo-worker-row tool-widget-row" data-serial="${esc(t.id)}">
-        <span class="wo-worker-name">${esc(t.name)}<span class="tool-widget-status" style="color:${t.status === 'missing' ? 'var(--red)' : 'var(--warning)'}">${esc(STATUS_LABEL[t.status])}</span></span>
-      </div>`).join('') : '<div class="wo-empty">Проблемных инструментов нет</div>';
-  } catch (e) {
-    el.innerHTML = '<div class="js-error-state">Ошибка загрузки</div>';
-  }
 }

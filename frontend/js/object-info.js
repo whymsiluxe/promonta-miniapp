@@ -69,13 +69,6 @@ async function renderObjectInfoTab(objectId) {
       </div>
       <div id="obj-info-docs-summary"></div>
     </div>
-    <div class="obj-info-section">
-      <div class="obj-info-section-title-row">
-        <span class="obj-info-section-title" style="margin-bottom:0;">Инструменты</span>
-        <span class="obj-info-count-badge obj-info-tools-link" onclick="switchView('tools')">Все ▸</span>
-      </div>
-      <div id="obj-info-tools-widget"></div>
-    </div>
     <!-- 29.07 v2: Потребности перенесены сюда из отдельной 4-й вкладки (owner ТЗ: финальная
          структура Object Detail -- ровно 3 таба Чат/Инфо/План работ, без отдельной вкладки
          Потребности). Разметка и вся логика ниже (_loadObjNeeds/_renderNeedRow) перенесены
@@ -179,9 +172,6 @@ async function renderObjectInfoTab(objectId) {
     _renderObjDocsSummary(objectId),
     _loadObjNeeds(objectId),
   ];
-  if (typeof renderToolWidgetForObject === 'function') {
-    promises.push(renderToolWidgetForObject('obj-info-tools-widget', _objDetailCurrentName || ''));
-  }
   if (currentRole === 'owner') promises.push(_renderObjTeamAndShifts(objectId));
   await Promise.all(promises);
 }

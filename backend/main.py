@@ -1650,6 +1650,24 @@ def checkout_tool(serial: str, body: CheckoutBody, user: dict = Depends(get_curr
     return {"status": "ok"}
 
 
+@app.patch("/api/tools/{serial}/return")
+def return_tool(serial: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """30.07 (Инструменты-редизайн, п.11, реальный найденный баг): предыдущая версия
+    "возврата" вызывала /checkout с пустыми holder/object_name -- checkout_tool всё равно
+    пишет holder_id текущего юзера безусловно, так что "возврат" на деле мог сделать
+    держателем СВОБОДНОГО инструмента того, кто на самом деле его не брал. Отдельный
+    endpoint: текущий держатель или owner -- разрешено, посторонний worker -- 403."""
+    import tools_lib as tl
+    tool = tl.get_tool(serial)
+    if tool is None:
+        raise HTTPException(404, f'инструмент {serial} не найден')
+    holder_id = (tool.get('ID держателя') or '').strip()
+    if role != 'owner' and str(user['id']) != holder_id:
+        raise HTTPException(403, "Можно вернуть только инструмент, который взят вами")
+    tl.return_tool(serial, user.get('first_name', str(user['id'])))
+    return {"status": "ok"}
+
+
 class ToolUpdateBody(BaseModel):
     status: str
     holder: str = ''

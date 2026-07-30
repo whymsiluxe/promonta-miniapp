@@ -81,14 +81,6 @@ async function initHomeView() {
       </div>
     </div>
 
-    <div id="home-tools-section" class="home-rings-section">
-      <div class="home-section-header">
-        <span class="home-section-title">Инструменты</span>
-        <span class="home-section-action" onclick="switchView('tools')">Все ▸</span>
-      </div>
-      <div id="home-tools-widget"></div>
-    </div>
-
     <div id="home-weather-card" class="weather-card">
       <div class="weather-card-loading">Загрузка погоды...</div>
     </div>
@@ -105,7 +97,6 @@ async function _loadHomeData() {
   _loadHomeAlerts();
   _loadHomeAbwesenheitSummary();
   _loadHomeChatSummary();
-  if (typeof renderToolWidgetDashboard === 'function') renderToolWidgetDashboard('home-tools-widget');
 }
 
 // 10.11: Abwesenheit-плашка на Home — сводка вместо мелкой строки в Profile→Ещё.
