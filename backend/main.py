@@ -1426,6 +1426,20 @@ def get_team_plan(date: str = '', user: dict = Depends(get_current_user), _: Non
     def _worker_name(uid):
         return _sanitize_display_name(profiles.get(str(uid), {}).get('name'), str(uid))
 
+    # Cleanup-commit (спек п.4): stage_id в assignments -- уже человекочитаемый текст
+    # (вид работ из BUBBLE_STAGE_OPTIONS либо "Текущий этап" объекта на момент назначения),
+    # но не всегда совпадает с актуальным названием строки этапа в Sheets. Один batch-запрос
+    # (не N+1 по каждому назначению) -- матчим по названию этапа того же объекта, при
+    # совпадении отдаём каноничное имя, иначе используем stage_id как есть (fallback).
+    import objekte_lib as o
+    stage_names_by_object = {}
+    for oid, stages in o.all_stages_grouped().items():
+        stage_names_by_object[oid] = {s.get('Название этапа', '').strip().lower(): s.get('Название этапа', '') for s in stages}
+
+    def _resolve_stage_name(oid, stage_id):
+        names = stage_names_by_object.get(oid, {})
+        return names.get((stage_id or '').strip().lower(), '')
+
     is_today = target_date == date_cls.today().isoformat()
     sessions_by_uid = {}
     if is_today:
@@ -1441,19 +1455,24 @@ def get_team_plan(date: str = '', user: dict = Depends(get_current_user), _: Non
             if not (date_from and date_to and date_from <= target_date <= date_to):
                 continue
             status = _assignment_status(a)
-            if status == 'declined':
-                continue
+            # Cleanup-commit (спек п.5): declined больше НЕ пропускается -- owner должен
+            # видеть, что запланированный сотрудник отклонил назначение.
             uid = str(a.get('user_id', ''))
+            stage_id = a.get('stage_id', '')
             entry = {
                 "user_id": uid,
                 "worker_name": _worker_name(uid),
-                "stage_id": a.get('stage_id', ''),
+                "stage_id": stage_id,
+                "stage_name": _resolve_stage_name(oid, stage_id),
                 "task_note": a.get('task_note', ''),
                 "date_from": date_from,
                 "date_to": date_to,
                 "assignment_status": status,
             }
-            if is_today:
+            # shift_state имеет смысл только для уже принятого назначения на сегодня --
+            # pending ещё ничего не подтвердил, declined отклонил, для них факта смены
+            # физически быть не может.
+            if is_today and status == 'accepted':
                 uid_sessions = sessions_by_uid.get(uid, [])
                 active = next((s for s in uid_sessions if s.get('object_id') == oid and s.get('finish_at') is None), None)
                 finished = next((s for s in uid_sessions if s.get('object_id') == oid and s.get('finish_at') is not None), None)

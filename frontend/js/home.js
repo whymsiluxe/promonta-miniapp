@@ -815,16 +815,15 @@ async function initWorkingObjectsView() {
       const working = shifts.working_now || [];
       const notStarted = shifts.not_started || [];
       const awaiting = shifts.awaiting_response || [];
-      const available = shifts.available_today || [];
 
       // Краткая сводка -- счётчики строго из API length, не DOM. Кликабельны --
       // плавная прокрутка к соответствующему блоку (спек: не отдельные фильтры/экраны).
       const summaryHtml = `
         <div class="wo-summary-bar">
           <div class="wo-summary-tile" data-scroll-target="wo-anchor-working"><span class="wo-summary-num">${working.length}</span><span class="wo-summary-label">работают</span></div>
-          <div class="wo-summary-tile" data-scroll-target="wo-anchor-attention"><span class="wo-summary-num">${notStarted.length}</span><span class="wo-summary-label">не вышли</span></div>
-          <div class="wo-summary-tile" data-scroll-target="wo-anchor-attention"><span class="wo-summary-num">${awaiting.length}</span><span class="wo-summary-label">ждут</span></div>
-          <div class="wo-summary-tile" data-scroll-target="wo-anchor-without-object"><span class="wo-summary-num">${available.length}</span><span class="wo-summary-label">доступны</span></div>
+          <div class="wo-summary-tile" data-scroll-target="${notStarted.length ? 'wo-anchor-not-started' : 'wo-anchor-attention'}"><span class="wo-summary-num">${notStarted.length}</span><span class="wo-summary-label">не вышли</span></div>
+          <div class="wo-summary-tile" data-scroll-target="${awaiting.length ? 'wo-anchor-awaiting' : 'wo-anchor-attention'}"><span class="wo-summary-num">${awaiting.length}</span><span class="wo-summary-label">ждут</span></div>
+          <div class="wo-summary-tile" data-scroll-target="wo-anchor-without-object"><span class="wo-summary-num">${withoutObject.length}</span><span class="wo-summary-label">без объекта</span></div>
         </div>`;
 
       // Требует внимания -- ЕДИНСТВЕННОЕ место, где рендерятся not_started/awaiting
@@ -838,17 +837,36 @@ async function initWorkingObjectsView() {
           <button type="button" class="wo-blocker-resolve-btn" data-object="${esc(b.object_id)}" data-row="${esc(b.row_num)}">Проблема решена</button>
         </div>`;
       const attentionCount = notStarted.length + awaiting.length + blockers.length;
+      // Cleanup-commit (спек): счётчики "Не вышли"/"Ждут" должны прокручивать к СВОИМ
+      // подразделам, не к общему началу блока -- отдельные якоря, заголовки только
+      // при наличии записей. Blocker-карточки остаются в общем разделе без своего якоря.
       const attentionHtml = attentionCount
-        ? [...notStarted.map(notStartedCard), ...awaiting.map(awaitingCard), ...blockers.map(blockerCard)].join('')
+        ? `
+          ${notStarted.length ? `<div id="wo-anchor-not-started"><div class="wo-team-block-title">Не вышли</div>${notStarted.map(notStartedCard).join('')}</div>` : ''}
+          ${awaiting.length ? `<div id="wo-anchor-awaiting"><div class="wo-team-block-title">Ожидают подтверждения</div>${awaiting.map(awaitingCard).join('')}</div>` : ''}
+          ${blockers.map(blockerCard).join('')}
+        `
         : '<div class="wo-empty">Всё в порядке</div>';
 
       // Активные смены -- отдельный заметный блок.
       const workingHtml = working.length ? working.map(activeCard).join('') : '<div class="wo-empty">Сейчас никто не работает</div>';
 
       // Часы команды -- компактный список: максимум 5, ненулевые сначала, без ID
-      // как главного имени (team_hours[].name уже через _sanitize_display_name,
-      // но fallback на числовой ID возможен -- такие записи не главные, просто
-      // не подсвечиваем их отдельно; спек просит НЕ показывать нулевые часы вовсе).
+      // как главного имени. Cleanup-commit (спек п.6): backend team_hours[].name уже
+      // проходит через _sanitize_display_name (Worker Profile), но fallback там --
+      // числовой Telegram ID, который тоже "проходит" как непустая строка. Порядок
+      // здесь: 1) backend name (Worker Profile) 2) имя из уже загруженного /api/workers
+      // 3) backend name если не состоит только из цифр 4) "Сотрудник".
+      const workersByUid = {};
+      workers.forEach(w => { workersByUid[String(w.user_id)] = w.name; });
+      const _isNumericOnly = s => /^\d+$/.test((s || '').trim());
+      const _resolveHoursName = t => {
+        const backendName = t.name || '';
+        if (backendName && !_isNumericOnly(backendName)) return backendName;
+        const workerName = workersByUid[String(t.user_id)];
+        if (workerName && !_isNumericOnly(workerName)) return workerName;
+        return 'Сотрудник';
+      };
       const teamHours = (stats && stats.team_hours) || [];
       const weekTotal = teamHours.reduce((sum, t) => sum + (t.hours || 0), 0);
       const nonZeroHours = teamHours.filter(t => t.hours > 0).slice(0, 5);
@@ -862,7 +880,7 @@ async function initWorkingObjectsView() {
           </div>
           ${nonZeroHours.length ? nonZeroHours.map(t => `
             <div class="wo-hours-row">
-              <span class="wo-hours-name">${esc(t.name)}</span>
+              <span class="wo-hours-name">${esc(_resolveHoursName(t))}</span>
               <span class="wo-hours-value">${t.hours.toFixed(1)} ч</span>
             </div>`).join('') : '<div class="wo-empty">На этой неделе часов пока нет</div>'}
         </div>` : '';
@@ -1111,7 +1129,7 @@ async function _loadWorkingObjectsPlanContent() {
         ${o.assignments.map(a => `
           <div class="wo-plan-row" data-uid="${esc(a.user_id)}">
             <div class="wo-plan-row-top">
-              <span class="wo-plan-row-name">${esc(a.worker_name)}${a.stage_id ? ` — <span class="wo-plan-row-stage">${esc(a.stage_id)}</span>` : ''}</span>
+              <span class="wo-plan-row-name">${esc(a.worker_name)}${(a.stage_name || a.stage_id) ? ` — <span class="wo-plan-row-stage">${esc(a.stage_name || a.stage_id)}</span>` : ''}</span>
               <span class="wo-plan-status wo-plan-status-${a.assignment_status}">${esc(WO_PLAN_STATUS_LABEL[a.assignment_status] || a.assignment_status)}</span>
             </div>
             ${a.task_note ? `<div class="wo-plan-row-detail">${esc(a.task_note)}</div>` : ''}

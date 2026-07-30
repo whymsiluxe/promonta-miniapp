@@ -2758,7 +2758,7 @@ body.view-locked {
 
 /* ── "Команда" (23.07, 30.07 v3/v4/v5 -- см. спеки) ── */
 .wo-mode-switch { margin: 0 0.75rem 0.25rem; }
-#working-objects-slot, #working-objects-plan-slot { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
+#working-objects-slot, #working-objects-plan-slot { padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 16px); }
 .wo-section { padding: 0.9rem 0.75rem; border-bottom: 1px solid var(--border-color); }
 .wo-section:last-child { border-bottom: none; }
 .wo-section-title { font-family: var(--font-heading); font-size: 1rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.55rem; }
@@ -2815,6 +2815,7 @@ body.view-locked {
 .wo-plan-status { font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px; white-space: nowrap; }
 .wo-plan-status-accepted { background: rgba(90,150,90,0.15); color: var(--accent); }
 .wo-plan-status-pending { background: rgba(200,150,50,0.15); color: var(--warning-text); }
+.wo-plan-status-declined { background: rgba(150,90,90,0.15); color: var(--red); }
 .wo-plan-status-shift { font-size: 0.72rem; color: var(--text-light); margin-top: 0.2rem; }
 
 /* 23.07: единый error-state — было 8+ разных стилей одного смысла (text-light/red/без стиля
