@@ -252,6 +252,41 @@ def sniff_image_or_pdf(raw: bytes) -> str | None:
     return None
 
 
+# 30.07 (Release-аудит P0): chat-вложения/голосовые/transcribe раньше принимали
+# ЛЮБОЙ файл без magic-byte проверки (только size limit) -- единственные upload
+# endpoints без sniff_image()/sniff_image_or_pdf(), в отличие от avatar/object-photo/
+# document/feed/mangel/blocker, которые уже так делали. Расширенный allowlist:
+# изображения + PDF (вложение может быть и документом) + аудио (голосовые).
+_ALLOWED_AUDIO_MIME_EXT = {
+    'audio/ogg': 'ogg', 'application/ogg': 'ogg',
+    'audio/webm': 'webm', 'video/webm': 'webm',  # webm audio-only контейнер иногда детектится как video/webm
+    'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a',
+    'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/vnd.wave': 'wav',
+}
+_ALLOWED_CHAT_ATTACHMENT_MIME_EXT = {**_ALLOWED_IMAGE_MIME_EXT, 'application/pdf': 'pdf', **_ALLOWED_AUDIO_MIME_EXT}
+
+
+def sniff_audio(raw: bytes) -> str | None:
+    """Как sniff_image(), но для голосовых -- отдельная функция (не смешиваем
+    allowlist изображений с аудио, вызывающий код явно говорит что ожидает)."""
+    detected = magic.from_buffer(raw, mime=True)
+    return detected if detected in _ALLOWED_AUDIO_MIME_EXT else None
+
+
+def sniff_chat_attachment(raw: bytes) -> tuple[str, str] | None:
+    """Чат принимает и фото, и голосовые, и документы через один и тот же upload
+    endpoint (/api/chat/messages/attachment) -- единая проверка на объединённый
+    allowlist. Возвращает (mime, безопасное_расширение) или None, если формат не
+    разрешён. Расширение ВСЕГДА берётся из этой таблицы (не из имени файла от
+    клиента) -- закрывает как "любой файл проходит", так и path-traversal через
+    непровалидированное имя/расширение (10.07 -- Release-аудит P0)."""
+    detected = magic.from_buffer(raw, mime=True)
+    ext = _ALLOWED_CHAT_ATTACHMENT_MIME_EXT.get(detected)
+    if ext is None:
+        return None
+    return detected, ext
+
+
 def _csv_safe(value) -> str:
     """CSV formula injection: Excel/LibreOffice выполняет ячейку, начинающуюся с
     =, +, -, @ как формулу при открытии. object_id в stundenzettel идёт от
@@ -3057,11 +3092,18 @@ def post_chat_attachment(thread_key: str = Form(''), to_user_id: str = Form(''),
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
             raise HTTPException(403, "Чат закрыт руководством")
 
-    ext = os.path.splitext(file.filename or '')[1] or '.bin'
-    fname = f'{uuid.uuid4().hex}{ext}'
     data = file.file.read()
     if len(data) > 8 * 1024 * 1024:
         raise HTTPException(400, "Файл слишком большой (макс. 8 МБ)")
+    # 30.07 (Release-аудит P0): раньше расширение бралось из имени файла от клиента
+    # без проверки содержимого -- любой файл (включая .html/.svg) сохранялся и позже
+    # отдавался через FileResponse без nosniff, что выполнялось инлайн в WebView
+    # (stored XSS). Теперь: magic-byte allowlist + расширение ТОЛЬКО из этой таблицы.
+    sniffed = sniff_chat_attachment(data)
+    if sniffed is None:
+        raise HTTPException(400, "Недопустимый тип файла")
+    _, ext = sniffed
+    fname = f'{uuid.uuid4().hex}.{ext}'
     with open(os.path.join(CHAT_ATTACH_DIR, fname), 'wb') as f:
         f.write(data)
 
@@ -3115,11 +3157,16 @@ async def transcribe_voice_endpoint(file: UploadFile = File(...), user: dict = D
         raise HTTPException(400, "Голосовое слишком большое (макс. 8 МБ)")
     if not data:
         raise HTTPException(400, "Пустой файл")
+    # 30.07 (Release-аудит P0): было -- любой файл принимался (только size limit),
+    # расширение бралось из клиентского filename без проверки. Magic-byte allowlist.
+    detected = sniff_audio(data)
+    if detected is None:
+        raise HTTPException(400, "Недопустимый формат аудио")
+    ext = f'.{_ALLOWED_AUDIO_MIME_EXT[detected]}'
 
     uid = str(user['id'])
     user_dir = os.path.join(TRANSCRIBE_AUDIO_DIR, uid)
     os.makedirs(user_dir, exist_ok=True)
-    ext = os.path.splitext(file.filename or '')[1] or '.ogg'
     file_id = uuid.uuid4().hex
     fpath = os.path.join(user_dir, f'{file_id}{ext}')
     with open(fpath, 'wb') as f:
@@ -3170,11 +3217,15 @@ async def post_chat_voice(thread_key: str = Form(''), to_user_id: str = Form('')
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
             raise HTTPException(403, "Чат закрыт руководством")
 
-    ext = os.path.splitext(file.filename or '')[1] or '.ogg'
-    fname = f'{uuid.uuid4().hex}{ext}'
     data = await file.read()
     if len(data) > 8 * 1024 * 1024:
         raise HTTPException(400, "Голосовое слишком большое (макс. 8 МБ)")
+    # 30.07 (Release-аудит P0): magic-byte allowlist, расширение из таблицы а не
+    # от клиента -- то же обоснование что и в post_chat_attachment выше.
+    detected = sniff_audio(data)
+    if detected is None:
+        raise HTTPException(400, "Недопустимый формат аудио")
+    fname = f'{uuid.uuid4().hex}.{_ALLOWED_AUDIO_MIME_EXT[detected]}'
     fpath = os.path.join(CHAT_ATTACH_DIR, fname)
     with open(fpath, 'wb') as f:
         f.write(data)
@@ -3244,20 +3295,29 @@ def extract_task_from_text(body: ExtractTaskBody, user: dict = Depends(get_curre
 
 @app.get("/api/chat/attachments/{fname}")
 def get_chat_attachment(fname: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    path = os.path.join(CHAT_ATTACH_DIR, fname)
+    # 30.07 (Release-аудит P0): basename -- fname раньше шёл в os.path.join без
+    # проверки, что путь не выходит за пределы CHAT_ATTACH_DIR (owner-путь вообще
+    # не имел проверки ниже, только non-owner ветка сверяла msg-принадлежность).
+    safe_fname = os.path.basename(fname)
+    if safe_fname != fname:
+        raise HTTPException(404, "Файл не найден")
+    path = os.path.join(CHAT_ATTACH_DIR, safe_fname)
     if not os.path.exists(path):
         raise HTTPException(404, "Файл не найден")
     if role != 'owner':
         # 10.29 (Fable-аудит, IDOR): fname — uuid, но раньше отдавался любому
         # авторизованному без проверки, что он участник треда с этим вложением.
         messages = _load_chat()
-        msg = next((m for m in messages if m.get('attachment', {}).get('file') == fname), None)
+        msg = next((m for m in messages if m.get('attachment', {}).get('file') == safe_fname), None)
         if not msg:
             raise HTTPException(404, "Файл не найден")
         thread_id = _chat_thread_id(msg['user_id'], msg.get('to_user_id'))
         if str(user['id']) not in _chat_thread_participants(thread_id):
             raise HTTPException(403, "Нет доступа к этому файлу")
-    return FileResponse(path)
+    # 30.07 (Release-аудит P0): nosniff -- расширение теперь всегда из allowlist
+    # (см. sniff_chat_attachment), но nosniff не даёт браузеру угадывать иначе,
+    # даже для легаси-вложений, загруженных до этого фикса без magic-byte проверки.
+    return FileResponse(path, headers={"X-Content-Type-Options": "nosniff"})
 
 
 class ChatMessageBody(BaseModel):
@@ -4659,6 +4719,12 @@ def _save_checkin_meta(items: list):
 
 
 async def _save_checkin_photos(files: list, object_id: str, date_str: str) -> list:
+    # 30.07 (Release-аудит P0): object_id на /api/checkin/start приходит от клиента
+    # (Form-параметр), раньше обрезался только по длине (.strip()[:100]), без защиты
+    # от '../' -- потенциальный path traversal при записи фото. os.path.basename
+    # схлопывает любые сегменты пути в один компонент (тот же приём, что уже
+    # используется для fname/file_id в других upload/serving endpoints).
+    object_id = os.path.basename(object_id) or 'unknown'
     day_dir = os.path.join(CHECKIN_PHOTO_BASE, object_id, date_str)
     os.makedirs(day_dir, exist_ok=True)
     saved = []
@@ -5415,7 +5481,12 @@ def resolve_critical_alert(alert_id: str, resolution: str = Form(...), note: str
 
     saved_photos = []
     if resolution == 'yes' and files:
-        alert_dir = os.path.join(CRITICAL_ALERT_PHOTO_DIR, alert_id)
+        # 30.07 (Release-аудит P1-8): basename на write-стороне для согласованности
+        # с read-стороной (GET .../photo/{filename} уже санитирует). alert_id уже
+        # проверен по _load_critical_alerts()+ownership выше, практическая
+        # эксплуатируемость низкая (id -- server-generated uuid), но раз паттерн
+        # есть на чтении -- должен быть и на записи.
+        alert_dir = os.path.join(CRITICAL_ALERT_PHOTO_DIR, os.path.basename(alert_id))
         os.makedirs(alert_dir, exist_ok=True)
         for f in files:
             data = f.file.read()
