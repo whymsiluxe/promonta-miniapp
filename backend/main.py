@@ -1047,6 +1047,11 @@ def delete_object_image(object_id: str, fname: str, user: dict = Depends(get_cur
 
 @app.get("/api/objects/{object_id}/image/file")
 def get_object_image_file(object_id: str, index: int = 0, user: dict = Depends(get_current_user)):
+    # 30.07 (Release-аудит P1-5): нет require_object_access -- согласовано с
+    # GET /api/objects (весь список объектов виден любому авторизованному, см.
+    # тот же паттерн у /stages, /roadmap notes GET). Upload/delete фото остаются
+    # owner-only. Не меняем это в рамках feature freeze -- задокументировано как
+    # by-design consistency с остальным просмотром объектов, не отдельная дыра.
     images = _load_object_images()
     photos = images.get(object_id) or []
     if not photos or index < 0 or index >= len(photos):
@@ -4272,6 +4277,12 @@ def create_roadmap_note(object_id: str, row_num: int, body: RoadmapNoteBody,
 
 @app.get("/api/objects/{object_id}/stages/{row_num}/roadmap/notes")
 def list_roadmap_notes(object_id: str, row_num: int, item_id: str = '', user: dict = Depends(get_current_user)):
+    # 30.07 (Release-аудит P1-6): нет require_object_access -- согласовано с
+    # GET /api/objects/{object_id}/stages и GET .../roadmap (оба тоже открыты
+    # любому авторизованному по документированному 28.07 owner-решению: "любой
+    # worker может просматривать этапы/roadmap любого объекта"). POST на этот же
+    # ресурс требует require_object_access -- писать может только назначенный,
+    # читать может любой. Не меняем в рамках feature freeze.
     stage = _find_stage_by_row(object_id, row_num)
     store = _load_roadmap_store()
     notes = rl.stage_notes(store, stage['ID строки этапа'], item_id=item_id or None)
