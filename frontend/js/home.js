@@ -855,7 +855,11 @@ async function initWorkingObjectsView() {
       const hoursHtml = teamHours.length ? `
         <div class="wo-section">
           <div class="wo-section-title">Часы команды</div>
-          <div class="wo-hours-summary">Работают сейчас: ${working.length} · сегодня: ${(shifts.hours_today_total || 0).toFixed(1)} ч · за неделю: ${weekTotal.toFixed(1)} ч</div>
+          <div class="wo-hours-tiles">
+            <div class="wo-hours-tile"><span class="wo-hours-tile-num">${working.length}</span><span class="wo-hours-tile-label">работают сейчас</span></div>
+            <div class="wo-hours-tile"><span class="wo-hours-tile-num">${(shifts.hours_today_total || 0).toFixed(1)}</span><span class="wo-hours-tile-label">часов сегодня</span></div>
+            <div class="wo-hours-tile"><span class="wo-hours-tile-num">${weekTotal.toFixed(1)}</span><span class="wo-hours-tile-label">часов за неделю</span></div>
+          </div>
           ${nonZeroHours.length ? nonZeroHours.map(t => `
             <div class="wo-hours-row">
               <span class="wo-hours-name">${esc(t.name)}</span>
