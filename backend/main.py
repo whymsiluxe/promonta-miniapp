@@ -1654,13 +1654,18 @@ class ToolUpdateBody(BaseModel):
     status: str
     holder: str = ''
     object_name: str = ''
+    # 30.07 (Инструменты-редизайн, п.7): Owner теперь выбирает Worker из /api/workers
+    # вместо ручного ввода имени -- holder_id делает avatar держателя в карточке
+    # кликабельным (openUserCard), тот же смысл что уже есть у worker-self checkout.
+    holder_id: str = ''
 
 
 @app.patch("/api/tools/{serial}")
 def update_tool(serial: str, body: ToolUpdateBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     import tools_lib as tl
     try:
-        tl.update_tool_status(serial, body.status, body.holder, body.object_name, user.get('first_name', str(user['id'])))
+        tl.update_tool_status(serial, body.status, body.holder, body.object_name,
+                               user.get('first_name', str(user['id'])), holder_id=body.holder_id)
     except ValueError as e:
         raise HTTPException(404, str(e))
     return {"status": "ok"}

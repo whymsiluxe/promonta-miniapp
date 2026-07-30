@@ -3651,6 +3651,22 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
 #view-objects .card:hover,
 #view-tools .card:hover { box-shadow: var(--shadow-md); }
 
+/* 30.07: Инструменты-редизайн -- сводка вместо дублирующего ряда фильтров, компактнее карточка */
+.tools-summary-bar { display: flex; gap: 0.5rem; padding: 0.75rem 1rem 0.4rem; }
+.tools-summary-tile { flex: 1; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.55rem 0.4rem; text-align: center; cursor: pointer; transition: transform 0.1s; }
+.tools-summary-tile:active { transform: scale(0.96); }
+.tools-summary-tile.active { background: var(--primary); }
+.tools-summary-tile.active .tools-summary-num,
+.tools-summary-tile.active .tools-summary-label { color: #fff; }
+.tools-summary-num { display: block; font-size: 1.2rem; font-weight: 700; color: var(--text-main); }
+.tools-summary-label { display: block; font-size: 0.68rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.02em; }
+.tool-card-meta { font-size: 0.8rem; color: var(--text-light); margin-top: 0.2rem; }
+#view-tools .cards { padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 16px); }
+.tool-detail-modal .tool-detail-hero { height: 140px; border-radius: var(--radius-md); position: relative; display: flex; align-items: center; justify-content: center; margin-bottom: 0.5rem; }
+.tool-detail-row { font-size: 0.9rem; color: var(--text-main); padding: 0.1rem 0 0.3rem; }
+.tool-detail-row-clickable { cursor: pointer; text-decoration: underline dotted; }
+.tool-detail-history { font-size: 0.85rem; color: var(--text-light); max-height: 200px; overflow-y: auto; }
+
 .news-card { background: var(--bg-card) !important; border: 1px solid var(--border-color); }
 .feed-photo-item { background: var(--bg-card) !important; border: 1px solid var(--border-color); }
 .feed-card { background: var(--bg-card) !important; border: 1px solid var(--border-color) !important; box-shadow: var(--shadow-md) !important; }
@@ -4088,15 +4104,14 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
     <h1>Инструмент</h1>
     <button class="fab" id="add-tool" style="display:none">+</button>
   </header>
-  <div class="search-bar">
-    <input type="text" id="tools-search" placeholder="Поиск по названию или категории...">
+  <div class="tools-summary-bar" id="tools-summary-bar">
+    <div class="tools-summary-tile active" data-filter="all"><span class="tools-summary-num" id="tools-summary-all">0</span><span class="tools-summary-label">Всего</span></div>
+    <div class="tools-summary-tile" data-filter="free"><span class="tools-summary-num" id="tools-summary-free">0</span><span class="tools-summary-label">Свободны</span></div>
+    <div class="tools-summary-tile" data-filter="in-use"><span class="tools-summary-num" id="tools-summary-in-use">0</span><span class="tools-summary-label">Выданы</span></div>
+    <div class="tools-summary-tile" data-filter="repair"><span class="tools-summary-num" id="tools-summary-repair">0</span><span class="tools-summary-label">В ремонте</span></div>
   </div>
-  <div class="filters" id="tools-filters">
-    <div class="filter-chip active" data-filter="all">Все</div>
-    <div class="filter-chip" data-filter="free">Свободен</div>
-    <div class="filter-chip" data-filter="in-use">На объекте</div>
-    <div class="filter-chip" data-filter="reserved">Зарезервирован</div>
-    <div class="filter-chip" data-filter="repair">В ремонте</div>
+  <div class="search-bar">
+    <input type="text" id="tools-search" placeholder="Поиск по названию, номеру, объекту или сотруднику">
   </div>
   <div class="cards" id="tools-cards"></div>
 </div>
