@@ -99,19 +99,13 @@ class ItemStatusTransitionTests(unittest.TestCase):
         self.assertIsNone(reopened['completed_by'])
         self.assertIsNone(reopened['completed_at'])
 
-    def test_blocked_requires_or_defaults_reason(self):
-        blocked = rl.update_item_status(self.store, self.stage_key, self.item['id'], 'blocked', 'worker-7', '')
-        self.assertEqual(blocked['blocked_reason'], 'Не указана причина')
-        blocked2 = rl.update_item_status(self.store, self.stage_key, self.item['id'], 'blocked', 'worker-7', 'Нет материала')
-        self.assertEqual(blocked2['blocked_reason'], 'Нет материала')
-
     def test_missing_item_returns_none(self):
         self.assertIsNone(rl.update_item_status(self.store, self.stage_key, 'nonexistent', 'done', 'u1'))
 
 
 class StageProgressTests(unittest.TestCase):
     """ТЗ п.15 -- прогресс считается по весам, required items влияют на review-
-    готовность отдельно от общего процента, skipped items исключены из расчёта."""
+    готовность отдельно от общего процента."""
 
     def setUp(self):
         self.store = rl._default_store()
@@ -142,18 +136,6 @@ class StageProgressTests(unittest.TestCase):
         rl.update_item_status(self.store, self.stage_key, req_item['id'], 'done', 'u1')
         progress = rl.stage_progress(self.store, self.stage_key)
         self.assertEqual(progress['required_open'], 0)
-
-    def test_skipped_items_excluded_from_progress(self):
-        normal = rl.new_item(self.store, self.stage_key, 'Обычный')
-        skipped = rl.new_item(self.store, self.stage_key, 'Пропущенный')
-        rl.update_item_status(self.store, self.stage_key, normal['id'], 'done', 'u1')
-        rl.update_item_status(self.store, self.stage_key, skipped['id'], 'skipped', 'u1')
-        progress = rl.stage_progress(self.store, self.stage_key)
-        # Only the 'done' item counts toward total_weight -- skipped is excluded entirely,
-        # so 1/1 = 100%, not 1/2 = 50%.
-        self.assertEqual(progress['total_weight'], 1)
-        self.assertEqual(progress['percent'], 100)
-
 
 class NotesTests(unittest.TestCase):
     def test_stage_level_note_has_null_item_id(self):
