@@ -1,55 +1,156 @@
 #!/bin/bash
-# Promonta miniapp deploy — syncs repo → VPS (backend + frontend), with
-# backups and a syntax check before touching the live service. Run manually
-# from the repo root on the VPS (/home/promonta/agent/miniapp-repo) after
-# reviewing your diff. Does not restart the backend by default — pass
-# --restart to also bounce promonta-miniapp.service (needs root).
+# Promonta miniapp deploy -- Release-аудит Этап 8. Полный цикл: чистота репо ->
+# тесты -> syntax -> backup -> копирование в production paths -> restart ->
+# health-проверка. При ЛЮБОЙ ошибке на любом шаге -- exit, ничего дальше не
+# трогаем (set -euo pipefail), последний удачный backup остаётся на диске для
+# scripts/rollback.sh.
+#
+# Запуск: на VPS, из корня репозитория (/home/promonta/agent/miniapp-repo):
+#   sudo scripts/deploy.sh
+# (sudo нужен для записи в /var/www/miniapp/, владелец root; без sudo backend-
+# часть всё равно задеплоится, если пользователь promonta имеет права на
+# /home/promonta/agent/miniapp/, но frontend-шаг откажет.)
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BACKEND_SRC="$REPO_DIR/backend/main.py"
-BACKEND_DST="/home/promonta/agent/miniapp/main.py"
-FRONTEND_SRC="$REPO_DIR/frontend/"
-FRONTEND_DST="/var/www/miniapp/"
-TS="$(date +%Y%m%d%H%M%S)"
+cd "$REPO_DIR"
 
-RESTART=0
-if [[ "${1:-}" == "--restart" ]]; then
-  RESTART=1
+# Production paths -- НЕ угадано, сверено с реальным systemd unit
+# (/etc/systemd/system/promonta-miniapp.service, WorkingDirectory=/home/promonta/agent,
+# ExecStart=uvicorn miniapp.main:app) и реальной раздачей frontend через Caddy
+# (/var/www/miniapp/) на момент написания этого скрипта.
+BACKEND_SERVING_DIR="/home/promonta/agent/miniapp"
+FRONTEND_SERVING_DIR="/var/www/miniapp"
+SERVICE_NAME="promonta-miniapp.service"
+HEALTH_URL="https://app.promonta.fun/api/health"
+HEALTH_READY_URL_LOCAL="http://127.0.0.1:8001/api/health/ready"
+
+TS="$(date +%Y%m%d_%H%M%S)"
+BACKUP_DIR="/tmp/rollback_backup_${TS}"
+
+echo "== 1/12 Проверка: работаем из git-репозитория =="
+if [[ ! -d "$REPO_DIR/.git" ]]; then
+  echo "ОШИБКА: $REPO_DIR не является git-репозиторием" >&2
+  exit 1
 fi
+echo "OK: $REPO_DIR"
 
-echo "== 1/5 Syntax check backend =="
-python3 -m py_compile "$BACKEND_SRC"
-echo "OK"
-
-echo "== 2/5 Backup + sync backend =="
-if [[ -f "$BACKEND_DST" ]]; then
-  cp "$BACKEND_DST" "${BACKEND_DST}.bak-pre-deploy-${TS}"
+echo "== 2/12 Проверка ветки и SHA =="
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+CURRENT_SHA="$(git rev-parse HEAD)"
+if [[ "$CURRENT_BRANCH" != "main" ]]; then
+  echo "ОШИБКА: деплой разрешён только с ветки main, сейчас на '$CURRENT_BRANCH'" >&2
+  exit 1
 fi
-cp "$BACKEND_SRC" "$BACKEND_DST"
-python3 -m py_compile "$BACKEND_DST"
+echo "OK: branch=main, SHA=$CURRENT_SHA"
+
+echo "== 3/12 Проверка чистого git status =="
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "ОШИБКА: есть незакоммиченные изменения -- закоммить или stash перед деплоем" >&2
+  git status --short
+  exit 1
+fi
+echo "OK: working tree чист"
+
+echo "== 4/12 Python syntax-check =="
+python3 -m py_compile backend/*.py
 echo "OK"
 
-echo "== 3/5 Backup + sync frontend =="
-# rsync into the root-owned /var/www/miniapp/ requires sudo on this box —
-# this script assumes it's being run as a user with write access there
-# (root), or that /var/www/miniapp/ has been chowned for promonta.
-mkdir -p "/var/www/miniapp/.bak-pre-deploy-${TS}"
-rsync -a --exclude='.bak-*' "$FRONTEND_DST" "/var/www/miniapp/.bak-pre-deploy-${TS}/" 2>/dev/null || true
-rsync -av --exclude='.bak-*' --exclude='.archived-legacy' "$FRONTEND_SRC" "$FRONTEND_DST"
+echo "== 5/12 node --check (frontend/js/*.js) =="
+for f in frontend/js/*.js; do
+  node --check "$f"
+done
 echo "OK"
 
-echo "== 4/5 Restart backend =="
-if [[ "$RESTART" -eq 1 ]]; then
-  systemctl restart promonta-miniapp.service
-  sleep 2
-  systemctl is-active promonta-miniapp.service
+echo "== 6/12 Полный test suite =="
+# Тестовое окружение сервиса (venv с fastapi/python-magic уже установлены) --
+# не production venv напрямую с активацией, а явный путь к интерпретатору,
+# как и во всех прошлых прогонах в этой сессии.
+TEST_PYTHON="${BACKEND_SERVING_DIR}/.venv/bin/python3"
+if [[ ! -x "$TEST_PYTHON" ]]; then
+  echo "ОШИБКА: $TEST_PYTHON не найден -- venv сервиса недоступен" >&2
+  exit 1
+fi
+if [[ -f /etc/claude-agent.env ]]; then
+  env $(grep -v '^#' /etc/claude-agent.env | xargs -d'\n') "$TEST_PYTHON" -m pytest tests/ -q
 else
-  echo "skipped (pass --restart to bounce promonta-miniapp.service)"
+  echo "ОШИБКА: /etc/claude-agent.env не найден (нужен BOT_TOKEN для теста)" >&2
+  exit 1
 fi
+echo "OK: тесты прошли"
 
-echo "== 5/5 Smoke check =="
-curl -s -o /dev/null -w 'app.html -> %{http_code}\n' "https://app.promonta.fun/app.html"
-curl -s -o /dev/null -w 'api/health -> %{http_code}\n' "https://app.promonta.fun/api/health" || true
+echo "== 7/12 Создание timestamped backup =="
+mkdir -p "$BACKUP_DIR"
+if [[ -f "${BACKEND_SERVING_DIR}/main.py" ]]; then
+  cp "${BACKEND_SERVING_DIR}/main.py" "${BACKUP_DIR}/main.py"
+fi
+if [[ -f "${BACKEND_SERVING_DIR}/tools_lib.py" ]]; then
+  cp "${BACKEND_SERVING_DIR}/tools_lib.py" "${BACKUP_DIR}/tools_lib.py"
+fi
+if [[ -f "${BACKEND_SERVING_DIR}/mangel_lib.py" ]]; then
+  cp "${BACKEND_SERVING_DIR}/mangel_lib.py" "${BACKUP_DIR}/mangel_lib.py"
+fi
+if [[ -d "$FRONTEND_SERVING_DIR" ]]; then
+  mkdir -p "${BACKUP_DIR}/frontend"
+  cp -r "${FRONTEND_SERVING_DIR}/app.html" "${BACKUP_DIR}/frontend/" 2>/dev/null || true
+  cp -r "${FRONTEND_SERVING_DIR}/js" "${BACKUP_DIR}/frontend/" 2>/dev/null || true
+fi
+echo "== 8/12 Проверка, что backup реально содержит файлы =="
+if [[ -z "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]]; then
+  echo "ОШИБКА: backup-директория пуста после копирования -- деплой остановлен" >&2
+  exit 1
+fi
+echo "OK: backup сохранён в $BACKUP_DIR"
+find "$BACKUP_DIR" -type f | sed 's/^/  /'
 
-echo "Done. Backups: ${BACKEND_DST}.bak-pre-deploy-${TS}, /var/www/miniapp/.bak-pre-deploy-${TS}/"
+echo "== 9/12 Копирование backend в serving-путь (main.py + tools_lib.py + mangel_lib.py рядом) =="
+# ВАЖНО: tools_lib.py и mangel_lib.py обязаны лежать РЯДОМ с main.py -- изолированный
+# importlib-loader (_load_repo_tools_lib/_load_repo_mangel_lib в main.py) резолвит их
+# по BACKEND_DIR = os.path.dirname(main.py), не по глобальному sys.path.
+cp "$REPO_DIR/backend/main.py" "${BACKEND_SERVING_DIR}/main.py"
+cp "$REPO_DIR/backend/tools_lib.py" "${BACKEND_SERVING_DIR}/tools_lib.py"
+cp "$REPO_DIR/backend/mangel_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py"
+python3 -m py_compile "${BACKEND_SERVING_DIR}/main.py" "${BACKEND_SERVING_DIR}/tools_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py"
+# Version-файл для /api/health -- version/commit видны в ответе без git subprocess
+# на каждый запрос (main.py читает VERSION рядом с собой, см. APP_VERSION_FILE).
+cat > "${BACKEND_SERVING_DIR}/VERSION" <<EOF
+{"version": "$(git describe --tags --always 2>/dev/null || echo 0.9.0-rc1)", "commit": "$CURRENT_SHA"}
+EOF
+echo "OK"
+
+echo "== 10/12 Копирование frontend (без .git, без тестов, без secrets) =="
+mkdir -p "$FRONTEND_SERVING_DIR"
+rsync -av --delete \
+  --exclude='.git*' --exclude='.archived-legacy' --exclude='*.bak-*' \
+  "$REPO_DIR/frontend/" "$FRONTEND_SERVING_DIR/"
+chown -R root:root "$FRONTEND_SERVING_DIR" 2>/dev/null || echo "предупреждение: chown пропущен (не root) -- проверь права вручную"
+echo "OK"
+
+echo "== 11/12 Restart backend =="
+systemctl restart "$SERVICE_NAME"
+sleep 3
+if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+  echo "ОШИБКА: $SERVICE_NAME не активен после restart -- см. journalctl -u $SERVICE_NAME" >&2
+  echo "Для отката: scripts/rollback.sh $BACKUP_DIR" >&2
+  exit 1
+fi
+echo "OK: $SERVICE_NAME активен"
+
+echo "== 12/12 Health/readiness проверка =="
+HEALTH_CODE="$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_URL" || echo 000)"
+echo "GET $HEALTH_URL -> $HEALTH_CODE"
+if [[ "$HEALTH_CODE" != "200" ]]; then
+  echo "ОШИБКА: /api/health не отвечает 200 после деплоя" >&2
+  echo "Для отката: scripts/rollback.sh $BACKUP_DIR" >&2
+  exit 1
+fi
+echo "(readiness /api/health/ready owner-only -- проверь вручную через Telegram-авторизованный запрос, скрипт её не может вызвать без initData)"
+
+echo ""
+echo "== Последние логи backend =="
+journalctl -u "$SERVICE_NAME" -n 20 --no-pager
+
+echo ""
+echo "=== ДЕПЛОЙ ЗАВЕРШЁН ==="
+echo "SHA:     $CURRENT_SHA"
+echo "Backup:  $BACKUP_DIR (не удалён -- для отката: scripts/rollback.sh $BACKUP_DIR)"
