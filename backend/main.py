@@ -32,24 +32,42 @@ sys.path.insert(0, '/home/promonta/agent')
 # пути к файлу через importlib.util, без малейшего влияния на глобальный sys.path.
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 TOOLS_LIB_PATH = os.path.join(BACKEND_DIR, 'tools_lib.py')
+MANGEL_LIB_PATH = os.path.join(BACKEND_DIR, 'mangel_lib.py')
 _repo_tools_lib = None
+_repo_mangel_lib = None
+
+
+def _load_repo_module(path: str, internal_name: str, cache: dict, cache_key: str):
+    """Общая логика для _load_repo_tools_lib()/_load_repo_mangel_lib() -- грузит
+    модуль под уникальным внутренним именем (не 'tools_lib'/'mangel_lib', чтобы не
+    столкнуться с/не подменить то, что уже могло быть закэшировано в sys.modules
+    из-за глобального /home/promonta/agent в sys.path). Кэш передаётся вызывающим
+    как dict с одним ключом -- эмулирует module-level global без глобальной
+    переменной на каждый модуль."""
+    if cache.get(cache_key) is not None:
+        return cache[cache_key]
+    spec = importlib.util.spec_from_file_location(internal_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'не удалось загрузить {os.path.basename(path)} из {path}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    cache[cache_key] = module
+    return module
+
+
+_repo_module_cache: dict = {}
 
 
 def _load_repo_tools_lib():
-    """Загружает backend/tools_lib.py под уникальным внутренним именем модуля --
-    не 'tools_lib' (чтобы не столкнуться с/не подменить то, что уже могло быть
-    закэшировано в sys.modules из-за глобального /home/promonta/agent в sys.path).
-    Загружается один раз, дальше отдаётся закэшированный экземпляр."""
-    global _repo_tools_lib
-    if _repo_tools_lib is not None:
-        return _repo_tools_lib
-    spec = importlib.util.spec_from_file_location('promonta_repo_tools_lib', TOOLS_LIB_PATH)
-    if spec is None or spec.loader is None:
-        raise ImportError(f'не удалось загрузить tools_lib.py из {TOOLS_LIB_PATH}')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    _repo_tools_lib = module
-    return _repo_tools_lib
+    return _load_repo_module(TOOLS_LIB_PATH, 'promonta_repo_tools_lib', _repo_module_cache, 'tools_lib')
+
+
+def _load_repo_mangel_lib():
+    """30.07 (Release-аудит P1): mangel_lib.py был полностью вне git и импортировался
+    обычным `import mangel_lib as ml` -- тот же класс риска, что чинили для tools_lib.py
+    (import мог молча резолвиться в untracked-копию на диске сервера вместо
+    репозиторной, даже если содержимое разошлось). Тот же изолированный loader."""
+    return _load_repo_module(MANGEL_LIB_PATH, 'promonta_repo_mangel_lib', _repo_module_cache, 'mangel_lib')
 
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
@@ -2637,8 +2655,9 @@ def _archive_chat_messages(messages: list):
         return
     archive = _safe_load_json(CHAT_ARCHIVE_FILE, [])
     archive.extend(messages)
-    with open(CHAT_ARCHIVE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(archive, f, ensure_ascii=False)
+    # 30.07 (Release-аудит P1): plain open(w)+json.dump -> atomic. Вызывается изнутри
+    # _save_chat, которая уже держит _chat_lock -- RMW-race закрыт, тут только crash-safety.
+    _atomic_write_json(CHAT_ARCHIVE_FILE, archive)
 
 
 def _load_chat() -> list:
@@ -2653,8 +2672,9 @@ def _save_chat(messages: list):
     if len(messages) > CHAT_MAX:
         _archive_chat_messages(messages[:-CHAT_MAX])
         messages = messages[-CHAT_MAX:]
-    with open(CHAT_FILE, 'w', encoding='utf-8') as f:
-        json.dump(messages, f, ensure_ascii=False)
+    # 30.07 (Release-аудит P1): plain open(w)+json.dump -> atomic. RMW-race уже
+    # закрыт _chat_lock на всех call sites, тут только crash-safety записи.
+    _atomic_write_json(CHAT_FILE, messages)
 
 
 CHAT_RETENTION_SECONDS = 7 * 24 * 3600  # 7 дней — сообщения старше удаляются автоматически
@@ -4502,7 +4522,11 @@ def update_task_status(task_id: str, body: TaskStatusBody, user: dict = Depends(
 
 
 # ---------- Mängelmanagement — Фаза 3 ----------
-import mangel_lib as ml
+# 30.07 (Release-аудит P1): было `import mangel_lib as ml` -- обычный import
+# зависит от глобального sys.path (см. _load_repo_mangel_lib выше). Изолированная
+# загрузка по точному пути, ml остаётся module-level именем как раньше -- все
+# вызовы ml.xxx() ниже по файлу не меняются.
+ml = _load_repo_mangel_lib()
 
 MANGEL_PHOTO_DIR = '/home/promonta/agent/miniapp/feed_photos'  # переиспользуем feed_photos/
 
@@ -4714,8 +4738,10 @@ def _load_checkin_meta() -> list:
 
 
 def _save_checkin_meta(items: list):
-    with open(CHECKIN_META_FILE, 'w', encoding='utf-8') as f:
-        json.dump(items, f, ensure_ascii=False)
+    # 30.07 (Release-аудит P1): было plain open(w)+json.dump -- crash посреди записи
+    # (systemctl restart, OOM-kill) обрезал бы главный стор смен/GPS/фото. RMW-race
+    # уже закрыт _checkin_lock на всех call sites, здесь только crash-safety записи.
+    _atomic_write_json(CHECKIN_META_FILE, items)
 
 
 async def _save_checkin_photos(files: list, object_id: str, date_str: str) -> list:
@@ -5351,7 +5377,9 @@ def analyze_checkin_defects(session_id: str, user: dict = Depends(get_current_us
     ticket = None
     if has_defect:
         description = result.split('\n', 1)[1].strip() if '\n' in result else 'Дефект обнаружен AI-анализом'
-        import mangel_lib as ml
+        # 30.07 (Release-аудит P1): убран локальный import mangel_lib as ml -- module-level
+        # ml уже загружен через _load_repo_mangel_lib() выше, повторный обычный import
+        # был бы тем же риском резолва в untracked-копию, что мы только что закрыли.
         ticket = ml.create_ticket(
             object_id=session['object_id'],
             description=description[:500],
