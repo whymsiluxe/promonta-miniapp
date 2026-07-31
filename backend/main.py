@@ -34,8 +34,10 @@ BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
 TOOLS_LIB_PATH = os.path.join(BACKEND_DIR, 'tools_lib.py')
 MANGEL_LIB_PATH = os.path.join(BACKEND_DIR, 'mangel_lib.py')
+OBJEKTE_LIB_PATH = os.path.join(BACKEND_DIR, 'objekte_lib.py')
 _repo_tools_lib = None
 _repo_mangel_lib = None
+_repo_objekte_lib = None
 
 
 def _load_repo_module(path: str, internal_name: str, cache: dict, cache_key: str):
@@ -69,6 +71,15 @@ def _load_repo_mangel_lib():
     (import мог молча резолвиться в untracked-копию на диске сервера вместо
     репозиторной, даже если содержимое разошлось). Тот же изолированный loader."""
     return _load_repo_module(MANGEL_LIB_PATH, 'promonta_repo_mangel_lib', _repo_module_cache, 'mangel_lib')
+
+
+def _load_repo_objekte_lib():
+    """31.07 (Release-аудит P2): objekte_lib.py -- последний shared runtime-модуль вне
+    git, тем же путём: import резолвился через глобальный sys.path на
+    /home/promonta/agent/objekte_lib.py, что и работает в prod, но не существует на
+    CI runner (нет /home/promonta там) -- CI падал ModuleNotFoundError. Тот же
+    изолированный loader, что и tools_lib/mangel_lib."""
+    return _load_repo_module(OBJEKTE_LIB_PATH, 'promonta_repo_objekte_lib', _repo_module_cache, 'objekte_lib')
 
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
@@ -859,7 +870,7 @@ def _write_zeiterfassung_row(session: dict, object_id: str, user_id: str):
     бухгалтерии/отчётности заказчику. Вызывается из checkin_finish и checkin_manual,
     best-effort (не блокирует ответ пользователю при сбое записи в Sheets)."""
     try:
-        import objekte_lib as o
+        o = _load_repo_objekte_lib()
         profiles = _load_worker_profiles()
         worker_name = _sanitize_display_name(profiles.get(str(user_id), {}).get('name'), str(user_id))
 
@@ -1159,7 +1170,7 @@ def _cached_get_used_range(tab_name: str):
     cached = _sheets_cache.get(tab_name)
     if cached and now - cached[0] < SHEETS_CACHE_TTL:
         return cached[1]
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     rows = o.get_used_range(tab_name)
     _sheets_cache[tab_name] = (now, rows)
     return rows
@@ -1179,7 +1190,7 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
     images = _load_object_images()
     # 28.07 (external audit ТЗ п.20): batch stage summary -- один вызов all_stages_grouped()
     # для ВСЕХ объектов разом, не N+1 запросов к Google Sheets (один на каждую карточку).
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     stages_by_object = o.all_stages_grouped()
 
     def _user_info(uid: str, assignment: dict | None = None) -> dict:
@@ -1544,7 +1555,7 @@ def get_active_blockers(user: dict = Depends(get_current_user), _: None = Depend
     stage_blocks в roadmap.json хранится по stage_key (='ID строки этапа' в Sheets),
     без object_id/stage_name -- матчим через all_stages_grouped() (один batch-запрос,
     не N+1 по каждому объекту). owner-only, та же чувствительность что shifts-today."""
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     import roadmap_lib as rl
     store = _safe_load_json(rl.ROADMAP_FILE, rl._default_store())
     stage_blocks = store.get('stage_blocks', {})
@@ -1606,7 +1617,7 @@ def get_team_plan(date: str = '', user: dict = Depends(get_current_user), _: Non
     # но не всегда совпадает с актуальным названием строки этапа в Sheets. Один batch-запрос
     # (не N+1 по каждому назначению) -- матчим по названию этапа того же объекта, при
     # совпадении отдаём каноничное имя, иначе используем stage_id как есть (fallback).
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     stage_names_by_object = {}
     for oid, stages in o.all_stages_grouped().items():
         stage_names_by_object[oid] = {s.get('Название этапа', '').strip().lower(): s.get('Название этапа', '') for s in stages}
@@ -2014,7 +2025,7 @@ def create_angebot(body: AngebotBody, user: dict = Depends(get_current_user), _:
 # ---------- Aufgaben (tasks) ----------
 @app.get("/api/objects/{object_id}/tasks")
 def get_tasks(object_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     return {"tasks": o.list_tasks(object_id)}
 
 
@@ -2024,7 +2035,7 @@ class TaskBody(BaseModel):
 
 @app.post("/api/objects/{object_id}/tasks")
 def create_task(object_id: str, body: TaskBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     if not body.text.strip():
         raise HTTPException(400, "Текст не может быть пустым")
     task_id = o.add_task(object_id, body.text.strip(), user.get('first_name', str(user['id'])))
@@ -2033,7 +2044,7 @@ def create_task(object_id: str, body: TaskBody, user: dict = Depends(get_current
 
 @app.patch("/api/tasks/{task_id}/complete")
 def complete_task(task_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     try:
         o.complete_task(task_id)
     except ValueError as e:
@@ -2233,7 +2244,7 @@ VALID_OBJECT_STATUSES = {'В работе', 'Пауза', 'Завершён'}
 def update_object_status(object_id: str, body: StatusBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     if body.status not in VALID_OBJECT_STATUSES:
         raise HTTPException(400, f'Недопустимый статус: {body.status}')
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     try:
         o.update_object_field(object_id, 'Статус', body.status)
     except ValueError as e:
@@ -4008,7 +4019,7 @@ async def ai_chat_upload(file: UploadFile = File(...), user: dict = Depends(get_
 # значит можно закэшировать сырые строки листа через тот же _cached_get_used_range,
 # который уже используют list_objects/get_alerts, и фильтровать по object_id из кэша.
 def _cached_all_stages(object_id: str) -> list:
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     values = _cached_get_used_range('Этапы')
     if not values:
         return []
@@ -4039,7 +4050,7 @@ class NewStageBody(BaseModel):
 def create_stage(object_id: str, body: NewStageBody, user: dict = Depends(get_current_user)):
     # 28.07: owner request -- любой воркер может добавлять этап на любом объекте
     # (не только owner, не только назначенным на объект)
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     if not body.name.strip():
         raise HTTPException(400, "Name erforderlich")
     num = o.add_stage(object_id, body.name.strip(), body.description.strip()[:2000])
@@ -4056,7 +4067,7 @@ def update_stage_description_endpoint(object_id: str, row_num: int, body: StageD
     # 28.07: roadmap-этапы -- owner request "чтоб работник знал что ему делать" (список
     # подзадач текстом внутри развёрнутого этапа). Любая роль может редактировать (тот же
     # принцип, что уже применён к созданию/просмотру этапов сегодня -- не owner-only).
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     try:
         o.update_stage_description(row_num, body.description.strip()[:2000])
     except ValueError as e:
@@ -4070,7 +4081,7 @@ class StageStatusBody(BaseModel):
 
 @app.patch("/api/objects/{object_id}/stages/{row_num}")
 def update_stage(object_id: str, row_num: int, body: StageStatusBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     from datetime import date
     try:
         o.update_stage_status(row_num, body.status, date.today().isoformat())
@@ -4082,7 +4093,7 @@ def update_stage(object_id: str, row_num: int, body: StageStatusBody, user: dict
 
 @app.delete("/api/objects/{object_id}/stages/{row_num}")
 def remove_stage(object_id: str, row_num: int, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     try:
         o.delete_stage(object_id, row_num)
     except ValueError as e:
@@ -4097,7 +4108,7 @@ class StageSwapBody(BaseModel):
 
 @app.patch("/api/objects/{object_id}/stages/{row_num}/swap")
 def swap_stage(object_id: str, row_num: int, body: StageSwapBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     try:
         o.swap_stage_order(object_id, row_num, body.row_num_b)
     except ValueError as e:
@@ -4110,7 +4121,7 @@ def swap_stage(object_id: str, row_num: int, body: StageSwapBody, user: dict = D
 # badge поверх (см. /stages/{row}/blocker ниже).
 @app.post("/api/objects/{object_id}/stages/{row_num}/complete")
 def worker_complete_stage(object_id: str, row_num: int, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     from datetime import date
     try:
         o.worker_complete_stage(object_id, row_num, str(user['id']), date.today().isoformat())
@@ -4182,7 +4193,7 @@ def _find_stage_by_row(object_id: str, row_num: int) -> dict:
     """Общая проверка для все roadmap-эндпоинтов ниже -- этап должен реально
     существовать и принадлежать этому объекту, иначе 404 (не создаём roadmap-данные
     для несуществующего/чужого этапа)."""
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     stages = o.all_stages(object_id)
     stage = next((s for s in stages if s['_row'] == row_num), None)
     if not stage:
@@ -4414,7 +4425,7 @@ class StageRequestBody(BaseModel):
 def create_stage_request(object_id: str, row_num: int, body: StageRequestBody,
                           user: dict = Depends(get_current_user), role: str = Depends(get_role),
                           _: None = Depends(require_object_access)):
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     if role == 'owner':
         raise HTTPException(400, "Owner меняет этапы напрямую, без запроса")
     stage = _find_stage_by_row(object_id, row_num)
@@ -4470,7 +4481,7 @@ class StageRequestDecisionBody(BaseModel):
 @app.post("/api/objects/{object_id}/stages/requests/{request_id}/decide")
 def decide_stage_request_endpoint(object_id: str, request_id: str, body: StageRequestDecisionBody,
                                    user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    import objekte_lib as o
+    o = _load_repo_objekte_lib()
     from datetime import date
 
     # Проверка существования/принадлежности -- read-only, до транзакции (тот же паттерн,
@@ -4625,7 +4636,7 @@ def update_task_status(task_id: str, body: TaskStatusBody, user: dict = Depends(
         # из рабочего JSON. Экспорт best-effort -- сбой Sheets API не должен блокировать
         # закрытие потребности воркеру/owner (тот же паттерн что _write_zeiterfassung_row).
         try:
-            import objekte_lib as o
+            o = _load_repo_objekte_lib()
             from datetime import datetime
             created_str = datetime.fromtimestamp(task.get('created_at', 0)).strftime('%Y-%m-%d %H:%M') if task.get('created_at') else ''
             closed_str = datetime.fromtimestamp(task['closed_at']).strftime('%Y-%m-%d %H:%M')
@@ -4743,7 +4754,7 @@ async def create_mangel_ticket(
     # так же как объекты. JSON остаётся источником правды приложения, Sheets — только для просмотра;
     # сбой записи в Sheets НЕ должен ронять создание тикета (как и остальные Sheets-интеграции).
     try:
-        import objekte_lib as o
+        o = _load_repo_objekte_lib()
         o.append_row_safe('Дефекты', [
             ticket.get('id', ''),
             ticket.get('object_id', ''),
@@ -4783,7 +4794,7 @@ def update_mangel_status(ticket_id: str, body: MangelStatusBody, user: dict = De
         raise HTTPException(400, str(e))
     # 22.07: зеркалим смену статуса в Sheets тоже (та же best-effort защита, не роняем запрос)
     try:
-        import objekte_lib as o
+        o = _load_repo_objekte_lib()
         rows = o.get_used_range('Дефекты')
         if rows:
             for i, row in enumerate(rows[1:], start=2):
