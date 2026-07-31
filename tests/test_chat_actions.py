@@ -138,6 +138,7 @@ class AttachmentAccessTests(unittest.TestCase):
         att = {'file': 'photo1.jpg', 'name': 'photo.jpg', 'content_type': 'image/jpeg'}
         msg = _msg('m1', 10, text='', thread_key='obj:OBJ-1', attachment=att)
         with patch.object(backend, '_load_chat', return_value=[msg]), \
+             patch.object(backend, '_safe_load_json', return_value=[]), \
              patch.object(backend, 'os') as mock_os:
             mock_os.path.basename.return_value = 'photo1.jpg'
             mock_os.path.exists.return_value = True
@@ -151,6 +152,7 @@ class AttachmentAccessTests(unittest.TestCase):
         att = {'file': 'photo1.jpg', 'name': 'photo.jpg', 'content_type': 'image/jpeg'}
         msg = _msg('m1', 10, text='', thread_key='obj:OBJ-1', attachment=att)
         with patch.object(backend, '_load_chat', return_value=[msg]), \
+             patch.object(backend, '_safe_load_json', return_value=[]), \
              patch.object(backend, 'os') as mock_os:
             mock_os.path.basename.return_value = 'photo1.jpg'
             mock_os.path.exists.return_value = True
@@ -166,6 +168,7 @@ class AttachmentAccessTests(unittest.TestCase):
         original = _msg('m1', 10, text='', thread_key='obj:OBJ-1', attachment=att)
         forwarded = _msg('m2', 10, text='', thread_key='obj:OBJ-2', attachment=att)
         with patch.object(backend, '_load_chat', return_value=[original, forwarded]), \
+             patch.object(backend, '_safe_load_json', return_value=[]), \
              patch.object(backend, 'os') as mock_os:
             mock_os.path.basename.return_value = 'photo1.jpg'
             mock_os.path.exists.return_value = True
@@ -187,6 +190,7 @@ class AttachmentAccessTests(unittest.TestCase):
         original = _msg('m1', 10, text='', thread_key='obj:OBJ-1', attachment=att)
         forwarded = _msg('m2', 10, text='', thread_key='obj:OBJ-2', attachment=att)
         with patch.object(backend, '_load_chat', return_value=[original, forwarded]), \
+             patch.object(backend, '_safe_load_json', return_value=[]), \
              patch.object(backend, 'os') as mock_os:
             mock_os.path.basename.return_value = 'photo1.jpg'
             mock_os.path.exists.return_value = True
