@@ -1,3 +1,18 @@
+# Session handoff — release-hardening pass (2026-07-31)
+
+See `docs/PROJECT_STATE.md` for the current authoritative summary and
+`docs/CHANGELOG.md` (2026-07-31 entry) for full detail. Short version: chat
+message actions (reply/copy/forward) shipped, then three successive P0/P1
+audit-fix rounds closed worker-scope/privacy/corrupt-JSON/concurrency/Caddy
+issues. Deployed SHA `526922f`, CI green, 202 tests passing.
+
+**Not done, explicit blockers before pilot**: repo is public (needs manual
+switch to private), GitHub PAT not rotated, no real Telegram E2E performed
+by an agent (Safari MCP non-functional in this environment — owner doing
+this manually with screenshots).
+
+---
+
 # Session handoff — Promonta Miniapp UI overhaul (2026-07-25, long session)
 
 ## Where things stand

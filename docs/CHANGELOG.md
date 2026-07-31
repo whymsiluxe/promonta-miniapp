@@ -231,6 +231,36 @@ External ChatGPT audit (62 sections) was cross-checked against real code via 3 p
 ### Deferred (explicit owner decision)
 - **Rate limiting on upload/checkin endpoints** — only `/api/ai-chat` has a rate limit today (20/hr). Checkin-photo AI-analysis endpoints and general uploads have none. Owner's call: all current users are trusted (own workers), not urgent — skipped for now, revisit if abuse/cost-spam ever becomes a real incident.
 
+## 2026-07-31 (release-hardening: 4 rounds, chat actions + P0/P1 audit fixes)
+
+### Added
+- **Chat message actions**: reply-with-quote (snapshot-based, survives original deletion), copy-to-clipboard (with textarea/execCommand fallback that now correctly triggers on any clipboard error, not just missing API), forward-to-any-accessible-thread. Long-press + right-click + explicit `⋯` button all open the same menu; button moved out of `.chat-msg-header` so it stays visible on grouped (consecutive) messages.
+- **roadmap_lib.py isolated loader** (`_load_repo_roadmap_lib`) — matches tools_lib/mangel_lib/objekte_lib pattern, no longer resolved via global `sys.path`.
+- **Persistent corrupt-JSON quarantine**: critical stores (roles/assignments/checkin/chat/chat-archive/abwesenheit/profiles/tasks/critical-alerts/roadmap/stage-requests) that hit a `JSONDecodeError` are quarantined to `.corrupt-<ts>` with a permanent `.corrupt-lock` marker; reads/mutations return 503 until an owner manually restores the file and removes the marker — previously the second request after quarantine silently returned an empty default and a mutation could recreate an empty store on top.
+- **MINIAPP_DATA_ROOT real isolation**: 25+ hardcoded `/home/promonta/agent/miniapp/...` path constants across `main.py`, `roadmap_lib.py`, `mangel_lib.py` converted to `os.path.join(DATA_ROOT, ...)`. Verified by a subprocess regression test that performs real file I/O and confirms the prod directory's mtime is unchanged.
+- **Concurrency locks**: tool checkout/return (`_lock_for_tool`, per-serial), tool creation (`_tool_create_lock`, closes a duplicate-serial race on `POST /api/tools`) — both verified with real `threading.Barrier` tests, not sequential-call approximations.
+- **package-lock.json** for the PDF-generation `pdfkit` dependency; CI now runs `npm ci` + `require('pdfkit')` smoke-check; `deploy.sh` verifies pdfkit is present in serving `node_modules` *before* touching production files.
+
+### Fixed (security)
+- **Worker object-mutation scope**: `create_stage`/`update_stage_description_endpoint` allowed ANY worker to write to ANY object regardless of assignment — now gated by `require_object_access` (owner or accepted-assignment only).
+- **Abwesenheit privacy leak**: `/api/abwesenheit/all` was returning `note` and `reason` (free-text, potentially medical/personal) to every worker for every colleague's absence record. Now redacted to `{id, user_id, name, date_from, date_to, open_ended, status}` for entries that aren't the caller's own; owner and the record's author still see everything.
+- **Chat attachment IDOR**: `get_chat_attachment` matched access on the *first* message referencing a file and only checked `to_user_id` — broke for object/defect/task threads and files forwarded into a second thread. Now checks every message referencing the file (active *and* archived) via `_check_message_access`.
+- **Live production P0**: Caddy was serving `.bak-*` snapshot files publicly over HTTPS (verified live — 200 OK on a real `app.html.bak-*`). Blocked via `@forbidden`/`@hiddenDir` matchers (404), applied with config backup + `caddy validate` before each reload.
+- **CSP gap**: `media-src` was missing `blob:` — chat voice messages (fetched via authorized request, played through a blob URL) were silently blocked by the browser.
+- **Caddy body-size limit too low**: 10MB rejected legitimate finish-shift uploads (2 photos × 8MB backend limit each); raised to 30MB.
+
+### Fixed (reliability)
+- Frontend: chat message re-render / poll tick destroyed `<img>`/`<audio>` elements via `container.innerHTML` without revoking their `blob:` URLs — unbounded memory growth in the Telegram WebView over a session. `URL.revokeObjectURL` now called before DOM replacement, before `src` reassignment, and on chat view re-entry.
+- Attachment upload to `thread_key`-scoped chats (object/defect/task) wasn't setting `thread_key` on the saved message — files silently leaked into the general chat instead of staying in their thread.
+- deploy.sh/rollback.sh: added `objekte_lib.py` (was in git but never actually verified present by CI's required-files check — a real gap), `roadmap_lib.py`, `angebot_free.js`, `rechnung.js` to backup/restore/syntax-check coverage; trap-based auto-rollback on any failure after backup creation; test suite now runs with a dummy `BOT_TOKEN` + isolated `MINIAPP_DATA_ROOT`, not the full production credentials file.
+- Frontend cache-busting: JS/CSS `<script src>`/`<link href>` get `?v=<deploy SHA>` injected into the *serving* copy of `app.html` at deploy time (not the repo file); Caddy now caches `/js/*`/`/css/*` for a year as a result.
+
+### Known gaps (not fixed, explicitly out of scope this session)
+- Repository is currently **public** on GitHub — needs manual switch to private (Settings → Danger Zone) plus GitHub PAT rotation (used throughout these sessions for CI/git-push checks).
+- 144 loose `.bak-*` files remain physically on `/var/www/miniapp/` (Caddy no longer serves them, but disk isn't cleaned) — left as-is per explicit prior owner decision.
+- No frontend request timeout (AbortController) in `api()` — deferred, not a release blocker.
+- Real Telegram WebView E2E (Owner + 2 Workers) has not been performed by an automated agent — Safari MCP repeatedly failed to open the app in this environment; owner is doing this manually with screenshots.
+
 ## 2026-07-24 (evening — autonomous session)
 
 ### Fixed

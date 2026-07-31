@@ -1,31 +1,37 @@
 # Project state
 
-**Last updated**: 2026-07-31, end of a multi-stage release-readiness pass
-(see `docs/RELEASE_AUDIT.md` and `docs/RELEASE_CANDIDATE_REPORT.md` for full
-detail — this file is the short summary, those are the authoritative record).
+**Last updated**: 2026-07-31, end of a 4-round release-hardening pass (chat
+message actions, then three successive P0/P1 audit-fix rounds — see
+`docs/CHANGELOG.md` entry "2026-07-31" for full detail; this file is the
+short summary).
 
-**Branch**: `main` (GitHub default), all release-readiness commits pushed
-except `.github/workflows/ci.yml`/`requirements-test.txt` (blocked — see
-"Known blockers" below).
+**Branch**: `main` (GitHub default). Deployed SHA / production:
+`526922fb263d3296e5958b0a5857b6c4e90d3fef`.
 
-**Repo**: https://github.com/whymsiluxe/promonta-miniapp — private.
+**Repo**: https://github.com/whymsiluxe/promonta-miniapp — **currently
+PUBLIC**. This is a known blocker, see below — needs manual switch to
+private before pilot rollout.
 
-**Working tree**: clean, pushed to `origin/main` as of this update, except
-the two CI files noted above (present in the working tree, uncommitted).
+**Working tree**: clean, everything pushed to `origin/main`, CI green on
+the deployed SHA.
 
 ## What this document is
 
 The single place to check first after any session loss. If this contradicts
 something elsewhere, this file wins for "what's the current operational
 state" — other docs (ARCHITECTURE, FEATURES, RELEASE_AUDIT, etc.) are the
-detailed reference.
+detailed reference and may lag behind.
 
 ## Stack
 
-Vanilla HTML/JS frontend (no build step) + FastAPI/Python backend (140
-routes, single `main.py`) + flat JSON file storage (no database, atomic
-writes on all critical stores) + Google Sheets for object/tool data (via
-`objekte_lib.py`/`tools_lib.py`). Full detail: [ARCHITECTURE.md](ARCHITECTURE.md).
+Vanilla HTML/JS frontend (no build step) + FastAPI/Python backend (single
+`main.py`) + flat JSON file storage (no database, atomic writes + lock on
+all critical stores, corrupt-file quarantine with a persistent lock marker)
++ Google Sheets for object/tool data (via `objekte_lib.py`/`tools_lib.py`).
+All backend runtime-data JSON paths (roles/assignments/checkin/chat/
+abwesenheit/profiles/tasks/critical-alerts/roadmap/stage-requests/etc.) are
+isolated via `MINIAPP_DATA_ROOT`, verified by a real subprocess test. Full
+detail: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Environments
 
@@ -34,80 +40,64 @@ No staging, no local dev environment set up yet. See [DEPLOYMENT.md](DEPLOYMENT.
 
 ## What's working
 
-App is live, in active daily use. As of this release-readiness pass:
+App is live, in active daily use. As of this pass:
 
-- **Security hardening**: chat attachments/voice/transcribe now validate
-  file content via magic-byte allowlist (were previously accepting any
-  file — real stored-XSS risk via unvalidated `.html`/`.svg` uploads,
-  closed). Checkin photo path from client input is now sanitized against
-  path traversal.
-- **Reliability**: all critical JSON stores (`checkin_meta.json`,
-  `chat_messages.json`, `chat_messages_archive.json`, `mangel_tickets.json`,
-  most others) write atomically (temp-file + `os.replace`) — a crash mid-write
-  no longer corrupts them.
-- **Repo self-sufficiency**: `tools_lib.py`, `roadmap_lib.py`, `mangel_lib.py`
-  are now tracked in `backend/` and loaded via an isolated `importlib`
-  loader (resolves relative to `main.py`'s own directory, not global
-  `sys.path`) — a clean `git clone` + deploy reproduces working code for
-  these modules. `objekte_lib.py` is still untracked (known gap).
-- **Chat unread counter fix**: the general nav badge (`GET
-  /api/chat/unread_count`) previously mis-attributed thread-scoped messages
-  (obj:/mangel:/task:) to every user's group counter — fixed, now matches
-  `unread_by_thread` per-thread logic exactly.
-- **Health/ops**: `/api/health` now versioned (version/commit/time),
-  `/api/health/ready` added for owner-only readiness checks. Deploy/rollback
-  scripts (`scripts/deploy.sh`, `scripts/rollback.sh`,
-  `scripts/cleanup_rollback_backups.sh`) written and dry-run-verified.
-- **Test coverage**: 151 automated backend tests (was near-zero before this
-  pass), fully offline, covering upload security, atomic storage, chat
-  unread, health endpoints, tools checkout/return, endpoint access patterns.
-- **Documentation**: `docs/RELEASE_AUDIT.md` (full P0/P1/P2 findings),
-  `docs/ENDPOINT_ACCESS_MATRIX.md`, `docs/BACKUP_AND_RECOVERY.md`,
-  `docs/DATA_PROTECTION.md` all newly written this pass.
-- **Инструменты (Tools) screen**: fully redesigned earlier this session —
-  compact summary counters, richer search, worker no longer types their own
-  name at checkout (backend derives it from Telegram identity), real
-  `/return` endpoint (was previously misusing `/checkout` with empty fields).
+- **Repo self-sufficiency**: `tools_lib.py`, `mangel_lib.py`, `objekte_lib.py`,
+  `roadmap_lib.py` are ALL tracked in `backend/` and loaded via an isolated
+  `importlib` loader (resolves relative to `main.py`'s own directory, not
+  global `sys.path`) — a clean `git clone` + deploy reproduces working code
+  for all of them. (Previously `objekte_lib.py` was the last untracked one —
+  fixed.)
+- **Security**: chat attachments/voice/transcribe validate file content via
+  magic-byte allowlist. Worker object-mutation scope enforced (accepted
+  assignment required, was previously global write access). Chat attachment
+  access (including archived messages) checked per-message, not just first
+  match. Abwesenheit `reason`/`note`/`start_time`/`end_time` redacted from
+  other workers' view (own record and owner still see everything).
+- **Reliability**: critical JSON stores quarantine corrupt files with a
+  *persistent* `.corrupt-lock` marker (not just a one-shot 503 — a second
+  request after quarantine used to silently fall back to an empty default).
+  Tool checkout/return/creation races closed with real per-serial and
+  creation-scoped locks, verified with `threading.Barrier` concurrency tests.
+- **Caddy/HTTP**: `.bak-*`/`.git`/hidden-file serving blocked (was a live
+  P0 — verified 200 OK on a real `.bak` snapshot before the fix). CSP
+  `media-src` allows `blob:` (voice playback). Body-size limit raised to
+  30MB (was rejecting legitimate 2-photo finish-shift uploads under the old
+  10MB cap). Config changes always applied via backup + `caddy validate` +
+  reload, never blind.
+- **Deploy**: `scripts/deploy.sh` covers all backend lib modules + PDF JS
+  scripts in backup/restore/syntax-check; trap-based auto-rollback if any
+  step after backup creation fails; test suite runs with a dummy `BOT_TOKEN`
+  + isolated `MINIAPP_DATA_ROOT`, never production credentials; frontend
+  JS/CSS get deploy-time cache-busting (`?v=<SHA>`) injected into the
+  *serving* copy of `app.html`.
+- **CI**: green, runs full pytest + Python/JS/shell syntax + required-files
+  (including `objekte_lib.py`/`roadmap_lib.py`/PDF scripts, previously not
+  checked at all despite being required) + `npm ci` + `pdfkit` smoke-check +
+  secrets scan.
+- **Test coverage**: 202 automated backend tests (was 151 before this pass),
+  fully offline, including real concurrency tests (not sequential-call
+  approximations) and a real subprocess `MINIAPP_DATA_ROOT` isolation test.
 
 ## Known blockers
 
-- **CI workflow not pushed**: `.github/workflows/ci.yml` and
-  `requirements-test.txt` exist in the working tree on the VPS but could not
-  be pushed to GitHub — the deploying OAuth token lacks the `workflow`
-  scope required to create/update files under `.github/workflows/`. Needs
-  either a token with that scope, or a manual push by someone with
-  appropriate GitHub permissions. All CI steps were manually verified to
-  pass on the VPS before this was written (151 tests, syntax checks,
-  required-file checks, secrets scan — all green) — the workflow itself is
-  correct, only the push is blocked.
-- **No live Telegram E2E verification**: all fixes in this pass were
-  verified via automated tests + manual code reading, not a live Telegram
-  WebView session. Browser automation (Safari MCP) is not functional in
-  this environment (`safari-helper` process does not respond, root cause
-  not fully resolved — likely missing macOS Accessibility permission grant
-  that requires a manual GUI click, not scriptable). A real Telegram Worker/
-  Owner walkthrough is still required before this is truly release-ready —
-  see `docs/RELEASE_CANDIDATE_REPORT.md` for the exact scenario checklist.
-- **`objekte_lib.py` still untracked in git** — same class of risk `tools_lib.py`/
-  `mangel_lib.py` had before this pass, not yet fixed for this module.
-- Deploy has NOT been performed for the commits in this release-readiness
-  pass as of this writing — `scripts/deploy.sh` exists and is verified via
-  dry-run/manual-step checks, but running it against production requires a
-  separate explicit go-ahead (per this pass's own instructions: "не
-  выполнять production deploy без отдельного подтверждения").
-
-## What requires verification before trusting it
-
-- Whether `angebot-tab.html` / `projects-tab.html` / `tools-tab.html` are
-  live or dead frontend code — not re-checked in this pass.
-- Whether FastAPI's `/docs` Swagger UI is publicly reachable — `main.py`
-  sets `docs_url=None, redoc_url=None, openapi_url=None` in the `FastAPI()`
-  constructor, so this should already be closed, but worth a live `curl`
-  check after next deploy.
-- UX findings from this pass's code-level review (loading/error/empty states,
-  double-submit guards, safe-area consistency) — see
-  `docs/RELEASE_CANDIDATE_REPORT.md` for what was found and fixed vs. what's
-  logged for later.
+- **GitHub repository is public** — needs a manual switch to private
+  (Settings → Danger Zone → Change visibility) before pilot. Not done
+  automatically per explicit instruction to never change this silently.
+- **GitHub PAT not rotated** — the token used throughout these sessions for
+  CI-status checks and git push has been in active use; rotation discussed,
+  not executed, no explicit go-ahead yet.
+- **No live Telegram E2E verification** — all fixes across all four rounds
+  were verified via automated tests + manual code reading + live curl/health
+  checks against production, never a real Telegram WebView session. Safari
+  MCP is not functional in this environment (`safari-helper` process does
+  not respond). Owner is doing this manually with screenshots.
+- **~144 loose `.bak-*` files** still physically present on
+  `/var/www/miniapp/` — Caddy no longer serves them (404 confirmed), but
+  disk isn't cleaned. Left as-is per explicit prior owner decision; only
+  remove on explicit request.
+- **No frontend request timeout** (AbortController) in `api()` — was
+  requested once, deferred as non-blocking UX polish, not yet done.
 
 ## Technical debt
 
@@ -115,22 +105,21 @@ App is live, in active daily use. As of this release-readiness pass:
 - Frontend deploy uses `scp`/`rsync` + backup + restart via `scripts/deploy.sh` —
   not a fully automated `git push`-to-production pipeline (by design; a
   human-triggered script with pre-flight checks, not auto-deploy-on-merge).
-- `objekte_lib.py` untracked in git (see "Known blockers").
-- No formal semantic versioning before this pass — first tagged version is
-  planned as `0.9.0-rc1` (release candidate), see `docs/RELEASE_CANDIDATE_REPORT.md`.
-- 75+ stale `.bak-*` files committed directly in `backend/`/`frontend/` from
-  past manual deploys — clutter, not a functional problem, candidate for a
-  separate cleanup commit.
+- Backend is NOT symlink-atomic (staged release dir + atomic switch) — would
+  require changing the systemd unit's fixed `WorkingDirectory`, out of scope
+  so far. Compensated with trap-based auto-rollback instead (see deploy.sh).
+- No formal semantic versioning — `VERSION` file just tracks `{version,
+  commit}` from the deploying SHA.
+- `package-lock.json` exists for the PDF (`pdfkit`) dependency and CI
+  verifies it via `npm ci`, but production `node_modules` on the VPS was
+  installed manually outside of any tracked process — `deploy.sh` checks
+  its presence before touching prod files but doesn't install it itself.
 
 ## Next recommended step
 
-1. Resolve the GitHub token `workflow` scope issue and push
-   `.github/workflows/ci.yml` + `requirements-test.txt`.
-2. Perform the live Telegram Worker/Owner/cross-worker E2E walkthrough
-   documented in `docs/RELEASE_CANDIDATE_REPORT.md` — this is the one thing
-   this pass explicitly could not do itself.
-3. Once E2E passes: run `scripts/deploy.sh` for the accumulated commits
-   (with explicit owner go-ahead), verify `/api/health` and `/api/health/ready`
-   post-deploy.
-4. Track `objekte_lib.py` in git the same way `tools_lib.py`/`mangel_lib.py`
-   were in this pass (separate, focused commit).
+1. Make the GitHub repository private, then rotate the PAT that's been in
+   use.
+2. Perform the live Telegram Worker A / Worker B / Owner E2E walkthrough —
+   this is the one thing automated agents in this environment could not do.
+3. Once E2E passes and repo is private: this becomes genuinely READY FOR
+   PILOT, not before.

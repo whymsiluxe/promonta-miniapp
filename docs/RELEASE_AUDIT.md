@@ -82,7 +82,7 @@ Production-сервис: `promonta-miniapp.service` (текущий деплой
 - **Файловая система сервера** — все JSON-сторы, все загруженные файлы (фото/документы/голосовые) хранятся локально на VPS, не в объектном хранилище — единая точка отказа при заполнении диска или потере сервера.
 - **systemd** — `promonta-miniapp.service`, `WorkingDirectory=/home/promonta/agent`, запускается как `uvicorn miniapp.main:app`.
 - **Shared runtime-модули** (вне текущего репозитория, читаются с диска сервера в момент запроса):
-  - `objekte_lib.py` — объекты/этапы, **вне git**.
+  - `objekte_lib.py` — объекты/этапы (исправлено 2026-07-31: теперь в git, isolated importlib loader, см. docs/CHANGELOG.md).
   - `mangel_lib.py` — дефекты, **вне git**.
   - `tools_lib.py` / `roadmap_lib.py` — **в git** (`backend/tools_lib.py`, `backend/roadmap_lib.py`), также существуют идентичные copies на сервере (`/home/promonta/agent/tools_lib.py`, `/home/promonta/agent/roadmap_lib.py`) для совместимости/резервного пути импорта.
 - **faster-whisper** — локальная модель транскрипции голосовых (CPU, int8), без внешнего API.
