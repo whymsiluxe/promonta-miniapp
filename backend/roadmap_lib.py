@@ -14,8 +14,12 @@ import os
 import time
 import uuid
 
+# 31.07 (доп.раунд, П4): тот же MINIAPP_DATA_ROOT, что main.py использует для остальных
+# runtime JSON -- без этого тесты/CI с изолированным DATA_ROOT всё равно писали бы
+# roadmap.json/roadmap_stage_requests.json в реальный prod-путь.
+DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
 
-ROADMAP_FILE = '/home/promonta/agent/miniapp/roadmap.json'
+ROADMAP_FILE = os.path.join(DATA_ROOT, 'roadmap.json')
 
 
 def _default_store():
@@ -211,7 +215,7 @@ def stage_snapshot(store: dict, stage_key: str) -> dict:
 # surface. This store only holds the request queue; main.py wires it to
 # _create_critical_alert() and applies the actual objekte_lib/roadmap_lib mutation
 # only after the owner approves.
-STAGE_REQUESTS_FILE = '/home/promonta/agent/miniapp/roadmap_stage_requests.json'
+STAGE_REQUESTS_FILE = os.path.join(DATA_ROOT, 'roadmap_stage_requests.json')
 
 REQUEST_KINDS = ('delete_stage', 'change_status')
 

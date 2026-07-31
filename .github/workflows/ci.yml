@@ -53,6 +53,8 @@ jobs:
           test -f frontend/app.html || (echo 'frontend/app.html missing' && exit 1)
           test -f scripts/deploy.sh || (echo 'scripts/deploy.sh missing' && exit 1)
           test -f scripts/rollback.sh || (echo 'scripts/rollback.sh missing' && exit 1)
+          test -f package.json || (echo 'package.json missing' && exit 1)
+          test -f package-lock.json || (echo 'package-lock.json missing' && exit 1)
           echo "All required files present"
 
       - name: Shell syntax check (deploy/rollback scripts)
@@ -91,3 +93,9 @@ jobs:
           node --check backend/angebot_free.js
           node --check backend/rechnung.js
           echo "All JS files syntax-OK"
+
+      - name: Install pdfkit via npm ci (reproducible, from package-lock.json)
+        run: npm ci
+
+      - name: pdfkit require() smoke-check
+        run: node -e "require('pdfkit'); console.log('pdfkit OK')"
