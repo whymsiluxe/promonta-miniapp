@@ -81,6 +81,12 @@ function _renderChatMessages(messages) {
   let lastUid = null;
   let lastTs = null;
   _chatMessagesById = {};
+  // 31.07: container.innerHTML ниже уничтожает текущие img/audio элементы без
+  // выгрузки их blob: src -- каждый poll-тик копил новые blob URL в памяти WebView,
+  // старые никогда не освобождались. Revoke ДО замены DOM.
+  container.querySelectorAll('img.chat-attach-img[src^="blob:"], audio[src^="blob:"]').forEach(el => {
+    try { URL.revokeObjectURL(el.src); } catch (e) {}
+  });
   container.innerHTML = messages.map(msg => {
     _chatMessagesById[msg.id] = msg;
     const isOwn = msg.user_id === _chatMyId;
@@ -142,7 +148,11 @@ function _renderChatMessages(messages) {
   });
   container.querySelectorAll('audio[data-auth-audio]').forEach(async audio => {
     try {
-      audio.src = await authImageUrl(audio.dataset.authAudio);
+      const newUrl = await authImageUrl(audio.dataset.authAudio);
+      if (audio.src && audio.src.startsWith('blob:')) {
+        try { URL.revokeObjectURL(audio.src); } catch (e) {}
+      }
+      audio.src = newUrl;
     } catch (e) {}
   });
   container.querySelectorAll('[data-extract-transcript]').forEach(btn => {
@@ -1150,7 +1160,20 @@ function closeChatThread() {
   }
 }
 
+// 31.07: нет отдельного view-leave хука в текущей навигации (NavigationManager не
+// вызывает per-view cleanup) -- освобождаем blob URL от ПРЕДЫДУЩЕГО захода в чат
+// здесь же, на входе в следующий (idempotent, безопасно при первом входе -- контейнер
+// либо пуст, либо ещё не существует в DOM).
+function _revokeAllChatBlobUrls() {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+  container.querySelectorAll('img[src^="blob:"], audio[src^="blob:"]').forEach(el => {
+    try { URL.revokeObjectURL(el.src); } catch (e) {}
+  });
+}
+
 async function initChatView() {
+  _revokeAllChatBlobUrls();
   if (!_chatMyId) {
     try {
       const me = await api('/api/me');

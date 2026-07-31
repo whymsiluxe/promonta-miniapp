@@ -95,17 +95,30 @@ async function authImageUrl(path) {
   return URL.createObjectURL(await res.blob());
 }
 
+// 31.07: revoke предыдущий blob URL перед заменой src -- иначе повторный рендер того
+// же элемента (напр. каждый poll-тик чата) копит blob'ы в памяти WebView без освобождения.
+function _revokeIfBlobUrl(url) {
+  if (url && url.startsWith('blob:')) {
+    try { URL.revokeObjectURL(url); } catch (e) {}
+  }
+}
+
 async function authImg(imgEl, path) {
   if (!imgEl) return;
   try {
-    imgEl.src = await authImageUrl(path);
+    const newUrl = await authImageUrl(path);
+    _revokeIfBlobUrl(imgEl.src);
+    imgEl.src = newUrl;
   } catch (e) {}
 }
 
 async function authBgImage(el, path) {
   if (!el) return;
   try {
-    el.style.backgroundImage = `url(${await authImageUrl(path)})`;
+    const newUrl = await authImageUrl(path);
+    _revokeIfBlobUrl(el.dataset.blobUrl);
+    el.style.backgroundImage = `url(${newUrl})`;
+    el.dataset.blobUrl = newUrl;
   } catch (e) {}
 }
 

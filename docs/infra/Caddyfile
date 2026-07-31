@@ -1,6 +1,6 @@
 app.promonta.fun {
 	header {
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org https://web.telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.telegram.org; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://app.promonta.fun; media-src 'self' https://radiorecord.hostingradio.ru; frame-ancestors https://web.telegram.org https://*.telegram.org"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org https://web.telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.telegram.org; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://app.promonta.fun; media-src 'self' blob: https://radiorecord.hostingradio.ru; frame-ancestors https://web.telegram.org https://*.telegram.org"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(self), microphone=(self), geolocation=(self)"
