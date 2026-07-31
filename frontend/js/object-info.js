@@ -31,7 +31,11 @@ async function renderObjectInfoTab(objectId) {
 
   const teamShiftsHtml = currentRole === 'owner' ? `
     <div class="obj-info-section">
-      <div class="obj-info-section-title">Команда и смены</div>
+      <div class="obj-info-section-title-row">
+        <span class="obj-info-section-title" style="margin-bottom:0;">Команда и смены</span>
+        <button type="button" class="obj-info-team-add-btn" id="obj-team-add-btn">+ Добавить</button>
+      </div>
+      <div id="obj-info-team-summary" class="obj-info-team-summary"></div>
       <div id="obj-info-team"></div>
       <div id="obj-info-shifts-today"></div>
     </div>` : '';
@@ -138,6 +142,19 @@ async function renderObjectInfoTab(objectId) {
     });
   }
 
+  const teamAddBtn = document.getElementById('obj-team-add-btn');
+  if (teamAddBtn) {
+    teamAddBtn.addEventListener('click', async () => {
+      let objectName = objectId;
+      try {
+        const objData = await api('/api/objects');
+        const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(objectId));
+        objectName = obj?.['Объект'] || obj?.name || objectId;
+      } catch (e) { /* fallback на id */ }
+      openAssignmentSheet({ objectId, objectName });
+    });
+  }
+
   document.getElementById('obj-works-subtabs').querySelectorAll('.doc-type-opt').forEach(opt => {
     opt.addEventListener('click', () => {
       const tab = opt.dataset.worksTab;
@@ -181,10 +198,13 @@ async function renderObjectInfoTab(objectId) {
   await Promise.all(promises);
 }
 
-// ── Команда и смены (owner-only, B6, 27.07) ──
-// Собирает назначенных workers + сегодняшние смены прямо в детальной карточке
-// объекта -- владелец не должен искать эту информацию отдельно на Home/Objects.
+// ── Команда и смены (owner-only, B6, 27.07; переработано 01.08 под единый каталог
+// видов работ + единый Assignment Sheet) ──
+// Группы: На смене сейчас (реальные check-in сессии) / Назначены (accepted) /
+// Ожидают подтверждения (pending) / Отклонили (declined). Сводка счётчиков сверху.
+// + Добавить открывает общий Assignment Sheet с заранее заполненным object_id.
 async function _renderObjTeamAndShifts(objectId) {
+  const summaryEl = document.getElementById('obj-info-team-summary');
   const teamEl = document.getElementById('obj-info-team');
   const shiftsEl = document.getElementById('obj-info-shifts-today');
   if (!teamEl || !shiftsEl) return;
@@ -195,23 +215,83 @@ async function _renderObjTeamAndShifts(objectId) {
     ]);
     const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(objectId));
     const team = obj?.assigned_users || [];
-    // 29.07 ТЗ п.9: owner видит статус подтверждения назначения прямо на чипе --
-    // pending/declined получают маленький индикатор поверх обычных инициалов.
-    teamEl.innerHTML = team.length
-      ? `<div class="obj-info-team-row">${team.map(u => `
-          <div class="obj-info-team-chip obj-info-team-chip-${u.assignment_status || 'accepted'}" data-uid="${esc(u.user_id)}" title="${esc(u.name)}${u.assignment_status === 'pending' ? ' — ожидает подтверждения' : ''}${u.assignment_status === 'declined' ? ` — отклонил: ${esc(u.decline_reason || '')}` : ''}">
-            ${esc((u.name || '?').split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase())}
-            ${u.assignment_status === 'pending' ? '<span class="obj-info-team-chip-badge">?</span>' : ''}
-            ${u.assignment_status === 'declined' ? '<span class="obj-info-team-chip-badge obj-info-team-chip-badge-declined">✕</span>' : ''}
-          </div>`).join('')}</div>`
-      : '<div class="obj-info-empty-row"><span>Никто не назначен</span></div>';
-    // 29.07 (аудит): причина отказа раньше была видна только в HTML title-атрибуте
-    // (бесполезно в мобильном Telegram WebView -- нет hover). Tap на pending/declined
-    // чип теперь явно показывает статус+причину, не проваливается сразу в карточку
-    // воркера (та доступна отдельным долгим тапом не нужна была -- статус важнее здесь).
-    teamEl.querySelectorAll('.obj-info-team-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const u = team.find(t => String(t.user_id) === chip.dataset.uid);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const todaySessions = (checkinData.sessions || []).filter(s => s.date === today);
+    const onShiftNow = todaySessions.filter(s => !s.finish_at);
+
+    const accepted = team.filter(u => (u.assignment_status || 'accepted') === 'accepted');
+    const pending = team.filter(u => u.assignment_status === 'pending');
+    const declined = team.filter(u => u.assignment_status === 'declined');
+
+    summaryEl.innerHTML = `
+      <span>На смене: <b>${onShiftNow.length}</b></span>
+      <span>Назначено: <b>${accepted.length}</b></span>
+      <span>Ожидают: <b>${pending.length}</b></span>
+    `;
+
+    function actionsMenuHtml(u, isOnShift) {
+      // Спека п.11: для active check-in не показывать опасную кнопку удаления смены отдельно.
+      return `
+        <button type="button" class="obj-info-team-row-menu-btn" data-team-menu-uid="${esc(u.user_id)}" data-team-menu-assignment="${esc(u.assignment_id || '')}" aria-label="Действия">⋯</button>
+      `;
+    }
+
+    function rowHtml(u, statusLabel, statusClass) {
+      return `
+        <div class="obj-info-team-list-row" data-uid="${esc(u.user_id)}">
+          <span class="obj-info-team-row-avatar">${esc((u.name || '?')[0].toUpperCase())}</span>
+          <div class="obj-info-team-row-body">
+            <div class="obj-info-team-row-name">${esc(u.name)}</div>
+            <div class="obj-info-team-row-meta">${esc(u.work_type_name || u.stage_id || '')}${u.date_from ? ` · ${esc(u.date_from)}${u.date_to && u.date_to !== u.date_from ? '–' + esc(u.date_to) : ''}` : ''}</div>
+          </div>
+          <span class="obj-info-team-row-status ${statusClass}">${statusLabel}</span>
+          ${actionsMenuHtml(u, false)}
+        </div>
+      `;
+    }
+
+    const onShiftHtml = onShiftNow.length ? `
+      <div class="obj-info-team-group-title">На смене сейчас</div>
+      ${onShiftNow.map(s => {
+        const worker = team.find(u => String(u.user_id) === String(s.user_id));
+        const name = worker ? worker.name : s.user_id;
+        return `
+          <div class="obj-info-team-list-row" data-uid="${esc(s.user_id)}">
+            <span class="obj-info-team-row-avatar">${esc((name || '?')[0].toUpperCase())}</span>
+            <div class="obj-info-team-row-body">
+              <div class="obj-info-team-row-name">${esc(name)}</div>
+              <div class="obj-info-team-row-meta">${esc(worker?.work_type_name || s.stage_name || '')} · с ${esc((s.start_at || '').slice(11, 16))}</div>
+            </div>
+            <span class="obj-info-team-row-status obj-info-team-row-status-onshift">● На смене</span>
+          </div>
+        `;
+      }).join('')}
+    ` : '';
+
+    const acceptedHtml = accepted.length ? `
+      <div class="obj-info-team-group-title">Назначены</div>
+      ${accepted.map(u => rowHtml(u, '✓ Принял', 'obj-info-team-row-status-accepted')).join('')}
+    ` : '';
+
+    const pendingHtml = pending.length ? `
+      <div class="obj-info-team-group-title">Ожидают подтверждения</div>
+      ${pending.map(u => rowHtml(u, '? Ожидает ответа', 'obj-info-team-row-status-pending')).join('')}
+    ` : '';
+
+    const declinedHtml = declined.length ? `
+      <div class="obj-info-team-group-title">Отклонили</div>
+      ${declined.map(u => rowHtml(u, '✕ Отклонил', 'obj-info-team-row-status-declined')).join('')}
+    ` : '';
+
+    teamEl.innerHTML = (onShiftHtml + acceptedHtml + pendingHtml + declinedHtml) ||
+      '<div class="obj-info-empty-row"><span>Никто не назначен</span></div>';
+
+    // Причину отказа показывать по тапу, не только через HTML title (спека п.11).
+    teamEl.querySelectorAll('.obj-info-team-list-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.obj-info-team-row-menu-btn')) return;
+        const u = team.find(t => String(t.user_id) === row.dataset.uid);
         if (u?.assignment_status === 'declined') {
           showToast(`${u.name}: отклонил — ${u.decline_reason || 'причина не указана'}`, 'error');
           return;
@@ -220,39 +300,123 @@ async function _renderObjTeamAndShifts(objectId) {
           showToast(`${u.name}: ожидает подтверждения назначения`);
           return;
         }
-        if (typeof openUserCard === 'function') openUserCard(chip.dataset.uid);
+        if (typeof openUserCard === 'function') openUserCard(row.dataset.uid);
       });
     });
 
-    const today = new Date().toISOString().slice(0, 10);
-    const todaySessions = (checkinData.sessions || []).filter(s => s.date === today);
+    teamEl.querySelectorAll('.obj-info-team-row-menu-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _openTeamRowActionsMenu(objectId, btn.dataset.teamMenuUid, btn.dataset.teamMenuAssignment, team, btn);
+      });
+    });
+
     if (!todaySessions.length) {
-      shiftsEl.innerHTML = '<div class="obj-info-empty-row"><span>Сегодня смен не было</span></div>';
+      shiftsEl.innerHTML = '';
     } else {
-      shiftsEl.innerHTML = todaySessions.map(s => {
-        const worker = team.find(u => String(u.user_id) === String(s.user_id));
-        const name = worker ? worker.name : s.user_id;
-        const status = s.finish_at ? 'завершена' : 'идёт';
-        // 28.07: owner report -- сводка смены была почти пустой (только имя+статус),
-        // хотя worker заполняет "что сделано" (текст) и опционально голосовое через
-        // finish-wizard. Оба теперь видны прямо тут, без отдельного клика/экрана.
-        const summaryHtml = s.done_summary
-          ? `<div class="obj-info-shift-summary">${esc(s.done_summary)}</div>` : '';
-        const audioHtml = s.voice_note_audio_url
-          ? `<audio class="obj-info-shift-audio" controls preload="none" src="${esc(API_BASE + s.voice_note_audio_url)}"></audio>` : '';
-        return `<div class="obj-info-item-row obj-info-shift-row">
-          <div class="obj-info-shift-row-top">
-            <span class="obj-info-item-text">${esc(name)}</span>
-            <span class="obj-info-item-qty">${esc(status)}</span>
-          </div>
-          ${summaryHtml}
-          ${audioHtml}
-        </div>`;
-      }).join('');
+      const finished = todaySessions.filter(s => s.finish_at);
+      shiftsEl.innerHTML = finished.length ? `
+        <div class="obj-info-team-group-title">Завершённые смены сегодня</div>
+        ${finished.map(s => {
+          const worker = team.find(u => String(u.user_id) === String(s.user_id));
+          const name = worker ? worker.name : s.user_id;
+          const summaryHtml = s.done_summary ? `<div class="obj-info-shift-summary">${esc(s.done_summary)}</div>` : '';
+          const audioHtml = s.voice_note_audio_url
+            ? `<audio class="obj-info-shift-audio" controls preload="none" src="${esc(API_BASE + s.voice_note_audio_url)}"></audio>` : '';
+          return `<div class="obj-info-item-row obj-info-shift-row">
+            <div class="obj-info-shift-row-top">
+              <span class="obj-info-item-text">${esc(name)}</span>
+              <span class="obj-info-item-qty">завершена</span>
+            </div>
+            ${summaryHtml}
+            ${audioHtml}
+          </div>`;
+        }).join('')}
+      ` : '';
     }
   } catch (e) {
     teamEl.innerHTML = `<div class="obj-info-empty-row"><span>Ошибка: ${esc(e.message)}</span></div>`;
   }
+}
+
+// 01.08 (спека п.11): ⋯ меню на строке назначения -- открыть профиль/изменить
+// работу/изменить период/изменить задачу/удалить конкретное назначение.
+function _openTeamRowActionsMenu(objectId, userId, assignmentId, team, triggerEl) {
+  const u = team.find(t => String(t.user_id) === String(userId));
+  const backdrop = document.createElement('div');
+  backdrop.className = 'chat-bubble-menu-backdrop';
+  const menu = document.createElement('div');
+  menu.className = 'chat-bubble-menu';
+  const rect = triggerEl.getBoundingClientRect();
+  menu.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - 200)}px`;
+  menu.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
+  menu.innerHTML = `
+    <button type="button" class="chat-bubble-menu-reply" data-team-action="profile">Открыть профиль</button>
+    ${assignmentId ? `
+    <button type="button" class="chat-bubble-menu-reply" data-team-action="edit-work">Изменить работу</button>
+    <button type="button" class="chat-bubble-menu-reply" data-team-action="edit-period">Изменить период</button>
+    <button type="button" class="chat-bubble-menu-reply" data-team-action="edit-note">Изменить задачу</button>
+    <button type="button" class="chat-bubble-menu-delete" data-team-action="delete">Удалить назначение</button>
+    ` : ''}
+  `;
+  const close = () => { backdrop.remove(); menu.remove(); unregister?.(); };
+  const unregister = typeof NavigationManager !== 'undefined' ? NavigationManager.registerOverlay(close) : null;
+  backdrop.addEventListener('click', close);
+  document.body.appendChild(backdrop);
+  document.body.appendChild(menu);
+
+  menu.querySelectorAll('[data-team-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.teamAction;
+      close();
+      if (action === 'profile') {
+        if (typeof openUserCard === 'function') openUserCard(userId);
+        return;
+      }
+      if (action === 'delete') {
+        if (!confirm(`Удалить назначение ${u?.name || userId}?`)) return;
+        try {
+          await api(`/api/objects/${objectId}/assignments/${assignmentId}`, { method: 'DELETE' });
+          hapticImpact('light');
+          _renderObjTeamAndShifts(objectId);
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, 'error');
+        }
+        return;
+      }
+      if (action === 'edit-note') {
+        const note = prompt('Задача (до 500 символов):', u?.task_note || '');
+        if (note === null) return;
+        try {
+          await api(`/api/objects/${objectId}/assignments/${assignmentId}`, { method: 'PATCH', body: JSON.stringify({ task_note: note.slice(0, 500) }) });
+          hapticImpact('light');
+          _renderObjTeamAndShifts(objectId);
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, 'error');
+        }
+        return;
+      }
+      if (action === 'edit-period') {
+        const from = prompt('Дата начала (YYYY-MM-DD):', u?.date_from || '');
+        if (from === null) return;
+        const to = prompt('Дата окончания (YYYY-MM-DD):', u?.date_to || from);
+        if (to === null) return;
+        try {
+          await api(`/api/objects/${objectId}/assignments/${assignmentId}`, { method: 'PATCH', body: JSON.stringify({ date_from: from, date_to: to }) });
+          hapticImpact('light');
+          _renderObjTeamAndShifts(objectId);
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, 'error');
+        }
+        return;
+      }
+      if (action === 'edit-work') {
+        // Изменение вида работ -- открываем полноценный Assignment Sheet заново
+        // проще и надёжнее mini-picker, переиспользует ту же валидацию/каталог.
+        showToast('Чтобы изменить вид работ, удали текущее назначение и создай новое через + Добавить');
+      }
+    });
+  });
 }
 
 // ── Описание объекта ──

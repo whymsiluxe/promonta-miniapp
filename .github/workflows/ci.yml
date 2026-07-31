@@ -47,6 +47,11 @@ jobs:
           test -f backend/mangel_lib.py || (echo 'backend/mangel_lib.py missing' && exit 1)
           test -f backend/objekte_lib.py || (echo 'backend/objekte_lib.py missing' && exit 1)
           test -f backend/roadmap_lib.py || (echo 'backend/roadmap_lib.py missing' && exit 1)
+          test -f backend/work_types.py || (echo 'backend/work_types.py missing' && exit 1)
+          test -f backend/profile_skills.py || (echo 'backend/profile_skills.py missing' && exit 1)
+          test -f backend/assignment_matching.py || (echo 'backend/assignment_matching.py missing' && exit 1)
+          test -f frontend/js/skill-picker.js || (echo 'frontend/js/skill-picker.js missing' && exit 1)
+          test -f frontend/js/assignment-sheet.js || (echo 'frontend/js/assignment-sheet.js missing' && exit 1)
           test -f backend/angebot_free.js || (echo 'backend/angebot_free.js missing' && exit 1)
           test -f backend/rechnung.js || (echo 'backend/rechnung.js missing' && exit 1)
           test -f backend/main.py || (echo 'backend/main.py missing' && exit 1)
@@ -66,6 +71,25 @@ jobs:
       - name: Check for unresolved merge conflict markers
         run: |
           ! grep -rE "^(<<<<<<<|=======|>>>>>>>)" --include="*.py" --include="*.js" --include="*.html" backend/ frontend/ tests/
+
+      - name: Guard against work-type catalog duplication (01.08)
+        run: |
+          # 01.08 (единый каталог видов работ): backend/work_types.py -- ЕДИНСТВЕННЫЙ
+          # источник истины. Раньше один и тот же список навыков был вручную продублирован
+          # в main.py + 2 frontend-файлах, что дало реальный дрифт (SKILL_STAGE_MAP
+          # покрывал только 8 из 19 навыков). Эта проверка ловит повторное появление
+          # статичного списка ВНЕ work_types.py -- любой JS-файл с массивом из 15+
+          # захардкоженных строк-навыков (тот же класс паттерна, что были ONBOARDING_GROUPS/
+          # BUBBLE_STAGE_OPTIONS/SKILL_STAGE_MAP) считается регрессией.
+          FOUND=0
+          for f in frontend/js/*.js; do
+            if grep -qE '(SKILL_OPTIONS|ONBOARDING_GROUPS|BUBBLE_STAGE_OPTIONS|SKILL_STAGE_MAP)\s*=' "$f"; then
+              echo "REGRESSION: $f содержит статичный каталог навыков вместо GET /api/work-types"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" = "1" ]; then exit 1; fi
+          echo "OK: единый work-types каталог не продублирован во frontend"
 
       - name: Check for obvious committed secrets
         run: |
