@@ -92,6 +92,21 @@ def _load_repo_roadmap_lib():
     return _load_repo_module(ROADMAP_LIB_PATH, 'promonta_repo_roadmap_lib', _repo_module_cache, 'roadmap_lib')
 
 
+# 01.08 (единый каталог видов работ): work_types.py/profile_skills.py/
+# assignment_matching.py -- ТРИ НОВЫХ модуля, созданных в этой сессии, без
+# untracked-двойников на сервере (в отличие от tools_lib/mangel_lib/objekte_lib,
+# у которых были старые копии в /home/promonta/agent) -- поэтому обычный `import`
+# безопасен: uvicorn запускается из BACKEND_DIR, Python кладёт директорию
+# запускаемого модуля (main.py) в sys.path[0] автоматически, БЕЗ явного insert
+# с нашей стороны (тот insert -- именно то, что сломало global module resolution
+# и тест test_main_py_restores_original_global_sys_path_insert выше). Модули
+# импортируют друг друга обычным `import work_types`/`import profile_skills` --
+# тот же неявный sys.path[0] резолвит их одинаково для main.py и друг для друга.
+import work_types as wt  # noqa: E402
+import profile_skills as pskills  # noqa: E402
+import assignment_matching as amatch  # noqa: E402
+
+
 BOT_TOKEN = os.environ['BOT_TOKEN']
 ROLES_FILE = os.path.join(DATA_ROOT, 'roles.json')
 INIT_DATA_MAX_AGE = 3600  # секунд — Telegram initData считается протухшим через час
@@ -717,14 +732,14 @@ def list_workers(user: dict = Depends(get_current_user)):
 
 # ---------- Профиль работника: навыки + онбординг-квиз (Фаза 2/8) ----------
 WORKER_PROFILES_FILE = os.path.join(DATA_ROOT, 'worker_profiles.json')
-SKILL_OPTIONS = [
-    "Штукатурка", "Малярные работы", "Электрика", "Кровля", "Фасад",
-    "Сантехника", "Плитка", "Демонтаж", "Гипсокартон (сухая стройка)",
-    "Стяжка пола / бетонные работы", "Утепление / изоляция", "Каменная кладка",
-    "Столярные / плотницкие работы", "Сварочные работы", "Отопление / вентиляция",
-    "Ландшафт / благоустройство территории", "Малярные работы фасада",
-    "Монтаж окон и дверей", "Кровельная жесть / водостоки", "Строительные леса",
-]
+# 01.08 (единый каталог видов работ): SKILL_OPTIONS был вручную продублированным
+# списком из 19 строк, отдельно от frontend ONBOARDING_GROUPS/BUBBLE_STAGE_OPTIONS --
+# новый навык мог появиться в одном месте и отсутствовать в другом (реальный
+# найденный дрифт: SKILL_STAGE_MAP покрывал только 8 из 19). Источник истины теперь
+# один -- work_types.py, SKILL_OPTIONS оставлен как производный список ИМЁН active
+# work types (тот же порядок что в каталоге) только для legacy-полей API-ответов
+# (skill_options в /api/profile/me), которые старый frontend-код ещё может читать.
+SKILL_OPTIONS = [w['name'] for w in wt.WORK_TYPES if w['active']]
 
 
 def _load_worker_profiles() -> dict:
@@ -738,6 +753,29 @@ def _save_worker_profiles(profiles: dict):
 def _get_worker_profile(user_id) -> dict:
     profiles = _load_worker_profiles()
     return profiles.get(str(user_id), {"skills": [], "quiz_completed": False})
+
+
+@app.get("/api/work-types")
+def get_work_types(user: dict = Depends(get_current_user)):
+    """01.08: единый каталог видов работ -- доступен любому авторизованному
+    пользователю (не owner-only), т.к. Worker выбирает навыки в onboarding/профиле,
+    не только Owner в Assignment Sheet."""
+    return wt.work_types_catalog()
+
+
+def _get_worker_skills_v2(user_id) -> list:
+    """Профиль работника -> нормализованный skills_v2, с idempotent миграцией
+    legacy 'skills' (список названий) при первом обращении -- ТОЛЬКО если реально
+    нужна миграция (skills_v2 отсутствует), файл не переписывается на каждый read."""
+    profiles = _load_worker_profiles()
+    key = str(user_id)
+    profile = profiles.get(key, {"skills": [], "quiz_completed": False})
+    skills_v2, changed = pskills.normalize_profile_skills(profile)
+    if changed:
+        profile['skills_v2'] = skills_v2
+        profiles[key] = profile
+        _save_worker_profiles(profiles)
+    return skills_v2
 
 
 _INVISIBLE_FILLER_CHARS = (
@@ -811,7 +849,16 @@ def get_my_profile(user: dict = Depends(get_current_user)):
             healed_name = candidate
     if healed_name:
         profile = {**profile, 'name': healed_name}
-    return {"user_id": user['id'], "skill_options": SKILL_OPTIONS, **profile}
+    skills_v2 = _get_worker_skills_v2(user['id'])
+    return {
+        "user_id": user['id'],
+        "skill_options": SKILL_OPTIONS,  # legacy -- старый frontend-код может ещё это читать
+        **profile,
+        "skills": pskills.legacy_skill_names_from_v2(skills_v2),  # legacy-совместимый список строк
+        "skills_v2": skills_v2,  # новый источник истины
+        "onboarding_completed": bool(profile.get('onboarding_completed') or profile.get('quiz_completed')),
+        "onboarding_version": profile.get('onboarding_version', 1),
+    }
 
 
 @app.get("/api/users/{target_id}/card")
@@ -829,11 +876,13 @@ def get_user_card(target_id: str, user: dict = Depends(get_current_user), role: 
         raise HTTPException(404, "Пользователь не найден")
     profile = _get_worker_profile(target_id)
     has_avatar = bool(profile.get('avatar'))
+    skills_v2 = _get_worker_skills_v2(target_id)
     card = {
         "user_id": target_id,
         "name": _sanitize_display_name(profile.get('name'), target_id),
         "role": roles[target_id],
-        "skills": profile.get('skills', []),
+        "skills": pskills.legacy_skill_names_from_v2(skills_v2),
+        "skills_v2": skills_v2,
         "has_avatar": has_avatar,
     }
     if role == 'owner' and roles[target_id] != 'owner':
@@ -857,16 +906,29 @@ def get_user_card(target_id: str, user: dict = Depends(get_current_user), role: 
     return card
 
 
+class SkillV2Body(BaseModel):
+    skill_id: str
+    level: str
+    verified: bool = False
+
+
 class ProfileUpdateBody(BaseModel):
     name: str | None = None  # 24.07: ручное имя — нужно, когда Telegram first_name
     # пуст/скрыт/состоит из невидимых символов (self-heal в get_my_profile не может
     # исцелиться нечем в этом случае).
-    skills: list[str] | None = None
+    skills: list[str] | None = None  # legacy -- принимается для обратной совместимости
+    skills_v2: list[SkillV2Body] | None = None  # 01.08: новый источник истины
     quiz_completed: bool | None = None
+    onboarding_completed: bool | None = None
+    onboarding_version: int | None = None
     pants_size: str | None = None
     shirt_size: str | None = None
     shoe_size: str | None = None
     birthday: str | None = None  # YYYY-MM-DD, только месяц/день значимы (10.31)
+    # 01.08: дата рождения полностью убрана из onboarding v2 и нового UI профиля --
+    # поле в модели/JSON НЕ трогаем (спека: "существующие сохранённые значения не
+    # удалять автоматически из JSON, чтобы не делать опасную миграцию данных"),
+    # просто новый frontend-код больше никогда его не отправляет.
 
 
 @app.patch("/api/profile/me")
@@ -880,10 +942,62 @@ def update_my_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_
         if not cleaned:
             raise HTTPException(400, "Имя не должно быть пустым")
         updates['name'] = cleaned[:100]
+    if 'skills_v2' in updates:
+        for s in updates['skills_v2']:
+            if s.get('level') not in pskills.SKILL_LEVELS:
+                raise HTTPException(400, f"Недопустимый уровень навыка: {s.get('level')!r}")
+        # 01.08: worker не может сам выставить verified: true через этот общий
+        # endpoint (спека п.4) -- self-service PATCH всегда сбрасывает verified,
+        # подтверждение -- отдельный owner-only endpoint (см. verify_worker_skill ниже).
+        updates['skills_v2'] = [{**s, 'verified': False} for s in updates['skills_v2']]
+    # 01.08 (спека п.3): onboarding_completed нельзя установить, пока обязательные
+    # условия не выполнены -- проверяем на РЕЗУЛЬТИРУЮЩЕМ профиле (после merge с
+    # уже сохранёнными полями), не только на этом одном PATCH-запросе, т.к. frontend
+    # сохраняет профиль по шагам (спека: "Сначала сохранить профиль, затем
+    # установить onboarding_completed: true").
+    if updates.get('onboarding_completed'):
+        merged_name = updates.get('name', profile.get('name'))
+        merged_skills = updates.get('skills_v2', profile.get('skills_v2', []))
+        if not _sanitize_display_name(merged_name, ''):
+            raise HTTPException(400, "Укажите имя, чтобы завершить регистрацию")
+        if not merged_skills:
+            raise HTTPException(400, "Выберите хотя бы один навык")
+        for s in merged_skills:
+            level = s.get('level') if isinstance(s, dict) else None
+            if level not in pskills.SKILL_LEVELS:
+                raise HTTPException(400, "Укажите уровень для каждого выбранного навыка")
+        updates['onboarding_completed_at'] = datetime.utcnow().isoformat() + 'Z'
+        updates['onboarding_version'] = 2
+        updates['quiz_completed'] = True  # legacy-совместимость (спека п.3)
     profile.update(updates)
     profiles[key] = profile
     _save_worker_profiles(profiles)
     return profile
+
+
+class SkillVerificationBody(BaseModel):
+    verified: bool
+
+
+@app.patch("/api/workers/{user_id}/skills/{skill_id}/verification")
+def verify_worker_skill(user_id: str, skill_id: str, body: SkillVerificationBody,
+                         user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    """01.08 (спека п.4): только Owner подтверждает навык работника. Worker не может
+    сам выставить verified: true -- см. update_my_profile выше, self-service PATCH
+    всегда сбрасывает verified в False."""
+    profiles = _load_worker_profiles()
+    key = str(user_id)
+    profile = profiles.get(key)
+    if not profile:
+        raise HTTPException(404, "Профиль не найден")
+    skills_v2, _changed = pskills.normalize_profile_skills(profile)
+    skills_v2, found = pskills.set_skill_verification(skills_v2, skill_id, body.verified)
+    if not found:
+        raise HTTPException(404, "У работника нет такого навыка")
+    profile['skills_v2'] = skills_v2
+    profiles[key] = profile
+    _save_worker_profiles(profiles)
+    return {"skill_id": skill_id, "verified": body.verified}
 
 
 # ---------- Фаза 8: аватар + агрегированная статистика профиля ----------
@@ -1314,6 +1428,15 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
             info["assignment_status"] = _assignment_status(assignment)
             info["decline_reason"] = assignment.get('decline_reason', '')
             info["task_note"] = assignment.get('task_note', '')
+            # 01.08 (Команда и смены переработка): assignment_id/даты/вид работ нужны
+            # для ⋯ меню (изменить/удалить конкретное назначение) в object-info.js.
+            info["assignment_id"] = assignment.get('id', '')
+            info["date_from"] = assignment.get('date_from', '')
+            info["date_to"] = assignment.get('date_to', '')
+            work_type_id = assignment.get('work_type_id', '')
+            info["work_type_id"] = work_type_id
+            info["work_type_name"] = pskills.skill_display_name(work_type_id) if work_type_id else ''
+            info["stage_id"] = assignment.get('stage_id', '')
         return info
 
     def _stage_summary(oid: str) -> dict | None:
@@ -1367,11 +1490,14 @@ def my_assignments(user: dict = Depends(get_current_user)):
         for a in lst:
             if a.get('user_id') != uid:
                 continue
+            work_type_id = a.get('work_type_id', '')
             result.append({
                 "id": a.get('id', ''),  # 29.07 (аудит): фронт передаёт это в /respond
                 "object_id": oid,
                 "object_name": names.get(oid, oid),
                 "stage_id": a.get('stage_id', ''),
+                "work_type_id": work_type_id,
+                "work_type_name": pskills.skill_display_name(work_type_id) if work_type_id else '',
                 "date_from": a.get('date_from', ''),
                 "date_to": a.get('date_to', ''),
                 "assigned_at": a.get('assigned_at', ''),
@@ -1386,6 +1512,8 @@ def my_assignments(user: dict = Depends(get_current_user)):
 class AssignBody(BaseModel):
     user_id: str
     stage_id: str = ''
+    work_type_id: str = ''  # 01.08: новый источник истины matching'а; stage_id остаётся
+    # для legacy-совместимости (текстовое отображение старых этапов, см. work_types.py).
     date_from: str = ''
     date_to: str = ''
     task_note: str = ''
@@ -1452,6 +1580,7 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
             'id': uuid.uuid4().hex,
             'user_id': str(body.user_id),
             'stage_id': body.stage_id,
+            'work_type_id': body.work_type_id,
             'date_from': body.date_from,
             'date_to': body.date_to,
             'assigned_at': datetime.utcnow().isoformat(),
@@ -1472,13 +1601,89 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
 
 @app.delete("/api/objects/{object_id}/assign/{user_id}")
 def unassign_user(object_id: str, user_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    """01.08 (спека п.9): раньше удаляло ВСЕ назначения этого user_id на объекте
+    молча -- реальная опасность при нескольких назначениях одного worker'а на разные
+    work_type/периоды одного объекта (один клик мог случайно снять все). Теперь:
+    ровно одно активное (не declined) назначение -- удаляем его; несколько -- 409 с
+    просьбой использовать точный /assignments/{assignment_id} endpoint ниже."""
     key = str(object_id)
+    result_holder = {}
 
     def _mutator(assignments):
+        lst = assignments.get(key, [])
+        active = [a for a in lst if _assignment_status(a) != 'declined']
+        if len(active) > 1:
+            result_holder['multiple'] = True
+            return
         if key in assignments:
-            assignments[key] = [a for a in assignments[key] if a['user_id'] != str(user_id)]
+            assignments[key] = [a for a in lst if _assignment_status(a) == 'declined']
 
     update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
+    if result_holder.get('multiple'):
+        raise HTTPException(409, "У работника несколько назначений. Используйте assignment_id.")
+    return {"status": "ok"}
+
+
+class AssignmentUpdateBody(BaseModel):
+    work_type_id: str | None = None
+    date_from: str | None = None
+    date_to: str | None = None
+    task_note: str | None = None
+
+
+@app.patch("/api/objects/{object_id}/assignments/{assignment_id}")
+def update_assignment(object_id: str, assignment_id: str, body: AssignmentUpdateBody,
+                       user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    """01.08 (спека п.9): точечное редактирование ОДНОГО назначения по assignment_id.
+    При значимом изменении уже принятого назначения статус возвращается в pending --
+    worker должен подтвердить обновлённые условия заново."""
+    key = str(object_id)
+    updates = body.dict(exclude_unset=True)
+    if 'task_note' in updates and updates['task_note'] is not None:
+        updates['task_note'] = updates['task_note'].strip()[:500]
+    found = {}
+
+    def _mutator(assignments):
+        lst = assignments.get(key, [])
+        target = next((a for a in lst if a.get('id') == assignment_id), None)
+        if target is None:
+            return
+        found['ok'] = True
+        was_accepted = _assignment_status(target) == 'accepted'
+        target.update({k: v for k, v in updates.items() if v is not None})
+        if was_accepted and updates:
+            # 01.08: значимое изменение уже принятого назначения -- сброс на pending,
+            # старый responded_at очищается, worker подтверждает заново.
+            target['status'] = 'pending'
+            target['decline_reason'] = ''
+            target['responded_at'] = ''
+        target['updated_at'] = datetime.utcnow().isoformat()
+
+    update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
+    if not found.get('ok'):
+        raise HTTPException(404, "Назначение не найдено")
+    return {"status": "ok"}
+
+
+@app.delete("/api/objects/{object_id}/assignments/{assignment_id}")
+def delete_assignment(object_id: str, assignment_id: str,
+                       user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    """01.08 (спека п.9): удаляет РОВНО одно назначение по assignment_id -- в отличие
+    от старого DELETE .../assign/{user_id} (см. выше), который теперь тоже защищён,
+    но этот endpoint -- предпочтительный путь для frontend, без неоднозначности вообще."""
+    key = str(object_id)
+    found = {}
+
+    def _mutator(assignments):
+        lst = assignments.get(key, [])
+        if not any(a.get('id') == assignment_id for a in lst):
+            return
+        found['ok'] = True
+        assignments[key] = [a for a in lst if a.get('id') != assignment_id]
+
+    update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
+    if not found.get('ok'):
+        raise HTTPException(404, "Назначение не найдено")
     return {"status": "ok"}
 
 
@@ -1526,6 +1731,135 @@ def respond_to_assignment(object_id: str, user_id: str, body: AssignmentRespondB
         return target
 
     return update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
+
+
+@app.get("/api/assignment-candidates")
+def get_assignment_candidates(object_id: str, work_type_id: str, date_from: str, date_to: str,
+                               user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    """01.08 (спека п.7): кандидаты для Assignment Sheet -- recommended (точное
+    совпадение навыка) / available (навык не указан, но доступен) / unavailable
+    (пересечение/абсенс/занят сегодня). Не N+1 -- все файлы читаются ОДИН раз,
+    матчинг чисто в памяти (assignment_matching.build_candidates)."""
+    if not _sanitize_display_name(work_type_id, ''):
+        raise HTTPException(400, "work_type_id обязателен")
+    _validate_date_str(date_from, 'date_from')
+    _validate_date_str(date_to, 'date_to')
+
+    roles = _load_roles()
+    profiles = _load_worker_profiles()
+    worker_ids = {uid for uid, r in roles.items() if r != 'owner'} | \
+                 {uid for uid, p in profiles.items() if roles.get(uid, 'worker') != 'owner'}
+
+    workers = []
+    for uid in worker_ids:
+        profile = profiles.get(uid, {})
+        name = _sanitize_display_name(profile.get('name'), uid)
+        workers.append({
+            "user_id": uid, "name": name,
+            "has_avatar": bool(profile.get('avatar')),
+            "profile": profile,
+        })
+
+    all_assignments = _load_assignments()
+    abwesenheit_entries = _load_abwesenheit()
+    checkin_sessions = _load_checkin_meta()
+
+    return amatch.build_candidates(
+        work_type_id, object_id, date_from, date_to,
+        workers, all_assignments, abwesenheit_entries, checkin_sessions,
+    )
+
+
+class BatchAssignBody(BaseModel):
+    user_ids: list[str]
+    work_type_id: str
+    date_from: str
+    date_to: str
+    task_note: str = ''
+
+
+@app.post("/api/objects/{object_id}/assignments/batch")
+def batch_assign(object_id: str, body: BatchAssignBody,
+                  user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    """01.08 (спека п.8): назначить нескольких работников одним запросом -- каждому
+    отдельная запись с уникальным id, весь read/check/write под одним transaction lock
+    (update_json_transaction), без дублей на того же worker+work_type+пересекающийся
+    период. Партиальный успех -- 200 с created/skipped; ни одного успеха -- 409."""
+    wtype = wt.get_work_type(body.work_type_id)
+    if wtype is None or not wtype.get('active'):
+        raise HTTPException(400, "Неизвестный или неактивный вид работ")
+    user_ids = list(dict.fromkeys(body.user_ids))  # без дублей, сохраняя порядок
+    if not user_ids:
+        raise HTTPException(400, "Укажите хотя бы одного работника")
+    _validate_date_str(body.date_from, 'date_from')
+    _validate_date_str(body.date_to, 'date_to')
+    if body.date_from > body.date_to:
+        raise HTTPException(400, "date_from не может быть позже date_to")
+    task_note = body.task_note.strip()[:500]
+
+    key = str(object_id)
+    result_holder = {"created": [], "skipped": []}
+
+    def _mutator(assignments):
+        if key not in assignments:
+            assignments[key] = []
+        abwesenheit = _load_abwesenheit()
+        created, skipped = [], []
+        for uid in user_ids:
+            # duplicate check: тот же worker, тот же work_type, пересекающийся период,
+            # статус не declined -- та же логика что assign_user() выше, для консистентности.
+            dup = any(
+                a['user_id'] == uid and a.get('work_type_id') == body.work_type_id
+                and _assignment_status(a) != 'declined'
+                and _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', ''))
+                for a in assignments[key]
+            )
+            if dup:
+                skipped.append({"user_id": uid, "reason": "overlap"})
+                continue
+            absence_hit = any(
+                str(e.get('user_id')) == uid and e.get('status') == 'approved'
+                and _dates_overlap(body.date_from, body.date_to, e.get('date_from', ''), e.get('date_to', ''))
+                for e in abwesenheit
+            )
+            if absence_hit:
+                skipped.append({"user_id": uid, "reason": "absence"})
+                continue
+            cross_object_hit = False
+            for other_oid, other_list in assignments.items():
+                if other_oid == key:
+                    continue
+                if any(a['user_id'] == uid and _assignment_status(a) != 'declined'
+                       and _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', ''))
+                       for a in other_list):
+                    cross_object_hit = True
+                    break
+            if cross_object_hit:
+                skipped.append({"user_id": uid, "reason": "overlap"})
+                continue
+            assignment_id = uuid.uuid4().hex
+            assignments[key].append({
+                'id': assignment_id,
+                'user_id': uid,
+                'stage_id': wtype['name'],  # legacy-совместимость (текстовое отображение)
+                'work_type_id': body.work_type_id,
+                'date_from': body.date_from,
+                'date_to': body.date_to,
+                'assigned_at': datetime.utcnow().isoformat(),
+                'status': 'pending',
+                'decline_reason': '',
+                'responded_at': '',
+                'task_note': task_note,
+                'created_by': str(user['id']),
+            })
+            created.append({"user_id": uid, "assignment_id": assignment_id})
+        result_holder['created'] = created
+        result_holder['skipped'] = skipped
+
+    update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
+    if not result_holder['created']:
+        raise HTTPException(409, "Ни одно назначение не создано (все пропущены)")
+    return result_holder
 
 
 # ---------- Owner dashboard: смены сегодня (B5, 27.07) ----------

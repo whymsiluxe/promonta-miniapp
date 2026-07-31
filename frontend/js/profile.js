@@ -473,11 +473,44 @@ async function _loadProfileStats() {
         </div>`).join('')
     : '<div style="font-size:0.85rem;color:var(--text-light)">Пока нет ни смен, ни назначений на объекты.</div>';
 
-  // Навыки
+  // Навыки -- skills_v2 (структурированные, с уровнем и verified). 01.08: chips
+  // теперь показывают уровень и, для owner-просмотра чужого профиля, статус
+  // подтверждения + кнопку подтвердить/снять.
+  await _ensureProfileSkillCatalogCache();
   const chips = document.getElementById('profile-skills-chips');
-  chips.innerHTML = (stats.skills || []).length
-    ? stats.skills.map(s => `<span class="profile-skill-chip">${s}</span>`).join('')
+  const skillsV2 = stats.skills_v2 || [];
+  const isOwnerViewingOther = currentRole === 'owner' && !!_profileStatsUserId;
+  chips.innerHTML = skillsV2.length
+    ? skillsV2.map(s => {
+        const name = _skillLevelDisplayName(s.skill_id);
+        const levelLabel = { helper: 'Помощник', independent: 'Самостоятельно', master: 'Мастер' }[s.level] || s.level;
+        const verifiedBadge = s.verified ? '<div class="profile-skill-verified">✓ Подтверждено компанией</div>' : '';
+        const ownerAction = isOwnerViewingOther
+          ? `<button type="button" class="profile-skill-verify-btn" data-skill-id="${esc(s.skill_id)}" data-verified="${s.verified ? '1' : '0'}">${s.verified ? 'Снять подтверждение' : 'Подтвердить навык'}</button>`
+          : '';
+        return `<div class="profile-skill-chip-v2">
+          <div class="profile-skill-chip-name">${esc(name)}</div>
+          <div class="profile-skill-chip-level">${esc(levelLabel)}</div>
+          ${verifiedBadge}
+          ${ownerAction}
+        </div>`;
+      }).join('')
     : '<div style="font-size:0.85rem;color:var(--text-light)">Навыки не указаны.</div>';
+  chips.querySelectorAll('.profile-skill-verify-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const skillId = btn.dataset.skillId;
+      const nextVerified = btn.dataset.verified !== '1';
+      try {
+        await api(`/api/workers/${_profileStatsUserId}/skills/${skillId}/verification`, {
+          method: 'PATCH', body: JSON.stringify({ verified: nextVerified }),
+        });
+        hapticImpact('light');
+        _loadProfileStats();
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    });
+  });
 
   // Имя — предзаполняем только если оно реальное (не совпадает с user_id, значит
   // не fallback после _sanitize_display_name на бэкенде).
@@ -547,49 +580,111 @@ function openWorkerFullProfile(uid) {
   }, 300);
 }
 
-let _skillsEditOpen = false;
+let _profileSkillCatalogByIdCache = null;
+
+async function _ensureProfileSkillCatalogCache() {
+  if (_profileSkillCatalogByIdCache) return;
+  try {
+    const catalog = await api('/api/work-types');
+    _profileSkillCatalogByIdCache = {};
+    for (const g of catalog.groups) for (const w of g.items) _profileSkillCatalogByIdCache[w.id] = w.name;
+    for (const w of catalog.featured) _profileSkillCatalogByIdCache[w.id] = w.name;
+  } catch (e) {
+    _profileSkillCatalogByIdCache = {};
+  }
+}
+
+function _skillLevelDisplayName(skillId) {
+  return (_profileSkillCatalogByIdCache && _profileSkillCatalogByIdCache[skillId]) || skillId;
+}
+
+// 01.08: редактирование навыков теперь использует ТОТ ЖЕ skill-picker.js компонент,
+// что onboarding (спека п.4 -- "не создавать вторую отдельную реализацию выбора
+// навыков"). Открывается как bottom-sheet поверх текущего экрана профиля, два шага
+// внутри одного sheet: выбор навыков -> уровень для каждого.
+let _profileSkillsSheetEl = null;
 
 async function _toggleSkillsEdit() {
-  // 30.07 (аудит): defensive guard -- защищает даже если кнопка по ошибке
-  // осталась в DOM/видима, пока owner смотрит чужой профиль.
-  if (_profileStatsUserId) return;
-  const editEl = document.getElementById('profile-skills-edit');
-  const btn = document.getElementById('profile-skills-edit-btn');
-  const chips = document.getElementById('profile-skills-chips');
+  if (_profileStatsUserId) return; // defensive guard, как и раньше
+  if (_profileSkillsSheetEl) return; // уже открыт
 
-  if (_skillsEditOpen) {
-    // Сохранить
-    const selected = Array.from(editEl.querySelectorAll('input[type=checkbox]:checked')).map(c => c.value);
-    try {
-      await api('/api/profile/me', { method: 'PATCH', body: JSON.stringify({ skills: selected }) });
-      hapticImpact('light');
-    } catch (e) {
-      showToast('Ошибка сохранения: ' + e.message, 'error');
+  const me = await api('/api/profile/me');
+  const currentSkillsV2 = me.skills_v2 || [];
+  const initialSelected = new Set(currentSkillsV2.map(s => s.skill_id));
+  const initialLevels = new Map(currentSkillsV2.map(s => [s.skill_id, s.level]));
+
+  const overlay = document.createElement('div');
+  overlay.className = 'bottom-sheet-overlay open';
+  overlay.innerHTML = `
+    <div class="bottom-sheet-panel profile-skills-sheet">
+      <div class="bottom-sheet-handle"></div>
+      <div class="form-header">
+        <span>Навыки</span>
+        <button type="button" class="obj-stage-add-sheet-close" id="profile-skills-sheet-close">✕</button>
+      </div>
+      <div class="profile-skills-sheet-body" id="profile-skills-sheet-step-picker"></div>
+      <div class="profile-skills-sheet-body" id="profile-skills-sheet-step-levels" style="display:none"></div>
+      <div class="form-submit-bar">
+        <button type="button" class="submit-btn" id="profile-skills-sheet-continue">Продолжить</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+  _profileSkillsSheetEl = overlay;
+
+  const closeSheet = () => {
+    overlay.remove();
+    document.body.style.overflow = '';
+    _profileSkillsSheetEl = null;
+    unregisterOverlay?.();
+  };
+  const unregisterOverlay = typeof NavigationManager !== 'undefined' ? NavigationManager.registerOverlay(closeSheet) : null;
+  document.getElementById('profile-skills-sheet-close').addEventListener('click', closeSheet);
+
+  const pickerContainer = document.getElementById('profile-skills-sheet-step-picker');
+  const levelsContainer = document.getElementById('profile-skills-sheet-step-levels');
+  const continueBtn = document.getElementById('profile-skills-sheet-continue');
+
+  let stage = 'picker';
+  const picker = await createSkillPicker(pickerContainer, {
+    initialSelected,
+    onChange: (selected) => { continueBtn.disabled = selected.size === 0; },
+  });
+  continueBtn.disabled = initialSelected.size === 0;
+
+  let levelPicker = null;
+  continueBtn.addEventListener('click', async () => {
+    if (stage === 'picker') {
+      const selectedIds = Array.from(picker.getSelected());
+      if (!selectedIds.length) return;
+      pickerContainer.style.display = 'none';
+      levelsContainer.style.display = 'block';
+      continueBtn.textContent = 'Сохранить';
+      continueBtn.disabled = true;
+      levelPicker = await createSkillLevelPicker(levelsContainer, selectedIds, {
+        initialLevels,
+        onChange: () => { continueBtn.disabled = !levelPicker.isComplete(); },
+      });
+      continueBtn.disabled = !levelPicker.isComplete();
+      stage = 'levels';
       return;
     }
-    _skillsEditOpen = false;
-    editEl.style.display = 'none';
-    chips.style.display = 'flex';
-    btn.textContent = 'Изменить навыки';
-    _loadProfileStats();
-    return;
-  }
-
-  // Открыть редактор
-  try {
-    const me = await api('/api/profile/me');
-    const mySkills = new Set(me.skills || []);
-    editEl.innerHTML = (me.skill_options || []).map(opt => `
-      <label class="profile-skill-check">
-        <input type="checkbox" value="${esc(opt)}" ${mySkills.has(opt) ? 'checked' : ''}> ${esc(opt)}
-      </label>`).join('');
-    editEl.style.display = 'block';
-    chips.style.display = 'none';
-    btn.textContent = '💾 Сохранить навыки';
-    _skillsEditOpen = true;
-  } catch (e) {
-    showToast('Ошибка: ' + e.message, 'error');
-  }
+    // stage === 'levels' -- сохранить
+    const skillsV2 = Array.from(levelPicker.getLevels().entries()).map(([skill_id, level]) => ({ skill_id, level, verified: false }));
+    continueBtn.disabled = true;
+    continueBtn.textContent = 'Сохраняю...';
+    try {
+      await api('/api/profile/me', { method: 'PATCH', body: JSON.stringify({ skills_v2: skillsV2 }) });
+      hapticImpact('light');
+      closeSheet();
+      _loadProfileStats();
+    } catch (e) {
+      showToast('Ошибка сохранения: ' + e.message, 'error');
+      continueBtn.disabled = false;
+      continueBtn.textContent = 'Сохранить';
+    }
+  });
 }
 
 async function _saveName() {
