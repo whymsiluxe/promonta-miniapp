@@ -90,6 +90,9 @@ fi
 if [[ -f "${BACKEND_SERVING_DIR}/mangel_lib.py" ]]; then
   cp "${BACKEND_SERVING_DIR}/mangel_lib.py" "${BACKUP_DIR}/mangel_lib.py"
 fi
+if [[ -f "${BACKEND_SERVING_DIR}/objekte_lib.py" ]]; then
+  cp "${BACKEND_SERVING_DIR}/objekte_lib.py" "${BACKUP_DIR}/objekte_lib.py"
+fi
 if [[ -d "$FRONTEND_SERVING_DIR" ]]; then
   mkdir -p "${BACKUP_DIR}/frontend"
   cp -r "${FRONTEND_SERVING_DIR}/app.html" "${BACKUP_DIR}/frontend/" 2>/dev/null || true
@@ -110,7 +113,8 @@ echo "== 9/12 Копирование backend в serving-путь (main.py + tool
 cp "$REPO_DIR/backend/main.py" "${BACKEND_SERVING_DIR}/main.py"
 cp "$REPO_DIR/backend/tools_lib.py" "${BACKEND_SERVING_DIR}/tools_lib.py"
 cp "$REPO_DIR/backend/mangel_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py"
-python3 -m py_compile "${BACKEND_SERVING_DIR}/main.py" "${BACKEND_SERVING_DIR}/tools_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py"
+cp "$REPO_DIR/backend/objekte_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py"
+python3 -m py_compile "${BACKEND_SERVING_DIR}/main.py" "${BACKEND_SERVING_DIR}/tools_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py"
 # Version-файл для /api/health -- version/commit видны в ответе без git subprocess
 # на каждый запрос (main.py читает VERSION рядом с собой, см. APP_VERSION_FILE).
 cat > "${BACKEND_SERVING_DIR}/VERSION" <<EOF
