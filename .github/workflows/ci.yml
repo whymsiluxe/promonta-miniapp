@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BOT_TOKEN: ci-dummy-token-not-a-real-secret
+      MINIAPP_DATA_ROOT: /tmp/ci-miniapp-data
     steps:
       - uses: actions/checkout@v4
 

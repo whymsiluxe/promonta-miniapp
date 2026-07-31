@@ -31,6 +31,7 @@ sys.path.insert(0, '/home/promonta/agent')
 # untracked /home/promonta/agent/tools_lib.py -- решение точечное: загрузка по явному
 # пути к файлу через importlib.util, без малейшего влияния на глобальный sys.path.
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
 TOOLS_LIB_PATH = os.path.join(BACKEND_DIR, 'tools_lib.py')
 MANGEL_LIB_PATH = os.path.join(BACKEND_DIR, 'mangel_lib.py')
 _repo_tools_lib = None
@@ -770,7 +771,7 @@ def update_my_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_
 
 
 # ---------- Фаза 8: аватар + агрегированная статистика профиля ----------
-AVATAR_DIR = '/home/promonta/agent/miniapp/avatars'
+AVATAR_DIR = os.path.join(DATA_ROOT, 'avatars')
 AVATAR_MAX_BYTES = 4 * 1024 * 1024
 os.makedirs(AVATAR_DIR, exist_ok=True)
 
@@ -1049,7 +1050,7 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
 # ---------- Назначения работников на объекты (Фаза 2c, восстановлено после инцидента Фазы 3) ----------
 OBJECT_ASSIGNMENTS_FILE = '/home/promonta/agent/miniapp/object_assignments.json'
 OBJECT_IMAGES_FILE = '/home/promonta/agent/miniapp/object_images.json'
-OBJECT_PHOTO_DIR = '/home/promonta/agent/miniapp/object_photos'
+OBJECT_PHOTO_DIR = os.path.join(DATA_ROOT, 'object_photos')
 
 
 def _load_assignments() -> dict:
@@ -1945,7 +1946,7 @@ def send_pdf_to_chat(chat_id, file_path, filename, caption):
 
 
 ANGEBOT_SCRIPT = '/home/promonta/agent/miniapp/angebot_free.js'
-ANGEBOT_OUT_DIR = '/home/promonta/agent/miniapp/angebote'
+ANGEBOT_OUT_DIR = os.path.join(DATA_ROOT, 'angebote')
 os.makedirs(ANGEBOT_OUT_DIR, exist_ok=True)
 
 
@@ -2042,7 +2043,7 @@ def complete_task(task_id: str, user: dict = Depends(get_current_user), _: None 
 
 # ---------- Инфо объекта (24.07, Step 3): work-items + документы ----------
 OBJECT_INFO_FILE = '/home/promonta/agent/miniapp/object_info.json'
-OBJECT_DOC_DIR = '/home/promonta/agent/miniapp/object_documents'
+OBJECT_DOC_DIR = os.path.join(DATA_ROOT, 'object_documents')
 os.makedirs(OBJECT_DOC_DIR, exist_ok=True)
 
 
@@ -2242,7 +2243,7 @@ def update_object_status(object_id: str, body: StatusBody, user: dict = Depends(
 
 # ---------- Rechnung generator ----------
 RECHNUNG_SCRIPT = '/home/promonta/agent/miniapp/rechnung.js'
-RECHNUNG_OUT_DIR = '/home/promonta/agent/miniapp/rechnungen'
+RECHNUNG_OUT_DIR = os.path.join(DATA_ROOT, 'rechnungen')
 os.makedirs(RECHNUNG_OUT_DIR, exist_ok=True)
 
 
@@ -2508,7 +2509,7 @@ def react_news_post(post_id: str, body: NewsReactionIn, user: dict = Depends(get
 # ---------- Photo feed ----------
 # Хранение: файлы на диске + метадата в JSON. Любой сотрудник грузит фото с объекта,
 # все видят общей лентой (без ролевых ограничений — как командный чат).
-PHOTO_DIR = '/home/promonta/agent/miniapp/feed_photos'
+PHOTO_DIR = os.path.join(DATA_ROOT, 'feed_photos')
 PHOTO_META_FILE = '/home/promonta/agent/miniapp/feed_photos.json'
 PHOTO_MAX_BYTES = 8 * 1024 * 1024  # 8 МБ
 PHOTO_MAX_COUNT = 300  # старые фото (и файлы) обрезаются сверху этого лимита
@@ -3209,7 +3210,7 @@ def mark_chat_read(with_: str = '', thread_key: str = '', user: dict = Depends(g
     return {"ok": True}
 
 
-CHAT_ATTACH_DIR = '/home/promonta/agent/miniapp/chat_attachments'
+CHAT_ATTACH_DIR = os.path.join(DATA_ROOT, 'chat_attachments')
 os.makedirs(CHAT_ATTACH_DIR, exist_ok=True)
 
 
@@ -3276,7 +3277,7 @@ def _transcribe_voice(path: str) -> str:
 
 
 TRANSCRIBE_MAX_BYTES = 8 * 1024 * 1024
-TRANSCRIBE_AUDIO_DIR = '/home/promonta/agent/miniapp/transcribe_audio'
+TRANSCRIBE_AUDIO_DIR = os.path.join(DATA_ROOT, 'transcribe_audio')
 os.makedirs(TRANSCRIBE_AUDIO_DIR, exist_ok=True)
 
 
@@ -4189,7 +4190,7 @@ def _find_stage_by_row(object_id: str, row_num: int) -> dict:
     return stage
 
 
-BLOCKER_PHOTO_DIR = '/home/promonta/agent/miniapp/blocker_photos'
+BLOCKER_PHOTO_DIR = os.path.join(DATA_ROOT, 'blocker_photos')
 os.makedirs(BLOCKER_PHOTO_DIR, exist_ok=True)
 
 
@@ -4649,7 +4650,7 @@ def update_task_status(task_id: str, body: TaskStatusBody, user: dict = Depends(
 # вызовы ml.xxx() ниже по файлу не меняются.
 ml = _load_repo_mangel_lib()
 
-MANGEL_PHOTO_DIR = '/home/promonta/agent/miniapp/feed_photos'  # переиспользуем feed_photos/
+MANGEL_PHOTO_DIR = os.path.join(DATA_ROOT, 'feed_photos')  # переиспользуем feed_photos/
 
 
 class MangelStatusBody(BaseModel):
@@ -4815,7 +4816,7 @@ def get_mangel_comments(ticket_id: str, user: dict = Depends(get_current_user), 
 
 
 # ---------- Фотоотчёт старт/финиш смены — Фаза 4a ----------
-CHECKIN_PHOTO_BASE = '/home/promonta/agent/miniapp/checkin_photos'
+CHECKIN_PHOTO_BASE = os.path.join(DATA_ROOT, 'checkin_photos')
 CHECKIN_META_FILE = '/home/promonta/agent/miniapp/checkin_meta.json'
 CHECKIN_MAX_BYTES = 8 * 1024 * 1024
 _checkin_lock = __import__('threading').Lock()
@@ -5514,7 +5515,7 @@ def analyze_checkin_defects(session_id: str, user: dict = Depends(get_current_us
 
 # ---------- Critical Alerts — persisted, с deadline/comment/photo (Фаза 10.16) ----------
 CRITICAL_ALERTS_FILE = '/home/promonta/agent/miniapp/critical_alerts.json'
-CRITICAL_ALERT_PHOTO_DIR = '/home/promonta/agent/miniapp/critical_alert_photos'
+CRITICAL_ALERT_PHOTO_DIR = os.path.join(DATA_ROOT, 'critical_alert_photos')
 os.makedirs(CRITICAL_ALERT_PHOTO_DIR, exist_ok=True)
 
 
