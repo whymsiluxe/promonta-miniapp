@@ -3261,6 +3261,7 @@ def post_chat_attachment(thread_key: str = Form(''), to_user_id: str = Form(''),
         "name": user.get('first_name', str(user['id'])),
         "text": '',
         "to_user_id": to_user_id or None,
+        "thread_key": thread_key or None,
         "attachment": {"file": fname, "name": file.filename or fname, "content_type": file.content_type or ''},
     }
     with _chat_lock:
@@ -3452,14 +3453,26 @@ def get_chat_attachment(fname: str, user: dict = Depends(get_current_user), role
     if not os.path.exists(path):
         raise HTTPException(404, "Файл не найден")
     if role != 'owner':
-        # 10.29 (Fable-аудит, IDOR): fname — uuid, но раньше отдавался любому
-        # авторизованному без проверки, что он участник треда с этим вложением.
+        # 30.07 (Release-аудит, IDOR): раньше бралось первое сообщение с этим файлом
+        # и доступ проверялся только через to_user_id -- ломалось для обектовых/
+        # дефектных/task-тредов (thread_key) и для файлов, пересланных в другой чат
+        # (после пересылки на файл ссылаются несколько сообщений в разных тредах).
+        # Теперь: доступ разрешён, если юзер имеет доступ хотя бы к одному сообщению
+        # с этим файлом (через ту же _check_message_access, что и остальные эндпоинты).
         messages = _load_chat()
-        msg = next((m for m in messages if m.get('attachment', {}).get('file') == safe_fname), None)
-        if not msg:
+        candidates = [m for m in messages if m.get('attachment', {}).get('file') == safe_fname]
+        if not candidates:
             raise HTTPException(404, "Файл не найден")
-        thread_id = _chat_thread_id(msg['user_id'], msg.get('to_user_id'))
-        if str(user['id']) not in _chat_thread_participants(thread_id):
+        uid = str(user['id'])
+        allowed = False
+        for msg in candidates:
+            try:
+                _check_message_access(msg, uid, role)
+                allowed = True
+                break
+            except HTTPException:
+                continue
+        if not allowed:
             raise HTTPException(403, "Нет доступа к этому файлу")
     # 30.07 (Release-аудит P0): nosniff -- расширение теперь всегда из allowlist
     # (см. sniff_chat_attachment), но nosniff не даёт браузеру угадывать иначе,

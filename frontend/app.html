@@ -2301,6 +2301,7 @@ body.view-locked {
    max-width:80% выровненного по краю -- ближе к тому как реально выглядит referenced
    screenshot (не messenger-bubble chat, more like a feed/thread). */
 .chat-bubble {
+  position: relative;
   width: 100%;
   padding: 0.3rem 0.2rem;
   word-break: break-word;
@@ -2412,9 +2413,14 @@ body.view-locked {
 .chat-bubble-menu-delete:active { background: var(--chat-surface-hover); }
 
 /* 31.07: кнопка ⋯ явный вход в то же меню, что long-press/right-click открывают --
-   long-press один в Telegram WebView работает неочевидно (спека задачи). */
+   long-press один в Telegram WebView работает неочевидно (спека задачи). Раньше кнопка
+   была частью .chat-msg-header и пропадала вместе с ним на сгруппированных сообщениях
+   (.chat-bubble-grouped .chat-msg-header{display:none}) -- вынесена из header и
+   позиционируется абсолютно на самом .chat-bubble (position:relative), доступна на
+   каждом сообщении независимо от группировки, не ломает вёрстку header. */
 .chat-msg-menu-btn {
-  margin-left: auto; border: none; background: none; color: var(--chat-text-tertiary, var(--text-light));
+  position: absolute; top: 0.2rem; right: 0.2rem;
+  border: none; background: none; color: var(--chat-text-tertiary, var(--text-light));
   font-size: 1.1rem; line-height: 1; padding: 0.1rem 0.4rem; cursor: pointer; border-radius: 6px;
 }
 .chat-msg-menu-btn:active { background: var(--chat-surface-hover); }

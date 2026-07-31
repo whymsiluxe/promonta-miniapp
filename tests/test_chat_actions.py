@@ -10,6 +10,7 @@ Run:
 import os
 import sys
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
@@ -125,6 +126,103 @@ class DeleteAccessTests(unittest.TestCase):
              patch.object(backend, '_load_chat_reactions', return_value=[]):
             result = backend.delete_chat_message('m1', user=OWNER, role='owner')
         self.assertEqual(result['status'], 'ok')
+
+
+class AttachmentAccessTests(unittest.TestCase):
+    """31.07: get_chat_attachment раньше брал первое сообщение с этим файлом и
+    проверял доступ только через to_user_id -- ломалось для obj:/mangel:/task:
+    тредов и для файлов, пересланных в другой чат. Теперь доступ разрешён, если
+    юзер имеет доступ хотя бы к одному сообщению с этим файлом."""
+
+    def test_outsider_worker_cannot_open_object_chat_attachment(self):
+        att = {'file': 'photo1.jpg', 'name': 'photo.jpg', 'content_type': 'image/jpeg'}
+        msg = _msg('m1', 10, text='', thread_key='obj:OBJ-1', attachment=att)
+        with patch.object(backend, '_load_chat', return_value=[msg]), \
+             patch.object(backend, 'os') as mock_os:
+            mock_os.path.basename.return_value = 'photo1.jpg'
+            mock_os.path.exists.return_value = True
+            mock_os.path.join.side_effect = lambda *a: '/'.join(a)
+            with patch.object(backend, '_check_thread_access', side_effect=HTTPException(403, 'no access')):
+                with self.assertRaises(HTTPException) as ctx:
+                    backend.get_chat_attachment('photo1.jpg', user=WORKER_B, role='worker')
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_object_participant_can_open_attachment(self):
+        att = {'file': 'photo1.jpg', 'name': 'photo.jpg', 'content_type': 'image/jpeg'}
+        msg = _msg('m1', 10, text='', thread_key='obj:OBJ-1', attachment=att)
+        with patch.object(backend, '_load_chat', return_value=[msg]), \
+             patch.object(backend, 'os') as mock_os:
+            mock_os.path.basename.return_value = 'photo1.jpg'
+            mock_os.path.exists.return_value = True
+            mock_os.path.join.side_effect = lambda *a: '/'.join(a)
+            with patch.object(backend, '_check_thread_access'), \
+                 patch.object(backend, 'FileResponse', return_value='OK') as mock_fr:
+                result = backend.get_chat_attachment('photo1.jpg', user=WORKER_A, role='worker')
+        self.assertEqual(result, 'OK')
+        mock_fr.assert_called_once()
+
+    def test_new_recipient_can_open_forwarded_attachment(self):
+        att = {'file': 'photo1.jpg', 'name': 'photo.jpg', 'content_type': 'image/jpeg'}
+        original = _msg('m1', 10, text='', thread_key='obj:OBJ-1', attachment=att)
+        forwarded = _msg('m2', 10, text='', thread_key='obj:OBJ-2', attachment=att)
+        with patch.object(backend, '_load_chat', return_value=[original, forwarded]), \
+             patch.object(backend, 'os') as mock_os:
+            mock_os.path.basename.return_value = 'photo1.jpg'
+            mock_os.path.exists.return_value = True
+            mock_os.path.join.side_effect = lambda *a: '/'.join(a)
+
+            def access(thread_key, uid, role):
+                if thread_key == 'obj:OBJ-1':
+                    raise HTTPException(403, 'no access')
+                # OBJ-2: доступ есть
+
+            with patch.object(backend, '_check_thread_access', side_effect=access), \
+                 patch.object(backend, 'FileResponse', return_value='OK') as mock_fr:
+                result = backend.get_chat_attachment('photo1.jpg', user=WORKER_B, role='worker')
+        self.assertEqual(result, 'OK')
+        mock_fr.assert_called_once()
+
+    def test_no_access_to_either_thread_403(self):
+        att = {'file': 'photo1.jpg', 'name': 'photo.jpg', 'content_type': 'image/jpeg'}
+        original = _msg('m1', 10, text='', thread_key='obj:OBJ-1', attachment=att)
+        forwarded = _msg('m2', 10, text='', thread_key='obj:OBJ-2', attachment=att)
+        with patch.object(backend, '_load_chat', return_value=[original, forwarded]), \
+             patch.object(backend, 'os') as mock_os:
+            mock_os.path.basename.return_value = 'photo1.jpg'
+            mock_os.path.exists.return_value = True
+            mock_os.path.join.side_effect = lambda *a: '/'.join(a)
+            with patch.object(backend, '_check_thread_access', side_effect=HTTPException(403, 'no access')):
+                with self.assertRaises(HTTPException) as ctx:
+                    backend.get_chat_attachment('photo1.jpg', user=WORKER_B, role='worker')
+        self.assertEqual(ctx.exception.status_code, 403)
+
+
+class AttachmentThreadKeyTests(unittest.TestCase):
+    """31.07: post_chat_attachment принимал thread_key в форме, но не сохранял его
+    в сообщении -- вложение, отправленное в obj:-тред, попадало в общий чат."""
+
+    def test_attachment_sent_to_object_thread_gets_thread_key(self):
+        captured = {}
+
+        def fake_save(messages):
+            captured['messages'] = messages
+
+        with patch.object(backend, '_load_chat', return_value=[]), \
+             patch.object(backend, '_save_chat', side_effect=fake_save), \
+             patch.object(backend, '_check_thread_access'), \
+             patch.object(backend, 'sniff_chat_attachment', return_value=('image/jpeg', 'jpg')), \
+             patch('builtins.open', unittest.mock.mock_open()):
+            fake_file = unittest.mock.MagicMock()
+            fake_file.file.read.return_value = b'fake-image-bytes'
+            fake_file.filename = 'photo.jpg'
+            fake_file.content_type = 'image/jpeg'
+            result = backend.post_chat_attachment(
+                thread_key='obj:OBJ-1', to_user_id='', file=fake_file,
+                user=WORKER_A, role='worker',
+            )
+        self.assertEqual(result['message']['thread_key'], 'obj:OBJ-1')
+        self.assertIsNone(result['message']['to_user_id'])
+        self.assertEqual(captured['messages'][0]['thread_key'], 'obj:OBJ-1')
 
 
 if __name__ == '__main__':

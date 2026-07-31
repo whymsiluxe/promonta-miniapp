@@ -120,7 +120,8 @@ function _renderChatMessages(messages) {
       : '';
     return `${divider}
     <div class="chat-bubble ${isOwn ? 'chat-bubble-own' : 'chat-bubble-other'}${isGrouped ? ' chat-bubble-grouped' : ''}" data-msg-id="${msg.id}" data-uid="${msg.user_id}">
-      <div class="chat-msg-header">${avatarHtml}${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span><button type="button" class="chat-msg-menu-btn" data-menu-btn="${msg.id}" aria-label="Действия с сообщением">⋯</button></div>
+      <div class="chat-msg-header">${avatarHtml}${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span></div>
+      <button type="button" class="chat-msg-menu-btn" data-menu-btn="${msg.id}" aria-label="Действия с сообщением">⋯</button>
       ${forwardedHtml}
       ${replyHtml}
       ${msg.attachment ? _renderChatAttachment(msg) : ''}
@@ -362,22 +363,36 @@ function _openChatBubbleMenu(bubble, msgId, canDelete) {
 async function _copyChatMessageText(msgId) {
   const msg = _chatMessagesById[msgId];
   if (!msg || !msg.text) return;
+  // Telegram WebView часто имеет navigator.clipboard, но writeText кидает
+  // permissions-ошибку -- fallback нужен не только при отсутствии API,
+  // но и при любой ошибке вызова (пункт 3 задачи).
+  let copied = false;
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(msg.text);
-    } else {
+      copied = true;
+    }
+  } catch (e) {
+    copied = false;
+  }
+  if (!copied) {
+    try {
       const ta = document.createElement('textarea');
       ta.value = msg.text;
       ta.style.position = 'fixed';
       ta.style.opacity = '0';
       document.body.appendChild(ta);
       ta.select();
-      document.execCommand('copy');
+      copied = document.execCommand('copy');
       document.body.removeChild(ta);
+    } catch (e) {
+      copied = false;
     }
+  }
+  if (copied) {
     showToast('Текст скопирован');
-  } catch (e) {
-    showToast('Не удалось скопировать: ' + e.message, 'error');
+  } else {
+    showToast('Не удалось скопировать текст', 'error');
   }
 }
 
@@ -522,6 +537,7 @@ async function _sendChatAttachment(file) {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('to_user_id', _chatActiveThread || '');
+    formData.append('thread_key', _chatActiveThreadKey || '');
     const res = await fetch(`${API_BASE}/api/chat/messages/attachment`, {
       method: 'POST',
       headers: { 'X-Telegram-Init-Data': initData },
