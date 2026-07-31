@@ -2399,12 +2399,70 @@ body.view-locked {
   border-radius: 10px; cursor: pointer; line-height: 1;
 }
 .chat-bubble-menu-reactions button:active { background: var(--chat-surface-hover); transform: scale(1.15); }
+.chat-bubble-menu-reply, .chat-bubble-menu-copy, .chat-bubble-menu-forward {
+  border: none; background: none; text-align: left; padding: 0.55rem 0.6rem;
+  color: var(--chat-text); font-size: 0.9rem; cursor: pointer; border-radius: 8px;
+}
+.chat-bubble-menu-reply:active, .chat-bubble-menu-copy:active, .chat-bubble-menu-forward:active { background: var(--chat-surface-hover); }
 .chat-bubble-menu-delete {
   border: none; background: none; text-align: left; padding: 0.55rem 0.6rem;
   border-top: 1px solid var(--chat-border); color: var(--red);
   font-size: 0.9rem; cursor: pointer; border-radius: 8px;
 }
 .chat-bubble-menu-delete:active { background: var(--chat-surface-hover); }
+
+/* 31.07: кнопка ⋯ явный вход в то же меню, что long-press/right-click открывают --
+   long-press один в Telegram WebView работает неочевидно (спека задачи). */
+.chat-msg-menu-btn {
+  margin-left: auto; border: none; background: none; color: var(--chat-text-tertiary, var(--text-light));
+  font-size: 1.1rem; line-height: 1; padding: 0.1rem 0.4rem; cursor: pointer; border-radius: 6px;
+}
+.chat-msg-menu-btn:active { background: var(--chat-surface-hover); }
+
+/* Цитата ответа внутри пузыря нового сообщения -- клик прокручивает к оригиналу. */
+.chat-reply-quote {
+  display: flex; flex-direction: column; gap: 1px;
+  border-left: 3px solid var(--chat-forest, var(--c-accent, var(--primary)));
+  padding: 0.2rem 0.5rem; margin-bottom: 0.3rem; border-radius: 4px;
+  background: var(--chat-surface-hover); cursor: pointer;
+}
+.chat-reply-quote-name { font-size: 0.78rem; font-weight: 600; color: var(--chat-forest-light, var(--c-accent)); }
+.chat-reply-quote-preview { font-size: 0.82rem; color: var(--chat-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-forwarded-label { font-size: 0.75rem; color: var(--chat-text-tertiary, var(--text-light)); margin-bottom: 0.2rem; }
+
+@keyframes chatBubbleHighlight { 0%, 100% { background: none; } 30% { background: var(--chat-surface-active); } }
+.chat-bubble-highlight { animation: chatBubbleHighlight 1.2s ease; border-radius: var(--radius-md, 10px); }
+
+/* Reply bar над input -- появляется/скрывается через display в chat.js (_renderChatReplyBar). */
+.chat-reply-bar {
+  align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem;
+  background: var(--chat-surface); border-top: 1px solid var(--chat-border);
+  border-left: 3px solid var(--chat-forest, var(--c-accent, var(--primary)));
+}
+.chat-reply-bar-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat-reply-bar-name { font-size: 0.78rem; font-weight: 600; color: var(--chat-forest-light, var(--c-accent)); }
+.chat-reply-bar-preview { font-size: 0.82rem; color: var(--chat-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-reply-bar-cancel {
+  flex-shrink: 0; border: none; background: none; color: var(--chat-text-tertiary, var(--text-light));
+  font-size: 1rem; padding: 0.3rem; cursor: pointer; border-radius: 6px;
+}
+.chat-reply-bar-cancel:active { background: var(--chat-surface-hover); }
+
+/* Forward destination picker -- тот же паттерн модалки, что chat-bubble-menu (fixed+backdrop). */
+.chat-forward-modal-backdrop { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,0.4); }
+.chat-forward-modal {
+  position: fixed; z-index: 71; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  background: var(--chat-surface-active); border: 1px solid var(--chat-border);
+  border-radius: var(--radius-lg); box-shadow: 0 8px 30px rgba(0,0,0,0.45);
+  padding: 0.6rem; width: min(320px, calc(100vw - 2rem)); max-height: 70vh; overflow-y: auto;
+}
+.chat-forward-modal-title { font-size: 0.9rem; font-weight: 600; color: var(--chat-text); padding: 0.4rem 0.5rem 0.6rem; }
+.chat-forward-modal-list { display: flex; flex-direction: column; gap: 0.15rem; }
+.chat-forward-dest {
+  border: none; background: none; text-align: left; padding: 0.6rem 0.5rem;
+  color: var(--chat-text); font-size: 0.9rem; cursor: pointer; border-radius: 8px;
+}
+.chat-forward-dest:active { background: var(--chat-surface-hover); }
 
 /* 28.07 (Phase 06): pin/mute/archive UI поверх готового backend data layer --
    long-press на .chat-thread-item открывает то же .chat-bubble-menu (переиспользуем
@@ -4557,6 +4615,7 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
     </div>
     <div id="chat-error" class="error-banner" style="display:none;margin:0 0.75rem;"></div>
     <input type="file" id="chat-file-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none;">
+    <div id="chat-reply-bar" class="chat-reply-bar" style="display:none;"></div>
     <div class="chat-input-bar" id="chat-input-bar">
       <button id="chat-attach-btn" class="chat-attach-btn" aria-label="Прикрепить файл" type="button"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a1.5 1.5 0 0 1-2.12-2.12l8.49-8.48"/></svg></button>
       <button id="chat-voice-btn" class="chat-attach-btn" aria-label="Голосовое сообщение" type="button"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg></button>

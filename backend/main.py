@@ -3471,6 +3471,18 @@ class ChatMessageBody(BaseModel):
     text: str
     to_user_id: str | None = None
     thread_key: str | None = None
+    reply_to_id: str | None = None
+
+
+def _reply_snapshot(msg: dict) -> dict:
+    """Компактный snapshot цитаты -- хранится в самом сообщении, а не резолвится
+    заново из оригинала на каждый рендер, чтобы цитата не ломалась после удаления
+    оригинала (пункт 3 задачи)."""
+    return {
+        "id": msg['id'],
+        "name": msg.get('name', ''),
+        "preview": _message_preview(msg)[:200],
+    }
 
 
 @app.post("/api/chat/messages")
@@ -3490,6 +3502,24 @@ def post_chat_message(body: ChatMessageBody, user: dict = Depends(get_current_us
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
             raise HTTPException(403, "Чат закрыт руководством")
 
+    reply_snapshot = None
+    if body.reply_to_id:
+        with _chat_lock:
+            source = next((m for m in _load_chat() if m['id'] == body.reply_to_id), None)
+        if source is None:
+            raise HTTPException(404, "Исходное сообщение не найдено")
+        # Цитировать можно только сообщение из ТОГО ЖЕ треда/DM-пары, что и новое --
+        # иначе можно было бы процитировать сообщение из чужого закрытого диалога,
+        # просто зная его id (пункт 3 задачи: "нельзя цитировать чужой закрытый DM").
+        if (source.get('thread_key') or None) != (body.thread_key or None):
+            raise HTTPException(403, "Нельзя цитировать сообщение из другого чата")
+        if not body.thread_key:
+            source_thread = _chat_thread_id(source['user_id'], source.get('to_user_id'))
+            new_thread = _chat_thread_id(user['id'], body.to_user_id)
+            if source_thread != new_thread:
+                raise HTTPException(403, "Нельзя цитировать сообщение из другого чата")
+        reply_snapshot = _reply_snapshot(source)
+
     msg = {
         "id": uuid.uuid4().hex,
         "ts": int(time.time()),
@@ -3498,6 +3528,53 @@ def post_chat_message(body: ChatMessageBody, user: dict = Depends(get_current_us
         "text": text,
         "to_user_id": body.to_user_id,
         "thread_key": body.thread_key,
+        "reply_to": reply_snapshot,
+    }
+    with _chat_lock:
+        messages = _load_chat()
+        messages.append(msg)
+        _save_chat(messages)
+    return {"message": msg}
+
+
+@app.post("/api/chat/messages/{msg_id}/forward")
+def forward_chat_message(msg_id: str, body: ChatMessageBody, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """Пересылка: копия текста/вложения исходного сообщения в новый чат-назначение,
+    с отметкой forwarded_from. Вложение пересылается ссылкой на тот же файл на диске
+    (не копия) -- безопасно, потому что раздача /api/chat/attachments/{fname} уже
+    проверяет участие в треде ПО САМОМУ СООБЩЕНИЮ (main.py:3457-3463), а не по
+    оригинальному, так что после пересылки новое сообщение само становится валидным
+    источником доступа к файлу для участников нового треда."""
+    uid = str(user['id'])
+    with _chat_lock:
+        source = next((m for m in _load_chat() if m['id'] == msg_id), None)
+    if source is None:
+        raise HTTPException(404, "Сообщение не найдено")
+    _check_message_access(source, uid, role)
+
+    if body.thread_key:
+        _check_thread_access(body.thread_key, uid, role)
+    else:
+        _reject_self_chat(user['id'], body.to_user_id)
+        thread_id = _chat_thread_id(user['id'], body.to_user_id)
+        thread_meta = _load_chat_thread_meta()
+        if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
+            raise HTTPException(403, "Чат закрыт руководством")
+
+    if not source.get('text') and not source.get('attachment'):
+        raise HTTPException(400, "Нечего пересылать")
+
+    msg = {
+        "id": uuid.uuid4().hex,
+        "ts": int(time.time()),
+        "user_id": user['id'],
+        "name": user.get('first_name', str(user['id'])),
+        "text": source.get('text', ''),
+        "to_user_id": body.to_user_id,
+        "thread_key": body.thread_key,
+        "attachment": source.get('attachment'),
+        "voice_transcript": source.get('voice_transcript'),
+        "forwarded_from": source.get('name', ''),
     }
     with _chat_lock:
         messages = _load_chat()

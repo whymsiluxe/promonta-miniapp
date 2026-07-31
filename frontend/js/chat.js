@@ -21,6 +21,7 @@ let _chatActiveThread = null; // null = группа, иначе user_id соб�
 let _chatActiveThreadKey = null; // 10.36: чат объекта/дефекта (obj:OBJ-001 / mangel:ticket_id) — приоритет над _chatActiveThread
 let _chatWorkers = [];
 let _chatReturnToView = null; // 21.07: откуда открыт чат (Потребности/Дефекты) — назад должен вернуть туда, не в общий список тредов
+let _chatReplyTarget = null; // {id, name, preview} — выбранное сообщение для ответа, до отправки
 
 // 28.07 (Phase 06): message reactions — компактный фиксированный набор, зеркалит
 // backend CHAT_REACTION_OPTIONS (main.py). Держать в синхроне при изменении набора.
@@ -111,9 +112,17 @@ function _renderChatMessages(messages) {
     const readReceiptHtml = (isOwn && isLastMessage && typeof msg.read_by_recipient === 'boolean')
       ? `<span class="chat-read-receipt ${msg.read_by_recipient ? 'chat-read-receipt-read' : 'chat-read-receipt-sent'}" title="${msg.read_by_recipient ? 'Прочитано' : 'Отправлено'}">${msg.read_by_recipient ? '✓✓' : '✓'}</span>`
       : '';
+    const replyHtml = msg.reply_to
+      ? `<div class="chat-reply-quote" data-goto-msg-id="${msg.reply_to.id}"><span class="chat-reply-quote-name">${_escChat(msg.reply_to.name)}</span><span class="chat-reply-quote-preview">${_escChat(msg.reply_to.preview)}</span></div>`
+      : '';
+    const forwardedHtml = msg.forwarded_from
+      ? `<div class="chat-forwarded-label">↪ Переслано от ${_escChat(msg.forwarded_from)}</div>`
+      : '';
     return `${divider}
     <div class="chat-bubble ${isOwn ? 'chat-bubble-own' : 'chat-bubble-other'}${isGrouped ? ' chat-bubble-grouped' : ''}" data-msg-id="${msg.id}" data-uid="${msg.user_id}">
-      <div class="chat-msg-header">${avatarHtml}${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span></div>
+      <div class="chat-msg-header">${avatarHtml}${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span><button type="button" class="chat-msg-menu-btn" data-menu-btn="${msg.id}" aria-label="Действия с сообщением">⋯</button></div>
+      ${forwardedHtml}
+      ${replyHtml}
       ${msg.attachment ? _renderChatAttachment(msg) : ''}
       ${msg.text ? `<div class="chat-text">${_escChat(msg.text)}</div>` : ''}
       <div class="chat-reactions-slot">${_renderChatReactions(msg)}</div>
@@ -178,6 +187,8 @@ function _attachChatBubbleHandlers(container) {
     const msgId = bubble.dataset.msgId;
     const canDelete = _chatIsOwner || Number(bubble.dataset.uid) === _chatMyId;
 
+    // 31.07: long-press один в Telegram WebView работает неочевидно (спека) —
+    // добавлены явная кнопка ⋯ и right-click как равноправные способы открыть то же меню.
     bubble.addEventListener('touchstart', () => {
       _chatLongPressTimer = setTimeout(() => {
         hapticImpact('medium');
@@ -187,6 +198,21 @@ function _attachChatBubbleHandlers(container) {
 
     bubble.addEventListener('touchend', () => clearTimeout(_chatLongPressTimer));
     bubble.addEventListener('touchmove', () => clearTimeout(_chatLongPressTimer));
+
+    bubble.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      _openChatBubbleMenu(bubble, msgId, canDelete);
+    });
+  });
+
+  container.querySelectorAll('.chat-msg-menu-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const bubble = btn.closest('.chat-bubble');
+      const msgId = bubble.dataset.msgId;
+      const canDelete = _chatIsOwner || Number(bubble.dataset.uid) === _chatMyId;
+      _openChatBubbleMenu(bubble, msgId, canDelete);
+    });
   });
 
   container.querySelectorAll('.chat-reaction-chip').forEach(chip => {
@@ -195,6 +221,18 @@ function _attachChatBubbleHandlers(container) {
       _toggleChatReaction(chip.dataset.msgId, chip.dataset.reaction);
     });
   });
+
+  container.querySelectorAll('.chat-reply-quote[data-goto-msg-id]').forEach(quote => {
+    quote.addEventListener('click', () => _scrollToChatMessage(quote.dataset.gotoMsgId));
+  });
+}
+
+function _scrollToChatMessage(msgId) {
+  const target = document.querySelector(`.chat-bubble[data-msg-id="${msgId}"]`);
+  if (!target) return; // оригинал мог не попасть в текущую выгрузку (200 сообщений) — тихо игнорируем
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  target.classList.add('chat-bubble-highlight');
+  setTimeout(() => target.classList.remove('chat-bubble-highlight'), 1200);
 }
 
 function _renderChatReactions(msg) {
@@ -259,6 +297,9 @@ async function _toggleChatReaction(msgId, reaction) {
 function _openChatBubbleMenu(bubble, msgId, canDelete) {
   document.querySelectorAll('.chat-bubble-menu, .chat-bubble-menu-backdrop').forEach(el => el.remove());
 
+  const msg = _chatMessagesById[msgId];
+  const hasText = !!(msg && msg.text);
+
   const backdrop = document.createElement('div');
   backdrop.className = 'chat-bubble-menu-backdrop';
   const menu = document.createElement('div');
@@ -267,6 +308,9 @@ function _openChatBubbleMenu(bubble, msgId, canDelete) {
     <div class="chat-bubble-menu-reactions">
       ${CHAT_REACTION_OPTIONS.map(r => `<button type="button" data-reaction="${r}">${r}</button>`).join('')}
     </div>
+    <button type="button" class="chat-bubble-menu-reply">↩ Ответить</button>
+    ${hasText ? `<button type="button" class="chat-bubble-menu-copy">⧉ Копировать</button>` : ''}
+    <button type="button" class="chat-bubble-menu-forward">➦ Переслать</button>
     ${canDelete ? `<button type="button" class="chat-bubble-menu-delete">Удалить сообщение</button>` : ''}
   `;
   document.body.appendChild(backdrop);
@@ -289,6 +333,21 @@ function _openChatBubbleMenu(bubble, msgId, canDelete) {
       _toggleChatReaction(msgId, btn.dataset.reaction);
     });
   });
+  menu.querySelector('.chat-bubble-menu-reply').addEventListener('click', () => {
+    close();
+    _setChatReplyTarget(msgId);
+  });
+  const copyBtn = menu.querySelector('.chat-bubble-menu-copy');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      close();
+      _copyChatMessageText(msgId);
+    });
+  }
+  menu.querySelector('.chat-bubble-menu-forward').addEventListener('click', () => {
+    close();
+    _openChatForwardDialog(msgId);
+  });
   const delBtn = menu.querySelector('.chat-bubble-menu-delete');
   if (delBtn) {
     delBtn.addEventListener('click', () => {
@@ -296,6 +355,118 @@ function _openChatBubbleMenu(bubble, msgId, canDelete) {
       _confirmDeleteChatMessage(msgId, bubble);
     });
   }
+}
+
+// Копирование полного НЕэкранированного текста -- msg.text из данных, не textContent
+// пузыря, иначе в буфер попал бы HTML-экранированный вариант (пункт 2 задачи).
+async function _copyChatMessageText(msgId) {
+  const msg = _chatMessagesById[msgId];
+  if (!msg || !msg.text) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(msg.text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = msg.text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    showToast('Текст скопирован');
+  } catch (e) {
+    showToast('Не удалось скопировать: ' + e.message, 'error');
+  }
+}
+
+function _setChatReplyTarget(msgId) {
+  const msg = _chatMessagesById[msgId];
+  if (!msg) return;
+  _chatReplyTarget = {
+    id: msg.id,
+    name: msg.user_id === _chatMyId ? 'Вы' : msg.name,
+    preview: msg.text || (msg.attachment ? ((msg.attachment.content_type || '').startsWith('audio') ? '🎤 Голосовое' : '📎 Файл') : ''),
+  };
+  _renderChatReplyBar();
+  const input = document.getElementById('chat-input');
+  if (input) input.focus();
+}
+
+function _clearChatReplyTarget() {
+  _chatReplyTarget = null;
+  _renderChatReplyBar();
+}
+
+function _renderChatReplyBar() {
+  const bar = document.getElementById('chat-reply-bar');
+  if (!bar) return;
+  if (!_chatReplyTarget) {
+    bar.style.display = 'none';
+    bar.innerHTML = '';
+    return;
+  }
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <div class="chat-reply-bar-content">
+      <span class="chat-reply-bar-name">${_escChat(_chatReplyTarget.name)}</span>
+      <span class="chat-reply-bar-preview">${_escChat(_chatReplyTarget.preview).slice(0, 120)}</span>
+    </div>
+    <button type="button" class="chat-reply-bar-cancel" aria-label="Отменить ответ">✕</button>
+  `;
+  bar.querySelector('.chat-reply-bar-cancel').addEventListener('click', _clearChatReplyTarget);
+}
+
+// Пересылка: назначение выбирается из тредов, к которым у юзера уже есть доступ
+// (общий/личный/объектовый/дефект) -- переиспользуем _loadMyChatThreads вместо
+// отдельного каталога, список назначений не может быть шире того, что юзер и так видит.
+async function _openChatForwardDialog(msgId) {
+  document.querySelectorAll('.chat-forward-modal, .chat-forward-modal-backdrop').forEach(el => el.remove());
+  const backdrop = document.createElement('div');
+  backdrop.className = 'chat-forward-modal-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'chat-forward-modal';
+  modal.innerHTML = `<div class="chat-forward-modal-title">Переслать в…</div><div class="chat-forward-modal-list">Загрузка…</div>`;
+  document.body.appendChild(backdrop);
+  document.body.appendChild(modal);
+  const close = () => { backdrop.remove(); modal.remove(); };
+  backdrop.addEventListener('click', close);
+
+  const destinations = [{ id: null, thread_key: null, title: 'Общий чат' }];
+  try {
+    const threads = await api('/api/chat/threads');
+    (threads.threads || []).forEach(t => {
+      if (t.type === 'GENERAL') return; // уже добавлен выше как дефолт
+      if (t.type === 'DIRECT') destinations.push({ id: t.id, thread_key: null, title: t.title });
+      else destinations.push({ id: null, thread_key: t.id, title: t.title });
+    });
+  } catch (e) {
+    showToast('Не удалось загрузить список чатов: ' + e.message, 'error');
+  }
+
+  const listEl = modal.querySelector('.chat-forward-modal-list');
+  listEl.innerHTML = destinations.map((d, i) => `<button type="button" class="chat-forward-dest" data-idx="${i}">${_escChat(d.title)}</button>`).join('');
+  listEl.querySelectorAll('.chat-forward-dest').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const dest = destinations[Number(btn.dataset.idx)];
+      close();
+      try {
+        await api(`/api/chat/messages/${msgId}/forward`, {
+          method: 'POST',
+          body: JSON.stringify({ text: '', to_user_id: dest.id, thread_key: dest.thread_key }),
+        });
+        showToast('Переслано');
+        hapticImpact('light');
+        if (dest.thread_key === _chatActiveThreadKey && dest.id === _chatActiveThread) {
+          _chatLastRenderSig = null;
+          _loadChatMessages(true);
+        }
+      } catch (e) {
+        showToast('Ошибка пересылки: ' + e.message, 'error');
+      }
+    });
+  });
 }
 
 async function _confirmDeleteChatMessage(msgId, bubbleEl) {
@@ -383,10 +554,14 @@ async function _sendChatMessage() {
   try {
     await api('/api/chat/messages', {
       method: 'POST',
-      body: JSON.stringify({ text, to_user_id: _chatActiveThread, thread_key: _chatActiveThreadKey }),
+      body: JSON.stringify({
+        text, to_user_id: _chatActiveThread, thread_key: _chatActiveThreadKey,
+        reply_to_id: _chatReplyTarget ? _chatReplyTarget.id : null,
+      }),
     });
     input.value = '';
     input.style.height = 'auto';
+    _clearChatReplyTarget();
     _chatLastRenderSig = null;
     await _loadChatMessages(true);
     _loadMyChatThreads(); // 24.07: обновляет last_ts/last_preview в списке тредов, иначе
