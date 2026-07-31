@@ -152,7 +152,10 @@ async function renderObjectInfoTab(objectId) {
     needsAddBtn.addEventListener('click', async () => {
       const textEl = document.getElementById('obj-needs-new-text');
       const text = textEl.value.trim();
-      if (!text) return;
+      // 31.07 (UX-аудит): disabled guard -- без него быстрый двойной тап
+      // создавал 2 одинаковые Потребности до возврата первого ответа.
+      if (!text || needsAddBtn.disabled) return;
+      needsAddBtn.disabled = true;
       try {
         await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title: text, object_id: objectId }) });
         textEl.value = '';
@@ -160,6 +163,8 @@ async function renderObjectInfoTab(objectId) {
         await _loadObjNeeds(objectId);
       } catch (e) {
         showToast('Ошибка: ' + e.message, 'error');
+      } finally {
+        needsAddBtn.disabled = false;
       }
     });
   }
@@ -320,7 +325,10 @@ async function _renderObjWorksTasksSection(objectId) {
     addBtn.addEventListener('click', async () => {
       const textEl = document.getElementById('obj-tasks-new-text');
       const text = textEl.value.trim();
-      if (!text) return;
+      // 31.07 (UX-аудит): disabled guard -- без него быстрый двойной тап
+      // создавал 2 одинаковые задачи до возврата первого ответа.
+      if (!text || addBtn.disabled) return;
+      addBtn.disabled = true;
       try {
         await api(`/api/objects/${objectId}/tasks`, { method: 'POST', body: JSON.stringify({ text }) });
         textEl.value = '';
@@ -328,6 +336,8 @@ async function _renderObjWorksTasksSection(objectId) {
         await loadObjectWorkTasks(objectId, listEl, null);
       } catch (e) {
         showToast('Ошибка: ' + e.message, 'error');
+      } finally {
+        addBtn.disabled = false;
       }
     });
   }

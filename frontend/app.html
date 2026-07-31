@@ -3488,7 +3488,7 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
 .wx-strip-day:active { background: rgba(255,255,255,0.08); }
 
 #wx-hourly-sheet { position: fixed; inset: 0; z-index: 1500; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; }
-.wx-hourly-inner { width: 100%; background: var(--bg-card); border-radius: 20px 20px 0 0; padding: 1rem 1rem 1.5rem; max-height: 65vh; display: flex; flex-direction: column; border: 1px solid var(--border-color); border-bottom: none; }
+.wx-hourly-inner { width: 100%; background: var(--bg-card); border-radius: 20px 20px 0 0; padding: 1rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); max-height: 65vh; display: flex; flex-direction: column; border: 1px solid var(--border-color); border-bottom: none; }
 .wx-hourly-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
 .wx-hourly-title { font-weight: 700; font-size: 1rem; color: #fff; }
 .wx-hourly-close { background: none; border: none; color: var(--text-light); font-size: 1.1rem; cursor: pointer; }

@@ -752,8 +752,12 @@ function closePhotoComments() {
 
 async function _sendPhotoComment() {
   const input = document.getElementById('pc-comment-input');
+  const btn = document.getElementById('pc-comment-send-btn');
   const text = input.value.trim();
-  if (!text || !_pcCurrentPhotoId) return;
+  // 31.07 (UX-аудит): btn.disabled guard -- быстрый двойной тап отправлял 2
+  // одинаковых комментария до возврата первого ответа.
+  if (!text || !_pcCurrentPhotoId || (btn && btn.disabled)) return;
+  if (btn) btn.disabled = true;
   try {
     await api(`/api/feed/photos/${_pcCurrentPhotoId}/comments`, { method: 'POST', body: JSON.stringify({ text }) });
     input.value = '';
@@ -762,6 +766,8 @@ async function _sendPhotoComment() {
     loadFeedPhotos(); // обновить счётчик комментариев в ленте
   } catch (e) {
     showToast('Ошибка отправки: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 

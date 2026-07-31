@@ -26,7 +26,11 @@ async function loadAbwesenheit() {
     const res = await api('/api/abwesenheit/all');
     _abwEntries = res.entries || [];
   } catch (e) {
+    // 31.07 (UX-аудит): было -- при реальной ошибке API молча показывался пустой
+    // календарь, неотличимо от "никто не отсутствует". Toast делает ошибку видимой,
+    // не ломая остальной рендер календаря (тот уже строится независимо от entries).
     _abwEntries = [];
+    showToast('Не удалось загрузить календарь отсутствий', 'error');
   }
   if (_pendingAbwesenheitFocusId) {
     const entry = _abwEntries.find(e => e.id === _pendingAbwesenheitFocusId);

@@ -224,11 +224,18 @@ async function _loadProfileTeam() {
     });
     listEl.querySelectorAll('.profile-team-grant-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
+        // 31.07 (UX-аудит): disabled guard -- без него быстрый двойной тап мог
+        // отправить 2 запроса на выдачу доступа подряд.
+        if (btn.disabled) return;
+        btn.disabled = true;
         try {
           await api('/api/roles', { method: 'POST', body: JSON.stringify({ user_id: btn.dataset.uid, role: 'worker' }) });
           hapticImpact('light');
           _loadProfileTeam();
-        } catch (e) { showToast('Ошибка: ' + e.message, 'error'); }
+        } catch (e) {
+          showToast('Ошибка: ' + e.message, 'error');
+          btn.disabled = false;
+        }
       });
     });
   } catch (e) {

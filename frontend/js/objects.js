@@ -204,6 +204,9 @@ function renderTaskRow(t) {
 }
 
 async function loadObjectWorkTasks(objectId, listEl, countEl) {
+  // 31.07 (UX-аудит): было -- список выглядел пустым/сломанным пока запрос в
+  // полёте, не отличить от "Задач нет".
+  listEl.innerHTML = '<div style="padding:0.3rem 0;color:var(--text-light);font-size:0.85rem">Загрузка…</div>';
   try {
     const data = await api(`/api/objects/${objectId}/tasks`);
     if (!data.tasks.length) {

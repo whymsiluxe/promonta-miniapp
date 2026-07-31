@@ -24,6 +24,9 @@ function renderTaskCard(task) {
 
 async function loadTasks() {
   const list = document.getElementById('tasks-list');
+  // 31.07 (UX-аудит): было -- экран выглядел пустым/сломанным пока запрос в
+  // полёте, разницы с "потребностей нет" не было видно.
+  list.innerHTML = '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>';
   try {
     const res = await api('/api/tasks');
     _tasksList = res.tasks || [];

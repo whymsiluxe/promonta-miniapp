@@ -58,7 +58,14 @@ async function loadMangelTickets() {
     _mangelTickets = res.tickets || [];
     renderMangelKanban();
   } catch (e) {
+    // 31.07 (UX-аудит): было только console.error -- при реальной ошибке API
+    // 3 колонки Kanban оставались пустыми точно как "дефектов нет", разницы
+    // юзер увидеть не мог. Показываем явный error-текст в каждой колонке.
     console.error('Ошибка загрузки Mängel-тикетов:', e.message);
+    MANGEL_STATUS_ORDER.forEach(status => {
+      const col = document.getElementById(_mangelStatusColId(status));
+      if (col) col.innerHTML = '<div class="js-error-state">Ошибка загрузки</div>';
+    });
   }
 }
 
@@ -221,9 +228,13 @@ async function openMangelTicketModal(ticketId) {
     await cycleMangelStatus(ticketId);
     openMangelTicketModal(ticketId);
   });
-  document.getElementById('mangel-comment-send-btn').addEventListener('click', async () => {
+  document.getElementById('mangel-comment-send-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
     const input = document.getElementById('mangel-comment-input');
-    if (!input.value.trim()) return;
+    if (!input.value.trim() || btn.disabled) return;
+    // 31.07 (UX-аудит): без disable быстрый двойной тап отправлял 2 одинаковых
+    // комментария до возврата первого ответа.
+    btn.disabled = true;
     try {
       await api(`/api/mangel/${ticketId}/comments`, { method: 'POST', body: JSON.stringify({ text: input.value.trim() }) });
       input.value = '';
@@ -231,6 +242,8 @@ async function openMangelTicketModal(ticketId) {
       openMangelTicketModal(ticketId);
     } catch (e) {
       showToast('Ошибка отправки комментария: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
     }
   });
   document.getElementById('mangel-ticket-modal').style.display = 'flex';
