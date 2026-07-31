@@ -93,10 +93,14 @@ fi
 if [[ -f "${BACKEND_SERVING_DIR}/objekte_lib.py" ]]; then
   cp "${BACKEND_SERVING_DIR}/objekte_lib.py" "${BACKUP_DIR}/objekte_lib.py"
 fi
+if [[ -f "${BACKEND_SERVING_DIR}/VERSION" ]]; then
+  cp "${BACKEND_SERVING_DIR}/VERSION" "${BACKUP_DIR}/VERSION"
+else
+  touch "${BACKUP_DIR}/.VERSION_ABSENT"
+fi
 if [[ -d "$FRONTEND_SERVING_DIR" ]]; then
   mkdir -p "${BACKUP_DIR}/frontend"
-  cp -r "${FRONTEND_SERVING_DIR}/app.html" "${BACKUP_DIR}/frontend/" 2>/dev/null || true
-  cp -r "${FRONTEND_SERVING_DIR}/js" "${BACKUP_DIR}/frontend/" 2>/dev/null || true
+  rsync -a "${FRONTEND_SERVING_DIR}/" "${BACKUP_DIR}/frontend/"
 fi
 echo "== 8/12 Проверка, что backup реально содержит файлы =="
 if [[ -z "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]]; then

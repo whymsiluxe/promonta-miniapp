@@ -42,6 +42,9 @@ fi
 if [[ -f "$BACKUP_DIR/mangel_lib.py" ]]; then
   python3 -m py_compile "$BACKUP_DIR/mangel_lib.py"
 fi
+if [[ -f "$BACKUP_DIR/objekte_lib.py" ]]; then
+  python3 -m py_compile "$BACKUP_DIR/objekte_lib.py"
+fi
 echo "OK"
 
 echo "== 3/6 Восстановление backend =="
@@ -52,16 +55,22 @@ fi
 if [[ -f "$BACKUP_DIR/mangel_lib.py" ]]; then
   cp "$BACKUP_DIR/mangel_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py"
 fi
+if [[ -f "$BACKUP_DIR/objekte_lib.py" ]]; then
+  cp "$BACKUP_DIR/objekte_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py"
+fi
+# VERSION -- симметрично deploy.sh: backup либо содержит старый VERSION (сценарий A,
+# восстановить), либо маркер .VERSION_ABSENT (сценарий B, файла до deploy не было --
+# удалить тот, что создал деплой, чтобы /api/health не показывал отменённый SHA).
+if [[ -f "$BACKUP_DIR/VERSION" ]]; then
+  cp "$BACKUP_DIR/VERSION" "${BACKEND_SERVING_DIR}/VERSION"
+elif [[ -f "$BACKUP_DIR/.VERSION_ABSENT" ]]; then
+  rm -f "${BACKEND_SERVING_DIR}/VERSION"
+fi
 echo "OK"
 
 echo "== 4/6 Восстановление frontend (если было в backup) =="
 if [[ -d "$BACKUP_DIR/frontend" ]]; then
-  if [[ -f "$BACKUP_DIR/frontend/app.html" ]]; then
-    cp "$BACKUP_DIR/frontend/app.html" "${FRONTEND_SERVING_DIR}/app.html"
-  fi
-  if [[ -d "$BACKUP_DIR/frontend/js" ]]; then
-    cp -r "$BACKUP_DIR/frontend/js/." "${FRONTEND_SERVING_DIR}/js/"
-  fi
+  rsync -a --delete "$BACKUP_DIR/frontend/" "${FRONTEND_SERVING_DIR}/"
   chown -R root:root "$FRONTEND_SERVING_DIR" 2>/dev/null || echo "предупреждение: chown пропущен (не root)"
   echo "OK"
 else
