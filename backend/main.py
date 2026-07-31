@@ -35,9 +35,11 @@ DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
 TOOLS_LIB_PATH = os.path.join(BACKEND_DIR, 'tools_lib.py')
 MANGEL_LIB_PATH = os.path.join(BACKEND_DIR, 'mangel_lib.py')
 OBJEKTE_LIB_PATH = os.path.join(BACKEND_DIR, 'objekte_lib.py')
+ROADMAP_LIB_PATH = os.path.join(BACKEND_DIR, 'roadmap_lib.py')
 _repo_tools_lib = None
 _repo_mangel_lib = None
 _repo_objekte_lib = None
+_repo_roadmap_lib = None
 
 
 def _load_repo_module(path: str, internal_name: str, cache: dict, cache_key: str):
@@ -82,9 +84,43 @@ def _load_repo_objekte_lib():
     return _load_repo_module(OBJEKTE_LIB_PATH, 'promonta_repo_objekte_lib', _repo_module_cache, 'objekte_lib')
 
 
+def _load_repo_roadmap_lib():
+    """31.07 (Release-аудит П2): roadmap_lib.py — последний shared runtime-модуль,
+    грузившийся обычным `import roadmap_lib as rl` через глобальный sys.path, тот же
+    риск резолва в untracked-копию на диске сервера вместо репозиторной. Тот же
+    изолированный loader, что и tools_lib/mangel_lib/objekte_lib."""
+    return _load_repo_module(ROADMAP_LIB_PATH, 'promonta_repo_roadmap_lib', _repo_module_cache, 'roadmap_lib')
+
+
 BOT_TOKEN = os.environ['BOT_TOKEN']
 ROLES_FILE = '/home/promonta/agent/miniapp/roles.json'
 INIT_DATA_MAX_AGE = 3600  # секунд — Telegram initData считается протухшим через час
+
+# 31.07 (Release-аудит П4): для этих сторов corrupt JSON НЕ должен молча деградировать
+# к default -- следующий же write через _atomic_write_json/update_json_transaction
+# записал бы default ПОВЕРХ повреждённого файла, необратимо уничтожая реальные данные
+# (roles/assignments/checkin/chat/abwesenheit/profiles/tasks/alerts/roadmap/stage_requests).
+# Для этих путей: карантин повреждённого файла (.corrupt-<ts>) + mutation вызывает 503,
+# read-only endpoint получает 503 вместо тихого пустого результата (см. exception_handler
+# ниже, регистрация путей -- в самом конце файла, см. CRITICAL_JSON_PATHS.update(...)).
+CRITICAL_JSON_PATHS: set = set()
+
+
+class CorruptJsonError(Exception):
+    def __init__(self, path: str):
+        self.path = path
+        super().__init__(f'{path} содержит повреждённый JSON')
+
+
+def _quarantine_corrupt_json(path: str) -> None:
+    ts = time.strftime('%Y%m%d-%H%M%S')
+    quarantine_path = f'{path}.corrupt-{ts}'
+    try:
+        os.replace(path, quarantine_path)
+        print(f'ERROR: {path} corrupt JSON -- карантин в {quarantine_path}, owner-alert нужен вручную')
+    except OSError as e:
+        print(f'ERROR: {path} corrupt JSON -- не удалось перенести в карантин: {e}')
+
 
 app = FastAPI(title="Promonta Mini App", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
@@ -93,6 +129,21 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(CorruptJsonError)
+async def _corrupt_json_handler(request, exc: CorruptJsonError):
+    """31.07 (Release-аудит П4): единая точка -- любой _load_*/update_json_transaction
+    на критичном сторе (roles/assignments/checkin/chat/abwesenheit/profiles/tasks/
+    critical_alerts/roadmap/stage_requests), наткнувшись на повреждённый JSON, карантинит
+    файл (_quarantine_corrupt_json) и поднимает это исключение вместо тихой деградации
+    к default -- перехватывается здесь для ЛЮБОГО эндпоинта (GET/POST/PATCH/DELETE)
+    без необходимости оборачивать каждый вызывающий код по отдельности."""
+    from starlette.responses import JSONResponse
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Данные временно недоступны (повреждённый файл), обратитесь к владельцу"},
+    )
 
 AUDIT_FILE = '/home/promonta/agent/miniapp/audit.log'
 AUDIT_LOCK = __import__('threading').Lock()
@@ -225,7 +276,11 @@ def update_json_transaction(path: str, default, mutator):
     (list.append/dict[k]=v — не return нового объекта, чтобы не плодить два разных
     паттерна использования) и может опционально вернуть значение для вызывающего кода.
     НЕ вызывать _atomic_write_json изнутри mutator -- тот же _lock_for(path) не
-    reentrant, будет deadlock (threading.Lock, не RLock)."""
+    reentrant, будет deadlock (threading.Lock, не RLock).
+
+    Для путей из CRITICAL_JSON_PATHS: corrupt JSON карантинится, транзакция НЕ пишет
+    default поверх файла -- поднимает CorruptJsonError, перехватывается глобальным
+    _corrupt_json_handler (регистрация -- сразу после app = FastAPI(...))."""
     with _lock_for(path):
         if not os.path.exists(path):
             data = default() if callable(default) else copy.deepcopy(default)
@@ -234,6 +289,9 @@ def update_json_transaction(path: str, default, mutator):
                 with open(path, encoding='utf-8') as f:
                     data = json.load(f)
             except json.JSONDecodeError:
+                if path in CRITICAL_JSON_PATHS:
+                    _quarantine_corrupt_json(path)
+                    raise CorruptJsonError(path)
                 print(f'ERROR: {path} corrupt JSON in transaction, falling back to default')
                 data = default() if callable(default) else copy.deepcopy(default)
         result = mutator(data)
@@ -250,13 +308,20 @@ def _safe_load_json(path: str, default):
     посреди записи, до _atomic_write_json или на старых файлах без него) не должен
     ронять запрос 500-кой, деградируем к default с явным логом. Раньше только
     roles.json имел эту защиту, 17 других _load_* падали с необработанным
-    JSONDecodeError на первом же corrupt-файле."""
+    JSONDecodeError на первом же corrupt-файле.
+
+    Для путей из CRITICAL_JSON_PATHS: НЕ деградирует к default молча (последующий
+    write записал бы default поверх повреждённого файла) -- карантинит файл и
+    поднимает CorruptJsonError, перехватывается глобальным _corrupt_json_handler."""
     if not os.path.exists(path):
         return default
     try:
         with open(path, encoding='utf-8') as f:
             return json.load(f)
     except json.JSONDecodeError:
+        if path in CRITICAL_JSON_PATHS:
+            _quarantine_corrupt_json(path)
+            raise CorruptJsonError(path)
         print(f'ERROR: {path} corrupt JSON, falling back to default: {default!r}')
         return default
 
@@ -1556,7 +1621,6 @@ def get_active_blockers(user: dict = Depends(get_current_user), _: None = Depend
     без object_id/stage_name -- матчим через all_stages_grouped() (один batch-запрос,
     не N+1 по каждому объекту). owner-only, та же чувствительность что shifts-today."""
     o = _load_repo_objekte_lib()
-    import roadmap_lib as rl
     store = _safe_load_json(rl.ROADMAP_FILE, rl._default_store())
     stage_blocks = store.get('stage_blocks', {})
     if not stage_blocks:
@@ -1841,20 +1905,39 @@ def _holder_name_from_user(user: dict) -> str:
     return holder_name
 
 
+_tool_locks: dict = {}
+_tool_locks_guard = __import__('threading').Lock()
+
+
+def _lock_for_tool(serial: str):
+    """31.07 (Release-аудит П6): один Lock на serial -- checkout/return читают статус
+    из Sheets (tools_lib.py, никакого threading.Lock внутри) и пишут отдельным вызовом;
+    без лока, охватывающего ВЕСЬ цикл read-check-write, два конкурентных checkout на
+    один serial могли оба пройти проверку mapped_status()=='free' до того как первый
+    успевал записать нового держателя -- тот же класс гонки, что _lock_for()/
+    update_json_transaction закрывают для JSON-сторов (см. их docstring выше), только
+    здесь бэкенд данных -- Google Sheets, не JSON-файл."""
+    with _tool_locks_guard:
+        if serial not in _tool_locks:
+            _tool_locks[serial] = __import__('threading').Lock()
+        return _tool_locks[serial]
+
+
 @app.patch("/api/tools/{serial}/checkout")
 def checkout_tool(serial: str, body: CheckoutBody, user: dict = Depends(get_current_user)):
     tl = _load_repo_tools_lib()
     if not body.object_name.strip():
         raise HTTPException(400, "Укажи объект")
-    tool = tl.get_tool(serial)
-    if tool is None:
-        raise HTTPException(404, f'инструмент {serial} не найден')
-    if tl.mapped_status(tool) != 'free':
-        raise HTTPException(409, "Инструмент уже выдан или недоступен")
-    # 22.07: worker сам оформляет checkout — user['id'] это и есть реальный держатель,
-    # пишем как holder_id чтобы avatar на карточке инструмента был кликабельным (openUserCard).
-    holder_name = _holder_name_from_user(user)
-    tl.checkout_tool(serial, holder_name, body.object_name, holder_name, holder_id=str(user['id']))
+    with _lock_for_tool(serial):
+        tool = tl.get_tool(serial)
+        if tool is None:
+            raise HTTPException(404, f'инструмент {serial} не найден')
+        if tl.mapped_status(tool) != 'free':
+            raise HTTPException(409, "Инструмент уже выдан или недоступен")
+        # 22.07: worker сам оформляет checkout — user['id'] это и есть реальный держатель,
+        # пишем как holder_id чтобы avatar на карточке инструмента был кликабельным (openUserCard).
+        holder_name = _holder_name_from_user(user)
+        tl.checkout_tool(serial, holder_name, body.object_name, holder_name, holder_id=str(user['id']))
     return {"status": "ok"}
 
 
@@ -1864,15 +1947,20 @@ def return_tool(serial: str, user: dict = Depends(get_current_user), role: str =
     "возврата" вызывала /checkout с пустыми holder/object_name -- checkout_tool всё равно
     пишет holder_id текущего юзера безусловно, так что "возврат" на деле мог сделать
     держателем СВОБОДНОГО инструмента того, кто на самом деле его не брал. Отдельный
-    endpoint: текущий держатель или owner -- разрешено, посторонний worker -- 403."""
+    endpoint: текущий держатель или owner -- разрешено, посторонний worker -- 403.
+
+    31.07 (Release-аудит П6): read-check-write под тем же _lock_for_tool(serial), что
+    checkout -- та же гонка, зеркально (два одновременных return, или return+checkout
+    на один serial)."""
     tl = _load_repo_tools_lib()
-    tool = tl.get_tool(serial)
-    if tool is None:
-        raise HTTPException(404, f'инструмент {serial} не найден')
-    holder_id = (tool.get('ID держателя') or '').strip()
-    if role != 'owner' and str(user['id']) != holder_id:
-        raise HTTPException(403, "Можно вернуть только инструмент, который взят вами")
-    tl.return_tool(serial, user.get('first_name', str(user['id'])))
+    with _lock_for_tool(serial):
+        tool = tl.get_tool(serial)
+        if tool is None:
+            raise HTTPException(404, f'инструмент {serial} не найден')
+        holder_id = (tool.get('ID держателя') or '').strip()
+        if role != 'owner' and str(user['id']) != holder_id:
+            raise HTTPException(403, "Можно вернуть только инструмент, который взят вами")
+        tl.return_tool(serial, user.get('first_name', str(user['id'])))
     return {"status": "ok"}
 
 
@@ -3459,7 +3547,10 @@ def get_chat_attachment(fname: str, user: dict = Depends(get_current_user), role
         # (после пересылки на файл ссылаются несколько сообщений в разных тредах).
         # Теперь: доступ разрешён, если юзер имеет доступ хотя бы к одному сообщению
         # с этим файлом (через ту же _check_message_access, что и остальные эндпоинты).
-        messages = _load_chat()
+        # 31.07 (Release-аудит П7): сообщения старше 7 дней уходят в CHAT_ARCHIVE_FILE
+        # (_archive_chat_messages) -- вложение из архивного сообщения раньше не находилось
+        # тут вообще (искали только активный _load_chat()), 404 даже для законного участника.
+        messages = _load_chat() + _safe_load_json(CHAT_ARCHIVE_FILE, [])
         candidates = [m for m in messages if m.get('attachment', {}).get('file') == safe_fname]
         if not candidates:
             raise HTTPException(404, "Файл не найден")
@@ -4137,9 +4228,12 @@ class NewStageBody(BaseModel):
 
 
 @app.post("/api/objects/{object_id}/stages")
-def create_stage(object_id: str, body: NewStageBody, user: dict = Depends(get_current_user)):
-    # 28.07: owner request -- любой воркер может добавлять этап на любом объекте
-    # (не только owner, не только назначенным на объект)
+def create_stage(object_id: str, body: NewStageBody, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
+    # 31.07 (Release-аудит П3): раньше любой авторизованный worker мог создать этап на
+    # ЛЮБОМ объекте, не только назначенном -- require_object_access ограничивает записью
+    # только для owner или worker с accepted-назначением на этот object_id (см.
+    # can_access_object выше, тот же принцип что уже применён к другим stage-mutation
+    # эндпоинтам этого файла).
     o = _load_repo_objekte_lib()
     if not body.name.strip():
         raise HTTPException(400, "Name erforderlich")
@@ -4153,10 +4247,10 @@ class StageDescriptionBody(BaseModel):
 
 
 @app.patch("/api/objects/{object_id}/stages/{row_num}/description")
-def update_stage_description_endpoint(object_id: str, row_num: int, body: StageDescriptionBody, user: dict = Depends(get_current_user)):
-    # 28.07: roadmap-этапы -- owner request "чтоб работник знал что ему делать" (список
-    # подзадач текстом внутри развёрнутого этапа). Любая роль может редактировать (тот же
-    # принцип, что уже применён к созданию/просмотру этапов сегодня -- не owner-only).
+def update_stage_description_endpoint(object_id: str, row_num: int, body: StageDescriptionBody, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
+    # 31.07 (Release-аудит П3): не owner-only (сохраняем прежнее намерение -- любой
+    # НАЗНАЧЕННЫЙ worker может редактировать), но require_object_access закрывает дыру,
+    # когда worker без accepted-назначения на объект мог менять описание этапа на чужом.
     o = _load_repo_objekte_lib()
     try:
         o.update_stage_description(row_num, body.description.strip()[:2000])
@@ -4263,7 +4357,10 @@ def clear_stage_blocker(object_id: str, row_num: int, user: dict = Depends(get_c
 # Stage identity/order/status/description остаются в Google Sheets (objekte_lib.py) --
 # roadmap_lib.py добавляет только то, чего там нет: чек-лист категорий/пунктов, заметки,
 # и очередь запросов worker->owner на структурные изменения существующего этапа.
-import roadmap_lib as rl
+# 31.07 (Release-аудит П2): было `import roadmap_lib as rl` через глобальный sys.path --
+# заменено на изолированный loader (см. _load_repo_roadmap_lib выше), гарантирующий
+# repo-файл, не untracked-копию на диске сервера.
+rl = _load_repo_roadmap_lib()
 
 
 def _load_roadmap_store() -> dict:
@@ -6004,16 +6101,29 @@ def list_my_abwesenheit(user: dict = Depends(get_current_user)):
     return {"entries": items}
 
 
+ABWESENHEIT_PUBLIC_FIELDS = {'id', 'user_id', 'name', 'date_from', 'date_to', 'open_ended', 'reason', 'status'}
+
+
 @app.get("/api/abwesenheit/all")
 def list_all_abwesenheit(user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     # 28.07: owner request -- воркер тоже может смотреть общий календарь команды
     # (view-only). Approve/reject остаются отдельно защищены require_owner на
     # /api/abwesenheit/{id}/status -- этот endpoint только читает список.
+    # 31.07 (Release-аудит П5): owner и сам автор записи видят все поля (включая
+    # свободный комментарий note, потенциально мед. детали), другие Worker -- только
+    # безопасные поля (имя/даты/общий статус). Свою полную запись Worker всё равно
+    # видит через GET /api/abwesenheit (list_my_abwesenheit), не этот endpoint.
     _auto_close_expired_open_ended_abwesenheit()
+    my_id = str(user['id'])
     entries = _load_abwesenheit()
+    result = []
     for e in entries:
         e.setdefault('status', 'pending')
-    return {"entries": entries}
+        if role == 'owner' or e.get('user_id') == my_id:
+            result.append(e)
+        else:
+            result.append({k: e.get(k) for k in ABWESENHEIT_PUBLIC_FIELDS})
+    return {"entries": result}
 
 
 @app.delete("/api/abwesenheit/{entry_id}")
@@ -6027,3 +6137,21 @@ def delete_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), ro
     items = [i for i in items if i['id'] != entry_id]
     _save_abwesenheit(items)
     return {"status": "ok"}
+
+
+# 31.07 (Release-аудит П4): регистрация критичных сторов -- в самом конце модуля,
+# после того как все _FILE-константы (включая rl.ROADMAP_FILE/rl.STAGE_REQUESTS_FILE,
+# доступные только после _load_repo_roadmap_lib() выше) уже определены. Порча этих
+# файлов не должна тихо деградировать к default (см. _safe_load_json/update_json_transaction).
+CRITICAL_JSON_PATHS.update({
+    ROLES_FILE,
+    OBJECT_ASSIGNMENTS_FILE,
+    CHECKIN_META_FILE,
+    CHAT_FILE,
+    ABWESENHEIT_FILE,
+    WORKER_PROFILES_FILE,
+    TASKS_FILE,
+    CRITICAL_ALERTS_FILE,
+    rl.ROADMAP_FILE,
+    rl.STAGE_REQUESTS_FILE,
+})
