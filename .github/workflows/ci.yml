@@ -45,9 +45,21 @@ jobs:
         run: |
           test -f backend/tools_lib.py || (echo 'backend/tools_lib.py missing' && exit 1)
           test -f backend/mangel_lib.py || (echo 'backend/mangel_lib.py missing' && exit 1)
+          test -f backend/objekte_lib.py || (echo 'backend/objekte_lib.py missing' && exit 1)
+          test -f backend/roadmap_lib.py || (echo 'backend/roadmap_lib.py missing' && exit 1)
+          test -f backend/angebot_free.js || (echo 'backend/angebot_free.js missing' && exit 1)
+          test -f backend/rechnung.js || (echo 'backend/rechnung.js missing' && exit 1)
           test -f backend/main.py || (echo 'backend/main.py missing' && exit 1)
           test -f frontend/app.html || (echo 'frontend/app.html missing' && exit 1)
+          test -f scripts/deploy.sh || (echo 'scripts/deploy.sh missing' && exit 1)
+          test -f scripts/rollback.sh || (echo 'scripts/rollback.sh missing' && exit 1)
           echo "All required files present"
+
+      - name: Shell syntax check (deploy/rollback scripts)
+        run: |
+          bash -n scripts/deploy.sh
+          bash -n scripts/rollback.sh
+          echo "deploy.sh/rollback.sh syntax OK"
 
       - name: Check for unresolved merge conflict markers
         run: |
@@ -71,9 +83,11 @@ jobs:
         run: |
           cd tests && python -m pytest . -q
 
-      - name: JS syntax check (frontend/js/*.js)
+      - name: JS syntax check (frontend/js/*.js + backend PDF scripts)
         run: |
           for f in frontend/js/*.js; do
             node --check "$f" || exit 1
           done
+          node --check backend/angebot_free.js
+          node --check backend/rechnung.js
           echo "All JS files syntax-OK"

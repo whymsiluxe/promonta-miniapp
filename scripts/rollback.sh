@@ -45,6 +45,15 @@ fi
 if [[ -f "$BACKUP_DIR/objekte_lib.py" ]]; then
   python3 -m py_compile "$BACKUP_DIR/objekte_lib.py"
 fi
+if [[ -f "$BACKUP_DIR/roadmap_lib.py" ]]; then
+  python3 -m py_compile "$BACKUP_DIR/roadmap_lib.py"
+fi
+if [[ -f "$BACKUP_DIR/angebot_free.js" ]]; then
+  node --check "$BACKUP_DIR/angebot_free.js"
+fi
+if [[ -f "$BACKUP_DIR/rechnung.js" ]]; then
+  node --check "$BACKUP_DIR/rechnung.js"
+fi
 echo "OK"
 
 echo "== 3/6 Восстановление backend =="
@@ -57,6 +66,15 @@ if [[ -f "$BACKUP_DIR/mangel_lib.py" ]]; then
 fi
 if [[ -f "$BACKUP_DIR/objekte_lib.py" ]]; then
   cp "$BACKUP_DIR/objekte_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py"
+fi
+if [[ -f "$BACKUP_DIR/roadmap_lib.py" ]]; then
+  cp "$BACKUP_DIR/roadmap_lib.py" "${BACKEND_SERVING_DIR}/roadmap_lib.py"
+fi
+if [[ -f "$BACKUP_DIR/angebot_free.js" ]]; then
+  cp "$BACKUP_DIR/angebot_free.js" "${BACKEND_SERVING_DIR}/angebot_free.js"
+fi
+if [[ -f "$BACKUP_DIR/rechnung.js" ]]; then
+  cp "$BACKUP_DIR/rechnung.js" "${BACKEND_SERVING_DIR}/rechnung.js"
 fi
 # VERSION -- симметрично deploy.sh: backup либо содержит старый VERSION (сценарий A,
 # восстановить), либо маркер .VERSION_ABSENT (сценарий B, файла до deploy не было --

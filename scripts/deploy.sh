@@ -1,9 +1,16 @@
 #!/bin/bash
-# Promonta miniapp deploy -- Release-аудит Этап 8. Полный цикл: чистота репо ->
-# тесты -> syntax -> backup -> копирование в production paths -> restart ->
-# health-проверка. При ЛЮБОЙ ошибке на любом шаге -- exit, ничего дальше не
-# трогаем (set -euo pipefail), последний удачный backup остаётся на диске для
-# scripts/rollback.sh.
+# Promonta miniapp deploy -- Release-аудит Этап 8 + доп.раунд 31.07. Полный цикл:
+# чистота репо -> тесты (в изолированном env, БЕЗ production credentials) -> syntax ->
+# backup -> копирование в production paths -> restart -> health-проверка.
+#
+# 31.07 (атомарность): backend всё ещё копируется на прежние serving-пути (смена на
+# staged-dir+symlink потребовала бы менять systemd unit -- WorkingDirectory сейчас
+# фиксированный /home/promonta/agent/miniapp, ExecStart=uvicorn miniapp.main:app; такой
+# рефакторинг вне рамок этой задачи). Вместо этого: `trap` с момента, когда backup готов
+# и МОГ БЫ понадобиться -- любая ошибка на шагах copy/restart/health триггерит
+# автоматический scripts/rollback.sh на этом backup, без ручного вмешательства. Это не
+# полная atomic-symlink-гарантия, но закрывает главный риск: backend/frontend/VERSION
+# от РАЗНЫХ SHA после упавшего деплоя.
 #
 # Запуск: на VPS, из корня репозитория (/home/promonta/agent/miniapp-repo):
 #   sudo scripts/deploy.sh
@@ -28,14 +35,41 @@ HEALTH_READY_URL_LOCAL="http://127.0.0.1:8001/api/health/ready"
 TS="$(date +%Y%m%d_%H%M%S)"
 BACKUP_DIR="/tmp/rollback_backup_${TS}"
 
-echo "== 1/12 Проверка: работаем из git-репозитория =="
+# 31.07: флаг + trap -- как только backup готов (шаг 7), любой exit с ошибкой (код != 0)
+# на ПОСЛЕДУЮЩИХ шагах (copy/restart/health) автоматически откатывает на этот backup.
+# До готовности backup (шаги 1-7) trap ничего не делает -- нечего откатывать, ошибка
+# там просто означает "деплой не начинался", production не тронут.
+BACKUP_READY=0
+DEPLOY_FAILED_AND_ROLLED_BACK=0
+
+_auto_rollback_on_failure() {
+  local exit_code=$?
+  if [[ $exit_code -eq 0 ]]; then
+    return
+  fi
+  if [[ "$BACKUP_READY" != "1" ]]; then
+    echo "ОШИБКА на шаге до готовности backup -- production не тронут, откат не нужен." >&2
+    return
+  fi
+  echo "" >&2
+  echo "!!! ДЕПЛОЙ УПАЛ (код $exit_code) -- ЗАПУСКАЮ АВТОМАТИЧЕСКИЙ ОТКАТ на $BACKUP_DIR !!!" >&2
+  if "$REPO_DIR/scripts/rollback.sh" "$BACKUP_DIR"; then
+    DEPLOY_FAILED_AND_ROLLED_BACK=1
+    echo "ОТКАТ ВЫПОЛНЕН УСПЕШНО -- production восстановлен на предыдущую версию." >&2
+  else
+    echo "!!! ОТКАТ ТОЖЕ ПРОВАЛИЛСЯ -- ТРЕБУЕТСЯ РУЧНОЕ ВМЕШАТЕЛЬСТВО. Backup: $BACKUP_DIR !!!" >&2
+  fi
+}
+trap _auto_rollback_on_failure EXIT
+
+echo "== 1/13 Проверка: работаем из git-репозитория =="
 if [[ ! -d "$REPO_DIR/.git" ]]; then
   echo "ОШИБКА: $REPO_DIR не является git-репозиторием" >&2
   exit 1
 fi
 echo "OK: $REPO_DIR"
 
-echo "== 2/12 Проверка ветки и SHA =="
+echo "== 2/13 Проверка ветки и SHA =="
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 CURRENT_SHA="$(git rev-parse HEAD)"
 if [[ "$CURRENT_BRANCH" != "main" ]]; then
@@ -44,7 +78,7 @@ if [[ "$CURRENT_BRANCH" != "main" ]]; then
 fi
 echo "OK: branch=main, SHA=$CURRENT_SHA"
 
-echo "== 3/12 Проверка чистого git status =="
+echo "== 3/13 Проверка чистого git status =="
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "ОШИБКА: есть незакоммиченные изменения -- закоммить или stash перед деплоем" >&2
   git status --short
@@ -52,34 +86,37 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 echo "OK: working tree чист"
 
-echo "== 4/12 Python syntax-check =="
+echo "== 4/13 Python syntax-check =="
 python3 -m py_compile backend/*.py
 echo "OK"
 
-echo "== 5/12 node --check (frontend/js/*.js) =="
+echo "== 5/13 node --check (frontend/js/*.js + backend PDF-скрипты) =="
 for f in frontend/js/*.js; do
   node --check "$f"
 done
+node --check backend/angebot_free.js
+node --check backend/rechnung.js
 echo "OK"
 
-echo "== 6/12 Полный test suite =="
-# Тестовое окружение сервиса (venv с fastapi/python-magic уже установлены) --
-# не production venv напрямую с активацией, а явный путь к интерпретатору,
-# как и во всех прошлых прогонах в этой сессии.
+echo "== 6/13 Полный test suite (изолированный env, БЕЗ production credentials) =="
+# 31.07 (Release-аудит, доп.раунд): раньше тесты запускались с ПОЛНЫМ
+# /etc/claude-agent.env -- реальные Google Sheets/Telegram/AI credentials попадали в
+# окружение тестового процесса без необходимости (тесты мокают все внешние вызовы
+# через patch.object, ни один реальный ключ им не нужен). Теперь: только dummy
+# BOT_TOKEN + временный MINIAPP_DATA_ROOT (пустая tmp-директория, тесты физически не
+# могут писать в /home/promonta/agent/miniapp или /var/www/miniapp даже по ошибке).
 TEST_PYTHON="${BACKEND_SERVING_DIR}/.venv/bin/python3"
 if [[ ! -x "$TEST_PYTHON" ]]; then
   echo "ОШИБКА: $TEST_PYTHON не найден -- venv сервиса недоступен" >&2
   exit 1
 fi
-if [[ -f /etc/claude-agent.env ]]; then
-  env $(grep -v '^#' /etc/claude-agent.env | xargs -d'\n') "$TEST_PYTHON" -m pytest tests/ -q
-else
-  echo "ОШИБКА: /etc/claude-agent.env не найден (нужен BOT_TOKEN для теста)" >&2
-  exit 1
-fi
-echo "OK: тесты прошли"
+TEST_DATA_ROOT="$(mktemp -d)"
+BOT_TOKEN="ci-dummy-token-not-a-real-secret" MINIAPP_DATA_ROOT="$TEST_DATA_ROOT" \
+  "$TEST_PYTHON" -m pytest tests/ -q
+rm -rf "$TEST_DATA_ROOT"
+echo "OK: тесты прошли (изолированный env, prod credentials не использовались)"
 
-echo "== 7/12 Создание timestamped backup =="
+echo "== 7/13 Создание timestamped backup =="
 mkdir -p "$BACKUP_DIR"
 if [[ -f "${BACKEND_SERVING_DIR}/main.py" ]]; then
   cp "${BACKEND_SERVING_DIR}/main.py" "${BACKUP_DIR}/main.py"
@@ -93,6 +130,15 @@ fi
 if [[ -f "${BACKEND_SERVING_DIR}/objekte_lib.py" ]]; then
   cp "${BACKEND_SERVING_DIR}/objekte_lib.py" "${BACKUP_DIR}/objekte_lib.py"
 fi
+if [[ -f "${BACKEND_SERVING_DIR}/roadmap_lib.py" ]]; then
+  cp "${BACKEND_SERVING_DIR}/roadmap_lib.py" "${BACKUP_DIR}/roadmap_lib.py"
+fi
+if [[ -f "${BACKEND_SERVING_DIR}/angebot_free.js" ]]; then
+  cp "${BACKEND_SERVING_DIR}/angebot_free.js" "${BACKUP_DIR}/angebot_free.js"
+fi
+if [[ -f "${BACKEND_SERVING_DIR}/rechnung.js" ]]; then
+  cp "${BACKEND_SERVING_DIR}/rechnung.js" "${BACKUP_DIR}/rechnung.js"
+fi
 if [[ -f "${BACKEND_SERVING_DIR}/VERSION" ]]; then
   cp "${BACKEND_SERVING_DIR}/VERSION" "${BACKUP_DIR}/VERSION"
 else
@@ -102,23 +148,31 @@ if [[ -d "$FRONTEND_SERVING_DIR" ]]; then
   mkdir -p "${BACKUP_DIR}/frontend"
   rsync -a "${FRONTEND_SERVING_DIR}/" "${BACKUP_DIR}/frontend/"
 fi
-echo "== 8/12 Проверка, что backup реально содержит файлы =="
+echo "== 8/13 Проверка, что backup реально содержит файлы =="
 if [[ -z "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]]; then
   echo "ОШИБКА: backup-директория пуста после копирования -- деплой остановлен" >&2
   exit 1
 fi
 echo "OK: backup сохранён в $BACKUP_DIR"
 find "$BACKUP_DIR" -type f | sed 's/^/  /'
+BACKUP_READY=1
 
-echo "== 9/12 Копирование backend в serving-путь (main.py + tools_lib.py + mangel_lib.py рядом) =="
-# ВАЖНО: tools_lib.py и mangel_lib.py обязаны лежать РЯДОМ с main.py -- изолированный
-# importlib-loader (_load_repo_tools_lib/_load_repo_mangel_lib в main.py) резолвит их
+echo "== 9/13 Копирование backend в serving-путь =="
+# ВАЖНО: tools_lib.py/mangel_lib.py/objekte_lib.py/roadmap_lib.py обязаны лежать РЯДОМ
+# с main.py -- изолированный importlib-loader (_load_repo_*_lib в main.py) резолвит их
 # по BACKEND_DIR = os.path.dirname(main.py), не по глобальному sys.path.
 cp "$REPO_DIR/backend/main.py" "${BACKEND_SERVING_DIR}/main.py"
 cp "$REPO_DIR/backend/tools_lib.py" "${BACKEND_SERVING_DIR}/tools_lib.py"
 cp "$REPO_DIR/backend/mangel_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py"
 cp "$REPO_DIR/backend/objekte_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py"
-python3 -m py_compile "${BACKEND_SERVING_DIR}/main.py" "${BACKEND_SERVING_DIR}/tools_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py"
+cp "$REPO_DIR/backend/roadmap_lib.py" "${BACKEND_SERVING_DIR}/roadmap_lib.py"
+cp "$REPO_DIR/backend/angebot_free.js" "${BACKEND_SERVING_DIR}/angebot_free.js"
+cp "$REPO_DIR/backend/rechnung.js" "${BACKEND_SERVING_DIR}/rechnung.js"
+python3 -m py_compile "${BACKEND_SERVING_DIR}/main.py" "${BACKEND_SERVING_DIR}/tools_lib.py" \
+  "${BACKEND_SERVING_DIR}/mangel_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py" \
+  "${BACKEND_SERVING_DIR}/roadmap_lib.py"
+node --check "${BACKEND_SERVING_DIR}/angebot_free.js"
+node --check "${BACKEND_SERVING_DIR}/rechnung.js"
 # Version-файл для /api/health -- version/commit видны в ответе без git subprocess
 # на каждый запрос (main.py читает VERSION рядом с собой, см. APP_VERSION_FILE).
 cat > "${BACKEND_SERVING_DIR}/VERSION" <<EOF
@@ -126,33 +180,52 @@ cat > "${BACKEND_SERVING_DIR}/VERSION" <<EOF
 EOF
 echo "OK"
 
-echo "== 10/12 Копирование frontend (без .git, без тестов, без secrets) =="
+echo "== 10/13 Копирование frontend (без .git, без тестов, без backup-файлов) =="
 mkdir -p "$FRONTEND_SERVING_DIR"
+# 31.07 (Release-аудит П9): расширенный exclude -- .bak/ (каталог) и .archived-legacy/
+# ранее не были explicit excluded директориями (--exclude='*.bak-*' ловит только файлы
+# с этим именем, не поддиректорию .bak/). Существующий .bak/ на проде НЕ трогаем (см.
+# отчёт -- ручное действие), но новые деплои больше никогда не заносят такой каталог.
 rsync -av --delete \
-  --exclude='.git*' --exclude='.archived-legacy' --exclude='*.bak-*' \
+  --exclude='.git*' --exclude='.archived-legacy' --exclude='.archived-legacy/' \
+  --exclude='.bak/' --exclude='*.bak-*' --exclude='*.corrupt-*' \
   "$REPO_DIR/frontend/" "$FRONTEND_SERVING_DIR/"
+# 31.07 (Release-аудит П9, cache-busting): app.html ссылается на js/css относительными
+# путями без версии (src="js/chat.js", href="css/tokens.css") -- Caddy теперь кеширует
+# /js/* и /css/* на год (immutable), поэтому КАЖДЫЙ деплой обязан менять URL, иначе
+# браузер отдаёт старый JS из кеша после релиза. Единый механизм: sed добавляет
+# ?v=<SHA> в SERVING-копии app.html (не в репозитории -- в git остаётся чистый путь без
+# версии, деплой -- единственное место, где появляется версия).
+sed -i -E "s#(src=\"js/[^\"]+)\"#\1?v=${CURRENT_SHA}\"#g; s#(href=\"css/[^\"]+)\"#\1?v=${CURRENT_SHA}\"#g" \
+  "${FRONTEND_SERVING_DIR}/app.html"
 chown -R root:root "$FRONTEND_SERVING_DIR" 2>/dev/null || echo "предупреждение: chown пропущен (не root) -- проверь права вручную"
 echo "OK"
 
-echo "== 11/12 Restart backend =="
+echo "== 11/13 Restart backend =="
 systemctl restart "$SERVICE_NAME"
 sleep 3
 if ! systemctl is-active --quiet "$SERVICE_NAME"; then
   echo "ОШИБКА: $SERVICE_NAME не активен после restart -- см. journalctl -u $SERVICE_NAME" >&2
-  echo "Для отката: scripts/rollback.sh $BACKUP_DIR" >&2
   exit 1
 fi
 echo "OK: $SERVICE_NAME активен"
 
-echo "== 12/12 Health/readiness проверка =="
+echo "== 12/13 Health/readiness проверка =="
 HEALTH_CODE="$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_URL" || echo 000)"
 echo "GET $HEALTH_URL -> $HEALTH_CODE"
 if [[ "$HEALTH_CODE" != "200" ]]; then
   echo "ОШИБКА: /api/health не отвечает 200 после деплоя" >&2
-  echo "Для отката: scripts/rollback.sh $BACKUP_DIR" >&2
   exit 1
 fi
 echo "(readiness /api/health/ready owner-only -- проверь вручную через Telegram-авторизованный запрос, скрипт её не может вызвать без initData)"
+
+echo "== 13/13 Проверка, что deployed SHA совпадает с ожидаемым =="
+DEPLOYED_SHA="$(curl -s "$HEALTH_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("commit",""))' 2>/dev/null || echo '')"
+if [[ "$DEPLOYED_SHA" != "$CURRENT_SHA" ]]; then
+  echo "ОШИБКА: /api/health вернул commit=$DEPLOYED_SHA, ожидался $CURRENT_SHA" >&2
+  exit 1
+fi
+echo "OK: deployed SHA подтверждён"
 
 echo ""
 echo "== Последние логи backend =="
@@ -162,3 +235,5 @@ echo ""
 echo "=== ДЕПЛОЙ ЗАВЕРШЁН ==="
 echo "SHA:     $CURRENT_SHA"
 echo "Backup:  $BACKUP_DIR (не удалён -- для отката: scripts/rollback.sh $BACKUP_DIR)"
+
+trap - EXIT

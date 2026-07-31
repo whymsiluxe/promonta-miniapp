@@ -1,0 +1,63 @@
+app.promonta.fun {
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org https://web.telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.telegram.org; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://app.promonta.fun; media-src 'self' https://radiorecord.hostingradio.ru; frame-ancestors https://web.telegram.org https://*.telegram.org"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(self), microphone=(self), geolocation=(self)"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# 31.07 (Release-аудит, Caddy/HTTP security): backup-файлы (.bak/, *.bak-*,
+	# .archived-legacy) и dot-файлы/директории раньше не были явно запрещены -- любой
+	# *.bak-* снапшот frontend отдавался публично 200 OK (проверено вживую перед фиксом).
+	# Явный запрет ДО общего file_server -- 404 вместо содержимого файла.
+	@forbidden path *.bak *.bak-* *.corrupt-* *~ *.swp /.bak/* /.git/* /.archived-legacy/*
+	@hiddenDir path_regexp ^/\..*
+	handle @forbidden {
+		respond 404
+	}
+	handle @hiddenDir {
+		respond 404
+	}
+
+	# 31.07: ограничение размера тела запроса на уровне edge -- backend отдельно уже
+	# проверяет 8MB на файловых upload-эндпоинтах (main.py), это defense-in-depth
+	# на случай не-multipart body или будущего эндпоинта без явной проверки.
+	request_body {
+		max_size 10MB
+	}
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8001
+	}
+
+	# 31.07 (Release-аудит П9): JS/CSS теперь кешируются -- но ТОЛЬКО потому что
+	# deploy.sh больше не оставляет их путь неизменным между релизами: main.js/chat.js/
+	# etc. запрашиваются с ?v=<release SHA> (см. app.html <script src> в репозитории и
+	# deploy.sh шаг подстановки версии) -- сам файл на диске тот же путь, но URL с новым
+	# query меняется на каждый деплой, так что long-cache безопасен (cache-busting через
+	# query, не через переименование файла).
+	handle /js/* {
+		root * /var/www/miniapp
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+	handle /css/* {
+		root * /var/www/miniapp
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	handle /app.html {
+		root * /var/www/miniapp
+		header Cache-Control "no-store, no-cache, must-revalidate"
+		file_server
+	}
+
+	handle {
+		root * /var/www/miniapp
+		try_files {path} /app.html
+		file_server
+	}
+}
