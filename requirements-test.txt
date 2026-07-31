@@ -1,0 +1,11 @@
+# Test-only dependencies for CI/local `pytest tests/` -- NOT used in production.
+# Production runtime installs backend/requirements.txt (faster-whisper, pypdf, etc.),
+# which is much heavier and unnecessary for running the test suite: main.py imports
+# those lazily (inside function bodies, not at module top-level), so tests never
+# actually execute that code path -- only fastapi/pydantic/python-magic/pytest are
+# needed to import backend/main.py and run tests/*.py.
+pytest==8.3.4
+fastapi==0.139.0
+pydantic==2.13.4
+python-multipart==0.0.32
+python-magic==0.4.27
