@@ -21,11 +21,14 @@ app.promonta.fun {
 		respond 404
 	}
 
-	# 31.07: ограничение размера тела запроса на уровне edge -- backend отдельно уже
-	# проверяет 8MB на файловых upload-эндпоинтах (main.py), это defense-in-depth
-	# на случай не-multipart body или будущего эндпоинта без явной проверки.
+	# 31.07 (доп.раунд, П3): 10MB было НИЖЕ реального worst-case -- finish-shift
+	# требует минимум 2 фото по backend-лимиту 8MB каждое (main.py) = до 16MB body
+	# в одном multipart-запросе, 10MB резал легитимные запросы. 30MB -- разумный
+	# запас (2 фото по 8MB + multipart overhead + другие поля формы), per-file лимиты
+	# на backend (main.py, 8MB/файл) остаются главной защитой, это edge-level
+	# defense-in-depth на случай не-multipart body или будущего эндпоинта без проверки.
 	request_body {
-		max_size 10MB
+		max_size 30MB
 	}
 
 	handle /api/* {

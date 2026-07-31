@@ -119,10 +119,13 @@ class CorruptJsonSafeHandlingTests(unittest.TestCase):
         with self.assertRaises(backend.CorruptJsonError):
             backend._safe_load_json(self.path, [])
         self.assertFalse(os.path.exists(self.path))
-        quarantined = [f for f in os.listdir(self.tmpdir) if '.corrupt-' in f]
+        # 31.07 (доп.раунд, П1): помимо quarantine-копии теперь также создаётся
+        # постоянный .corrupt-lock marker -- исключаем его из подсчёта snapshot-копий.
+        quarantined = [f for f in os.listdir(self.tmpdir) if '.corrupt-' in f and not f.endswith('.corrupt-lock')]
         self.assertEqual(len(quarantined), 1)
         with open(os.path.join(self.tmpdir, quarantined[0]), encoding='utf-8') as f:
             self.assertEqual(f.read(), '{not valid json!!')
+        self.assertTrue(os.path.exists(backend._corrupt_lock_path(self.path)))
 
     def test_transaction_on_corrupt_critical_json_does_not_write_default(self):
         with self.assertRaises(backend.CorruptJsonError):

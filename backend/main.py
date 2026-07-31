@@ -93,7 +93,7 @@ def _load_repo_roadmap_lib():
 
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
-ROLES_FILE = '/home/promonta/agent/miniapp/roles.json'
+ROLES_FILE = os.path.join(DATA_ROOT, 'roles.json')
 INIT_DATA_MAX_AGE = 3600  # секунд — Telegram initData считается протухшим через час
 
 # 31.07 (Release-аудит П4): для этих сторов corrupt JSON НЕ должен молча деградировать
@@ -112,14 +112,43 @@ class CorruptJsonError(Exception):
         super().__init__(f'{path} содержит повреждённый JSON')
 
 
+def _corrupt_lock_path(path: str) -> str:
+    return f'{path}.corrupt-lock'
+
+
 def _quarantine_corrupt_json(path: str) -> None:
+    """31.07 (доп.раунд, П1): после карантина исходный файл ИСЧЕЗАЕТ с диска --
+    следующий запрос видел os.path.exists(path)==False и тихо возвращался к default,
+    а mutation создавала НОВЫЙ пустой store поверх (карантин переставал что-либо
+    защищать со второго запроса). Постоянный маркер <path>.corrupt-lock переживает
+    отсутствие исходного файла -- проверяется _safe_load_json/update_json_transaction
+    ДО os.path.exists(path), так что 503 продолжает возвращаться, пока владелец не
+    восстановит валидный JSON и не удалит сам маркер вручную (никакого auto-restore)."""
+    lock_path = _corrupt_lock_path(path)
+    if os.path.exists(lock_path):
+        # Идемпотентность: уже закарантинен раньше (напр. предыдущий процесс упал
+        # между quarantine и записью маркера) -- не переносить повторно, не терять
+        # уже существующую quarantine-копию перезаписью новой.
+        return
     ts = time.strftime('%Y%m%d-%H%M%S')
     quarantine_path = f'{path}.corrupt-{ts}'
     try:
         os.replace(path, quarantine_path)
-        print(f'ERROR: {path} corrupt JSON -- карантин в {quarantine_path}, owner-alert нужен вручную')
     except OSError as e:
         print(f'ERROR: {path} corrupt JSON -- не удалось перенести в карантин: {e}')
+        return
+    marker = {
+        "original_path": path,
+        "quarantine_path": quarantine_path,
+        "detected_at": int(time.time()),
+        "detected_at_iso": datetime.utcnow().isoformat() + 'Z',
+    }
+    try:
+        with open(lock_path, 'w', encoding='utf-8') as f:
+            json.dump(marker, f, ensure_ascii=False)
+    except OSError as e:
+        print(f'ERROR: {path} corrupt JSON -- карантин выполнен, но не удалось записать {lock_path}: {e}')
+    print(f'ERROR: {path} corrupt JSON -- карантин в {quarantine_path}, marker {lock_path}, owner-alert нужен вручную')
 
 
 app = FastAPI(title="Promonta Mini App", docs_url=None, redoc_url=None, openapi_url=None)
@@ -145,7 +174,7 @@ async def _corrupt_json_handler(request, exc: CorruptJsonError):
         content={"detail": "Данные временно недоступны (повреждённый файл), обратитесь к владельцу"},
     )
 
-AUDIT_FILE = '/home/promonta/agent/miniapp/audit.log'
+AUDIT_FILE = os.path.join(DATA_ROOT, 'audit.log')
 AUDIT_LOCK = __import__('threading').Lock()
 
 
@@ -280,8 +309,16 @@ def update_json_transaction(path: str, default, mutator):
 
     Для путей из CRITICAL_JSON_PATHS: corrupt JSON карантинится, транзакция НЕ пишет
     default поверх файла -- поднимает CorruptJsonError, перехватывается глобальным
-    _corrupt_json_handler (регистрация -- сразу после app = FastAPI(...))."""
+    _corrupt_json_handler (регистрация -- сразу после app = FastAPI(...)).
+
+    31.07 (доп.раунд, П1): marker-файл (<path>.corrupt-lock) проверяется ДО
+    os.path.exists(path) -- после карантина исходный файл физически отсутствует,
+    без этой проверки транзакция бы тихо создала НОВЫЙ пустой store поверх карантина
+    на первой же mutation. Пока marker существует, store остаётся заблокирован --
+    снимается только вручную (см. _quarantine_corrupt_json)."""
     with _lock_for(path):
+        if path in CRITICAL_JSON_PATHS and os.path.exists(_corrupt_lock_path(path)):
+            raise CorruptJsonError(path)
         if not os.path.exists(path):
             data = default() if callable(default) else copy.deepcopy(default)
         else:
@@ -312,7 +349,12 @@ def _safe_load_json(path: str, default):
 
     Для путей из CRITICAL_JSON_PATHS: НЕ деградирует к default молча (последующий
     write записал бы default поверх повреждённого файла) -- карантинит файл и
-    поднимает CorruptJsonError, перехватывается глобальным _corrupt_json_handler."""
+    поднимает CorruptJsonError, перехватывается глобальным _corrupt_json_handler.
+
+    31.07 (доп.раунд, П1): marker-файл проверяется ДО os.path.exists(path) -- см.
+    подробное обоснование в update_json_transaction выше, тот же принцип."""
+    if path in CRITICAL_JSON_PATHS and os.path.exists(_corrupt_lock_path(path)):
+        raise CorruptJsonError(path)
     if not os.path.exists(path):
         return default
     try:
@@ -410,9 +452,7 @@ def _save_roles(roles: dict):
     _atomic_write_json(ROLES_FILE, roles)
 
 
-NOTIFIED_USERS_FILE = '/home/promonta/agent/miniapp/notified_users.json'
-
-
+NOTIFIED_USERS_FILE = os.path.join(DATA_ROOT, 'notified_users.json')
 NOTIFIED_USERS_TTL = 7 * 86400  # 7 дней — потом можно напомнить owner'у снова (10.29)
 
 
@@ -676,7 +716,7 @@ def list_workers(user: dict = Depends(get_current_user)):
 
 
 # ---------- Профиль работника: навыки + онбординг-квиз (Фаза 2/8) ----------
-WORKER_PROFILES_FILE = '/home/promonta/agent/miniapp/worker_profiles.json'
+WORKER_PROFILES_FILE = os.path.join(DATA_ROOT, 'worker_profiles.json')
 SKILL_OPTIONS = [
     "Штукатурка", "Малярные работы", "Электрика", "Кровля", "Фасад",
     "Сантехника", "Плитка", "Демонтаж", "Гипсокартон (сухая стройка)",
@@ -1124,8 +1164,8 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
 
 
 # ---------- Назначения работников на объекты (Фаза 2c, восстановлено после инцидента Фазы 3) ----------
-OBJECT_ASSIGNMENTS_FILE = '/home/promonta/agent/miniapp/object_assignments.json'
-OBJECT_IMAGES_FILE = '/home/promonta/agent/miniapp/object_images.json'
+OBJECT_ASSIGNMENTS_FILE = os.path.join(DATA_ROOT, 'object_assignments.json')
+OBJECT_IMAGES_FILE = os.path.join(DATA_ROOT, 'object_images.json')
 OBJECT_PHOTO_DIR = os.path.join(DATA_ROOT, 'object_photos')
 
 
@@ -1842,7 +1882,7 @@ def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_r
     return {"alerts": filtered, "count": len(filtered)}
 
 
-ALERT_DISMISSALS_FILE = '/home/promonta/agent/miniapp/alert_dismissals.json'
+ALERT_DISMISSALS_FILE = os.path.join(DATA_ROOT, 'alert_dismissals.json')
 ALERT_DISMISS_TTL = 24 * 3600
 
 
@@ -1990,10 +2030,20 @@ class NewToolBody(BaseModel):
     category: str
 
 
+_tool_create_lock = __import__('threading').Lock()
+
+
 @app.post("/api/tools")
 def create_tool(body: NewToolBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    # 31.07 (доп.раунд, П5): tl.add_tool() читает существующие serial, вычисляет
+    # next=max+1, добавляет строку и пишет историю -- без lock, охватывающего весь
+    # цикл, два конкурентных POST могли оба прочитать один и тот же max ДО того как
+    # первый успевал записать новую строку, оба бы вычислили ОДИНАКОВЫЙ serial.
+    # Отдельный module-level lock (не per-serial -- serial ещё не существует на
+    # момент входа в этот эндпоинт, в отличие от checkout/return выше).
     tl = _load_repo_tools_lib()
-    serial = tl.add_tool(body.name, body.category, user.get('first_name', str(user['id'])))
+    with _tool_create_lock:
+        serial = tl.add_tool(body.name, body.category, user.get('first_name', str(user['id'])))
     return {"serial": serial}
 
 
@@ -2141,7 +2191,7 @@ def complete_task(task_id: str, user: dict = Depends(get_current_user), _: None 
 
 
 # ---------- Инфо объекта (24.07, Step 3): work-items + документы ----------
-OBJECT_INFO_FILE = '/home/promonta/agent/miniapp/object_info.json'
+OBJECT_INFO_FILE = os.path.join(DATA_ROOT, 'object_info.json')
 OBJECT_DOC_DIR = os.path.join(DATA_ROOT, 'object_documents')
 os.makedirs(OBJECT_DOC_DIR, exist_ok=True)
 
@@ -2408,7 +2458,7 @@ def create_rechnung(body: RechnungBody, user: dict = Depends(get_current_user), 
 WEATHER_FEED_FILE = '/home/promonta/agent/.weather_feed.json'
 
 
-WEATHER_REACTIONS_FILE = '/home/promonta/agent/miniapp/weather_reactions.json'
+WEATHER_REACTIONS_FILE = os.path.join(DATA_ROOT, 'weather_reactions.json')
 # {entry_key: {user_id: true}} — entry_key = "{object}::{created}" (weather-записи не имеют своего id).
 
 
@@ -2460,9 +2510,9 @@ def react_weather_entry(body: dict, user: dict = Depends(get_current_user)):
 # ---------- News feed (Фаза 9, 10.32 — лайки + read-tracking для адаптивной фильтрации) ----------
 # Наполняется отдельным cron-пайплайном на VPS (WebSearch/RSS → AI-саммари), здесь чтение + реакции.
 NEWS_FEED_FILE = '/home/promonta/agent/.news_feed.json'
-NEWS_REACTIONS_FILE = '/home/promonta/agent/miniapp/news_reactions.json'
+NEWS_REACTIONS_FILE = os.path.join(DATA_ROOT, 'news_reactions.json')
 # {post_id: {user_id: "like"|"dislike"}} — по одной реакции на пост от юзера, апдейт при повторном клике.
-NEWS_READS_FILE = '/home/promonta/agent/miniapp/news_reads.json'
+NEWS_READS_FILE = os.path.join(DATA_ROOT, 'news_reads.json')
 # {user_id: {category: read_count}} — накопитель для будущей адаптивной фильтрации ленты под интересы.
 
 
@@ -2482,8 +2532,7 @@ def _save_news_reads(data: dict):
     _atomic_write_json(NEWS_READS_FILE, data)
 
 
-BIRTHDAY_ALERTS_FILE = '/home/promonta/agent/miniapp/birthday_alerts.json' 
-
+BIRTHDAY_ALERTS_FILE = os.path.join(DATA_ROOT, 'birthday_alerts.json')
 def _load_birthday_alerts() -> list:
     return _safe_load_json(BIRTHDAY_ALERTS_FILE, [])
 
@@ -2609,7 +2658,7 @@ def react_news_post(post_id: str, body: NewsReactionIn, user: dict = Depends(get
 # Хранение: файлы на диске + метадата в JSON. Любой сотрудник грузит фото с объекта,
 # все видят общей лентой (без ролевых ограничений — как командный чат).
 PHOTO_DIR = os.path.join(DATA_ROOT, 'feed_photos')
-PHOTO_META_FILE = '/home/promonta/agent/miniapp/feed_photos.json'
+PHOTO_META_FILE = os.path.join(DATA_ROOT, 'feed_photos.json')
 PHOTO_MAX_BYTES = 8 * 1024 * 1024  # 8 МБ
 PHOTO_MAX_COUNT = 300  # старые фото (и файлы) обрезаются сверху этого лимита
 _photo_lock = __import__('threading').Lock()
@@ -2831,8 +2880,8 @@ def get_feed_photo_file(photo_id: str, index: int = 0, user: dict = Depends(get_
 # ---------- Team Chat ----------
 # Хранение: JSON-файл, последние 200 сообщений. Polling с фронта каждые 8 сек.
 # Инстанс один, файл достаточен — без WebSocket и БД для простоты.
-CHAT_FILE = '/home/promonta/agent/miniapp/chat_messages.json'
-CHAT_ARCHIVE_FILE = '/home/promonta/agent/miniapp/chat_messages_archive.json'
+CHAT_FILE = os.path.join(DATA_ROOT, 'chat_messages.json')
+CHAT_ARCHIVE_FILE = os.path.join(DATA_ROOT, 'chat_messages_archive.json')
 CHAT_MAX = 200
 _chat_lock = __import__('threading').Lock()
 
@@ -2881,9 +2930,7 @@ def _purge_old_chat(messages: list) -> list:
     return keep
 
 
-CHAT_READS_FILE = '/home/promonta/agent/miniapp/chat_reads.json'
-
-
+CHAT_READS_FILE = os.path.join(DATA_ROOT, 'chat_reads.json')
 def _load_reads() -> dict:
     return _safe_load_json(CHAT_READS_FILE, {})
 
@@ -2892,9 +2939,7 @@ def _save_reads(reads: dict):
     _atomic_write_json(CHAT_READS_FILE, reads)
 
 
-CHAT_THREAD_META_FILE = '/home/promonta/agent/miniapp/chat_thread_meta.json'
-
-
+CHAT_THREAD_META_FILE = os.path.join(DATA_ROOT, 'chat_thread_meta.json')
 def _load_chat_thread_meta() -> dict:
     return _safe_load_json(CHAT_THREAD_META_FILE, {})
 
@@ -2903,7 +2948,7 @@ def _save_chat_thread_meta(meta: dict):
     _atomic_write_json(CHAT_THREAD_META_FILE, meta)
 
 
-CHAT_REACTIONS_FILE = '/home/promonta/agent/miniapp/chat_reactions.json'
+CHAT_REACTIONS_FILE = os.path.join(DATA_ROOT, 'chat_reactions.json')
 CHAT_REACTION_OPTIONS = ['👍', '✅', '👀', '❗']
 
 
@@ -3870,11 +3915,11 @@ def get_chat_thread_status(with_: str = '', user: dict = Depends(get_current_use
 # ---------- AI Chat (GLM / Sonnet / Opus, переключаемо) ----------
 # GLM — бесплатный, экономит лимиты (z.ai). Sonnet/Opus — через claude CLI по OAuth-подписке владельца.
 # Доступ только для owner, rate limit 20 запросов/час.
-AI_RATE_FILE = '/home/promonta/agent/miniapp/ai_chat_rate.json'
+AI_RATE_FILE = os.path.join(DATA_ROOT, 'ai_chat_rate.json')
 AI_RATE_LIMIT = 20
 AI_RATE_WINDOW = 3600
 
-AI_MODEL_FILE = '/home/promonta/agent/miniapp/ai_model.json'
+AI_MODEL_FILE = os.path.join(DATA_ROOT, 'ai_model.json')
 AI_MODELS = ('glm', 'sonnet', 'opus')
 AI_MODEL_DEFAULT = 'glm'
 CLAUDE_BIN = os.environ.get('CLAUDE_BIN', 'claude')
@@ -4089,7 +4134,7 @@ def ai_chat(body: AiChatBody, user: dict = Depends(get_current_user), role: str 
 # Owner explicit decision (2026-07-27): worker не должен видеть чувствительные
 # данные фирмы через AI, в отличие от owner-чата, который специально видит
 # весь контекст.
-WORKER_AI_RATE_FILE = '/home/promonta/agent/miniapp/worker_ai_chat_rate.json'
+WORKER_AI_RATE_FILE = os.path.join(DATA_ROOT, 'worker_ai_chat_rate.json')
 WORKER_AI_RATE_LIMIT = 15
 
 WORKER_AI_SYSTEM_PROMPT = (
@@ -4711,9 +4756,7 @@ def decide_stage_request_endpoint(object_id: str, request_id: str, body: StageRe
 
 
 # ---------- Потребности (10.33) — worker → owner запросы (инструмент/материалы/защита) ----------
-TASKS_FILE = '/home/promonta/agent/miniapp/tasks.json'
-
-
+TASKS_FILE = os.path.join(DATA_ROOT, 'tasks.json')
 def _load_tasks() -> list:
     return _safe_load_json(TASKS_FILE, [])
 
@@ -5015,7 +5058,7 @@ def get_mangel_comments(ticket_id: str, user: dict = Depends(get_current_user), 
 
 # ---------- Фотоотчёт старт/финиш смены — Фаза 4a ----------
 CHECKIN_PHOTO_BASE = os.path.join(DATA_ROOT, 'checkin_photos')
-CHECKIN_META_FILE = '/home/promonta/agent/miniapp/checkin_meta.json'
+CHECKIN_META_FILE = os.path.join(DATA_ROOT, 'checkin_meta.json')
 CHECKIN_MAX_BYTES = 8 * 1024 * 1024
 _checkin_lock = __import__('threading').Lock()
 
@@ -5712,7 +5755,7 @@ def analyze_checkin_defects(session_id: str, user: dict = Depends(get_current_us
 
 
 # ---------- Critical Alerts — persisted, с deadline/comment/photo (Фаза 10.16) ----------
-CRITICAL_ALERTS_FILE = '/home/promonta/agent/miniapp/critical_alerts.json'
+CRITICAL_ALERTS_FILE = os.path.join(DATA_ROOT, 'critical_alerts.json')
 CRITICAL_ALERT_PHOTO_DIR = os.path.join(DATA_ROOT, 'critical_alert_photos')
 os.makedirs(CRITICAL_ALERT_PHOTO_DIR, exist_ok=True)
 
@@ -5919,7 +5962,7 @@ def create_critical_alert_endpoint(body: CriticalAlertCreateBody, user: dict = D
 
 
 # ---------- Abwesenheit — Фаза 5 (календарь отсутствий работников) ----------
-ABWESENHEIT_FILE = '/home/promonta/agent/miniapp/abwesenheit.json'
+ABWESENHEIT_FILE = os.path.join(DATA_ROOT, 'abwesenheit.json')
 ABWESENHEIT_REASONS = ('Krankheit', 'Urlaub', 'Sonstiges')
 
 
@@ -6101,7 +6144,10 @@ def list_my_abwesenheit(user: dict = Depends(get_current_user)):
     return {"entries": items}
 
 
-ABWESENHEIT_PUBLIC_FIELDS = {'id', 'user_id', 'name', 'date_from', 'date_to', 'open_ended', 'reason', 'status'}
+# 31.07 (доп.раунд, П2): reason убран из публичного набора -- свободная строка,
+# может содержать мед./личные детали не хуже note (изначально П5 прошлого раунда
+# скрыл только note, оставив reason по ошибке).
+ABWESENHEIT_PUBLIC_FIELDS = {'id', 'user_id', 'name', 'date_from', 'date_to', 'open_ended', 'status'}
 
 
 @app.get("/api/abwesenheit/all")
@@ -6148,6 +6194,7 @@ CRITICAL_JSON_PATHS.update({
     OBJECT_ASSIGNMENTS_FILE,
     CHECKIN_META_FILE,
     CHAT_FILE,
+    CHAT_ARCHIVE_FILE,
     ABWESENHEIT_FILE,
     WORKER_PROFILES_FILE,
     TASKS_FILE,
