@@ -1,13 +1,14 @@
-// Онбординг-квиз навыков: показывается при первом запуске, если quiz_completed === false.
-// Блокирует основной UI до прохождения. При quiz_completed:true — мгновенно пропускается.
-// 10.2: многостраничный slide-флоу (intro + N экранов чекбоксов по группам), не один длинный список.
-
-const ONBOARDING_GROUPS = [
-  { title: 'Отделка', items: ['Штукатурка', 'Малярные работы', 'Малярные работы фасада', 'Гипсокартон (сухая стройка)', 'Плитка', 'Фасад'] },
-  { title: 'Инженерные системы', items: ['Электрика', 'Сантехника', 'Отопление / вентиляция', 'Утепление / изоляция'] },
-  { title: 'Конструкции и монтаж', items: ['Кровля', 'Кровельная жесть / водостоки', 'Монтаж окон и дверей', 'Строительные леса', 'Каменная кладка', 'Столярные / плотницкие работы', 'Сварочные работы'] },
-  { title: 'Прочее', items: ['Демонтаж', 'Стяжка пола / бетонные работы', 'Ландшафт / благоустройство территории'] },
-];
+// Онбординг v2: показывается новому пользователю при первом входе (onboarding_completed
+// !== true и quiz_completed !== true -- старый флаг тоже проверяется, существующие
+// пользователи с quiz_completed:true НЕ блокируются повторным onboarding). 4 шага:
+// 1) имя+аватар, 2) выбор навыков (skill-picker.js), 3) уровень для каждого навыка
+// (skill-picker.js), 4) размеры (необязательно) -> завершение.
+//
+// Дата рождения полностью убрана из onboarding v2 -- ни поля, ни отправки на backend.
+//
+// 01.08: полностью переписан под единый каталог видов работ (backend/work_types.py) --
+// ONBOARDING_GROUPS/статичный список навыков здесь больше не хранится, всё приходит
+// через api('/api/work-types') внутри skill-picker.js.
 
 const SIZE_OPTIONS = {
   shirt: ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'],
@@ -15,192 +16,266 @@ const SIZE_OPTIONS = {
   shoe: ['38', '39', '40', '41', '42', '43', '44', '45', '46', '47'],
 };
 
-let _obSelected = new Set();
+let _obStep = 1; // 1..4
+let _obName = '';
+let _obAvatarPending = null; // File объект, если пользователь выбрал фото до PATCH
+let _obSkillPicker = null;
+let _obLevelPicker = null;
 let _obSizes = { shirt: '', pants: '', shoe: '' };
-let _obBirthday = '';
-let _obStep = 0; // 0 = intro, 1..N = группы, N+1 = размеры
-let _obDirection = 'next'; // для анимации слайда: next или back
+let _obOverlayEl = null;
 
 async function checkOnboardingQuiz() {
   try {
     const profile = await api('/api/profile/me');
-    if (profile.quiz_completed) return;
-    await _showQuizOverlay(profile.skill_options || []);
+    // 01.08 (спека п.3): существующие пользователи с quiz_completed:true (старый флаг)
+    // НЕ блокируются onboarding v2 -- проверяем ОБА флага, любой truthy пропускает.
+    if (profile.onboarding_completed || profile.quiz_completed) return;
+    _obName = profile.name || (window.Telegram?.WebApp?.initDataUnsafe?.user?.first_name) || '';
+    _obStep = 1;
+    await _showOnboardingOverlay();
   } catch (e) {
     // профиль недоступен — не блокировать app
   }
 }
 
-function _obGroupsFromOptions(skillOptions) {
-  // Группируем по ONBOARDING_GROUPS, но не теряем навыки, которых нет в списке групп
-  // (на случай расхождения между SKILL_OPTIONS на бэкенде и статичным списком групп здесь).
-  const known = new Set(ONBOARDING_GROUPS.flatMap(g => g.items));
-  const groups = ONBOARDING_GROUPS.map(g => ({ ...g, items: g.items.filter(i => skillOptions.includes(i)) }))
-    .filter(g => g.items.length);
-  const extra = skillOptions.filter(s => !known.has(s));
-  if (extra.length) groups.push({ title: 'Другое', items: extra });
-  return groups;
+function _obTelegramFirstName() {
+  return window.Telegram?.WebApp?.initDataUnsafe?.user?.first_name || '';
 }
 
-function _obTotalSteps(groups) { return groups.length + 2; } // +1 intro slide, +1 size slide
-
-function _obRenderDots(groups) {
-  const total = _obTotalSteps(groups);
-  let dots = '';
-  for (let i = 0; i < total; i++) {
-    dots += `<span class="onboarding-dot${i === _obStep ? ' active' : ''}"></span>`;
-  }
-  return `<div class="onboarding-dots">${dots}</div>`;
+async function _showOnboardingOverlay() {
+  _obOverlayEl = document.createElement('div');
+  _obOverlayEl.id = 'onboarding-overlay';
+  document.body.appendChild(_obOverlayEl);
+  document.body.style.overflow = 'hidden';
+  await _obRenderStep();
 }
 
-function _obRenderIntro() {
-  return `
-    <div class="onboarding-slide onboarding-slide-intro">
-      <div class="onboarding-logo">🏗️</div>
-      <h1 class="onboarding-title">Добро пожаловать в Promonta!</h1>
-      <p class="onboarding-sub">Отметь виды работ, которые ты умеешь делать — так мы сможем предлагать тебе подходящие задачи и объекты.</p>
-    </div>`;
+function _obCloseOverlay() {
+  document.body.style.overflow = '';
+  _obOverlayEl?.remove();
+  _obOverlayEl = null;
+  location.reload(); // простой и надёжный способ гарантированно подтянуть свежий профиль/UI
 }
 
-function _obRenderGroupSlide(group, idx) {
-  return `
-    <div class="onboarding-slide">
-      <div class="onboarding-slide-label">Шаг ${idx + 1}</div>
-      <h2 class="onboarding-slide-title">${group.title}</h2>
-      <div class="onboarding-skills">
-        ${group.items.map(s => `
-          <label class="skill-chip${_obSelected.has(s) ? ' checked' : ''}" data-skill="${esc(s)}">
-            <input type="checkbox" value="${esc(s)}" ${_obSelected.has(s) ? 'checked' : ''}>
-            <span>${esc(s)}</span>
-          </label>
-        `).join('')}
-      </div>
-    </div>`;
+async function _obRenderStep() {
+  if (!_obOverlayEl) return;
+  if (_obStep === 1) return _obRenderStep1();
+  if (_obStep === 2) return _obRenderStep2();
+  if (_obStep === 3) return _obRenderStep3();
+  if (_obStep === 4) return _obRenderStep4();
 }
 
-function _obRenderSizeSlide() {
-  const rows = [
-    { key: 'shirt', label: 'Размер одежды', icon: '👕', options: SIZE_OPTIONS.shirt },
-    { key: 'pants', label: 'Размер брюк', icon: '👖', options: SIZE_OPTIONS.pants },
-    { key: 'shoe', label: 'Размер обуви', icon: '👟', options: SIZE_OPTIONS.shoe },
-  ];
-  return `
-    <div class="onboarding-slide">
-      <div class="onboarding-slide-label">Последний шаг</div>
-      <h2 class="onboarding-slide-title">Размеры для спецодежды</h2>
-      <div class="onboarding-sizes">
-        ${rows.map(row => `
-          <div class="size-row">
-            <div class="size-row-label"><span class="size-row-icon">${row.icon}</span>${row.label}</div>
-            <div class="size-row-options">
-              ${row.options.map(opt => `
-                <button type="button" class="size-chip${_obSizes[row.key] === opt ? ' checked' : ''}" data-size-key="${row.key}" data-size-val="${opt}">${opt}</button>
-              `).join('')}
-            </div>
-          </div>
-        `).join('')}
-        <div class="size-row">
-          <div class="size-row-label"><span class="size-row-icon">🎂</span>Дата рождения (необязательно)</div>
-          <input type="date" id="ob-birthday-input" class="onboarding-birthday-input" value="${_obBirthday}">
+// ---------- Шаг 1: приветствие, имя, аватар ----------
+function _obRenderStep1() {
+  if (!_obName) _obName = _obTelegramFirstName();
+  _obOverlayEl.innerHTML = `
+    <div class="onboarding-card">
+      <div class="onboarding-dots">${_obDotsHtml(1)}</div>
+      <h2 class="onboarding-title">Добро пожаловать в Promonta</h2>
+      <p class="onboarding-subtitle">Заполни профиль, чтобы руководитель мог правильно назначать тебе объекты и виды работ.</p>
+      <div class="onboarding-avatar-wrap">
+        <div class="onboarding-avatar-circle" id="ob-avatar-circle">
+          <span class="onboarding-avatar-placeholder">👤</span>
         </div>
-      </div>
-    </div>`;
-}
-
-function _obRenderStep(groups) {
-  if (_obStep === 0) return _obRenderIntro();
-  if (_obStep === groups.length + 1) return _obRenderSizeSlide();
-  const group = groups[_obStep - 1];
-  return _obRenderGroupSlide(group, _obStep - 1);
-}
-
-function _showQuizOverlay(skillOptions) {
-  const groups = _obGroupsFromOptions(skillOptions);
-  _obStep = 0;
-  _obSelected = new Set();
-
-  return new Promise(resolve => {
-    const overlay = document.createElement('div');
-    overlay.id = 'onboarding-overlay';
-
-    function render() {
-      const total = _obTotalSteps(groups);
-      const isLast = _obStep === total - 1;
-      overlay.innerHTML = `
-        <div class="onboarding-card">
-          ${_obRenderDots(groups)}
-          <div class="onboarding-slide-wrap"><div class="onboarding-slide-anim onboarding-anim-${_obDirection}">${_obRenderStep(groups)}</div></div>
-          <div class="onboarding-nav-row">
-            ${_obStep > 0 ? `<button class="onboarding-back-btn" id="onboarding-back" type="button">← Назад</button>` : '<span></span>'}
-            <button class="onboarding-submit-btn" id="onboarding-next" type="button">${isLast ? 'Готово ✓' : 'Далее →'}</button>
-          </div>
-          <div class="onboarding-error" id="onboarding-error" style="display:none"></div>
+        <div class="onboarding-avatar-actions">
+          <button type="button" class="onboarding-avatar-btn" id="ob-avatar-camera">📷 Сделать фото</button>
+          <button type="button" class="onboarding-avatar-btn" id="ob-avatar-gallery">🖼 Выбрать из галереи</button>
+          <button type="button" class="onboarding-avatar-btn onboarding-avatar-skip" id="ob-avatar-skip">Добавить позже</button>
         </div>
-      `;
+        <input type="file" accept="image/*" capture="environment" id="ob-avatar-input-camera" style="display:none">
+        <input type="file" accept="image/*" id="ob-avatar-input-gallery" style="display:none">
+      </div>
+      <label class="onboarding-name-label">Имя</label>
+      <input type="text" class="onboarding-name-input" id="ob-name-input" value="${_escOb(_obName)}" maxlength="100" placeholder="Твоё имя">
+      <div class="onboarding-error" id="ob-step1-error" style="display:none"></div>
+      <div class="onboarding-nav-row">
+        <button type="button" class="onboarding-submit-btn" id="ob-step1-next">Продолжить</button>
+      </div>
+    </div>
+  `;
 
-      overlay.querySelectorAll('.skill-chip').forEach(chip => {
-        chip.addEventListener('click', e => {
-          if (e.target.tagName !== 'INPUT') e.preventDefault();
-          const skill = chip.dataset.skill;
-          const checkbox = chip.querySelector('input');
-          if (_obSelected.has(skill)) {
-            _obSelected.delete(skill);
-            checkbox.checked = false;
-          } else {
-            _obSelected.add(skill);
-            checkbox.checked = true;
-          }
-          chip.classList.toggle('checked', _obSelected.has(skill));
-          hapticImpact('light');
-        });
-      });
+  const nameInput = document.getElementById('ob-name-input');
+  nameInput.addEventListener('input', () => { _obName = nameInput.value; });
 
-      overlay.querySelectorAll('.size-chip').forEach(chip => {
-        chip.addEventListener('click', () => {
-          const key = chip.dataset.sizeKey;
-          const val = chip.dataset.sizeVal;
-          _obSizes[key] = val;
-          overlay.querySelectorAll(`.size-chip[data-size-key="${key}"]`).forEach(c => c.classList.toggle('checked', c.dataset.sizeVal === val));
-          hapticImpact('light');
-        });
-      });
+  const showAvatarPreview = (file) => {
+    _obAvatarPending = file;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      document.getElementById('ob-avatar-circle').innerHTML = `<img src="${e.target.result}" class="onboarding-avatar-img">`;
+    };
+    reader.readAsDataURL(file);
+  };
+  document.getElementById('ob-avatar-camera').addEventListener('click', () => document.getElementById('ob-avatar-input-camera').click());
+  document.getElementById('ob-avatar-gallery').addEventListener('click', () => document.getElementById('ob-avatar-input-gallery').click());
+  document.getElementById('ob-avatar-input-camera').addEventListener('change', (e) => { if (e.target.files[0]) showAvatarPreview(e.target.files[0]); });
+  document.getElementById('ob-avatar-input-gallery').addEventListener('change', (e) => { if (e.target.files[0]) showAvatarPreview(e.target.files[0]); });
+  document.getElementById('ob-avatar-skip').addEventListener('click', () => { _obAvatarPending = null; });
 
-      const backBtn = document.getElementById('onboarding-back');
-      if (backBtn) backBtn.addEventListener('click', () => { _obDirection = 'back'; _obStep--; render(); });
-
-      document.getElementById('onboarding-next').addEventListener('click', async () => {
-        const birthdayInput = document.getElementById('ob-birthday-input');
-        if (birthdayInput) _obBirthday = birthdayInput.value;
-        if (!isLast) { _obDirection = 'next'; _obStep++; render(); return; }
-
-        const btn = document.getElementById('onboarding-next');
-        const errEl = document.getElementById('onboarding-error');
-        btn.disabled = true;
-        btn.textContent = '...';
-        errEl.style.display = 'none';
-
-        try {
-          await api('/api/profile/me', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              skills: Array.from(_obSelected), quiz_completed: true,
-              shirt_size: _obSizes.shirt || null, pants_size: _obSizes.pants || null, shoe_size: _obSizes.shoe || null,
-              birthday: _obBirthday || null,
-            })
-          });
-          overlay.classList.add('onboarding-fade-out');
-          setTimeout(() => { overlay.remove(); resolve(); }, 350);
-        } catch (e) {
-          errEl.textContent = 'Ошибка сохранения, попробуйте ещё раз';
-          errEl.style.display = 'block';
-          btn.disabled = false;
-          btn.textContent = 'Готово ✓';
-        }
-      });
+  document.getElementById('ob-step1-next').addEventListener('click', async () => {
+    const name = nameInput.value.trim();
+    const errEl = document.getElementById('ob-step1-error');
+    if (!name) {
+      errEl.textContent = 'Укажи имя';
+      errEl.style.display = 'block';
+      return;
     }
-
-    render();
-    document.body.appendChild(overlay);
+    _obName = name;
+    const btn = document.getElementById('ob-step1-next');
+    btn.disabled = true;
+    btn.textContent = 'Сохраняю...';
+    try {
+      // Аватар не должен блокировать завершение onboarding -- ошибка загрузки
+      // не мешает продолжить, только показывает понятное сообщение, имя не теряется.
+      if (_obAvatarPending) {
+        try {
+          const fd = new FormData();
+          fd.append('file', _obAvatarPending);
+          await fetch(`${API_BASE}/api/profile/me/avatar`, {
+            method: 'POST', headers: { 'X-Telegram-Init-Data': initData }, body: fd,
+          });
+        } catch (e) {
+          errEl.textContent = 'Не удалось загрузить фото, но можно продолжить';
+          errEl.style.display = 'block';
+        }
+      }
+      await api('/api/profile/me', { method: 'PATCH', body: JSON.stringify({ name: _obName }) });
+      _obStep = 2;
+      await _obRenderStep();
+    } catch (e) {
+      errEl.textContent = 'Не удалось сохранить имя: ' + e.message;
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Продолжить';
+    }
   });
+}
+
+// ---------- Шаг 2: выбор навыков ----------
+async function _obRenderStep2() {
+  _obOverlayEl.innerHTML = `
+    <div class="onboarding-card onboarding-card-skills">
+      <div class="onboarding-dots">${_obDotsHtml(2)}</div>
+      <h2 class="onboarding-title">Какие работы ты выполняешь?</h2>
+      <div class="onboarding-skills-picker" id="ob-skills-picker"></div>
+      <div class="onboarding-sticky-cta">
+        <button type="button" class="onboarding-submit-btn" id="ob-step2-next" disabled>Продолжить · выбрано 0</button>
+      </div>
+    </div>
+  `;
+  const container = document.getElementById('ob-skills-picker');
+  const nextBtn = document.getElementById('ob-step2-next');
+  _obSkillPicker = await createSkillPicker(container, {
+    onChange: (selected) => {
+      nextBtn.disabled = selected.size === 0;
+      nextBtn.textContent = `Продолжить · выбрано ${selected.size}`;
+    },
+  });
+  nextBtn.addEventListener('click', () => {
+    if (_obSkillPicker.getSelected().size === 0) return;
+    _obStep = 3;
+    _obRenderStep();
+  });
+}
+
+// ---------- Шаг 3: уровни выбранных навыков ----------
+async function _obRenderStep3() {
+  const skillIds = Array.from(_obSkillPicker.getSelected());
+  _obOverlayEl.innerHTML = `
+    <div class="onboarding-card">
+      <div class="onboarding-dots">${_obDotsHtml(3)}</div>
+      <h2 class="onboarding-title">Твой уровень</h2>
+      <div class="onboarding-levels-picker" id="ob-levels-picker"></div>
+      <div class="onboarding-nav-row">
+        <button type="button" class="onboarding-back-btn" id="ob-step3-back">Назад</button>
+        <button type="button" class="onboarding-submit-btn" id="ob-step3-next" disabled>Продолжить</button>
+      </div>
+    </div>
+  `;
+  const container = document.getElementById('ob-levels-picker');
+  const nextBtn = document.getElementById('ob-step3-next');
+  _obLevelPicker = await createSkillLevelPicker(container, skillIds, {
+    onChange: () => { nextBtn.disabled = !_obLevelPicker.isComplete(); },
+  });
+  document.getElementById('ob-step3-back').addEventListener('click', () => { _obStep = 2; _obRenderStep(); });
+  nextBtn.addEventListener('click', () => {
+    if (!_obLevelPicker.isComplete()) return;
+    _obStep = 4;
+    _obRenderStep();
+  });
+}
+
+// ---------- Шаг 4: размеры + завершение ----------
+function _obRenderStep4() {
+  _obOverlayEl.innerHTML = `
+    <div class="onboarding-card">
+      <div class="onboarding-dots">${_obDotsHtml(4)}</div>
+      <h2 class="onboarding-title">Размеры (необязательно)</h2>
+      <div class="onboarding-sizes">
+        ${_obSizeSelectHtml('shirt', 'Футболка')}
+        ${_obSizeSelectHtml('pants', 'Брюки')}
+        ${_obSizeSelectHtml('shoe', 'Обувь')}
+      </div>
+      <div class="onboarding-error" id="ob-step4-error" style="display:none"></div>
+      <div class="onboarding-nav-row">
+        <button type="button" class="onboarding-back-btn" id="ob-step4-back">Назад</button>
+        <button type="button" class="onboarding-submit-btn" id="ob-step4-finish">Завершить регистрацию</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('ob-step4-back').addEventListener('click', () => { _obStep = 3; _obRenderStep(); });
+  document.querySelectorAll('.onboarding-size-select').forEach(sel => {
+    sel.addEventListener('change', () => { _obSizes[sel.dataset.sizeKey] = sel.value; });
+  });
+  document.getElementById('ob-step4-finish').addEventListener('click', async () => {
+    const btn = document.getElementById('ob-step4-finish');
+    const errEl = document.getElementById('ob-step4-error');
+    btn.disabled = true;
+    btn.textContent = 'Сохраняю...';
+    const skillsV2 = Array.from(_obLevelPicker.getLevels().entries()).map(([skill_id, level]) => ({ skill_id, level, verified: false }));
+    try {
+      // Спека: "Сначала сохранить профиль, затем установить onboarding_completed: true" --
+      // здесь это один PATCH-запрос (backend делает то же самое атомарно: если
+      // обязательные поля не прошли валидацию, onboarding_completed не устанавливается).
+      await api('/api/profile/me', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: _obName,
+          skills_v2: skillsV2,
+          shirt_size: _obSizes.shirt || null,
+          pants_size: _obSizes.pants || null,
+          shoe_size: _obSizes.shoe || null,
+          onboarding_completed: true,
+        }),
+      });
+      _obCloseOverlay();
+    } catch (e) {
+      errEl.textContent = 'Не удалось завершить регистрацию: ' + e.message;
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Завершить регистрацию';
+    }
+  });
+}
+
+function _obSizeSelectHtml(key, label) {
+  const options = SIZE_OPTIONS[key].map(v => `<option value="${v}">${v}</option>`).join('');
+  return `
+    <div class="onboarding-size-field">
+      <label>${label}</label>
+      <select class="onboarding-size-select" data-size-key="${key}">
+        <option value="">—</option>
+        ${options}
+      </select>
+    </div>
+  `;
+}
+
+function _obDotsHtml(active) {
+  return [1, 2, 3, 4].map(n => `<span class="onboarding-dot${n === active ? ' active' : ''}"></span>`).join('');
+}
+
+function _escOb(s) {
+  const div = document.createElement('div');
+  div.textContent = s == null ? '' : String(s);
+  return div.innerHTML;
 }
