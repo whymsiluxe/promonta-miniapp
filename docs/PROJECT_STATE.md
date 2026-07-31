@@ -1,19 +1,21 @@
 # Project state
 
-**Last updated**: 2026-07-31, end of a 4-round release-hardening pass (chat
-message actions, then three successive P0/P1 audit-fix rounds — see
-`docs/CHANGELOG.md` entry "2026-07-31" for full detail; this file is the
-short summary).
+**Last updated**: 2026-08-01, worker profile v2 / onboarding v2 / unified
+work-type catalog / unified assignment feature (NOT YET DEPLOYED as of this
+writing — see `docs/CHANGELOG.md` entry "2026-08-01" for full detail; this
+file is the short summary). Previous entry: 2026-07-31 4-round
+release-hardening pass, deployed as `526922f`.
 
 **Branch**: `main` (GitHub default). Deployed SHA / production:
-`526922fb263d3296e5958b0a5857b6c4e90d3fef`.
+`526922fb263d3296e5958b0a5857b6c4e90d3fef` — the 2026-08-01 work is pushed
+to `main` and CI-green but **not yet deployed to production** (per this
+task's own instruction: no deploy without separate go-ahead).
 
 **Repo**: https://github.com/whymsiluxe/promonta-miniapp — **currently
 PUBLIC**. This is a known blocker, see below — needs manual switch to
 private before pilot rollout.
 
-**Working tree**: clean, everything pushed to `origin/main`, CI green on
-the deployed SHA.
+**Working tree**: clean, everything pushed to `origin/main`, CI green.
 
 ## What this document is
 
@@ -81,6 +83,11 @@ App is live, in active daily use. As of this pass:
 
 ## Known blockers
 
+- **2026-08-01 feature not deployed** — new onboarding v2, unified work-type
+  catalog, unified Assignment Sheet are pushed+CI-green on `main` but not
+  yet copied to production (`scripts/deploy.sh` not run for this batch —
+  needs explicit go-ahead). No manual Telegram E2E performed yet either
+  (Safari MCP non-functional in this environment) — code-review only.
 - **GitHub repository is public** — needs a manual switch to private
   (Settings → Danger Zone → Change visibility) before pilot. Not done
   automatically per explicit instruction to never change this silently.

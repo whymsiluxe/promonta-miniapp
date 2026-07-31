@@ -22,7 +22,7 @@ There is no database. No ORM. No migrations. Persistence is per-feature JSON fil
 ## Frontend
 
 - `app.html` — the shell: role-based bottom navigation (two parallel `<div class="bottom-nav">` blocks, `#bottom-nav-owner` / `#bottom-nav-worker`, switched by `applyRoleNav()`), view routing (`switchView()`), global CSS.
-- `js/*.js` — one file roughly per feature area (home, objects, tasks, chat, checkin, abwesenheit, mangel, tools, profile, onboarding, critical-alerts, bubble-assign, worker-checkin-fab, radio, feed, ai, signature, rechnung, angebot, swipe-nav, theme, shared).
+- `js/*.js` — one file roughly per feature area (home, objects, tasks, chat, checkin, abwesenheit, mangel, tools, profile, onboarding, critical-alerts, worker-checkin-fab, radio, feed, ai, signature, rechnung, angebot, swipe-nav, theme, shared). 01.08: `skill-picker.js` (shared skill-selection component, used by onboarding + profile) and `assignment-sheet.js` (unified assignment flow, replaces the old `bubble-assign.js`) added.
 - `angebot-tab.html`, `projects-tab.html`, `tools-tab.html` — standalone legacy tab pages. UNKNOWN whether still linked/used from the current `app.html` shell or superseded by the in-app views — verify before assuming dead code (see FEATURES.md status).
 - No bundler, no npm build. Scripts are loaded directly; cache-busting is handled by Caddy's `Cache-Control: no-store, no-cache, must-revalidate` on `/js/*` and `/app.html`, not by filename hashing.
 - State management: no framework store. Each JS module manages its own local state and calls `fetch()` directly against `/api/*`.
@@ -42,6 +42,10 @@ Two roles only: `owner`, `worker`. Stored in `roles.json`, `{telegram_user_id: "
 ### Data layer
 
 Flat JSON files, one per domain (see [DATABASE.md](DATABASE.md) for the full inventory). Read-modify-write races are mitigated with `threading.Lock` per file path + atomic replace via temp-file + `os.replace()`. This is adequate for the current single-process, low-concurrency deployment; it would not scale to multi-worker/multi-process without moving the locks out of in-process memory.
+
+### Work-type catalog and skills (01.08)
+
+`backend/work_types.py` is the single source of truth for the list of work types (44 items, 8 groups, 7 featured) — no static copy exists anywhere in the frontend, everything is fetched via `GET /api/work-types`. `backend/profile_skills.py` layers structured `skills_v2` (`{skill_id, level, verified}`) on top of the legacy `worker_profiles.json` `skills` field (list of names), with an idempotent one-way migration on first read. `backend/assignment_matching.py` is pure functions (no file I/O) for candidate ranking/availability — both `GET /api/assignment-candidates` and the batch-assign duplicate check reuse the same logic. All three modules are new, untracked-copy-free (no equivalent files pre-existed on the VPS outside this repo), loaded via plain `import` — `uvicorn` runs from `BACKEND_DIR`, which Python implicitly adds to `sys.path[0]`, so no explicit `sys.path.insert()` was needed (an earlier attempt to add one broke `test_main_py_restores_original_global_sys_path_insert`, since a second top-level insert shifts global module resolution for the *other* shared modules like `roadmap_lib.py`).
 
 ### AI integration
 

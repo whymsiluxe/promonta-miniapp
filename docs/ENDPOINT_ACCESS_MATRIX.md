@@ -30,9 +30,9 @@
 
 | Method + Path | Owner | Worker | Resource check |
 |---|---|---|---|
-| GET /api/profile/me | ✅ | ✅ | self only |
-| GET /api/users/{id}/card | ✅ | ✅ | ✅ доп. shift/location поля только owner |
-| PATCH /api/profile/me | ✅ | ✅ | self only |
+| GET /api/profile/me | ✅ | ✅ | self only. 01.08: отдаёт skills_v2 + legacy skills (строки, для старого frontend) |
+| GET /api/users/{id}/card | ✅ | ✅ | ✅ доп. shift/location поля только owner. 01.08: содержит skills_v2 |
+| PATCH /api/profile/me | ✅ | ✅ | self only. 01.08: skills_v2 всегда сбрасывает verified в false; onboarding_completed требует имя+навык+уровень каждого |
 | POST /api/profile/me/avatar | ✅ | ✅ | self only |
 | GET /api/profile/{user_id}/avatar | ✅ | ✅ | by-design (полу-публичный, как user-card) |
 | GET /api/profile/stats | ✅ | ✅ | ✅ non-owner принудительно self |
@@ -47,8 +47,14 @@
 | GET /api/objects | ✅ | ✅ | by-design: весь список виден всем |
 | GET /api/my-assignments | ✅ | ✅ | self only |
 | POST /api/objects/{id}/assign | ✅ | ❌ | require_owner |
-| DELETE /api/objects/{id}/assign/{uid} | ✅ | ❌ | require_owner |
+| DELETE /api/objects/{id}/assign/{uid} | ✅ | ❌ | require_owner. 01.08: 409 если у работника несколько активных назначений (раньше молча удаляло все) |
 | POST /api/objects/{id}/assign/{uid}/respond | ✅ | ✅ | ✅ self only |
+| GET /api/work-types | ✅ | ✅ | 01.08: любой авторизованный, единый каталог видов работ |
+| GET /api/assignment-candidates | ✅ | ❌ | require_owner. 01.08: без утечки приватных absence note/reason |
+| POST /api/objects/{id}/assignments/batch | ✅ | ❌ | require_owner. 01.08: несколько работников одним запросом |
+| PATCH /api/objects/{id}/assignments/{assignment_id} | ✅ | ❌ | require_owner. 01.08: точечное изменение, значимая правка сбрасывает accepted → pending |
+| DELETE /api/objects/{id}/assignments/{assignment_id} | ✅ | ❌ | require_owner. 01.08: удаляет ровно одно назначение по id |
+| PATCH /api/workers/{uid}/skills/{skill_id}/verification | ✅ | ❌ | require_owner. 01.08: Worker не может сам подтвердить свой навык |
 | GET /api/objects/{id}/tasks | ✅ | ✅ | ✅ require_object_access |
 | POST /api/objects/{id}/tasks | ✅ | ❌ | require_owner |
 | PATCH /api/tasks/{id}/complete | ✅ | ❌ | require_owner |

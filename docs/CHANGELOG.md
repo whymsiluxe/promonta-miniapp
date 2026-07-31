@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-08-01 (worker profile v2 + onboarding v2 + unified work-type catalog + unified assignment)
+
+Крупное функциональное расширение перед пилотом (не редизайн, не смена архитектуры).
+
+### Added
+- **`backend/work_types.py`** — единый каталог видов работ (44 позиции, 8 групп, 7 featured), единственный источник истины для onboarding/профиля/назначения. Раньше список из 19 навыков был вручную продублирован в `main.py` (`SKILL_OPTIONS`) + `onboarding.js` (`ONBOARDING_GROUPS`) + `bubble-assign.js` (`BUBBLE_STAGE_OPTIONS`) — реальный дрифт: `SKILL_STAGE_MAP` покрывал только 8 из 19 навыков keyword-based matching'ом.
+- **`GET /api/work-types`** — единый endpoint каталога, доступен любому авторизованному пользователю.
+- **`backend/profile_skills.py`** — структурированные навыки `skills_v2` (`{skill_id, level, verified}`, level ∈ helper/independent/master) поверх старого `skills` (список названий). Idempotent-миграция legacy → v2, helper-функции для отображения/сравнения/мутации.
+- **`PATCH /api/workers/{user_id}/skills/{skill_id}/verification`** — owner-only подтверждение навыка. Worker не может сам выставить `verified: true` (любой self-service PATCH навыков сбрасывает verified).
+- **`backend/assignment_matching.py`** — полный matching по `work_type_id`, заменяет `SKILL_STAGE_MAP`. Сортировка: verified master → unverified master → verified independent → helper → без навыка, при равенстве — по имени.
+- **`GET /api/assignment-candidates`** — owner-only, кандидаты для назначения (`recommended`/`available`/`unavailable`), без N+1 запросов, без утечки приватных причин отсутствия.
+- **`POST /api/objects/{object_id}/assignments/batch`** — назначение нескольких работников одним запросом, партиальный результат (`created`/`skipped`), 409 если ни одного не создано.
+- **`PATCH/DELETE /api/objects/{object_id}/assignments/{assignment_id}`** — точечное редактирование/удаление ОДНОГО назначения. Значимое изменение уже принятого назначения возвращает его в `pending`.
+- **Frontend**: `skill-picker.js` (единый компонент выбора навыков — featured grid + поиск + accordion-группы + уровни, используется onboarding и профилем), `assignment-sheet.js` (единый Assignment Sheet — все точки входа: объект/профиль worker/старый bubble-триггер), полностью переписанный `onboarding.js` (4 шага: имя+аватар → навыки → уровни → размеры, дата рождения полностью убрана).
+- Тесты: `test_work_types.py`, `test_assignment_matching.py`, `test_assignment_lifecycle.py` — 66 новых тестов (каталог/миграция/matching/availability/batch/update-delete/privacy).
+
+### Fixed
+- **`DELETE /api/objects/{object_id}/assign/{user_id}`** раньше удаляло ВСЕ назначения этого работника на объекте молча, без разбора сколько их. Теперь: ровно одно активное — удаляется, несколько — 409 с просьбой использовать `assignment_id`.
+- Устаревший `SKILL_STAGE_MAP` (8 из 19 навыков) удалён вместе со старым bubble-drag UI (`frontend/js/bubble-assign.js`) — весь matching идёт через `work_type_id`, одинаково для всех навыков каталога.
+
+### Removed
+- `frontend/js/bubble-assign.js` (заменён `assignment-sheet.js`, старые `openBubbleAssign`/`openAssignFromProfile` теперь тонкие обёртки над `openAssignmentSheet`).
+- `SKILL_OPTIONS`/`ONBOARDING_GROUPS`/`BUBBLE_STAGE_OPTIONS`/`SKILL_STAGE_MAP` как статичные frontend-копии каталога — CI теперь проверяет, что они не появятся снова ни в одном JS-файле.
+
+### Not yet verified
+Ручной Telegram E2E (Owner создаёт batch-назначение, Worker A/B видят его в Мои задачи, принимают/отклоняют, Owner подтверждает навык) — не выполнен. Визуальная проверка UI (onboarding 4 шага, Assignment Sheet, Команда и смены) сделана только код-ревью, без Safari MCP (недоступен в этом окружении).
+
 ## 2026-07-28 (interactive session — Phases 05-10 finish, live device bugfixes, feature additions)
 
 38 commits (`9874208`..`640dad3`), all deployed to prod incrementally with backups before each write, backend restarted where `main.py` changed, verified with `py_compile`/`node --check` + live health-check after each backend restart. Autonomous VPS timer (`autonomous-miniapp.timer`) stopped and disabled — all further work moved to this interactive session per owner request.
