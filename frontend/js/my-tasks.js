@@ -7,11 +7,6 @@
 
 const MY_TASK_CHAT_ICON = `<svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`;
 
-// 01.08 (спека п.10): для назначения на один день показывать "Сегодня" или конкретную дату.
-function _myTasksTodayStr() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
-}
-
 async function initMyTasksView() {
   const list = document.getElementById('my-tasks-list');
   list.innerHTML = '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>';
@@ -33,7 +28,7 @@ async function initMyTasksView() {
           <div class="my-task-card-title">${esc(a.object_name)}</div>
           ${a.work_type_name || a.stage_id ? `<div class="my-task-card-stage">${esc(a.work_type_name || a.stage_id)}</div>` : ''}
           ${a.date_from === a.date_to && a.date_from
-            ? `<div class="my-task-card-dates">${esc(a.date_from) === _myTasksTodayStr() ? 'Сегодня' : esc(a.date_from)}</div>`
+            ? `<div class="my-task-card-dates">${esc(a.date_from) === todayBerlin() ? 'Сегодня' : esc(a.date_from)}</div>`
             : (a.date_from || a.date_to) ? `<div class="my-task-card-dates">${esc(a.date_from)} — ${esc(a.date_to)}</div>` : ''}
           ${a.task_note ? `<div class="my-task-card-note">${esc(a.task_note)}</div>` : ''}
           ${a.status === 'pending' ? `<div class="my-task-card-badge my-task-badge-pending">Ожидает подтверждения</div>` : ''}

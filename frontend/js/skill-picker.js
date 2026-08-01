@@ -88,6 +88,16 @@ async function createSkillPicker(container, opts = {}) {
       }).join('');
     }
 
+    // 01.08 (доп.раунд П7, реальный найденный баг): проверка `document.activeElement
+    // === searchInput` ниже сравнивала СТАРЫЙ фокусированный элемент с НОВЫМ (после
+    // innerHTML пересоздания DOM) -- always false, .focus() никогда не вызывался,
+    // фокус слетал после каждой буквы поиска. Снимаем состояние фокуса/курсора ДО
+    // замены DOM, восстанавливаем ПОСЛЕ на новом элементе.
+    const prevSearchInput = container.querySelector('.skill-picker-search-input');
+    const wasSearchFocused = document.activeElement === prevSearchInput;
+    const prevSelectionStart = prevSearchInput ? prevSearchInput.selectionStart : null;
+    const prevSelectionEnd = prevSearchInput ? prevSearchInput.selectionEnd : null;
+
     container.innerHTML = `
       <div class="skill-picker-featured-label">Часто используемые</div>
       <div class="skill-picker-featured-grid">${featuredHtml}</div>
@@ -111,7 +121,12 @@ async function createSkillPicker(container, opts = {}) {
       searchQuery = e.target.value;
       render();
     });
-    if (document.activeElement === searchInput) searchInput.focus();
+    if (wasSearchFocused && searchInput) {
+      searchInput.focus();
+      if (prevSelectionStart !== null) {
+        searchInput.setSelectionRange(prevSelectionStart, prevSelectionEnd);
+      }
+    }
   }
 
   render();

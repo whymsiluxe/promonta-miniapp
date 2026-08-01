@@ -216,7 +216,10 @@ async function _renderObjTeamAndShifts(objectId) {
     const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(objectId));
     const team = obj?.assigned_users || [];
 
-    const today = new Date().toISOString().slice(0, 10);
+    // 01.08 (доп.раунд П7, реальный найденный баг): toISOString() -- UTC-дата, не
+    // Berlin -- "сегодняшняя смена" вечером/ночью по местному времени считалась
+    // по вчерашней/завтрашней UTC-дате. todayBerlin() -- единая точка (shared.js).
+    const today = todayBerlin();
     const todaySessions = (checkinData.sessions || []).filter(s => s.date === today);
     const onShiftNow = todaySessions.filter(s => !s.finish_at);
 
@@ -397,25 +400,137 @@ function _openTeamRowActionsMenu(objectId, userId, assignmentId, team, triggerEl
         return;
       }
       if (action === 'edit-period') {
-        const from = prompt('Дата начала (YYYY-MM-DD):', u?.date_from || '');
-        if (from === null) return;
-        const to = prompt('Дата окончания (YYYY-MM-DD):', u?.date_to || from);
-        if (to === null) return;
-        try {
-          await api(`/api/objects/${objectId}/assignments/${assignmentId}`, { method: 'PATCH', body: JSON.stringify({ date_from: from, date_to: to }) });
-          hapticImpact('light');
-          _renderObjTeamAndShifts(objectId);
-        } catch (e) {
-          showToast('Ошибка: ' + e.message, 'error');
-        }
+        // 01.08 (доп.раунд П5): period через небольшой sheet с двумя date-input, не prompt().
+        _openEditAssignmentPeriodSheet(objectId, assignmentId, u);
         return;
       }
       if (action === 'edit-work') {
-        // Изменение вида работ -- открываем полноценный Assignment Sheet заново
-        // проще и надёжнее mini-picker, переиспользует ту же валидацию/каталог.
-        showToast('Чтобы изменить вид работ, удали текущее назначение и создай новое через + Добавить');
+        // 01.08 (доп.раунд П5, реальный найденный баг): кнопка была толькой тостом,
+        // не выполняла реальный PATCH. Теперь открывает общий work-type picker
+        // (skill-picker.js, тот же каталог что Assignment Sheet использует).
+        _openEditAssignmentWorkTypeSheet(objectId, assignmentId, u);
       }
     });
+  });
+}
+
+// 01.08 (доп.раунд П5): небольшой sheet с двумя date-input для правки периода
+// назначения -- заменяет prompt(), которое не валидирует ввод и выглядит чуждо UI.
+function _openEditAssignmentPeriodSheet(objectId, assignmentId, assignment) {
+  const overlay = document.createElement('div');
+  overlay.className = 'bottom-sheet-overlay open';
+  overlay.innerHTML = `
+    <div class="bottom-sheet-panel">
+      <div class="bottom-sheet-handle"></div>
+      <div class="form-header">
+        <span>Изменить период</span>
+        <button type="button" class="obj-stage-add-sheet-close" id="edit-period-close">✕</button>
+      </div>
+      <div style="padding:0.75rem 1rem;display:flex;gap:0.6rem;">
+        <label style="flex:1;display:flex;flex-direction:column;gap:0.3rem;font-size:0.82rem;color:var(--text-light);">С
+          <input type="date" id="edit-period-from" value="${esc(assignment?.date_from || '')}">
+        </label>
+        <label style="flex:1;display:flex;flex-direction:column;gap:0.3rem;font-size:0.82rem;color:var(--text-light);">По
+          <input type="date" id="edit-period-to" value="${esc(assignment?.date_to || '')}">
+        </label>
+      </div>
+      <div class="assignment-sheet-error" id="edit-period-error" style="display:none;margin:0 1rem;"></div>
+      <div class="form-submit-bar">
+        <button type="button" class="submit-btn" id="edit-period-save">Сохранить</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+  const close = () => { overlay.remove(); document.body.style.overflow = ''; unregister?.(); };
+  const unregister = typeof NavigationManager !== 'undefined' ? NavigationManager.registerOverlay(close) : null;
+  document.getElementById('edit-period-close').addEventListener('click', close);
+  document.getElementById('edit-period-save').addEventListener('click', async () => {
+    const fromInput = document.getElementById('edit-period-from');
+    const toInput = document.getElementById('edit-period-to');
+    const errEl = document.getElementById('edit-period-error');
+    const from = fromInput.value;
+    const to = toInput.value;
+    if (!from || !to) {
+      errEl.textContent = 'Укажи обе даты';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (from > to) {
+      errEl.textContent = 'Дата начала не может быть позже даты окончания';
+      errEl.style.display = 'block';
+      return;
+    }
+    try {
+      await api(`/api/objects/${objectId}/assignments/${assignmentId}`, { method: 'PATCH', body: JSON.stringify({ date_from: from, date_to: to }) });
+      hapticImpact('light');
+      close();
+      _renderObjTeamAndShifts(objectId);
+    } catch (e) {
+      errEl.textContent = 'Ошибка: ' + e.message;
+      errEl.style.display = 'block';
+    }
+  });
+}
+
+// 01.08 (доп.раунд П5): реальный work-type picker (skill-picker.js) + PATCH --
+// заменяет тост-заглушку, которая не меняла ничего.
+async function _openEditAssignmentWorkTypeSheet(objectId, assignmentId, assignment) {
+  const overlay = document.createElement('div');
+  overlay.className = 'bottom-sheet-overlay open';
+  overlay.innerHTML = `
+    <div class="bottom-sheet-panel profile-skills-sheet">
+      <div class="bottom-sheet-handle"></div>
+      <div class="form-header">
+        <span>Изменить вид работ</span>
+        <button type="button" class="obj-stage-add-sheet-close" id="edit-worktype-close">✕</button>
+      </div>
+      <div class="profile-skills-sheet-body" id="edit-worktype-picker"></div>
+      <div class="form-submit-bar">
+        <button type="button" class="submit-btn" id="edit-worktype-save" disabled>Сохранить</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+  const close = () => { overlay.remove(); document.body.style.overflow = ''; unregister?.(); };
+  const unregister = typeof NavigationManager !== 'undefined' ? NavigationManager.registerOverlay(close) : null;
+  document.getElementById('edit-worktype-close').addEventListener('click', close);
+
+  const container = document.getElementById('edit-worktype-picker');
+  const saveBtn = document.getElementById('edit-worktype-save');
+  const initialSelected = assignment?.work_type_id ? new Set([assignment.work_type_id]) : new Set();
+  let selectedId = assignment?.work_type_id || '';
+  const picker = await createSkillPicker(container, {
+    initialSelected,
+    onChange: (selected) => {
+      const ids = Array.from(selected);
+      if (ids.length > 1) {
+        const newest = ids.find(id => id !== selectedId) || ids[ids.length - 1];
+        selected.clear();
+        selected.add(newest);
+        picker.destroy();
+        return; // тап уже перерисует через новый createSkillPicker при следующем открытии
+      }
+      selectedId = ids[0] || '';
+      saveBtn.disabled = !selectedId;
+    },
+  });
+  saveBtn.disabled = !selectedId;
+  saveBtn.addEventListener('click', async () => {
+    if (!selectedId) return;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Сохраняю...';
+    try {
+      await api(`/api/objects/${objectId}/assignments/${assignmentId}`, { method: 'PATCH', body: JSON.stringify({ work_type_id: selectedId }) });
+      hapticImpact('light');
+      close();
+      _renderObjTeamAndShifts(objectId);
+    } catch (e) {
+      showToast('Ошибка: ' + e.message, 'error');
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Сохранить';
+    }
   });
 }
 

@@ -155,17 +155,8 @@ function _asPeriodStepHtml() {
   `;
 }
 
-function _asTodayBerlin() {
-  // Europe/Berlin -- используем Intl вместо ручного смещения (DST-safe).
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
-}
-
-function _asTomorrowBerlin() {
-  const todayStr = _asTodayBerlin();
-  const d = new Date(todayStr + 'T12:00:00Z'); // полдень UTC -- без риска перескочить дату
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
-}
+// 01.08 (доп.раунд П7): вынесено в shared.js как todayBerlin()/tomorrowBerlin() --
+// единая точка для всего frontend, не дублировать логику по файлам.
 
 function _asBindPeriodStep() {
   const inputsWrap = document.getElementById('as-date-inputs');
@@ -193,12 +184,12 @@ function _asBindPeriodStep() {
       btn.classList.add('selected');
       const quick = btn.dataset.quick;
       if (quick === 'today') {
-        const t = _asTodayBerlin();
+        const t = todayBerlin();
         _asState.dateFrom = t; _asState.dateTo = t;
         inputsWrap.style.display = 'none';
         errEl.style.display = 'none';
       } else if (quick === 'tomorrow') {
-        const t = _asTomorrowBerlin();
+        const t = tomorrowBerlin();
         _asState.dateFrom = t; _asState.dateTo = t;
         inputsWrap.style.display = 'none';
         errEl.style.display = 'none';
@@ -260,7 +251,11 @@ async function _asBindWorkersStep() {
     const objPicker = document.getElementById('as-object-picker');
     try {
       const data = await api('/api/objects');
-      const objects = (data.objects || []).filter(o => o.status !== 'Завершён');
+      // 01.08 (доп.раунд П5, реальный найденный баг): /api/objects отдаёт сырые
+      // Sheets-строки (obj['Статус']/obj['ID объекта']/obj['Объект']), не
+      // status/id/name -- фильтр по o.status и рендер o.id/o.name всегда были
+      // undefined, отправлялся undefined как object_id. normalizeObjectDto() единая точка.
+      const objects = (data.objects || []).map(normalizeObjectDto).filter(o => o.status !== 'Завершён');
       objPicker.innerHTML = `
         <select id="as-object-select" class="mangel-select">
           <option value="">Выбери объект</option>
@@ -406,8 +401,17 @@ function _asBindConfirmStep() {
       } else {
         showToast('Назначение создано');
       }
+      // 01.08 (доп.раунд П5, реальный найденный баг): _asClose() обнуляет _asState --
+      // сохраняем objectId ДО закрытия, иначе следующая строка всегда видела
+      // _asState === null и refresh никогда не вызывался. Заодно: refreshObjectDetail
+      // никогда не существовал ни в одном файле проекта (мёртвый вызов, typeof-guard
+      // просто тихо съедал ошибку) -- реальная функция обновления секции "Команда и
+      // смены" это _renderObjTeamAndShifts() в object-info.js.
+      const closedObjectId = _asState.objectId;
       _asClose();
-      if (typeof refreshObjectDetail === 'function' && _asState?.objectId) refreshObjectDetail(_asState.objectId);
+      if (closedObjectId && typeof _renderObjTeamAndShifts === 'function') {
+        _renderObjTeamAndShifts(closedObjectId);
+      }
     } catch (e) {
       errEl.textContent = 'Ошибка: ' + e.message;
       errEl.style.display = 'block';
@@ -436,7 +440,7 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
   let objectName = '';
   try {
     const data = await api('/api/objects');
-    const obj = (data.objects || []).find(o => String(o.id) === String(objectId));
+    const obj = (data.objects || []).map(normalizeObjectDto).find(o => String(o.id) === String(objectId));
     objectName = obj ? (obj.name || obj.address || objectId) : objectId;
   } catch (e) {
     objectName = objectId;

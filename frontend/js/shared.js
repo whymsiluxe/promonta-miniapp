@@ -70,6 +70,35 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 
+// 01.08 (доп.раунд П5): GET /api/objects отдаёт СЫРЫЕ Google Sheets-строки с русскими
+// ключами (obj['ID объекта']/obj['Объект']/obj['Адрес']/obj['Статус']) -- не
+// id/name/address как предполагал assignment-sheet.js (реальный найденный баг:
+// отправлялся undefined в качестве object_id). Единая точка нормализации -- любой
+// новый код должен читать объект через это, не изобретать свои obj.id/obj.name.
+// 01.08 (доп.раунд П7): единый Europe/Berlin date helper -- new Date().toISOString()
+// возвращает UTC-дату, которая расходится с локальной Berlin-датой вечером/ночью
+// (найденный реальный баг в object-info.js: "сегодня" для смен считалось по UTC).
+// Единая точка, используется вместо любого прямого toISOString().slice(0,10).
+function todayBerlin() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
+}
+
+function tomorrowBerlin() {
+  const todayStr = todayBerlin();
+  const d = new Date(todayStr + 'T12:00:00Z'); // полдень UTC -- без риска перескочить дату при переходе через полночь Berlin
+  d.setUTCDate(d.getUTCDate() + 1);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(d);
+}
+
+function normalizeObjectDto(obj) {
+  return {
+    id: obj['ID объекта'] ?? obj.id ?? '',
+    name: obj['Объект'] || obj['Название'] || obj.name || '',
+    address: obj['Адрес'] || obj.address || '',
+    status: obj['Статус'] || obj.status || '',
+  };
+}
+
 // img src / CSS background-image не умеют слать X-Telegram-Init-Data — файловые эндпойнты
 // (фото ленты, Mängel, чек-ин) отдают 422 без него. Тянем blob через fetch с тем же заголовком,
 // что и api(), и возвращаем object URL — единая точка вместо копипасты по каждому месту рендера.

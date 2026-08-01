@@ -23,6 +23,13 @@ let _obSkillPicker = null;
 let _obLevelPicker = null;
 let _obSizes = { shirt: '', pants: '', shoe: '' };
 let _obOverlayEl = null;
+// 01.08 (доп.раунд П7, реальный найденный баг): выбор навыков/уровней жил ТОЛЬКО
+// внутри живого _obSkillPicker/_obLevelPicker -- каждый _obRenderStep2()/3() пересоздаёт
+// компонент через innerHTML, а initialSelected/initialLevels никогда не передавались.
+// Возврат на шаг 2 назад из шага 3, потом снова вперёд -- выбор терялся полностью.
+// Общее состояние живёт здесь, каждый рендер шага восстанавливает его в новый picker.
+let _obSelectedSkillIds = new Set();
+let _obSkillLevels = new Map();
 
 async function checkOnboardingQuiz() {
   try {
@@ -130,9 +137,17 @@ function _obRenderStep1() {
         try {
           const fd = new FormData();
           fd.append('file', _obAvatarPending);
-          await fetch(`${API_BASE}/api/profile/me/avatar`, {
+          const avatarRes = await fetch(`${API_BASE}/api/profile/me/avatar`, {
             method: 'POST', headers: { 'X-Telegram-Init-Data': initData }, body: fd,
           });
+          // 01.08 (доп.раунд П7, реальный найденный баг): fetch() кидает исключение
+          // ТОЛЬКО на сетевую ошибку -- 400 (не изображение) / 413 (слишком большой)
+          // это успешный HTTP-ответ с ok:false, catch его не ловил вообще, ошибка
+          // молча проглатывалась как будто аватар загрузился.
+          if (!avatarRes.ok) {
+            errEl.textContent = 'Не удалось загрузить фото, но можно продолжить';
+            errEl.style.display = 'block';
+          }
         } catch (e) {
           errEl.textContent = 'Не удалось загрузить фото, но можно продолжить';
           errEl.style.display = 'block';
@@ -165,13 +180,18 @@ async function _obRenderStep2() {
   const container = document.getElementById('ob-skills-picker');
   const nextBtn = document.getElementById('ob-step2-next');
   _obSkillPicker = await createSkillPicker(container, {
+    initialSelected: _obSelectedSkillIds,
     onChange: (selected) => {
+      _obSelectedSkillIds = selected;
       nextBtn.disabled = selected.size === 0;
       nextBtn.textContent = `Продолжить · выбрано ${selected.size}`;
     },
   });
+  nextBtn.disabled = _obSelectedSkillIds.size === 0;
+  nextBtn.textContent = `Продолжить · выбрано ${_obSelectedSkillIds.size}`;
   nextBtn.addEventListener('click', () => {
     if (_obSkillPicker.getSelected().size === 0) return;
+    _obSelectedSkillIds = _obSkillPicker.getSelected();
     _obStep = 3;
     _obRenderStep();
   });
@@ -179,7 +199,7 @@ async function _obRenderStep2() {
 
 // ---------- Шаг 3: уровни выбранных навыков ----------
 async function _obRenderStep3() {
-  const skillIds = Array.from(_obSkillPicker.getSelected());
+  const skillIds = Array.from(_obSelectedSkillIds);
   _obOverlayEl.innerHTML = `
     <div class="onboarding-card">
       <div class="onboarding-dots">${_obDotsHtml(3)}</div>
@@ -194,11 +214,21 @@ async function _obRenderStep3() {
   const container = document.getElementById('ob-levels-picker');
   const nextBtn = document.getElementById('ob-step3-next');
   _obLevelPicker = await createSkillLevelPicker(container, skillIds, {
-    onChange: () => { nextBtn.disabled = !_obLevelPicker.isComplete(); },
+    initialLevels: _obSkillLevels,
+    onChange: (levels) => {
+      _obSkillLevels = levels;
+      nextBtn.disabled = !_obLevelPicker.isComplete();
+    },
   });
-  document.getElementById('ob-step3-back').addEventListener('click', () => { _obStep = 2; _obRenderStep(); });
+  nextBtn.disabled = !_obLevelPicker.isComplete();
+  document.getElementById('ob-step3-back').addEventListener('click', () => {
+    _obSkillLevels = _obLevelPicker.getLevels();
+    _obStep = 2;
+    _obRenderStep();
+  });
   nextBtn.addEventListener('click', () => {
     if (!_obLevelPicker.isComplete()) return;
+    _obSkillLevels = _obLevelPicker.getLevels();
     _obStep = 4;
     _obRenderStep();
   });
@@ -231,7 +261,9 @@ function _obRenderStep4() {
     const errEl = document.getElementById('ob-step4-error');
     btn.disabled = true;
     btn.textContent = 'Сохраняю...';
-    const skillsV2 = Array.from(_obLevelPicker.getLevels().entries()).map(([skill_id, level]) => ({ skill_id, level, verified: false }));
+    // 01.08 (доп.раунд П7): _obLevelPicker уже уничтожен (шаг 3 больше не отрендерен) --
+    // используем сохранённый module-level state _obSkillLevels, не живой picker.
+    const skillsV2 = Array.from(_obSkillLevels.entries()).map(([skill_id, level]) => ({ skill_id, level, verified: false }));
     try {
       // Спека: "Сначала сохранить профиль, затем установить onboarding_completed: true" --
       // здесь это один PATCH-запрос (backend делает то же самое атомарно: если
