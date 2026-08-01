@@ -48,6 +48,15 @@ fi
 if [[ -f "$BACKUP_DIR/roadmap_lib.py" ]]; then
   python3 -m py_compile "$BACKUP_DIR/roadmap_lib.py"
 fi
+if [[ -f "$BACKUP_DIR/work_types.py" ]]; then
+  python3 -m py_compile "$BACKUP_DIR/work_types.py"
+fi
+if [[ -f "$BACKUP_DIR/profile_skills.py" ]]; then
+  python3 -m py_compile "$BACKUP_DIR/profile_skills.py"
+fi
+if [[ -f "$BACKUP_DIR/assignment_matching.py" ]]; then
+  python3 -m py_compile "$BACKUP_DIR/assignment_matching.py"
+fi
 if [[ -f "$BACKUP_DIR/angebot_free.js" ]]; then
   node --check "$BACKUP_DIR/angebot_free.js"
 fi
@@ -69,6 +78,25 @@ if [[ -f "$BACKUP_DIR/objekte_lib.py" ]]; then
 fi
 if [[ -f "$BACKUP_DIR/roadmap_lib.py" ]]; then
   cp "$BACKUP_DIR/roadmap_lib.py" "${BACKEND_SERVING_DIR}/roadmap_lib.py"
+fi
+# 01.08 (доп.раунд П1): work_types.py/profile_skills.py/assignment_matching.py --
+# симметрично VERSION: backup содержит файл (восстановить) либо .ABSENT-marker
+# (файла не было до деплоя -- удалить то, что деплой создал, чтобы откат реально
+# вернул систему в состояние ДО этой фичи, не оставил частично новый backend).
+if [[ -f "$BACKUP_DIR/work_types.py" ]]; then
+  cp "$BACKUP_DIR/work_types.py" "${BACKEND_SERVING_DIR}/work_types.py"
+elif [[ -f "$BACKUP_DIR/.work_types.py.ABSENT" ]]; then
+  rm -f "${BACKEND_SERVING_DIR}/work_types.py"
+fi
+if [[ -f "$BACKUP_DIR/profile_skills.py" ]]; then
+  cp "$BACKUP_DIR/profile_skills.py" "${BACKEND_SERVING_DIR}/profile_skills.py"
+elif [[ -f "$BACKUP_DIR/.profile_skills.py.ABSENT" ]]; then
+  rm -f "${BACKEND_SERVING_DIR}/profile_skills.py"
+fi
+if [[ -f "$BACKUP_DIR/assignment_matching.py" ]]; then
+  cp "$BACKUP_DIR/assignment_matching.py" "${BACKEND_SERVING_DIR}/assignment_matching.py"
+elif [[ -f "$BACKUP_DIR/.assignment_matching.py.ABSENT" ]]; then
+  rm -f "${BACKEND_SERVING_DIR}/assignment_matching.py"
 fi
 if [[ -f "$BACKUP_DIR/angebot_free.js" ]]; then
   cp "$BACKUP_DIR/angebot_free.js" "${BACKEND_SERVING_DIR}/angebot_free.js"

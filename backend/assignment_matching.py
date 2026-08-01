@@ -8,7 +8,13 @@ matching. Новая логика: assignment.work_type_id == profile.skills_v2[
 мокать _load_*, только собрать входные dict/list) и переиспользование (GET
 /api/assignment-candidates и Assignment Sheet используют одну и ту же логику)."""
 
-from profile_skills import SKILL_LEVEL_RANK, normalize_profile_skills
+# 01.08 (доп.раунд): та же проблема, что main.py/profile_skills.py -- relative import
+# для package-import сценария (uvicorn miniapp.main:app), absolute fallback для
+# top-level (тесты).
+try:
+    from .profile_skills import SKILL_LEVEL_RANK, normalize_profile_skills
+except ImportError:
+    from profile_skills import SKILL_LEVEL_RANK, normalize_profile_skills
 
 
 def _dates_overlap(a_from: str, a_to: str, b_from: str, b_to: str) -> bool:

@@ -41,6 +41,28 @@ jobs:
           print('main.py imported OK, routes:', len(main.app.routes))
           "
 
+      - name: Verify backend importable as a package (production uvicorn miniapp.main:app scenario)
+        run: |
+          # 01.08 (доп.раунд П1): production запускается как `uvicorn miniapp.main:app`
+          # с WorkingDirectory=/home/promonta/agent -- это package-import (namespace
+          # package, нет __init__.py), sys.path[0] в этом сценарии -- родительская
+          # директория пакета, НЕ директория main.py. Обычный top-level `import main`
+          # (шаг выше) не ловит эту разницу вообще -- собираем временный пакет
+          # `miniapp/` из backend/*.py и импортируем его как package member, ровно
+          # как это делает uvicorn в проде.
+          rm -rf /tmp/ci-pkgtest && mkdir -p /tmp/ci-pkgtest/miniapp
+          cp backend/*.py /tmp/ci-pkgtest/miniapp/
+          cd /tmp/ci-pkgtest && python -c "
+          import sys
+          sys.path.insert(0, '.')
+          import miniapp.main as m
+          print('package-import OK, routes:', len(m.app.routes))
+          assert m.wt.__name__ == 'miniapp.work_types', m.wt.__name__
+          assert m.pskills.__name__ == 'miniapp.profile_skills', m.pskills.__name__
+          assert m.amatch.__name__ == 'miniapp.assignment_matching', m.amatch.__name__
+          "
+          rm -rf /tmp/ci-pkgtest
+
       - name: Check required repo files exist
         run: |
           test -f backend/tools_lib.py || (echo 'backend/tools_lib.py missing' && exit 1)

@@ -159,6 +159,25 @@ fi
 if [[ -f "${BACKEND_SERVING_DIR}/roadmap_lib.py" ]]; then
   cp "${BACKEND_SERVING_DIR}/roadmap_lib.py" "${BACKUP_DIR}/roadmap_lib.py"
 fi
+# 01.08 (доп.раунд П1): work_types.py/profile_skills.py/assignment_matching.py --
+# первый деплой этой фичи, файлов раньше в BACKEND_SERVING_DIR не было. ABSENT-marker
+# на каждый по отдельности (не .VERSION_ABSENT -- тот один общий для VERSION),
+# rollback.sh должен удалить файл при откате, если маркер есть, см. симметрию там.
+if [[ -f "${BACKEND_SERVING_DIR}/work_types.py" ]]; then
+  cp "${BACKEND_SERVING_DIR}/work_types.py" "${BACKUP_DIR}/work_types.py"
+else
+  touch "${BACKUP_DIR}/.work_types.py.ABSENT"
+fi
+if [[ -f "${BACKEND_SERVING_DIR}/profile_skills.py" ]]; then
+  cp "${BACKEND_SERVING_DIR}/profile_skills.py" "${BACKUP_DIR}/profile_skills.py"
+else
+  touch "${BACKUP_DIR}/.profile_skills.py.ABSENT"
+fi
+if [[ -f "${BACKEND_SERVING_DIR}/assignment_matching.py" ]]; then
+  cp "${BACKEND_SERVING_DIR}/assignment_matching.py" "${BACKUP_DIR}/assignment_matching.py"
+else
+  touch "${BACKUP_DIR}/.assignment_matching.py.ABSENT"
+fi
 if [[ -f "${BACKEND_SERVING_DIR}/angebot_free.js" ]]; then
   cp "${BACKEND_SERVING_DIR}/angebot_free.js" "${BACKUP_DIR}/angebot_free.js"
 fi
@@ -192,11 +211,15 @@ cp "$REPO_DIR/backend/tools_lib.py" "${BACKEND_SERVING_DIR}/tools_lib.py"
 cp "$REPO_DIR/backend/mangel_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py"
 cp "$REPO_DIR/backend/objekte_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py"
 cp "$REPO_DIR/backend/roadmap_lib.py" "${BACKEND_SERVING_DIR}/roadmap_lib.py"
+cp "$REPO_DIR/backend/work_types.py" "${BACKEND_SERVING_DIR}/work_types.py"
+cp "$REPO_DIR/backend/profile_skills.py" "${BACKEND_SERVING_DIR}/profile_skills.py"
+cp "$REPO_DIR/backend/assignment_matching.py" "${BACKEND_SERVING_DIR}/assignment_matching.py"
 cp "$REPO_DIR/backend/angebot_free.js" "${BACKEND_SERVING_DIR}/angebot_free.js"
 cp "$REPO_DIR/backend/rechnung.js" "${BACKEND_SERVING_DIR}/rechnung.js"
 python3 -m py_compile "${BACKEND_SERVING_DIR}/main.py" "${BACKEND_SERVING_DIR}/tools_lib.py" \
   "${BACKEND_SERVING_DIR}/mangel_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py" \
-  "${BACKEND_SERVING_DIR}/roadmap_lib.py"
+  "${BACKEND_SERVING_DIR}/roadmap_lib.py" "${BACKEND_SERVING_DIR}/work_types.py" \
+  "${BACKEND_SERVING_DIR}/profile_skills.py" "${BACKEND_SERVING_DIR}/assignment_matching.py"
 node --check "${BACKEND_SERVING_DIR}/angebot_free.js"
 node --check "${BACKEND_SERVING_DIR}/rechnung.js"
 # Version-файл для /api/health -- version/commit видны в ответе без git subprocess

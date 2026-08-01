@@ -14,7 +14,12 @@
 без необходимости (см. main.py -- запись происходит только если что-то РЕАЛЬНО
 изменилось, не на каждый read)."""
 
-from work_types import get_work_type, legacy_skill_name_to_id, WORK_TYPES
+# 01.08 (доп.раунд): та же проблема, что main.py -- relative import для package-import
+# сценария (uvicorn miniapp.main:app), absolute fallback для top-level (тесты).
+try:
+    from .work_types import get_work_type, legacy_skill_name_to_id, WORK_TYPES
+except ImportError:
+    from work_types import get_work_type, legacy_skill_name_to_id, WORK_TYPES
 
 SKILL_LEVELS = ("helper", "independent", "master")
 SKILL_LEVEL_LABELS = {

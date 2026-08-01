@@ -92,19 +92,29 @@ def _load_repo_roadmap_lib():
     return _load_repo_module(ROADMAP_LIB_PATH, 'promonta_repo_roadmap_lib', _repo_module_cache, 'roadmap_lib')
 
 
-# 01.08 (единый каталог видов работ): work_types.py/profile_skills.py/
-# assignment_matching.py -- ТРИ НОВЫХ модуля, созданных в этой сессии, без
-# untracked-двойников на сервере (в отличие от tools_lib/mangel_lib/objekte_lib,
-# у которых были старые копии в /home/promonta/agent) -- поэтому обычный `import`
-# безопасен: uvicorn запускается из BACKEND_DIR, Python кладёт директорию
-# запускаемого модуля (main.py) в sys.path[0] автоматически, БЕЗ явного insert
-# с нашей стороны (тот insert -- именно то, что сломало global module resolution
-# и тест test_main_py_restores_original_global_sys_path_insert выше). Модули
-# импортируют друг друга обычным `import work_types`/`import profile_skills` --
-# тот же неявный sys.path[0] резолвит их одинаково для main.py и друг для друга.
-import work_types as wt  # noqa: E402
-import profile_skills as pskills  # noqa: E402
-import assignment_matching as amatch  # noqa: E402
+# 01.08 (доп.раунд): предыдущее предположение "обычный import безопасен, uvicorn
+# кладёт BACKEND_DIR в sys.path[0]" было ВЕРНО только для `uvicorn main:app` из
+# BACKEND_DIR напрямую -- production запускается как `uvicorn miniapp.main:app`
+# с WorkingDirectory=/home/promonta/agent (см. systemd unit), это package-import
+# (miniapp -- implicit namespace package, нет __init__.py), и в этом случае Python
+# кладёт в sys.path[0] именно WorkingDirectory (/home/promonta/agent), НЕ директорию
+# main.py (/home/promonta/agent/miniapp/) -- `import work_types` внутри main.py не
+# находит work_types.py вообще, реальный ImportError в проде, не пойманный тестами
+# (тесты всегда грузят main.py напрямую как top-level module, не как package member).
+# Fix: relative import сначала (работает для package-import сценария, т.к. `from .
+# import work_types` резолвится относительно ПАКЕТА miniapp, не sys.path), fallback на
+# обычный import для top-level запуска (тесты, uvicorn main:app из BACKEND_DIR). НЕ
+# добавляем НИКАКОГО ДОПОЛНИТЕЛЬНОГО вызова, вставляющего путь в sys.path -- именно
+# такой вызов уже один раз сломал resolution других shared-модулей (см.
+# test_main_py_restores_original_global_sys_path_insert).
+try:
+    from . import work_types as wt
+    from . import profile_skills as pskills
+    from . import assignment_matching as amatch
+except ImportError:
+    import work_types as wt  # noqa: E402
+    import profile_skills as pskills  # noqa: E402
+    import assignment_matching as amatch  # noqa: E402
 
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
@@ -689,6 +699,14 @@ def health_ready(user: dict = Depends(get_current_user), _: None = Depends(requi
     # importlib-loader должен находить файл по TOOLS_LIB_PATH).
     checks['tools_lib'] = 'ok' if os.path.isfile(TOOLS_LIB_PATH) else 'missing'
     checks['mangel_lib'] = 'ok' if os.path.isfile(MANGEL_LIB_PATH) else 'missing'
+    # 01.08 (доп.раунд П1): work_types.py/profile_skills.py/assignment_matching.py --
+    # если import упал в проде (см. try/except в шапке файла), main.py вообще не
+    # стартует и этот эндпоинт недостижим -- но если файлы отсутствуют РЯДОМ с
+    # main.py (deploy.sh забыл их скопировать), это ловится тут же, до того как
+    # реальный запрос на /api/work-types упадёт 500-кой.
+    checks['work_types'] = 'ok' if os.path.isfile(os.path.join(BACKEND_DIR, 'work_types.py')) else 'missing'
+    checks['profile_skills'] = 'ok' if os.path.isfile(os.path.join(BACKEND_DIR, 'profile_skills.py')) else 'missing'
+    checks['assignment_matching'] = 'ok' if os.path.isfile(os.path.join(BACKEND_DIR, 'assignment_matching.py')) else 'missing'
 
     # runtime JSON -- ROLES_FILE обязателен для работы whitelist-авторизации,
     # его отсутствие -- реальный readiness-блокер (не просто "пусто").
@@ -946,10 +964,24 @@ def update_my_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_
         for s in updates['skills_v2']:
             if s.get('level') not in pskills.SKILL_LEVELS:
                 raise HTTPException(400, f"Недопустимый уровень навыка: {s.get('level')!r}")
-        # 01.08: worker не может сам выставить verified: true через этот общий
-        # endpoint (спека п.4) -- self-service PATCH всегда сбрасывает verified,
-        # подтверждение -- отдельный owner-only endpoint (см. verify_worker_skill ниже).
-        updates['skills_v2'] = [{**s, 'verified': False} for s in updates['skills_v2']]
+        # 01.08 (доп.раунд П3): было -- ЛЮБОЙ PATCH skills_v2 сбрасывал verified=False
+        # для ВСЕГО списка, включая навыки, которые вообще не менялись (реальный баг:
+        # owner подтверждает 3 навыка, worker меняет уровень 4-го -- все 3 подтверждения
+        # молча слетали). Теперь: verified сохраняется, если И skill_id, И level
+        # совпадают с тем, что уже было в сохранённом профиле; новый/изменённый навык
+        # получает verified=False (worker всё ещё не может сам его подтвердить -- см.
+        # verify_worker_skill ниже, единственный способ поставить True).
+        existing_by_id = {s['skill_id']: s for s in (profile.get('skills_v2') or []) if 'skill_id' in s}
+        normalized = []
+        for s in updates['skills_v2']:
+            prior = existing_by_id.get(s.get('skill_id'))
+            unchanged = prior is not None and prior.get('level') == s.get('level')
+            normalized.append({
+                "skill_id": s.get('skill_id'),
+                "level": s.get('level'),
+                "verified": bool(prior.get('verified')) if unchanged else False,
+            })
+        updates['skills_v2'] = normalized
     # 01.08 (спека п.3): onboarding_completed нельзя установить, пока обязательные
     # условия не выполнены -- проверяем на РЕЗУЛЬТИРУЮЩЕМ профиле (после merge с
     # уже сохранёнными полями), не только на этом одном PATCH-запросе, т.к. frontend
@@ -1250,6 +1282,11 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
             krankheit_used += days
 
     profile = _get_worker_profile(target)
+    # 01.08 (доп.раунд П2): frontend (profile.js _loadProfileStats) читает stats.skills_v2
+    # для уровня/verified -- backend отдавал только сырой legacy 'skills' (список
+    # названий), skills_v2 отсутствовал вообще, owner никогда не видел уровень/verified
+    # чужого работника на этом экране.
+    stats_skills_v2 = _get_worker_skills_v2(target)
     return {
         'user_id': target,
         'name': _sanitize_display_name(
@@ -1257,7 +1294,8 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
             target,
         ),
         'role': _load_roles().get(target, 'worker'),
-        'skills': profile.get('skills', []),
+        'skills': pskills.legacy_skill_names_from_v2(stats_skills_v2),
+        'skills_v2': stats_skills_v2,
         'sizes': {
             'pants': profile.get('pants_size', ''),
             'shirt': profile.get('shirt_size', ''),
@@ -1601,24 +1639,37 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
 
 @app.delete("/api/objects/{object_id}/assign/{user_id}")
 def unassign_user(object_id: str, user_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    """01.08 (спека п.9): раньше удаляло ВСЕ назначения этого user_id на объекте
-    молча -- реальная опасность при нескольких назначениях одного worker'а на разные
-    work_type/периоды одного объекта (один клик мог случайно снять все). Теперь:
-    ровно одно активное (не declined) назначение -- удаляем его; несколько -- 409 с
-    просьбой использовать точный /assignments/{assignment_id} endpoint ниже."""
+    """01.08 (доп.раунд П4, реальный найденный баг): предыдущая версия фильтровала
+    "активные" назначения по ВСЕМ user_id на объекте, не по переданному user_id --
+    DELETE для одного работника мог 409-ить из-за ЧУЖИХ активных назначений на том
+    же объекте, а при единственном активном (не именно этого работника, а вообще)
+    строка `assignments[key] = [declined only]` СТИРАЛА ВСЕ назначения других
+    работников, оставляя только declined-записи. Теперь: фильтр строго по
+    str(user_id), не трогает записи других людей вообще.
+    Правила: нет активного назначения этого работника -> 404; ровно одно активное ->
+    удалить только его; несколько активных -> 409 с просьбой использовать
+    assignment_id; declined-записи (этого и других работников) не трогаются."""
     key = str(object_id)
+    uid = str(user_id)
     result_holder = {}
 
     def _mutator(assignments):
         lst = assignments.get(key, [])
-        active = [a for a in lst if _assignment_status(a) != 'declined']
-        if len(active) > 1:
+        user_active = [a for a in lst if str(a.get('user_id')) == uid and _assignment_status(a) != 'declined']
+        if not user_active:
+            result_holder['not_found'] = True
+            return
+        if len(user_active) > 1:
             result_holder['multiple'] = True
             return
-        if key in assignments:
-            assignments[key] = [a for a in lst if _assignment_status(a) == 'declined']
+        target_id = user_active[0].get('id')
+        # Удаляем ТОЛЬКО целевую запись -- всё остальное (declined этого работника,
+        # любые записи других работников) остаётся нетронутым.
+        assignments[key] = [a for a in lst if a.get('id') != target_id]
 
     update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
+    if result_holder.get('not_found'):
+        raise HTTPException(404, "Активное назначение этого работника не найдено")
     if result_holder.get('multiple'):
         raise HTTPException(409, "У работника несколько назначений. Используйте assignment_id.")
     return {"status": "ok"}
@@ -1635,33 +1686,113 @@ class AssignmentUpdateBody(BaseModel):
 def update_assignment(object_id: str, assignment_id: str, body: AssignmentUpdateBody,
                        user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     """01.08 (спека п.9): точечное редактирование ОДНОГО назначения по assignment_id.
-    При значимом изменении уже принятого назначения статус возвращается в pending --
-    worker должен подтвердить обновлённые условия заново."""
+    При РЕАЛЬНОМ изменении уже принятого назначения (работа/период/задача) статус
+    возвращается в pending -- worker должен подтвердить обновлённые условия заново.
+
+    01.08 (доп.раунд П6): раньше не проверялось вообще ничего -- work_type
+    существование/active, валидность дат, роль worker, объект, абсенс, пересечения
+    (исключая само это назначение). И no-op PATCH (пустой updates.dict но всё равно
+    truthy `{}` -- нет, нюанс в том что даже совпадающие значения считались
+    "изменением" и сбрасывали accepted -- сравниваем итоговое значение с уже
+    сохранённым, не просто "ключ присутствовал в body")."""
     key = str(object_id)
     updates = body.dict(exclude_unset=True)
     if 'task_note' in updates and updates['task_note'] is not None:
         updates['task_note'] = updates['task_note'].strip()[:500]
-    found = {}
+
+    if 'work_type_id' in updates and updates['work_type_id'] is not None:
+        wtype = wt.get_work_type(updates['work_type_id'])
+        if wtype is None or not wtype.get('active'):
+            raise HTTPException(400, "Неизвестный или неактивный вид работ")
+    if 'date_from' in updates and updates['date_from'] is not None:
+        _validate_date_str(updates['date_from'], 'date_from')
+    if 'date_to' in updates and updates['date_to'] is not None:
+        _validate_date_str(updates['date_to'], 'date_to')
+
+    key = str(object_id)
+    result_holder = {}
 
     def _mutator(assignments):
         lst = assignments.get(key, [])
         target = next((a for a in lst if a.get('id') == assignment_id), None)
         if target is None:
+            result_holder['not_found'] = True
             return
-        found['ok'] = True
+
+        merged_work_type = updates.get('work_type_id', target.get('work_type_id'))
+        merged_date_from = updates.get('date_from', target.get('date_from', ''))
+        merged_date_to = updates.get('date_to', target.get('date_to', ''))
+        if merged_date_from and merged_date_to and merged_date_from > merged_date_to:
+            result_holder['error'] = "date_from не может быть позже date_to"
+            return
+
+        uid = str(target.get('user_id'))
+        role = _load_roles().get(uid)
+        if role != 'worker':
+            result_holder['error'] = f"Пользователь {uid} не является Worker (роль: {role})"
+            return
+
+        rows = _cached_get_used_range('Объекты')
+        object_row = None
+        if rows:
+            header, data = rows[0], rows[1:]
+            for r in data:
+                row = dict(zip(header, r))
+                if str(row.get('ID объекта', '')) == str(object_id):
+                    object_row = row
+                    break
+        if object_row is None:
+            result_holder['error'] = "Объект не найден"
+            return
+
+        abwesenheit = _load_abwesenheit()
+        if any(str(e.get('user_id')) == uid and e.get('status') == 'approved'
+               and _dates_overlap(merged_date_from, merged_date_to, e.get('date_from', ''), e.get('date_to', ''))
+               for e in abwesenheit):
+            result_holder['error'] = "Работник недоступен (отсутствие) на этот период"
+            return
+
+        # пересечения с ДРУГИМИ назначениями этого же работника, исключая само target
+        overlap = False
+        for other_oid, other_list in assignments.items():
+            for a in other_list:
+                if a.get('id') == assignment_id:
+                    continue  # исключаем текущее назначение из проверки на самого себя
+                if str(a.get('user_id')) != uid or _assignment_status(a) == 'declined':
+                    continue
+                if _dates_overlap(merged_date_from, merged_date_to, a.get('date_from', ''), a.get('date_to', '')):
+                    overlap = True
+                    break
+            if overlap:
+                break
+        if overlap:
+            result_holder['error'] = "Пересекается с другим назначением этого работника"
+            return
+
+        result_holder['ok'] = True
         was_accepted = _assignment_status(target) == 'accepted'
+        # 01.08 (доп.раунд П6, реальный найденный баг): "реальное изменение" -- сравниваем
+        # ИТОГОВОЕ значение каждого затронутого поля с уже сохранённым, не просто факт
+        # присутствия ключа в updates. PATCH с тем же work_type_id/датами/note, что уже
+        # сохранены, не должен сбрасывать accepted -> pending.
+        significant_change = (
+            merged_work_type != target.get('work_type_id') or
+            merged_date_from != target.get('date_from', '') or
+            merged_date_to != target.get('date_to', '') or
+            ('task_note' in updates and updates['task_note'] != target.get('task_note', ''))
+        )
         target.update({k: v for k, v in updates.items() if v is not None})
-        if was_accepted and updates:
-            # 01.08: значимое изменение уже принятого назначения -- сброс на pending,
-            # старый responded_at очищается, worker подтверждает заново.
+        if was_accepted and significant_change:
             target['status'] = 'pending'
             target['decline_reason'] = ''
             target['responded_at'] = ''
         target['updated_at'] = datetime.utcnow().isoformat()
 
     update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
-    if not found.get('ok'):
+    if result_holder.get('not_found'):
         raise HTTPException(404, "Назначение не найдено")
+    if result_holder.get('error'):
+        raise HTTPException(409 if 'Пересекается' in result_holder['error'] or 'недоступен' in result_holder['error'] else 400, result_holder['error'])
     return {"status": "ok"}
 
 
@@ -1747,8 +1878,12 @@ def get_assignment_candidates(object_id: str, work_type_id: str, date_from: str,
 
     roles = _load_roles()
     profiles = _load_worker_profiles()
-    worker_ids = {uid for uid, r in roles.items() if r != 'owner'} | \
-                 {uid for uid, p in profiles.items() if roles.get(uid, 'worker') != 'owner'}
+    # 01.08 (доп.раунд П6, реальный найденный баг): второй set-comprehension делал
+    # `roles.get(uid, 'worker')` -- ДЕФОЛТ 'worker' для любого uid, которого нет в
+    # roles вообще, а не только для явно назначенных worker. Профиль в
+    # worker_profiles.json без активной whitelist-записи (уволенный/удалённый из
+    # roles) всё равно попадал в кандидаты. Теперь строго: только roles[uid]=='worker'.
+    worker_ids = {uid for uid, r in roles.items() if r == 'worker'}
 
     workers = []
     for uid in worker_ids:
@@ -1784,10 +1919,29 @@ def batch_assign(object_id: str, body: BatchAssignBody,
     """01.08 (спека п.8): назначить нескольких работников одним запросом -- каждому
     отдельная запись с уникальным id, весь read/check/write под одним transaction lock
     (update_json_transaction), без дублей на того же worker+work_type+пересекающийся
-    период. Партиальный успех -- 200 с created/skipped; ни одного успеха -- 409."""
+    период. Партиальный успех -- 200 с created/skipped; ни одного успеха -- 409.
+
+    01.08 (доп.раунд П6): усилена валидация -- раньше не проверялось, что объект
+    вообще существует/не завершён, что user_id реально есть в roles, что его роль
+    именно worker (owner или человек без роли мог случайно попасть в назначение)."""
     wtype = wt.get_work_type(body.work_type_id)
     if wtype is None or not wtype.get('active'):
         raise HTTPException(400, "Неизвестный или неактивный вид работ")
+
+    rows = _cached_get_used_range('Объекты')
+    object_row = None
+    if rows:
+        header, data = rows[0], rows[1:]
+        for r in data:
+            row = dict(zip(header, r))
+            if str(row.get('ID объекта', '')) == str(object_id):
+                object_row = row
+                break
+    if object_row is None:
+        raise HTTPException(404, "Объект не найден")
+    if object_row.get('Статус') == 'Завершён':
+        raise HTTPException(400, "Объект завершён, назначение недоступно")
+
     user_ids = list(dict.fromkeys(body.user_ids))  # без дублей, сохраняя порядок
     if not user_ids:
         raise HTTPException(400, "Укажите хотя бы одного работника")
@@ -1796,6 +1950,18 @@ def batch_assign(object_id: str, body: BatchAssignBody,
     if body.date_from > body.date_to:
         raise HTTPException(400, "date_from не может быть позже date_to")
     task_note = body.task_note.strip()[:500]
+
+    # 01.08 (доп.раунд П6): каждый user_id обязан существовать в roles с role=='worker' --
+    # старый профиль без активной whitelist-записи (уволенный/никогда не добавленный)
+    # не должен становиться доступным для назначения только потому что когда-то
+    # прошёл onboarding и оставил worker_profiles.json запись.
+    roles = _load_roles()
+    for uid in user_ids:
+        role = roles.get(uid)
+        if role is None:
+            raise HTTPException(400, f"Пользователь {uid} не найден в списке доступа")
+        if role != 'worker':
+            raise HTTPException(400, f"Пользователь {uid} не является Worker (роль: {role})")
 
     key = str(object_id)
     result_holder = {"created": [], "skipped": []}
