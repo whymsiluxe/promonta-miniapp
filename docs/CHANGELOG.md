@@ -1,11 +1,5 @@
 # Changelog
 
-## 2026-08-03 (deploy)
-
-Задеплоено на production: commit  (стабилизационный раунд + chat-menu lifecycle fix,
-включая CI-фикс мокинга ).  перезапущен,
-health-check 200, deployed SHA подтверждён. Backup: .
-
 ## 2026-08-03 (стабилизационный раунд: session tokens, Owner AI freeze, worker-privacy, needs access control, business-date sweep)
 
 Второй проход того же дня, поверх `859d3dc`/`d8fc913` — 6 отдельных задач, все code+tests,
