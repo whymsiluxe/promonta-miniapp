@@ -1,28 +1,189 @@
-// Профиль работника (Фаза 8): аватар, 7 колец часов, work-speed, история объектов,
-// навыки, размеры одежды. Все метрики считает backend (/api/profile/stats) на чтении.
+// Профиль (Фаза 8 → Раунд1): чёткое разделение.
+//   * Owner Profile = ЛИЧНЫЙ + административный (3 вкладки: Профиль | Доступ | Настройки).
+//     Никаких worker-часов/колец/навыков/размеров/отпуска/выбора чужого сотрудника.
+//   * Worker self-profile (когда Worker смотрит СЕБЯ) = полный (кольца часов, отпуск,
+//     доступность, объекты, навыки, размеры) — не сломан, ветка по currentRole.
+//   * Worker Card = ОТДЕЛЬНЫЙ режим-overlay (openWorkerCard), НЕ подмена профиля Owner:
+//     часы/смена/объекты/навыки/доступность/размеры/табель для конкретного uid.
+//     Открывается из Команды/объекта/доступа/аватара; Back возвращает туда, откуда открыт.
 
 const WEEKDAY_LETTERS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const PROFILE_DAY_NORM_HOURS = 10; // 100% кольца = 10ч в день
 
-let _profileStatsUserId = ''; // пусто = я сам; owner может смотреть работников
-let _profilePeriod = 'week'; // 21.07: period-pills (Kalo batch 1) — week/month/3months/year, 3 визуальных режима
+let _profileStatsUserId = ''; // пусто = я сам (worker-self). Owner-self НЕ смотрит чужих тут.
+let _profilePeriod = 'week'; // period-pills worker-self — week/month/3months/year
 const PROFILE_PERIOD_LABEL = { week: 'Неделя', month: 'Месяц', '3months': '3 месяца', year: 'Год' };
+
+// Раунд1 Задача 2.3: явный режим + точка возврата для Worker Card.
+let _profileMode = 'owner-self'; // 'owner-self' | 'worker-card'
+let _profileReturnView = null;   // куда вернуться из Worker Card (Back)
 
 function initProfileView() {
   const slot = document.getElementById('profile-content');
   if (!slot) return;
+  // Bottom-nav "Профиль" ВСЕГДА показывает СВОЙ профиль. Worker Card — отдельный overlay.
+  _profileStatsUserId = '';
+  _profileMode = 'owner-self';
+  if (currentRole === 'owner') _renderOwnerSelfProfile(slot);
+  else _renderWorkerSelfProfile(slot);
+}
 
-  const tabsHtml = currentRole === 'owner'
-    ? `<div class="profile-tabs" id="profile-tabs">
-        <div class="profile-tab active" data-tab="me">Мой профиль</div>
-        <div class="profile-tab" data-tab="team">Доступ и роли</div>
-        <div class="profile-tab" data-tab="settings">Настройки</div>
-      </div>`
-    : `<div class="profile-tabs" id="profile-tabs">
-        <div class="profile-tab active" data-tab="me">Мой профиль</div>
-        <div class="profile-tab" data-tab="settings">Настройки</div>
-      </div>`;
+// ─────────────────────────── OWNER: личный + административный ───────────────────────────
 
+function _renderOwnerSelfProfile(slot) {
+  slot.innerHTML = `
+    <div class="profile-header-card">
+      <div class="profile-avatar-wrap" id="profile-avatar-wrap" title="Сменить фото">
+        <img id="profile-avatar-img" alt="" style="display:none">
+        <span id="profile-avatar-fallback"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"></path></svg></span>
+        <span class="profile-avatar-edit"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
+      </div>
+      <input type="file" id="profile-avatar-input" accept="image/*" style="display:none">
+      <div class="profile-header-info">
+        <div class="profile-name" id="profile-name">Загрузка…</div>
+        <div class="profile-role-badge" id="profile-role-badge">Владелец</div>
+        <div class="profile-secondary-id" id="profile-telegram-id"></div>
+      </div>
+    </div>
+
+    <div class="profile-tabs" id="profile-tabs">
+      <div class="profile-tab active" data-tab="me">Профиль</div>
+      <div class="profile-tab" data-tab="team">Доступ</div>
+      <div class="profile-tab" data-tab="settings">Настройки</div>
+    </div>
+
+    <div class="profile-tab-panel" data-panel="me">
+      <div class="card">
+        <div class="profile-owner-actions">
+          <button class="profile-owner-action-btn" id="profile-owner-edit-name" type="button">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+            Изменить имя
+          </button>
+          <button class="profile-owner-action-btn" id="profile-owner-edit-photo" type="button">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            Изменить фото
+          </button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="home-section-header" style="padding:0 0 0.5rem;">
+          <span class="home-section-title">Приложение</span>
+        </div>
+        <div id="profile-app-status" class="profile-app-status">
+          <div class="profile-app-status-row"><span>Версия</span><span id="profile-app-version">—</span></div>
+          <div class="profile-app-status-row"><span>AI-ассистент</span><span>GLM-режим</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="profile-tab-panel" data-panel="team" style="display:none">
+      <div class="accordion-section" style="display:block">
+        <div id="profile-team-list" style="font-size:0.85rem;color:var(--text-light);padding:0.75rem 0">Загрузка…</div>
+      </div>
+    </div>
+
+    <div class="profile-tab-panel" data-panel="settings" style="display:none">
+      <div class="card">
+        <div class="home-section-header" style="padding:0 0 0.5rem;">
+          <span class="home-section-title">Имя</span>
+        </div>
+        <input type="text" id="profile-name-input" class="mangel-select" placeholder="Например: Иван" maxlength="100">
+        <button class="submit-btn profile-inline-btn" id="profile-name-save-btn" type="button" style="margin-top:0.5rem">Сохранить имя</button>
+        <div id="profile-name-status" style="font-size:0.8rem;color:var(--accent);margin-top:0.4rem"></div>
+      </div>
+      <div class="card">
+        <div class="home-section-header" style="padding:0 0 0.5rem;">
+          <span class="home-section-title">Фото профиля</span>
+        </div>
+        <button class="submit-btn profile-inline-btn" id="profile-settings-photo-btn" type="button">Изменить фото</button>
+      </div>
+      <div class="card">
+        <div class="home-section-header" style="padding:0 0 0.5rem;">
+          <span class="home-section-title">Система</span>
+        </div>
+        <div id="profile-settings-sysinfo" class="profile-app-status"></div>
+      </div>
+    </div>
+  `;
+
+  _bindProfileTabs();
+  _bindOwnerSelfHandlers();
+  _loadOwnerSelfProfile();
+  _loadProfileTeam();
+}
+
+function _bindOwnerSelfHandlers() {
+  const wrap = document.getElementById('profile-avatar-wrap');
+  const input = document.getElementById('profile-avatar-input');
+  const triggerPhoto = () => input && input.click();
+  wrap?.addEventListener('click', triggerPhoto);
+  document.getElementById('profile-owner-edit-photo')?.addEventListener('click', triggerPhoto);
+  document.getElementById('profile-settings-photo-btn')?.addEventListener('click', triggerPhoto);
+  document.getElementById('profile-owner-edit-name')?.addEventListener('click', () => {
+    // переключить на вкладку Настройки, где поле имени
+    const settingsTab = document.querySelector('#profile-tabs .profile-tab[data-tab="settings"]');
+    settingsTab?.click();
+    setTimeout(() => document.getElementById('profile-name-input')?.focus(), 60);
+  });
+  input?.addEventListener('change', async () => {
+    if (!input.files || !input.files[0]) return;
+    const fd = new FormData();
+    fd.append('file', input.files[0]);
+    try {
+      const res = await fetch(`${API_BASE}/api/profile/me/avatar`, { method: 'POST', headers: { ..._authHeaders() }, body: fd });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+      hapticImpact('light');
+      _loadAvatar(String(window._profileMyUserId || ''));
+    } catch (e) {
+      showToast('Ошибка загрузки аватара: ' + e.message, 'error');
+    }
+    input.value = '';
+  });
+  document.getElementById('profile-name-save-btn')?.addEventListener('click', _saveName);
+}
+
+async function _loadOwnerSelfProfile() {
+  let stats;
+  try {
+    stats = await api('/api/profile/stats');
+  } catch (e) {
+    document.getElementById('profile-name').textContent = 'Ошибка загрузки профиля';
+    return;
+  }
+  window._profileMyUserId = stats.user_id;
+  document.getElementById('profile-name').textContent = stats.name || 'Владелец';
+  const idEl = document.getElementById('profile-telegram-id');
+  if (idEl) idEl.textContent = 'Telegram ID: ' + stats.user_id;
+  const nameInput = document.getElementById('profile-name-input');
+  if (nameInput) nameInput.value = (stats.name && stats.name !== String(stats.user_id)) ? stats.name : '';
+
+  if (stats.has_avatar) _loadAvatar(stats.user_id);
+  else {
+    const img = document.getElementById('profile-avatar-img');
+    const fb = document.getElementById('profile-avatar-fallback');
+    if (img) img.style.display = 'none';
+    if (fb) fb.style.display = 'block';
+  }
+
+  // Компактный статус приложения (версия/SHA из существующего /api/health — новых
+  // health-эндпоинтов не добавляем, ТЗ 2.2).
+  try {
+    const h = await api('/api/health');
+    const ver = h.version && h.version !== 'unknown' ? h.version : '';
+    const commit = h.commit ? String(h.commit).slice(0, 7) : '';
+    const label = [ver, commit].filter(Boolean).join(' · ') || '—';
+    const vEl = document.getElementById('profile-app-version');
+    if (vEl) vEl.textContent = label;
+    const sys = document.getElementById('profile-settings-sysinfo');
+    if (sys) sys.innerHTML = `
+      <div class="profile-app-status-row"><span>Версия</span><span>${esc(ver || '—')}</span></div>
+      <div class="profile-app-status-row"><span>Commit</span><span>${esc(commit || '—')}</span></div>`;
+  } catch (e) {}
+}
+
+// ─────────────────────────── WORKER: полный собственный профиль ───────────────────────────
+
+function _renderWorkerSelfProfile(slot) {
   slot.innerHTML = `
     <div class="profile-header-card">
       <div class="profile-avatar-wrap" id="profile-avatar-wrap" title="Сменить фото">
@@ -37,11 +198,12 @@ function initProfileView() {
       </div>
     </div>
 
-    ${tabsHtml}
+    <div class="profile-tabs" id="profile-tabs">
+      <div class="profile-tab active" data-tab="me">Мой профиль</div>
+      <div class="profile-tab" data-tab="settings">Настройки</div>
+    </div>
 
     <div class="profile-tab-panel" data-panel="me">
-      <div id="profile-worker-picker-slot"></div>
-
       <div class="card profile-week-card">
         <div class="profile-period-pills" id="profile-period-pills">
           ${Object.keys(PROFILE_PERIOD_LABEL).map(p =>
@@ -55,9 +217,7 @@ function initProfileView() {
         <div class="profile-week-rings" id="profile-week-rings">
           <div style="color:var(--text-light);font-size:0.85rem">Загрузка…</div>
         </div>
-        ${currentRole === 'owner'
-          ? `<button class="submit-btn profile-inline-btn" id="profile-export-stundenzettel-btn" type="button">📄 Скачать табель (CSV)</button>`
-          : `<a class="profile-csv-link-secondary" id="profile-export-stundenzettel-btn">Скачать табель (CSV)</a>`}
+        <a class="profile-csv-link-secondary" id="profile-export-stundenzettel-btn">Скачать табель (CSV)</a>
       </div>
 
       <div class="card profile-urlaub-card" id="profile-urlaub-card" style="display:none;">
@@ -84,13 +244,6 @@ function initProfileView() {
         <div class="accordion-body collapsed"><div class="accordion-body-inner"><div id="profile-objects-list"></div></div></div>
       </div>
     </div>
-
-    ${currentRole === 'owner' ? `
-    <div class="profile-tab-panel" data-panel="team" style="display:none">
-      <div class="accordion-section" style="display:block">
-        <div id="profile-team-list" style="font-size:0.85rem;color:var(--text-light);padding:0.75rem 0">Загрузка…</div>
-      </div>
-    </div>` : ''}
 
     <div class="profile-tab-panel" data-panel="settings" style="display:none">
       <div class="accordion-section">
@@ -131,32 +284,7 @@ function initProfileView() {
   _bindProfileTabs();
   _bindProfileHandlers();
   _loadProfileStats();
-  _syncProfileViewingMode();
-  if (currentRole === 'owner') {
-    _renderWorkerPicker();
-    _loadProfileTeam();
-  } else {
-    _loadProfileAvailabilitySummary();
-  }
-}
-
-// 30.07 (аудит): owner, просматривающий чужого Worker (_profileStatsUserId заполнен),
-// не должен видеть вкладку "Настройки" -- иначе "Сохранить имя"/навыки/размеры
-// уходят в PATCH /api/profile/me, т.е. в СОБСТВЕННЫЙ профиль owner'а, молча затирая
-// его данные значениями, которые он вводил глядя на чужую карточку. Вызывается после
-// каждой смены _profileStatsUserId (openWorkerFullProfile, worker picker, возврат к себе).
-function _syncProfileViewingMode() {
-  const viewingOther = !!_profileStatsUserId;
-  const settingsTab = document.querySelector('#profile-tabs .profile-tab[data-tab="settings"]');
-  const settingsPanel = document.querySelector('.profile-tab-panel[data-panel="settings"]');
-  if (settingsTab) settingsTab.style.display = viewingOther ? 'none' : '';
-  if (viewingOther && settingsPanel && settingsPanel.style.display !== 'none') {
-    settingsPanel.style.display = 'none';
-    const meTab = document.querySelector('#profile-tabs .profile-tab[data-tab="me"]');
-    const mePanel = document.querySelector('.profile-tab-panel[data-panel="me"]');
-    document.querySelectorAll('#profile-tabs .profile-tab').forEach(t => t.classList.toggle('active', t === meTab));
-    if (mePanel) mePanel.style.display = '';
-  }
+  _loadProfileAvailabilitySummary();
 }
 
 function _bindProfileTabs() {
@@ -166,14 +294,14 @@ function _bindProfileTabs() {
     const tab = e.target.closest('.profile-tab');
     if (!tab) return;
     tabs.querySelectorAll('.profile-tab').forEach(t => t.classList.toggle('active', t === tab));
-    document.querySelectorAll('.profile-tab-panel').forEach(panel => {
+    document.querySelectorAll('#view-profile .profile-tab-panel').forEach(panel => {
       panel.style.display = panel.dataset.panel === tab.dataset.tab ? '' : 'none';
     });
     hapticImpact('light');
   });
 }
 
-// 21.07: worker — summary-строка Urlaub-баланс + deep-link в Календарь, НЕ дублирование UI календаря
+// 21.07: worker — summary-строка Urlaub-баланс + deep-link в Календарь.
 async function _loadProfileAvailabilitySummary() {
   const section = document.getElementById('profile-availability-section');
   const summaryEl = document.getElementById('profile-availability-summary');
@@ -187,11 +315,7 @@ async function _loadProfileAvailabilitySummary() {
   } catch (e) {}
 }
 
-// 21.07: owner — управление whitelist прямо из Профиля (backend /api/roles уже готов).
-// 30.07 v2 (спек): 4-группная оперативная разбивка переехала в Dashboard→"Команда" --
-// эта вкладка ("Доступ и роли") теперь ЧИСТО административная: дать/убрать доступ,
-// список ролей. Не дублирует Dashboard, чтобы не было двух разных "Команда" с разным
-// содержимым под одинаковым названием (путаница, которую явно исправляет этот спек).
+// Owner "Доступ": управление whitelist (backend /api/roles). Чисто административная вкладка.
 async function _loadProfileTeam() {
   const listEl = document.getElementById('profile-team-list');
   if (!listEl) return;
@@ -224,8 +348,6 @@ async function _loadProfileTeam() {
     });
     listEl.querySelectorAll('.profile-team-grant-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
-        // 31.07 (UX-аудит): disabled guard -- без него быстрый двойной тап мог
-        // отправить 2 запроса на выдачу доступа подряд.
         if (btn.disabled) return;
         btn.disabled = true;
         try {
@@ -243,23 +365,17 @@ async function _loadProfileTeam() {
   }
 }
 
+// Worker-self handlers.
 function _bindProfileHandlers() {
   const wrap = document.getElementById('profile-avatar-wrap');
   const input = document.getElementById('profile-avatar-input');
-  wrap.addEventListener('click', () => {
-    if (_profileStatsUserId) return; // чужой профиль (owner-просмотр) — фото не меняем
-    input.click();
-  });
+  wrap.addEventListener('click', () => { input.click(); });
   input.addEventListener('change', async () => {
     if (!input.files || !input.files[0]) return;
     const fd = new FormData();
     fd.append('file', input.files[0]);
     try {
-      const res = await fetch(`${API_BASE}/api/profile/me/avatar`, {
-        method: 'POST',
-        headers: { ..._authHeaders() },
-        body: fd,
-      });
+      const res = await fetch(`${API_BASE}/api/profile/me/avatar`, { method: 'POST', headers: { ..._authHeaders() }, body: fd });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
       hapticImpact('light');
       _loadAvatar(String(window._profileMyUserId || ''));
@@ -278,7 +394,7 @@ function _bindProfileHandlers() {
     const pill = e.target.closest('.profile-period-pill');
     if (!pill || pill.dataset.period === _profilePeriod) return;
     _profilePeriod = pill.dataset.period;
-    document.querySelectorAll('.profile-period-pill').forEach(p => p.classList.toggle('active', p.dataset.period === _profilePeriod));
+    document.querySelectorAll('#view-profile .profile-period-pill').forEach(p => p.classList.toggle('active', p.dataset.period === _profilePeriod));
     hapticImpact('light');
     _loadProfileStats();
   });
@@ -289,9 +405,7 @@ async function _downloadStundenzettel() {
   btn.disabled = true;
   try {
     const targetId = _profileStatsUserId || '';
-    const res = await fetch(`${API_BASE}/api/checkin/stundenzettel?user_id=${targetId}`, {
-      headers: { ..._authHeaders() },
-    });
+    const res = await fetch(`${API_BASE}/api/checkin/stundenzettel?user_id=${targetId}`, { headers: { ..._authHeaders() } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
@@ -316,9 +430,7 @@ async function _loadAvatar(uid) {
   const fallback = document.getElementById('profile-avatar-fallback');
   if (!img || !uid) return;
   try {
-    const res = await fetch(`${API_BASE}/api/profile/${uid}/avatar`, {
-      headers: { ..._authHeaders() },
-    });
+    const res = await fetch(`${API_BASE}/api/profile/${uid}/avatar`, { headers: { ..._authHeaders() } });
     if (!res.ok) return;
     img.src = URL.createObjectURL(await res.blob());
     img.style.display = 'block';
@@ -351,43 +463,10 @@ async function _loadProfileStats() {
     if (fb) { fb.style.display = 'block'; }
   }
 
-  // 21.07: 3 визуальных режима по периоду (batch 1 Kalo) — не одна вьюха с другим диапазоном дат.
-  // week: 7 колец (как было). month: compact heatmap. 3months/year: bar-график по неделям.
   const rings = document.getElementById('profile-week-rings');
   const periodTitle = document.getElementById('profile-period-title');
   const pd = stats.period_data;
-  if (stats.team_hours) {
-    // owner смотрит СВОЙ профиль — не личные часы (пусты, owner не делает check-in),
-    // а агрегат "часы команды за неделю", bar по каждому работнику.
-    periodTitle.textContent = 'Часы команды за неделю';
-    const team = stats.team_hours;
-    if (team.length === 1) {
-      // 24.07: единственный работник = единственный столбик = мат. всегда 100% высоты —
-      // бар-график тут бессмыслен (не с чем сравнивать), выглядел как "сплошная заливка".
-      // Крупная карточка-число вместо голого бара — не просто "убрать баг", юзер попросил
-      // сделать красиво: карточка в стиле RaisedTab (тёплая тень, приподнятая поверхность).
-      rings.className = 'profile-period-bar-chart';
-      const t = team[0];
-      rings.innerHTML = `
-        <div class="profile-single-worker-card">
-          <div class="profile-single-worker-icon">
-            <svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 21c0-4 3.5-7 7-7M12 21c0-4-3.5-7-7-7M12 21V3M9 6l3-3 3 3"/></svg>
-          </div>
-          <div class="profile-single-worker-hours">${esc(String(t.hours))}<span class="profile-single-worker-unit">ч</span></div>
-          <div class="profile-single-worker-name">${esc(t.name)}</div>
-        </div>`;
-    } else {
-      rings.className = 'profile-period-bar-chart profile-team-bar-chart';
-      const maxH = Math.max(1, ...team.map(t => t.hours));
-      rings.innerHTML = team.length ? team.map(t =>
-        `<div class="profile-bar-col" title="${esc(t.name)}: ${t.hours}ч">
-          <div class="profile-bar-fill" style="height:${Math.round(t.hours / maxH * 100)}%"></div>
-          <div class="profile-bar-label">${esc(t.name).split(' ')[0]}</div>
-        </div>`
-      ).join('') : '<div style="color:var(--text-light);font-size:0.85rem">Нет работников в команде.</div>';
-    }
-    document.getElementById('profile-week-total').textContent = Math.round(team.reduce((s, t) => s + t.hours, 0) * 10) / 10 + ' ч';
-  } else if (stats.period === 'week' || !pd) {
+  if (stats.period === 'week' || !pd) {
     periodTitle.textContent = 'Часы за 7 дней';
     rings.className = 'profile-week-rings';
     rings.innerHTML = (stats.week || []).map(d => {
@@ -429,13 +508,8 @@ async function _loadProfileStats() {
       `Использовано ${stats.urlaub.used} из ${stats.urlaub.total} дней в этом году`;
   }
 
-  // Work-speed — только для worker: считается из личных check-in фото-сессий, у owner их
-  // нет (он не делает check-in своей смены) — карточка "пока нет данных" была бессмысленной
-  // заглушкой на его собственном профиле.
   const speedCard = document.getElementById('profile-speed-card');
-  if (currentRole === 'owner') {
-    speedCard.style.display = 'none';
-  } else if (stats.work_speed || stats.avg_session_hours) {
+  if (stats.work_speed || stats.avg_session_hours) {
     const ws = stats.work_speed;
     const avgPct = stats.avg_session_hours ? Math.min(100, stats.avg_session_hours / 8 * 100) : 0;
     speedCard.style.display = 'block';
@@ -458,126 +532,42 @@ async function _loadProfileStats() {
       Работа по фото: пока нет данных — сделайте первый check-in смены с фото на объекте.</div>`;
   }
 
-  // История объектов
   const objList = document.getElementById('profile-objects-list');
   const objects = stats.objects || [];
   objList.innerHTML = objects.length
     ? objects.map(o => `
         <div class="profile-object-row">
-          <div class="profile-object-name">${o.object_name}</div>
+          <div class="profile-object-name">${esc(o.object_name)}</div>
           <div class="profile-object-meta">
             ${o.sessions ? `${o.sessions} смен · ${o.total_hours} ч` : ''}
-            ${o.assigned_stages && o.assigned_stages.length ? ` · назначен: ${o.assigned_stages.join(', ')}` : ''}
+            ${o.assigned_stages && o.assigned_stages.length ? ` · назначен: ${esc(o.assigned_stages.join(', '))}` : ''}
             ${o.last_date ? ` · ${o.last_date}` : ''}
           </div>
         </div>`).join('')
     : '<div style="font-size:0.85rem;color:var(--text-light)">Пока нет ни смен, ни назначений на объекты.</div>';
 
-  // Навыки -- skills_v2 (структурированные, с уровнем и verified). 01.08: chips
-  // теперь показывают уровень и, для owner-просмотра чужого профиля, статус
-  // подтверждения + кнопку подтвердить/снять.
   await _ensureProfileSkillCatalogCache();
   const chips = document.getElementById('profile-skills-chips');
   const skillsV2 = stats.skills_v2 || [];
-  const isOwnerViewingOther = currentRole === 'owner' && !!_profileStatsUserId;
   chips.innerHTML = skillsV2.length
     ? skillsV2.map(s => {
         const name = _skillLevelDisplayName(s.skill_id);
         const levelLabel = { helper: 'Помощник', independent: 'Самостоятельно', master: 'Мастер' }[s.level] || s.level;
         const verifiedBadge = s.verified ? '<div class="profile-skill-verified">✓ Подтверждено компанией</div>' : '';
-        const ownerAction = isOwnerViewingOther
-          ? `<button type="button" class="profile-skill-verify-btn" data-skill-id="${esc(s.skill_id)}" data-verified="${s.verified ? '1' : '0'}">${s.verified ? 'Снять подтверждение' : 'Подтвердить навык'}</button>`
-          : '';
         return `<div class="profile-skill-chip-v2">
           <div class="profile-skill-chip-name">${esc(name)}</div>
           <div class="profile-skill-chip-level">${esc(levelLabel)}</div>
           ${verifiedBadge}
-          ${ownerAction}
         </div>`;
       }).join('')
     : '<div style="font-size:0.85rem;color:var(--text-light)">Навыки не указаны.</div>';
-  chips.querySelectorAll('.profile-skill-verify-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const skillId = btn.dataset.skillId;
-      const nextVerified = btn.dataset.verified !== '1';
-      try {
-        await api(`/api/workers/${_profileStatsUserId}/skills/${skillId}/verification`, {
-          method: 'PATCH', body: JSON.stringify({ verified: nextVerified }),
-        });
-        hapticImpact('light');
-        _loadProfileStats();
-      } catch (e) {
-        showToast('Ошибка: ' + e.message, 'error');
-      }
-    });
-  });
 
-  // Имя — предзаполняем только если оно реальное (не совпадает с user_id, значит
-  // не fallback после _sanitize_display_name на бэкенде).
   const nameInput = document.getElementById('profile-name-input');
   if (nameInput) nameInput.value = (stats.name && stats.name !== String(stats.user_id)) ? stats.name : '';
 
-  // Размеры
   document.getElementById('profile-size-pants').value = stats.sizes?.pants || '';
   document.getElementById('profile-size-shirt').value = stats.sizes?.shirt || '';
   document.getElementById('profile-size-shoe').value = stats.sizes?.shoe || '';
-
-  // Чужой профиль (owner-просмотр): навыки/размеры менять нельзя
-  const isOther = !!_profileStatsUserId;
-  document.getElementById('profile-skills-edit-btn').style.display = isOther ? 'none' : 'block';
-  document.getElementById('profile-sizes-save-btn').style.display = isOther ? 'none' : 'block';
-}
-
-async function _renderWorkerPicker() {
-  const slot = document.getElementById('profile-worker-picker-slot');
-  if (!slot) return;
-  try {
-    const data = await api('/api/workers');
-    const workers = (data.workers || []);
-    if (workers.length < 2) return;
-    slot.innerHTML = `
-      <select id="profile-worker-select" class="mangel-select" style="margin:0 0 0.75rem">
-        <option value="">Мой профиль</option>
-        ${workers.map(w => `<option value="${esc(w.user_id)}">${esc(w.name)} (${esc(w.role)})</option>`).join('')}
-      </select>
-      <button class="submit-btn profile-inline-btn" id="profile-assign-object-btn" type="button" style="display:none;margin-bottom:0.75rem">📌 Назначить на объект</button>`;
-    const select = document.getElementById('profile-worker-select');
-    const assignBtn = document.getElementById('profile-assign-object-btn');
-    select.value = _profileStatsUserId || '';
-    assignBtn.style.display = _profileStatsUserId ? 'block' : 'none';
-    select.addEventListener('change', e => {
-      _profileStatsUserId = e.target.value;
-      assignBtn.style.display = _profileStatsUserId ? 'block' : 'none';
-      _loadProfileStats();
-      _syncProfileViewingMode();
-    });
-    assignBtn.addEventListener('click', () => {
-      const worker = workers.find(w => String(w.user_id) === String(_profileStatsUserId));
-      if (worker && typeof openAssignFromProfile === 'function') openAssignFromProfile(worker.user_id, worker.name);
-    });
-  } catch (e) {}
-}
-
-// 30.07 (спек: полный Worker profile) -- переиспользует существующий механизм
-// _profileStatsUserId + worker picker (часы/навыки/размеры/объекты уже показываются
-// там для чужого профиля), просто открывает его напрямую по uid вместо dropdown-выбора.
-// Не создаём отдельный новый экран -- Profile→"Мой профиль" уже умеет показывать
-// чужого работника, не хватало только прямого входа извне (Team-группы/user-card).
-function openWorkerFullProfile(uid) {
-  if (currentRole !== 'owner') return;
-  switchView('profile');
-  const tabs = document.getElementById('profile-tabs');
-  tabs?.querySelectorAll('.profile-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'me'));
-  document.querySelectorAll('.profile-tab-panel').forEach(p => { p.style.display = p.dataset.panel === 'me' ? '' : 'none'; });
-  _profileStatsUserId = String(uid);
-  _loadProfileStats();
-  _syncProfileViewingMode();
-  setTimeout(() => {
-    const select = document.getElementById('profile-worker-select');
-    if (select) select.value = _profileStatsUserId;
-    const assignBtn = document.getElementById('profile-assign-object-btn');
-    if (assignBtn) assignBtn.style.display = 'block';
-  }, 300);
 }
 
 let _profileSkillCatalogByIdCache = null;
@@ -598,15 +588,12 @@ function _skillLevelDisplayName(skillId) {
   return (_profileSkillCatalogByIdCache && _profileSkillCatalogByIdCache[skillId]) || skillId;
 }
 
-// 01.08: редактирование навыков теперь использует ТОТ ЖЕ skill-picker.js компонент,
-// что onboarding (спека п.4 -- "не создавать вторую отдельную реализацию выбора
-// навыков"). Открывается как bottom-sheet поверх текущего экрана профиля, два шага
-// внутри одного sheet: выбор навыков -> уровень для каждого.
+// Редактирование навыков worker-self через общий skill-picker.js.
 let _profileSkillsSheetEl = null;
 
 async function _toggleSkillsEdit() {
-  if (_profileStatsUserId) return; // defensive guard, как и раньше
-  if (_profileSkillsSheetEl) return; // уже открыт
+  if (_profileStatsUserId) return; // defensive guard
+  if (_profileSkillsSheetEl) return;
 
   const me = await api('/api/profile/me');
   const currentSkillsV2 = me.skills_v2 || [];
@@ -670,7 +657,6 @@ async function _toggleSkillsEdit() {
       stage = 'levels';
       return;
     }
-    // stage === 'levels' -- сохранить
     const skillsV2 = Array.from(levelPicker.getLevels().entries()).map(([skill_id, level]) => ({ skill_id, level, verified: false }));
     continueBtn.disabled = true;
     continueBtn.textContent = 'Сохраняю...';
@@ -688,8 +674,8 @@ async function _toggleSkillsEdit() {
 }
 
 async function _saveName() {
-  // 30.07 (аудит): без этого owner, глядя на чужой профиль, мог отправить имя
-  // Worker'а в PATCH /api/profile/me -- т.е. в СВОЙ СОБСТВЕННЫЙ профиль.
+  // owner-self: _profileStatsUserId пусто -> сохраняем СВОЁ имя. Worker-self: тоже своё.
+  // Гард остаётся: чужой uid никогда не редактируется через /api/profile/me.
   if (_profileStatsUserId) return;
   const input = document.getElementById('profile-name-input');
   const statusEl = document.getElementById('profile-name-status');
@@ -700,10 +686,7 @@ async function _saveName() {
     return;
   }
   try {
-    await api('/api/profile/me', {
-      method: 'PATCH',
-      body: JSON.stringify({ name }),
-    });
+    await api('/api/profile/me', { method: 'PATCH', body: JSON.stringify({ name }) });
     hapticImpact('light');
     statusEl.style.color = 'var(--accent)';
     statusEl.textContent = '✓ Сохранено';
@@ -734,4 +717,250 @@ async function _saveSizes() {
   } catch (e) {
     statusEl.textContent = 'Ошибка: ' + e.message;
   }
+}
+
+// ─────────────────────────── WORKER CARD — отдельный режим (overlay) ───────────────────────────
+// ТЗ 2.3/3: НЕ подмена профиля Owner. Собственные scoped-ID (wc-*), собственный стейт,
+// не трогает _profileMyUserId/имя/avatar Owner. Back через NavigationManager.registerOverlay.
+
+let _workerCardEl = null;          // overlay элемент; null = закрыт (двойной тап -> один overlay)
+let _workerCardUserId = '';
+let _workerCardPeriod = 'week';
+let _workerCardUnreg = null;
+
+// Совместимость: shared.js/openUserCard раньше звал openWorkerFullProfile.
+function openWorkerFullProfile(uid) { openWorkerCard(uid); }
+
+function openWorkerCard(uid, returnCtx) {
+  if (currentRole !== 'owner') {
+    if (typeof openUserCard === 'function') openUserCard(uid);
+    return;
+  }
+  if (_workerCardEl) return; // guard: двойной тап не открывает два overlay
+  _workerCardUserId = String(uid);
+  _workerCardPeriod = 'week';
+  _profileMode = 'worker-card';
+  _profileReturnView = returnCtx || null;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'worker-card-overlay';
+  overlay.id = 'worker-card-overlay';
+  overlay.innerHTML = `
+    <div class="worker-card-panel">
+      <div class="worker-card-header">
+        <button type="button" class="worker-card-back" id="wc-back" aria-label="Назад">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>
+          <span>Сотрудник</span>
+        </button>
+      </div>
+      <div class="worker-card-identity">
+        <div class="worker-card-avatar-wrap">
+          <img class="worker-card-avatar" id="wc-avatar-img" alt="" style="display:none">
+          <div class="worker-card-avatar-fallback" id="wc-avatar-fallback">?</div>
+        </div>
+        <div class="worker-card-name" id="wc-name">Загрузка…</div>
+        <div class="worker-card-role" id="wc-role">Работник</div>
+        <div class="worker-card-shift" id="wc-shift"></div>
+      </div>
+      <div class="profile-period-pills" id="wc-period-pills">
+        ${Object.keys(PROFILE_PERIOD_LABEL).map(p =>
+          `<div class="profile-period-pill${p === _workerCardPeriod ? ' active' : ''}" data-period="${p}">${PROFILE_PERIOD_LABEL[p]}</div>`
+        ).join('')}
+      </div>
+      <div class="worker-card-body" id="wc-body">
+        <div style="color:var(--text-light);font-size:0.85rem;padding:1rem 0">Загрузка…</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+  _workerCardEl = overlay;
+
+  _workerCardUnreg = (typeof NavigationManager !== 'undefined') ? NavigationManager.registerOverlay(closeWorkerCard) : null;
+  overlay.querySelector('#wc-back').addEventListener('click', closeWorkerCard);
+  overlay.querySelector('#wc-period-pills').addEventListener('click', e => {
+    const pill = e.target.closest('.profile-period-pill');
+    if (!pill || pill.dataset.period === _workerCardPeriod) return;
+    _workerCardPeriod = pill.dataset.period;
+    overlay.querySelectorAll('#wc-period-pills .profile-period-pill').forEach(p => p.classList.toggle('active', p.dataset.period === _workerCardPeriod));
+    hapticImpact('light');
+    _loadWorkerCard();
+  });
+
+  hapticImpact('light');
+  _loadWorkerCard();
+}
+
+function closeWorkerCard() {
+  if (_workerCardEl) { _workerCardEl.remove(); _workerCardEl = null; }
+  document.body.style.overflow = '';
+  _workerCardUserId = '';
+  _profileMode = 'owner-self';
+  if (_workerCardUnreg) { _workerCardUnreg(); _workerCardUnreg = null; }
+}
+
+async function _loadWorkerCard() {
+  const uid = _workerCardUserId;
+  const body = document.getElementById('wc-body');
+  if (!body) return;
+  const params = new URLSearchParams();
+  params.set('user_id', uid);
+  params.set('period', _workerCardPeriod);
+  let stats, card;
+  try {
+    [stats, card] = await Promise.all([
+      api('/api/profile/stats?' + params.toString()),
+      api(`/api/users/${encodeURIComponent(uid)}/card`).catch(() => null),
+    ]);
+  } catch (e) {
+    body.innerHTML = `<div style="color:var(--red);padding:1rem 0">Ошибка загрузки: ${esc(e.message)}
+      <button type="button" class="wo-retry-btn" onclick="_loadWorkerCard()">Повторить</button></div>`;
+    return;
+  }
+  if (!document.getElementById('wc-body')) return; // закрыли пока грузилось
+
+  // Шапка: имя/роль/аватар (только этой карточки, НЕ трогаем профиль Owner).
+  const nameEl = document.getElementById('wc-name');
+  if (nameEl) nameEl.textContent = stats.name || 'Сотрудник';
+  const roleEl = document.getElementById('wc-role');
+  if (roleEl) roleEl.textContent = stats.role === 'owner' ? 'Владелец' : 'Работник';
+  const fb = document.getElementById('wc-avatar-fallback');
+  const img = document.getElementById('wc-avatar-img');
+  const initials = (stats.name || '?').split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+  if (fb) fb.textContent = initials;
+  if (stats.has_avatar && img) {
+    img.onload = () => { img.style.display = 'block'; if (fb) fb.style.display = 'none'; };
+    if (typeof authImg === 'function') authImg(img, `/api/profile/${uid}/avatar`);
+  }
+
+  // Текущая смена (owner видит shift_status в user-card).
+  const shiftEl = document.getElementById('wc-shift');
+  if (shiftEl) {
+    if (card && card.shift_status === 'working') {
+      const mins = card.start_at ? Math.round((Date.now() / 1000 - card.start_at) / 60) : 0;
+      const dur = mins >= 60 ? `${Math.floor(mins / 60)} ч ${mins % 60} мин` : `${mins} мин`;
+      shiftEl.className = 'worker-card-shift worker-card-shift-active';
+      shiftEl.textContent = `● На смене · ${card.object_name || ''}${card.stage_name ? ' · ' + card.stage_name : ''} · ${dur}`;
+    } else if (card && card.shift_status === 'idle') {
+      shiftEl.className = 'worker-card-shift';
+      shiftEl.textContent = 'Сейчас не на смене';
+    } else {
+      shiftEl.textContent = '';
+    }
+  }
+
+  body.innerHTML = _workerCardBodyHtml(stats, uid);
+
+  // CSV табель (Owner-only).
+  document.getElementById('wc-export-csv')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${API_BASE}/api/checkin/stundenzettel?user_id=${encodeURIComponent(uid)}`, { headers: { ..._authHeaders() } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'Stundenzettel.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      hapticImpact('light');
+    } catch (e) {
+      showToast('Ошибка экспорта: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+function _workerCardBodyHtml(stats, uid) {
+  // Часы (period viz)
+  const pd = stats.period_data;
+  let hoursTitle, hoursHtml, hoursTotal;
+  if (stats.period === 'week' || !pd) {
+    hoursTitle = 'Часы за 7 дней';
+    hoursHtml = `<div class="profile-week-rings">${(stats.week || []).map(d => {
+      const pct = Math.min(100, d.hours / PROFILE_DAY_NORM_HOURS * 100);
+      const lbl = d.hours > 0 ? (Math.round(d.hours * 10) / 10) + '' : '·';
+      return `<div class="profile-day-ring">${renderRingProgress(pct, 40, 4, lbl)}<div class="profile-day-letter">${WEEKDAY_LETTERS[d.weekday]}</div></div>`;
+    }).join('')}</div>`;
+    hoursTotal = (stats.week_total_hours || 0) + ' ч';
+  } else if (pd.kind === 'heatmap') {
+    hoursTitle = 'Часы за месяц';
+    const maxH = Math.max(1, ...pd.days.map(d => d.hours));
+    hoursHtml = `<div class="profile-month-heatmap">${pd.days.map(d => {
+      const intensity = d.hours > 0 ? Math.min(1, d.hours / maxH) : 0;
+      return `<div class="profile-heatmap-cell" style="background:color-mix(in srgb, var(--accent) ${Math.round(intensity * 100)}%, var(--bg-card-raised))" title="${d.date}: ${d.hours}ч"></div>`;
+    }).join('')}</div>`;
+    hoursTotal = pd.total_hours + ' ч';
+  } else {
+    hoursTitle = stats.period === '3months' ? 'Часы за 3 месяца' : 'Часы за год';
+    const maxH = Math.max(1, ...pd.buckets.map(b => b.hours));
+    hoursHtml = `<div class="profile-period-bar-chart">${pd.buckets.map(b =>
+      `<div class="profile-bar-col" title="${b.label}: ${b.hours}ч"><div class="profile-bar-fill" style="height:${Math.round(b.hours / maxH * 100)}%"></div></div>`
+    ).join('')}</div>`;
+    hoursTotal = pd.total_hours + ' ч';
+  }
+
+  const urlaubHtml = stats.urlaub ? `
+    <div class="card">
+      <div class="home-section-header" style="padding:0 0 0.5rem;">
+        <span class="home-section-title">Отпуск</span>
+        <span class="profile-week-total">${stats.urlaub.remaining} дн. осталось</span>
+      </div>
+      <div class="profile-urlaub-bar"><div class="profile-urlaub-bar-fill" style="width:${Math.min(100, (stats.urlaub.used / stats.urlaub.total) * 100)}%"></div></div>
+      <div class="profile-urlaub-caption">Использовано ${stats.urlaub.used} из ${stats.urlaub.total} дней в этом году${stats.krankheit_days_this_year ? ` · больничных ${stats.krankheit_days_this_year}` : ''}</div>
+    </div>` : '';
+
+  const objects = stats.objects || [];
+  const objectsHtml = `
+    <div class="card">
+      <div class="home-section-header" style="padding:0 0 0.5rem;"><span class="home-section-title">Объекты</span></div>
+      ${objects.length ? objects.map(o => `
+        <div class="profile-object-row">
+          <div class="profile-object-name">${esc(o.object_name)}</div>
+          <div class="profile-object-meta">
+            ${o.sessions ? `${o.sessions} смен · ${o.total_hours} ч` : ''}
+            ${o.assigned_stages && o.assigned_stages.length ? ` · назначен: ${esc(o.assigned_stages.join(', '))}` : ''}
+            ${o.last_date ? ` · ${o.last_date}` : ''}
+          </div>
+        </div>`).join('') : '<div style="font-size:0.85rem;color:var(--text-light)">Пока нет ни смен, ни назначений.</div>'}
+    </div>`;
+
+  const skillsV2 = stats.skills_v2 || [];
+  const skillsHtml = `
+    <div class="card">
+      <div class="home-section-header" style="padding:0 0 0.5rem;"><span class="home-section-title">Навыки</span></div>
+      <div class="profile-skills-chips">${skillsV2.length ? skillsV2.map(s => {
+        const name = _skillLevelDisplayName(s.skill_id);
+        const levelLabel = { helper: 'Помощник', independent: 'Самостоятельно', master: 'Мастер' }[s.level] || s.level;
+        return `<div class="profile-skill-chip-v2"><div class="profile-skill-chip-name">${esc(name)}</div><div class="profile-skill-chip-level">${esc(levelLabel)}</div>${s.verified ? '<div class="profile-skill-verified">✓ Подтверждено компанией</div>' : ''}</div>`;
+      }).join('') : '<div style="font-size:0.85rem;color:var(--text-light)">Навыки не указаны.</div>'}</div>
+    </div>`;
+
+  const sizes = stats.sizes || {};
+  const hasSizes = sizes.pants || sizes.shirt || sizes.shoe;
+  const sizesHtml = hasSizes ? `
+    <div class="card">
+      <div class="home-section-header" style="padding:0 0 0.5rem;"><span class="home-section-title">Размеры одежды</span></div>
+      <div class="profile-object-meta" style="font-size:0.85rem">
+        ${sizes.pants ? `Штаны: ${esc(sizes.pants)}` : ''}${sizes.shirt ? ` · Футболка: ${esc(sizes.shirt)}` : ''}${sizes.shoe ? ` · Обувь: ${esc(sizes.shoe)}` : ''}
+      </div>
+    </div>` : '';
+
+  return `
+    <div class="card profile-week-card">
+      <div class="home-section-header" style="padding:0 0 0.5rem;">
+        <span class="home-section-title">${hoursTitle}</span>
+        <span class="profile-week-total">${hoursTotal}</span>
+      </div>
+      ${hoursHtml}
+    </div>
+    ${urlaubHtml}
+    ${objectsHtml}
+    ${skillsHtml}
+    ${sizesHtml}
+    <button class="submit-btn profile-inline-btn" id="wc-export-csv" type="button">Скачать табель (CSV)</button>
+  `;
 }

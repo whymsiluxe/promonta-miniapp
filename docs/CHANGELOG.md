@@ -23,6 +23,26 @@ Code+tests only, **без deploy** (по инструкции очереди р�
   строке → рабочая карточка сотрудника (`openWorkerCard`, fallback `openUserCard`).
   Состояния loading/empty/error+«Повторить». Frontend НЕ считает неделю через UTC.
 
+### Changed (Owner Profile ↔ Worker Card, `profile.js`)
+- **Owner Profile теперь личный + административный**: 3 вкладки **Профиль | Доступ |
+  Настройки**. Убрано смешение с worker-аналитикой — с профиля Owner ушли 7 колец часов,
+  выбор чужого сотрудника (worker picker), скорость работы, отпуск, объекты работника,
+  навыки, размеры одежды, кнопка табеля. «Профиль» = avatar/имя/роль «Владелец»/Telegram ID
+  вторичным текстом + Изменить имя/фото + компактный блок статуса приложения (версия/commit
+  из существующего `/api/health`, без новых health-эндпоинтов). «Доступ» = `/api/roles`.
+  «Настройки» = имя, фото, системная информация (без навыков/размеров/доступности).
+- **Worker Card — отдельный режим-overlay** (`openWorkerCard(uid, returnCtx)`,
+  `_profileMode`/`_profileReturnView`): scoped `wc-*` ID, НЕ подменяет профиль Owner
+  (не трогает его имя/avatar/`_profileMyUserId`). Содержит часы (Неделя/Месяц/3мес/Год),
+  текущую смену, отпуск, объекты, навыки, размеры, скачивание табеля CSV. Открытие из
+  Команды/Доступа/аватара; регистрируется в `NavigationManager.registerOverlay` → Telegram
+  Back закрывает только карточку и возвращает на исходный экран с сохранённой вкладкой;
+  двойной тап не открывает два overlay (guard `_workerCardEl`).
+- **Worker self-profile не сломан**: ветвление по `currentRole` (`_renderWorkerSelfProfile`
+  сохраняет часы/периоды/отпуск/доступность/объекты/навыки/размеры/настройки).
+- Удалены `_renderWorkerPicker`/`_syncProfileViewingMode` (owner больше не смотрит чужого
+  внутри своего профиля); `openWorkerFullProfile` — тонкий алиас `openWorkerCard`.
+
 ## 2026-08-03 (deploy)
 
 Задеплоено на production: commit `aff42ce` (стабилизационный раунд + chat-menu lifecycle fix,

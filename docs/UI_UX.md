@@ -16,6 +16,20 @@ Swipe-between-tabs gesture (`js/swipe-nav.js`) explicitly excludes chat category
 - **Owner Home**: KPI bar, quick-actions grid, weather card (full), object budget rings (SVG progress circles).
 - **Worker Home**: 2×2 tile grid (Messages/Tasks/Alerts-important/Alerts-critical, 3D CSS icons), two wide tiles (Objects/Tools), compact weather card, activity feed.
 
+## Profile ↔ Worker Card (2026-08-04, Раунд1)
+
+- **Owner Profile** is personal + administrative only: 3 tabs **Профиль | Доступ |
+  Настройки**. No worker analytics (hours rings, work-speed), no other-worker picker,
+  no skills/sizes/availability, no CSV export button — those moved to the Worker Card.
+- **Worker Card** (`openWorkerCard(uid, returnCtx)` in `js/profile.js`) is a separate
+  full-screen overlay (`.worker-card-overlay`, `wc-*` scoped IDs), registered via
+  `NavigationManager.registerOverlay` so Telegram Back closes only the card and returns
+  to the origin screen with its active tab intact. It never overwrites the Owner's own
+  name/avatar (the prior bug where owner viewing a worker replaced their own profile
+  fields). Opened from Команда team-hours rows, the Доступ list, and the user-card modal.
+- **Worker self-profile** (a worker viewing themselves) is unchanged — full hours/periods/
+  Urlaub/availability/objects/skills/sizes, branched by `currentRole`.
+
 ## Design language (per July 2026 sessions)
 
 - Dark weather-card theme (`#0a0a0a` background, `1px solid var(--border-color)`) extended across worker tiles, owner quick-actions, object/tool cards, feed cards, abwesenheit request cards.

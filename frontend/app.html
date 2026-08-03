@@ -3317,6 +3317,29 @@ body.view-locked {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent); border-radius: 999px; font-size: 0.75rem; font-weight: 600;
 }
+/* Раунд1: Owner-профиль (личный+административный) — вторичный Telegram ID, action-кнопки, статус */
+.profile-secondary-id { font-size: 0.72rem; color: var(--text-light); margin-top: 0.25rem; }
+.profile-owner-actions { display: flex; gap: 0.5rem; }
+.profile-owner-action-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.6rem 0.5rem; background: var(--bg-card-raised); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-main); font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.profile-owner-action-btn:active { background: var(--bg-card); }
+.profile-app-status { font-size: 0.85rem; }
+.profile-app-status-row { display: flex; justify-content: space-between; padding: 0.3rem 0; color: var(--text-main); }
+.profile-app-status-row span:first-child { color: var(--text-light); }
+/* Раунд1: Worker Card — отдельный полноэкранный overlay (НЕ подмена профиля Owner) */
+.worker-card-overlay { position: fixed; inset: 0; z-index: 5200; background: var(--bg-app); display: flex; flex-direction: column; overflow: hidden; }
+.worker-card-panel { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 20px); }
+.worker-card-header { position: sticky; top: 0; z-index: 2; background: var(--bg-app); padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border-color); }
+.worker-card-back { display: inline-flex; align-items: center; gap: 0.3rem; background: none; border: none; color: var(--accent); font-size: 0.95rem; font-weight: 600; cursor: pointer; padding: 0.3rem 0.2rem; }
+.worker-card-identity { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0.6rem 1rem 0.4rem; }
+.worker-card-avatar-wrap { width: 80px; height: 80px; border-radius: 50%; overflow: hidden; background: var(--bg-card-raised); display: flex; align-items: center; justify-content: center; }
+.worker-card-avatar { width: 100%; height: 100%; object-fit: cover; }
+.worker-card-avatar-fallback { font-size: 1.8rem; font-weight: 700; color: var(--text-light); }
+.worker-card-name { font-family: var(--font-heading); font-size: 1.25rem; font-weight: 700; color: var(--text-main); margin-top: 0.5rem; }
+.worker-card-role { font-size: 0.8rem; color: var(--text-light); margin-top: 0.15rem; }
+.worker-card-shift { font-size: 0.82rem; color: var(--text-light); margin-top: 0.4rem; }
+.worker-card-shift-active { color: var(--c-brass, var(--accent-gold, var(--accent))); font-weight: 600; }
+.worker-card-body { padding: 0 0.75rem; }
+#wc-period-pills { padding: 0.5rem 1rem 0.25rem; }
 .profile-week-card { margin: 0 0.75rem 0.75rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 0.85rem; }
 /* 25.07: не задавал свой font-size вообще -- наследовал browser default (~16px) рядом
    с .kpi-num на Home (1.8rem/~29px), тот самый "разный размер шрифта" разрыв, на который
