@@ -23,25 +23,44 @@ let _chatWorkers = [];
 let _chatReturnToView = null; // 21.07: откуда открыт чат (Потребности/Дефекты) — назад должен вернуть туда, не в общий список тредов
 let _chatReplyTarget = null; // {id, name, preview} — выбранное сообщение для ответа, до отправки
 
-// 03.08: message-action menu / forward modal жили только в document.body без регистрации
-// в NavigationManager.overlayStack и без чистки при выходе из чата -- Telegram Back уходил
-// сразу в switchView(dashboard), оставляя .chat-bubble-menu/.chat-forward-modal висеть
-// поверх нового экрана (root cause бага). Единая функция закрытия + unregister-хендлы ниже
-// используются из всех путей открытия/закрытия чата, не только из самих меню.
-let _chatOverlayUnregister = null;
-function _closeAllChatOverlays() {
-  if (_chatOverlayUnregister) {
-    // registerOverlay возвращает unregister, а не close -- сам overlay должен закрыть
-    // себя (снять DOM/листенеры) ДО или ВНУТРИ unregister; храним отдельный close-колбэк
-    // на самой функции, чтобы не тащить второй параллельный стек.
-    const fn = _chatOverlayUnregister;
-    _chatOverlayUnregister = null;
+// 03.08 (v1): message-action menu / forward modal жили только в document.body без
+// регистрации в NavigationManager.overlayStack и без чистки при выходе из чата --
+// Telegram Back уходил сразу в switchView(dashboard).
+// 03.08 (v2, fix): v1 держал ОДИН _chatOverlayUnregister сразу для popup-меню И для
+// самого открытого треда -- при открытии popup внутри уже открытого треда второй
+// registerOverlay() затирал ссылку на overlay треда, и NavigationManager видел только
+// один уровень вместо двух. Popup (реакции/reply/copy/forward) и thread (список ->
+// диалог) теперь два отдельных handle с разными именами и разными close-функциями:
+// _chatMessageOverlayUnregister закрывает только .chat-bubble-menu/.chat-forward-modal,
+// _chatThreadOverlayUnregister закрывает весь диалог (closeChatThread()).
+let _chatMessageOverlayUnregister = null;
+function _closeChatMessageOverlays() {
+  if (_chatMessageOverlayUnregister) {
+    const fn = _chatMessageOverlayUnregister;
+    _chatMessageOverlayUnregister = null;
     fn();
   }
   document.querySelectorAll(
     '.chat-bubble-menu, .chat-bubble-menu-backdrop, ' +
     '.chat-forward-modal, .chat-forward-modal-backdrop'
   ).forEach(el => el.remove());
+}
+
+// Thread-level overlay: регистрируется при входе в диалог (общий/личный/object/mangel),
+// снимается при выходе. _chatThreadClosingFromBack различает "Back вызвал close" (сам
+// NavigationManager уже снял запись из overlayStack, unregister() не нужен повторно) от
+// "closeChatThread() вызван вручную кнопкой/другим кодом" (нужно снять регистрацию самим).
+let _chatThreadOverlayUnregister = null;
+let _chatThreadClosingFromBack = false;
+
+function _registerChatThreadOverlay() {
+  if (_chatThreadOverlayUnregister) return; // не регистрировать один диалог повторно
+  if (typeof NavigationManager === 'undefined') return;
+  _chatThreadOverlayUnregister = NavigationManager.registerOverlay(() => {
+    _chatThreadClosingFromBack = true;
+    closeChatThread();
+    _chatThreadClosingFromBack = false;
+  });
 }
 
 // 28.07 (Phase 06): message reactions — компактный фиксированный набор, зеркалит
@@ -329,7 +348,7 @@ async function _toggleChatReaction(msgId, reaction) {
 function _openChatBubbleMenu(bubble, msgId, canDelete) {
   // 03.08: закрыть любое предыдущее меню/forward-модалку ПЕРЕД открытием нового --
   // гарантирует не более одного оверлея в DOM одновременно (проверка из списка задач).
-  _closeAllChatOverlays();
+  _closeChatMessageOverlays();
 
   const msg = _chatMessagesById[msgId];
   const hasText = !!(msg && msg.text);
@@ -368,13 +387,13 @@ function _openChatBubbleMenu(bubble, msgId, canDelete) {
     menu.remove();
     document.removeEventListener('keydown', onKeydown);
     if (unregister) { unregister(); unregister = null; }
-    if (_chatOverlayUnregister === unregisterHandle) _chatOverlayUnregister = null;
+    if (_chatMessageOverlayUnregister === unregisterHandle) _chatMessageOverlayUnregister = null;
   };
   const unregisterHandle = () => close();
   if (typeof NavigationManager !== 'undefined') {
     unregister = NavigationManager.registerOverlay(close);
   }
-  _chatOverlayUnregister = unregisterHandle;
+  _chatMessageOverlayUnregister = unregisterHandle;
 
   const onKeydown = e => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKeydown);
@@ -491,7 +510,7 @@ function _renderChatReplyBar() {
 async function _openChatForwardDialog(msgId) {
   // 03.08: тот же паттерн, что _openChatBubbleMenu -- закрыть предыдущий оверлей,
   // зарегистрировать в NavigationManager, снять Escape-хендлер и unregister при закрытии.
-  _closeAllChatOverlays();
+  _closeChatMessageOverlays();
   const backdrop = document.createElement('div');
   backdrop.className = 'chat-forward-modal-backdrop';
   const modal = document.createElement('div');
@@ -506,13 +525,13 @@ async function _openChatForwardDialog(msgId) {
     modal.remove();
     document.removeEventListener('keydown', onKeydown);
     if (unregister) { unregister(); unregister = null; }
-    if (_chatOverlayUnregister === unregisterHandle) _chatOverlayUnregister = null;
+    if (_chatMessageOverlayUnregister === unregisterHandle) _chatMessageOverlayUnregister = null;
   };
   const unregisterHandle = () => close();
   if (typeof NavigationManager !== 'undefined') {
     unregister = NavigationManager.registerOverlay(close);
   }
-  _chatOverlayUnregister = unregisterHandle;
+  _chatMessageOverlayUnregister = unregisterHandle;
 
   const onKeydown = e => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKeydown);
@@ -981,13 +1000,6 @@ function _attachChatThreadLongPress(itemEl, prefsKey, payloadBase) {
 }
 
 
-function _hideBottomNavInline() {
-  const ownerNav = document.getElementById('bottom-nav-owner');
-  const workerNav = document.getElementById('bottom-nav-worker');
-  if (ownerNav) ownerNav.style.display = 'none';
-  if (workerNav) workerNav.style.display = 'none';
-}
-
 function _chatAvatarHue(id) {
   const s = String(id || '');
   let h = 0;
@@ -1127,14 +1139,14 @@ async function _loadUnreadByThread() {
 }
 
 function openChatThread(threadUserId, title) {
-  _closeAllChatOverlays(); // 03.08: не тащить меню/forward-модалку предыдущего треда в новый
+  _closeChatMessageOverlays(); // не тащить меню/forward-модалку предыдущего треда в новый
   _chatActiveThread = threadUserId;
   _chatActiveThreadKey = null;
   document.getElementById('chat-thread-title').textContent = title;
   document.getElementById('chat-thread-list-view').style.display = 'none';
   document.getElementById('chat-thread-detail-view').style.display = 'flex';
-  document.body.classList.add('chat-dialog-open');
-  _hideBottomNavInline();
+  document.body.classList.add('chat-dialog-open'); // единственный источник для body.chat-dialog-open .bottom-nav{display:none}
+  _registerChatThreadOverlay(); // 03.08 v2: диалог — отдельный уровень Back, не смешан с message-popup
   _chatLastRenderSig = null;
   _loadChatMessages(true);
   _refreshChatThreadCloseState();
@@ -1142,7 +1154,7 @@ function openChatThread(threadUserId, title) {
 }
 
 function openObjectOrMangelChat(threadKey, title, returnToView) {
-  _closeAllChatOverlays(); // 03.08: то же — не тащить меню/forward-модалку между тредами
+  _closeChatMessageOverlays(); // то же — не тащить меню/forward-модалку между тредами
   _chatActiveThread = null;
   _chatActiveThreadKey = threadKey;
   _chatReturnToView = returnToView || null;
@@ -1151,7 +1163,7 @@ function openObjectOrMangelChat(threadKey, title, returnToView) {
   document.getElementById('chat-thread-list-view').style.display = 'none';
   document.getElementById('chat-thread-detail-view').style.display = 'flex';
   document.body.classList.add('chat-dialog-open');
-  _hideBottomNavInline();
+  _registerChatThreadOverlay(); // 03.08 v2
   document.getElementById('chat-close-thread-btn').style.display = 'none'; // закрытие тредов не поддержано для obj:/mangel:
   _chatLastRenderSig = null;
   _loadChatMessages(true);
@@ -1207,16 +1219,42 @@ async function _reopenCurrentChatThread() {
 }
 
 function closeChatThread() {
-  // 03.08 (root cause fix): меню/forward-модалка жили в document.body без привязки к
-  // экрану чата -- при выходе из треда (Telegram Back/кнопка Назад) DOM оверлея не
-  // чистился и оставался поверх dashboard/другого view. Закрываем ДО скрытия detail-view.
-  _closeAllChatOverlays();
+  // 03.08 (root cause fix, v2): меню/forward-модалка жили в document.body без привязки
+  // к экрану чата и без своей регистрации в NavigationManager -- Telegram Back не видел
+  // ни popup, ни сам диалог как отдельный уровень, проваливался сразу в dashboard.
+  // Idempotent: повторный вызов (напр. дубль-событие) не должен ничего сломать --
+  // все шаги ниже безопасны при уже закрытом состоянии (querySelectorAll на пусто,
+  // classList.remove на отсутствующий класс, unregister === null проверяется).
+  _closeChatMessageOverlays();
+
   document.getElementById('chat-thread-detail-view').style.display = 'none';
   document.getElementById('chat-thread-list-view').style.display = 'flex';
   document.body.classList.remove('chat-dialog-open');
-  if (typeof applyRoleNav === 'function') applyRoleNav();
+
   _chatActiveThread = null;
   _chatActiveThreadKey = null;
+
+  // Если closeChatThread() вызван ИЗНУТРИ callback'а registerOverlay() (Telegram Back /
+  // hardware back / popstate) -- NavigationManager.back() уже сделал overlayStack.pop()
+  // ДО вызова этого callback'а, повторный unregister() был бы no-op, но не бесплатным
+  // (лишний indexOf-проход) и семантически неверным (мы бы "отменяли регистрацию" записи,
+  // которой уже нет). Если же вызов пришёл НЕ от Back (кнопка ⬅ в шапке, программный
+  // вызов) -- overlayStack всё ещё содержит эту запись, снимаем её сами.
+  if (!_chatThreadClosingFromBack && _chatThreadOverlayUnregister) {
+    const unregister = _chatThreadOverlayUnregister;
+    _chatThreadOverlayUnregister = null;
+    unregister();
+  } else {
+    _chatThreadOverlayUnregister = null;
+  }
+
+  // applyRoleNav() — единственный источник inline display для bottom-nav (роль решает
+  // owner/worker), body.chat-dialog-open — единственный источник видимости ВНУТРИ
+  // диалога (CSS). Раньше отдельный _hideBottomNavInline() дублировал role-логику
+  // и мог остаться неоткаченным, если Back уходил в обход closeChatThread() -- теперь
+  // единственный путь скрытия/показа это класс + applyRoleNav(), оба идемпотентны.
+  if (typeof applyRoleNav === 'function') applyRoleNav();
+
   if (_chatReturnToView) {
     const target = _chatReturnToView;
     _chatReturnToView = null;
@@ -1246,14 +1284,20 @@ function _revokeAllChatBlobUrls() {
 let _chatBodyClassObserver = null;
 function _watchChatDialogClose() {
   if (_chatBodyClassObserver) return; // idempotent -- один observer на весь lifetime страницы
+  // Аварийная страховка, не основной путь: closeChatThread()/_registerChatThreadOverlay()
+  // уже явно чистят message-popup и thread-overlay на всех известных путях выхода
+  // (кнопка ⬅, Telegram Back, смена треда, смена вкладки). Наблюдатель ловит только
+  // непредвиденный путь, где chat-dialog-open снят в обход closeChatThread() -- закрывает
+  // ТОЛЬКО message-popup (thread-регистрацию не трогает, чтобы не рассинхронить
+  // NavigationManager.overlayStack с реальным DOM-состоянием диалога).
   _chatBodyClassObserver = new MutationObserver(() => {
-    if (!document.body.classList.contains('chat-dialog-open')) _closeAllChatOverlays();
+    if (!document.body.classList.contains('chat-dialog-open')) _closeChatMessageOverlays();
   });
   _chatBodyClassObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 }
 
 async function initChatView() {
-  _closeAllChatOverlays(); // 03.08: тот же idempotent-паттерн, что _revokeAllChatBlobUrls ниже
+  _closeChatMessageOverlays(); // 03.08: тот же idempotent-паттерн, что _revokeAllChatBlobUrls ниже
   _watchChatDialogClose();
   _revokeAllChatBlobUrls();
   if (!_chatMyId) {
