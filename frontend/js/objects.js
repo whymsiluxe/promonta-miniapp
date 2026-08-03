@@ -176,7 +176,7 @@ function renderObjectCard(obj) {
     </div>
     <div class="obj-card-body">
       <div class="obj-card-title">${esc(obj['Объект']) || ''}</div>
-      <div class="obj-card-address obj-address-link" onclick="event.stopPropagation();${mapsUrl ? `openExternalLink('${mapsUrl}')` : ''}">
+      <div class="obj-card-address obj-address-link" data-url="${esc(mapsUrl)}">
         <svg class="obj-address-pin" viewBox="0 0 24 24" width="14" height="14" fill="none"><path d="M12 2C7.58 2 4 5.58 4 10c0 5.25 7 12 8 12s8-6.75 8-12c0-4.42-3.58-8-8-8z" fill="currentColor"/><circle cx="12" cy="10" r="2.5" fill="var(--bg-card)"/></svg>
         ${esc(obj['Адрес']) || 'Адрес не указан'}
       </div>
@@ -397,6 +397,21 @@ function attachObjectsHandlers() {
     const target = fill.style.width;
     fill.style.width = '0%';
     requestAnimationFrame(() => requestAnimationFrame(() => fill.style.width = target));
+  });
+
+  // 03.08 (ТЗ Задача 6b): было inline onclick="...openExternalLink('${mapsUrl}')" --
+  // адрес объекта интерполировался в JS-строку без экранирования кавычек, так что
+  // адрес, содержащий одинарную кавычку (реальный сценарий для немецких адресов вида
+  // "Bäcker's Weg"), ломал сгенерированный onclick целиком (SyntaxError в атрибуте,
+  // клик молча ничего не делал). data-url + delegated listener, тот же паттерн, что
+  // остальные card-level обработчики в этой функции -- значение идёт через esc() в
+  // HTML-атрибут (уже безопасно для кавычек), не через JS string literal.
+  document.querySelectorAll('#objects-cards .obj-address-link').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const url = el.dataset.url;
+      if (url) openExternalLink(url);
+    });
   });
 
   document.querySelectorAll('#objects-cards .stage-clickable').forEach(el => {

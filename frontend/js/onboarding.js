@@ -138,7 +138,7 @@ function _obRenderStep1() {
           const fd = new FormData();
           fd.append('file', _obAvatarPending);
           const avatarRes = await fetch(`${API_BASE}/api/profile/me/avatar`, {
-            method: 'POST', headers: { 'X-Telegram-Init-Data': initData }, body: fd,
+            method: 'POST', headers: { ..._authHeaders() }, body: fd,
           });
           // 01.08 (доп.раунд П7, реальный найденный баг): fetch() кидает исключение
           // ТОЛЬКО на сетевую ошибку -- 400 (не изображение) / 413 (слишком большой)

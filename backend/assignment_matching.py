@@ -62,9 +62,15 @@ def availability_for_worker(
             return "unavailable", "Уже назначен на этот период"
 
     # уже работает (открытая check-in сессия) на другом объекте сегодня -- актуально
-    # только для периода, включающего сегодня
+    # только для периода, включающего сегодня.
+    # 03.08 (ТЗ Задача 5): было datetime.date.today() -- UTC, расходится с business-day
+    # Europe/Berlin вечером/ночью (тот же класс бага, что чинили в main.py, см.
+    # business_today_str()). Модуль не импортирует main.py (избегаем циклического
+    # импорта), поэтому Berlin-логика продублирована здесь напрямую через zoneinfo,
+    # не через shared helper.
     import datetime
-    today = datetime.date.today().isoformat()
+    from zoneinfo import ZoneInfo
+    today = datetime.datetime.now(ZoneInfo('Europe/Berlin')).strftime('%Y-%m-%d')
     if date_from <= today <= date_to:
         for s in checkin_sessions:
             if str(s.get('user_id')) != uid:

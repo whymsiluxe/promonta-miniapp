@@ -304,7 +304,7 @@ async function submitMangelTicket() {
   try {
     await fetch(`${API_BASE}/api/mangel`, {
       method: 'POST',
-      headers: { 'X-Telegram-Init-Data': initData },
+      headers: { ..._authHeaders() },
       body: formData,
     }).then(async res => {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);

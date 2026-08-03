@@ -16,6 +16,13 @@ let _fwNeeds = []; // [{category, description}]
 let _fwDefects = []; // [{description}]
 let _fwPauseMinutes = 30;
 let _fwFinishGeo = null; // {lat, lon}
+// 03.08 (ТЗ Задача 1): персистентный на весь wizard-flow idempotency key -- раньше
+// генерировался заново на КАЖДЫЙ вызов _fwSubmitFinish(), так что retry после сетевой
+// ошибки/таймаута слал НОВЫЙ ключ и backend не мог распознать повтор того же запроса
+// (двойное списание фото-загрузки/двойная запись сессии при повторной отправке).
+// Сбрасывается только при открытии нового wizard-flow (openFinishShiftWizard), не при
+// каждой попытке отправки.
+let _fwIdempotencyKey = null;
 
 const FW_NEED_CATEGORIES = [
   { key: 'materials', label: 'Материалы' },
@@ -34,6 +41,7 @@ function openFinishShiftWizard(sessionId, objectId) {
   _fwExtraWorks = [];
   _fwNeeds = [];
   _fwDefects = [];
+  _fwIdempotencyKey = null; // новый wizard-flow -- новый ключ на первую попытку
   // 28.07: owner report -- было захардкожено 30 минут независимо от реальной паузы,
   // и нигде не показывалось в сводке. Читаем реально накопленное время паузы из
   // активной сессии (тот же источник, что checkin.js уже использует для старого flow).
@@ -369,10 +377,12 @@ async function _fwSubmitFinish() {
     if (_fwVoiceNoteFileId) formData.append('voice_note_file_id', _fwVoiceNoteFileId);
     _fwPhotos.forEach(f => formData.append('files', f));
 
-    const idempotencyKey = crypto.randomUUID();
+    // 03.08 (ТЗ Задача 1): переиспользуем ключ, если он уже был создан прошлой попыткой
+    // (retry после ошибки) -- новый генерируем только на самую первую отправку.
+    _fwIdempotencyKey = _fwIdempotencyKey || crypto.randomUUID();
     const res = await fetch(`${API_BASE}/api/checkin/${_fwSessionId}/finish`, {
       method: 'POST',
-      headers: { 'X-Telegram-Init-Data': initData, 'Idempotency-Key': idempotencyKey },
+      headers: { ..._authHeaders(), 'Idempotency-Key': _fwIdempotencyKey },
       body: formData,
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
@@ -395,7 +405,7 @@ async function _fwSubmitFinish() {
         fd.append('description', defect.description);
         await fetch(`${API_BASE}/api/mangel`, {
           method: 'POST',
-          headers: { 'X-Telegram-Init-Data': initData },
+          headers: { ..._authHeaders() },
           body: fd,
         });
       } catch (e) { console.warn('defect creation failed', e); }
@@ -457,7 +467,7 @@ function _fwWireVoiceButton(btnId, onTranscript) {
           fd.append('file', blob, 'voice.webm');
           const res = await fetch(`${API_BASE}/api/transcribe`, {
             method: 'POST',
-            headers: { 'X-Telegram-Init-Data': initData },
+            headers: { ..._authHeaders() },
             body: fd,
           });
           if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);

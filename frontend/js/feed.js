@@ -363,7 +363,7 @@ async function _uploadFeedPhoto(files) {
   try {
     await fetch(`${API_BASE}/api/feed/photos`, {
       method: 'POST',
-      headers: { 'X-Telegram-Init-Data': initData },
+      headers: { ..._authHeaders() },
       body: formData,
     }).then(async res => {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);

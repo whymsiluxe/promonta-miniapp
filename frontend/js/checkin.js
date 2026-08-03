@@ -286,7 +286,7 @@ async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey) {
   const res = await fetch(`${API_BASE}${url}`, {
     method: 'POST',
     headers: {
-      'X-Telegram-Init-Data': initData,
+      ..._authHeaders(),
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
     body: formData,

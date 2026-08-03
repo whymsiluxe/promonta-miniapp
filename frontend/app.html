@@ -5331,6 +5331,12 @@ async function initApp() {
   showSplash();
 
   try {
+    // 03.08 (ТЗ Задача 1): обмениваем initData на 12-часовой session token ОДИН раз
+    // при старте -- дальше api()/_authHeaders() сами используют его вместо initData
+    // (который иначе протухает через 1 час и обрывает воркеру смену на полпути).
+    // Если токен уже лежит в sessionStorage (юзер переключил вкладку, не закрывал
+    // WebView) -- ensureSessionToken() вернёт его сразу без сетевого вызова.
+    await ensureSessionToken();
     await fetchRole();
     applyRoleNav();
     initWorkerCheckinFab();

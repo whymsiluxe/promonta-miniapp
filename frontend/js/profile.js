@@ -257,7 +257,7 @@ function _bindProfileHandlers() {
     try {
       const res = await fetch(`${API_BASE}/api/profile/me/avatar`, {
         method: 'POST',
-        headers: { 'X-Telegram-Init-Data': initData },
+        headers: { ..._authHeaders() },
         body: fd,
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
@@ -290,7 +290,7 @@ async function _downloadStundenzettel() {
   try {
     const targetId = _profileStatsUserId || '';
     const res = await fetch(`${API_BASE}/api/checkin/stundenzettel?user_id=${targetId}`, {
-      headers: { 'X-Telegram-Init-Data': initData },
+      headers: { ..._authHeaders() },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
@@ -317,7 +317,7 @@ async function _loadAvatar(uid) {
   if (!img || !uid) return;
   try {
     const res = await fetch(`${API_BASE}/api/profile/${uid}/avatar`, {
-      headers: { 'X-Telegram-Init-Data': initData },
+      headers: { ..._authHeaders() },
     });
     if (!res.ok) return;
     img.src = URL.createObjectURL(await res.blob());

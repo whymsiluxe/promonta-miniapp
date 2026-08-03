@@ -120,7 +120,7 @@ async function _submitCriticalAlertResolution(alertId, resolution, note, files) 
     for (const f of files) formData.append('files', f);
     const res = await fetch(`${API_BASE}/api/critical-alerts/${alertId}/resolve`, {
       method: 'POST',
-      headers: { 'X-Telegram-Init-Data': initData },
+      headers: { ..._authHeaders() },
       body: formData,
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);

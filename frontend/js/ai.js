@@ -75,7 +75,7 @@ async function _handleAiFileSelect(e) {
   try {
     const res = await fetch(API_BASE + '/api/ai-chat/upload', {
       method: 'POST',
-      headers: { 'X-Telegram-Init-Data': initData },
+      headers: { ..._authHeaders() },
       body: formData,
     });
     if (!res.ok) {

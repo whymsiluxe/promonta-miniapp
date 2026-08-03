@@ -5,6 +5,49 @@ const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:8001' 
 let currentRole = 'worker';
 let currentUserId = null;
 
+// 03.08 (ТЗ Задача 1): 12-часовой backend session token поверх initData -- initData
+// сам протухает через 1 час (Telegram его не переподписывает без реального переоткрытия
+// мини-аппы), так что воркер посреди смены получал 401. sessionStorage (не localStorage) --
+// токен привязан к конкретному открытию WebView, не должен переживать полное закрытие
+// Telegram и попасть в постоянное хранилище на устройстве.
+const SESSION_TOKEN_KEY = 'promonta_session_token';
+let _sessionToken = null;
+try { _sessionToken = window.sessionStorage.getItem(SESSION_TOKEN_KEY); } catch (e) { /* приватный режим / недоступно */ }
+
+function _saveSessionToken(token) {
+  _sessionToken = token;
+  try { window.sessionStorage.setItem(SESSION_TOKEN_KEY, token); } catch (e) {}
+}
+
+function _clearSessionToken() {
+  _sessionToken = null;
+  try { window.sessionStorage.removeItem(SESSION_TOKEN_KEY); } catch (e) {}
+}
+
+// Получить token: если уже есть в sessionStorage -- используем как есть (backend всё
+// равно проверяет whitelist/роль заново на каждый запрос, не доверяет токену слепо).
+// Если нет -- обмениваем initData на token один раз при старте приложения (см. app.html).
+async function ensureSessionToken() {
+  if (_sessionToken) return _sessionToken;
+  if (!initData) return null;
+  const res = await fetch(API_BASE + '/api/session', {
+    method: 'POST',
+    headers: { 'X-Telegram-Init-Data': initData },
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+  const data = await res.json();
+  _saveSessionToken(data.token);
+  return data.token;
+}
+
+// Единая точка: юзер увидел "Сессия устарела" -- не молчаливый редирект/белый экран
+// (ТЗ Задача 1). Токен стёрт, следующий ensureSessionToken() при новом открытии
+// мини-аппы получит свежий initData от Telegram и перевыпустит токен сам.
+function _handleSessionExpired() {
+  _clearSessionToken();
+  document.body.innerHTML = '<div style="padding:2rem 1rem;text-align:center;color:var(--text-light)">Сессия устарела. Переоткройте приложение.</div>';
+}
+
 // Прогрев данных на splash-экране: initApp() кладёт сюда промисы GET-запросов заранее,
 // пока грузится анимация — к моменту открытия таба Объекты/Инструмент/Лента данные уже готовы.
 // Большинство путей используется из кэша один раз, дальше идёт обычный живой fetch —
@@ -46,13 +89,27 @@ function api(path, options = {}) {
   // это сломало бы multipart boundary, который браузер должен проставить сам. FormData
   // detection пропускает наш Content-Type override целиком.
   const isFormData = options.body instanceof FormData;
-  const headers = { 'X-Telegram-Init-Data': initData, ...(options.headers || {}) };
+  // 03.08 (ТЗ Задача 1): Authorization: Bearer <session token> -- приоритетный путь,
+  // не требует свежего initData на каждый запрос (12ч vs 1ч TTL). X-Telegram-Init-Data
+  // остаётся как fallback, только если токена ещё нет (напр. сетевой сбой при первом
+  // /api/session обмене на splash) -- backend всё ещё принимает его тоже (обратная
+  // совместимость), так что запрос не проваливается впустую.
+  const headers = { ...(options.headers || {}) };
+  if (_sessionToken) headers['Authorization'] = `Bearer ${_sessionToken}`;
+  else if (initData) headers['X-Telegram-Init-Data'] = initData;
   if (!isFormData) headers['Content-Type'] = 'application/json';
   return fetch(API_BASE + path, {
     ...options,
     headers
   }).then(async res => {
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    if (!res.ok) {
+      if (res.status === 401 && _sessionToken) {
+        // Токен истёк/отозван (не первичная initData-проверка, у неё нет _sessionToken
+        // ещё) -- явное сообщение юзеру, не silent redirect/белый экран без объяснения.
+        _handleSessionExpired();
+      }
+      throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    }
     return res.json();
   });
 }
@@ -118,9 +175,20 @@ function showToast(message, type) {
   _toastTimer = setTimeout(() => el.classList.remove('app-toast-show'), Math.max(3000, message.length * 60));
 }
 
+function _authHeaders() {
+  // 03.08 (ТЗ Задача 1): та же приоритизация Bearer-токена, что и в api() -- отдельные
+  // raw fetch() (файловые эндпоинты, img/blob) не проходят через api(), но должны
+  // одинаково пережить протухший initData, если session token уже выпущен.
+  if (_sessionToken) return { 'Authorization': `Bearer ${_sessionToken}` };
+  return { 'X-Telegram-Init-Data': initData };
+}
+
 async function authImageUrl(path) {
-  const res = await fetch(API_BASE + path, { headers: { 'X-Telegram-Init-Data': initData } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const res = await fetch(API_BASE + path, { headers: _authHeaders() });
+  if (!res.ok) {
+    if (res.status === 401 && _sessionToken) _handleSessionExpired();
+    throw new Error(`HTTP ${res.status}`);
+  }
   return URL.createObjectURL(await res.blob());
 }
 
@@ -329,7 +397,7 @@ function attachVoiceInputButton(buttonEl, onTranscript) {
           fd.append('file', blob, 'voice.webm');
           const res = await fetch(`${API_BASE}/api/transcribe`, {
             method: 'POST',
-            headers: { 'X-Telegram-Init-Data': initData },
+            headers: _authHeaders(),
             body: fd,
           });
           if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);

@@ -261,7 +261,7 @@ async function submitAngebot() {
   try {
     const res = await fetch(API_BASE + '/api/angebot', {
       method: 'POST',
-      headers: { 'X-Telegram-Init-Data': initData, 'Content-Type': 'application/json' },
+      headers: { ..._authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     if (!res.ok) {

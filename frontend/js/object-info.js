@@ -103,7 +103,7 @@ async function renderObjectInfoTab(objectId) {
         fd.append('file', file);
         await fetch(`${API_BASE}/api/objects/${encodeURIComponent(objectId)}/image`, {
           method: 'POST',
-          headers: { 'X-Telegram-Init-Data': initData },
+          headers: { ..._authHeaders() },
           body: fd,
         }).then(async r => {
           if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
@@ -910,7 +910,7 @@ async function _uploadObjInfoDoc(objectId, file) {
     formData.append('file', file);
     const res = await fetch(`${API_BASE}/api/objects/${objectId}/documents`, {
       method: 'POST',
-      headers: { 'X-Telegram-Init-Data': initData },
+      headers: { ..._authHeaders() },
       body: formData,
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
@@ -1603,7 +1603,7 @@ function _openBlockerSheet(onSubmit, { title = 'Сообщить о пробле
       const fd = new FormData();
       fd.append('file', file);
       const resp = await fetch(`${API_BASE}/api/objects/${encodeURIComponent(objectId)}/blocker-photo`, {
-        method: 'POST', headers: { 'X-Telegram-Init-Data': initData }, body: fd,
+        method: 'POST', headers: { ..._authHeaders() }, body: fd,
       });
       if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).detail || `HTTP ${resp.status}`);
       const data = await resp.json();

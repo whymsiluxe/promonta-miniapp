@@ -550,7 +550,7 @@ async function _sendChatAttachment(file) {
     formData.append('thread_key', _chatActiveThreadKey || '');
     const res = await fetch(`${API_BASE}/api/chat/messages/attachment`, {
       method: 'POST',
-      headers: { 'X-Telegram-Init-Data': initData },
+      headers: { ..._authHeaders() },
       body: formData,
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
@@ -1329,7 +1329,7 @@ async function _sendVoiceMessage(blob) {
     else formData.append('to_user_id', _voiceRecordingThread || '');
     const res = await fetch(`${API_BASE}/api/chat/messages/voice`, {
       method: 'POST',
-      headers: { 'X-Telegram-Init-Data': initData },
+      headers: { ..._authHeaders() },
       body: formData,
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
