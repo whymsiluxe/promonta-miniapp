@@ -2383,9 +2383,9 @@ body.view-locked {
 /* Меню появляется через appendChild(document.body) в chat.js (см. _openChatBubbleMenu) --
    вне DOM-поддерева #view-chat, поэтому стилизуется напрямую chat-переменными, не через
    #view-chat-scoping ниже (тот кейс для элементов, которые реально внутри #view-chat). */
-.chat-bubble-menu-backdrop { position: fixed; inset: 0; z-index: 60; background: transparent; }
+.chat-bubble-menu-backdrop { position: fixed; inset: 0; z-index: 320; background: transparent; }
 .chat-bubble-menu {
-  position: fixed; z-index: 61;
+  position: fixed; z-index: 321;
   background: var(--chat-surface-active); border: 1px solid var(--chat-border);
   border-radius: var(--radius-lg); box-shadow: 0 8px 30px rgba(0,0,0,0.45);
   padding: 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
@@ -2455,9 +2455,9 @@ body.view-locked {
 .chat-reply-bar-cancel:active { background: var(--chat-surface-hover); }
 
 /* Forward destination picker -- тот же паттерн модалки, что chat-bubble-menu (fixed+backdrop). */
-.chat-forward-modal-backdrop { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,0.4); }
+.chat-forward-modal-backdrop { position: fixed; inset: 0; z-index: 330; background: rgba(0,0,0,0.4); }
 .chat-forward-modal {
-  position: fixed; z-index: 71; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  position: fixed; z-index: 331; left: 50%; top: 50%; transform: translate(-50%, -50%);
   background: var(--chat-surface-active); border: 1px solid var(--chat-border);
   border-radius: var(--radius-lg); box-shadow: 0 8px 30px rgba(0,0,0,0.45);
   padding: 0.6rem; width: min(320px, calc(100vw - 2rem)); max-height: 70vh; overflow-y: auto;
