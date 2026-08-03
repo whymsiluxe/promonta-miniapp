@@ -345,7 +345,13 @@ async function _renderObjTeamAndShifts(objectId) {
 // 01.08 (спека п.11): ⋯ меню на строке назначения -- открыть профиль/изменить
 // работу/изменить период/изменить задачу/удалить конкретное назначение.
 function _openTeamRowActionsMenu(objectId, userId, assignmentId, team, triggerEl) {
-  const u = team.find(t => String(t.user_id) === String(userId));
+  // 03.08 (реальный найденный баг): при нескольких назначениях одного работника на
+  // одном объекте .find() по user_id всегда возвращал ПЕРВУЮ запись в team, не ту,
+  // на строку которой реально нажали -- меню открывалось/редактировало не то
+  // назначение. Сначала ищем по assignment_id (уникален для каждого назначения),
+  // fallback на user_id только для legacy-строк без assignment_id вообще.
+  const u = (assignmentId && team.find(t => t.assignment_id === assignmentId))
+    || team.find(t => String(t.user_id) === String(userId));
   const backdrop = document.createElement('div');
   backdrop.className = 'chat-bubble-menu-backdrop';
   const menu = document.createElement('div');
@@ -501,18 +507,14 @@ async function _openEditAssignmentWorkTypeSheet(objectId, assignmentId, assignme
   const saveBtn = document.getElementById('edit-worktype-save');
   const initialSelected = assignment?.work_type_id ? new Set([assignment.work_type_id]) : new Set();
   let selectedId = assignment?.work_type_id || '';
-  const picker = await createSkillPicker(container, {
+  // 03.08: singleSelect -- раньше второй тап вызывал picker.destroy() без
+  // пересоздания (баг: интерфейс реально пропадал до закрытия/переоткрытия sheet
+  // целиком). Встроенный режим picker'а больше никогда не уничтожает DOM.
+  await createSkillPicker(container, {
     initialSelected,
+    singleSelect: true,
     onChange: (selected) => {
-      const ids = Array.from(selected);
-      if (ids.length > 1) {
-        const newest = ids.find(id => id !== selectedId) || ids[ids.length - 1];
-        selected.clear();
-        selected.add(newest);
-        picker.destroy();
-        return; // тап уже перерисует через новый createSkillPicker при следующем открытии
-      }
-      selectedId = ids[0] || '';
+      selectedId = Array.from(selected)[0] || '';
       saveBtn.disabled = !selectedId;
     },
   });

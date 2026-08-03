@@ -102,21 +102,14 @@ async function _asBindWorkTypeStep() {
   const container = document.getElementById('as-worktype-picker');
   const nextBtn = document.getElementById('as-worktype-next');
   let selectedId = _asState.workTypeId;
-  const picker = await createSkillPicker(container, {
+  // 03.08: singleSelect -- Assignment Sheet выбирает ОДИН вид работ на назначение.
+  // Раньше это имитировалось вручную (selected.clear()+picker.destroy()+пересоздание
+  // на каждый второй тап), теперь встроенный режим picker'а.
+  await createSkillPicker(container, {
     initialSelected: selectedId ? new Set([selectedId]) : new Set(),
+    singleSelect: true,
     onChange: (selected) => {
-      // Assignment Sheet: выбирается ОДИН вид работ на назначение -- последний тап
-      // снимает все прочие (не мульти-select, в отличие от onboarding/профиля).
-      const ids = Array.from(selected);
-      if (ids.length > 1) {
-        const newest = ids.find(id => id !== selectedId) || ids[ids.length - 1];
-        selected.clear();
-        selected.add(newest);
-        picker.destroy();
-        _asBindWorkTypeStep();
-        return;
-      }
-      selectedId = ids[0] || '';
+      selectedId = Array.from(selected)[0] || '';
       nextBtn.disabled = !selectedId;
     },
   });

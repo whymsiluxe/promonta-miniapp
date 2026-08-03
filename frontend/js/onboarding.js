@@ -183,6 +183,14 @@ async function _obRenderStep2() {
     initialSelected: _obSelectedSkillIds,
     onChange: (selected) => {
       _obSelectedSkillIds = selected;
+      // 03.08 (реальный найденный баг): worker выбирал навык на шаге 2, указывал
+      // уровень на шаге 3, возвращался назад и снимал навык -- запись оставалась в
+      // _obSkillLevels и могла уйти в финальный payload для навыка, которого больше
+      // нет в выборе. Чистим Map сразу при каждом изменении выбора, не только на
+      // финальном шаге.
+      for (const skillId of Array.from(_obSkillLevels.keys())) {
+        if (!selected.has(skillId)) _obSkillLevels.delete(skillId);
+      }
       nextBtn.disabled = selected.size === 0;
       nextBtn.textContent = `Продолжить · выбрано ${selected.size}`;
     },
@@ -261,9 +269,26 @@ function _obRenderStep4() {
     const errEl = document.getElementById('ob-step4-error');
     btn.disabled = true;
     btn.textContent = 'Сохраняю...';
-    // 01.08 (доп.раунд П7): _obLevelPicker уже уничтожен (шаг 3 больше не отрендерен) --
-    // используем сохранённый module-level state _obSkillLevels, не живой picker.
-    const skillsV2 = Array.from(_obSkillLevels.entries()).map(([skill_id, level]) => ({ skill_id, level, verified: false }));
+    // 03.08: строим ТОЛЬКО по текущим _obSelectedSkillIds (не по _obSkillLevels.entries()
+    // напрямую) -- source of truth для того, какие навыки реально выбраны, это Set, а
+    // Map уровней -- производное состояние, которое чистится при снятии навыка (см.
+    // onChange шага 2 выше), но явная проверка здесь -- defense-in-depth на случай
+    // рассинхронизации. Если у выбранного навыка почему-то нет уровня -- не отправляем
+    // запрос вообще, backend всё равно бы отклонил onboarding_completed без уровня
+    // каждого навыка, но лучше явная ошибка тут, чем непонятный 400 с сервера.
+    const missingLevel = Array.from(_obSelectedSkillIds).find(id => !_obSkillLevels.has(id));
+    if (missingLevel) {
+      errEl.textContent = 'Укажи уровень для каждого выбранного навыка';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Завершить регистрацию';
+      return;
+    }
+    const skillsV2 = Array.from(_obSelectedSkillIds).map(skill_id => ({
+      skill_id,
+      level: _obSkillLevels.get(skill_id),
+      verified: false,
+    }));
     try {
       // Спека: "Сначала сохранить профиль, затем установить onboarding_completed: true" --
       // здесь это один PATCH-запрос (backend делает то же самое атомарно: если

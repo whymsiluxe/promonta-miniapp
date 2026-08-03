@@ -1655,17 +1655,21 @@ def unassign_user(object_id: str, user_id: str, user: dict = Depends(get_current
 
     def _mutator(assignments):
         lst = assignments.get(key, [])
-        user_active = [a for a in lst if str(a.get('user_id')) == uid and _assignment_status(a) != 'declined']
-        if not user_active:
+        active_indices = [i for i, a in enumerate(lst)
+                           if str(a.get('user_id')) == uid and _assignment_status(a) != 'declined']
+        if not active_indices:
             result_holder['not_found'] = True
             return
-        if len(user_active) > 1:
+        if len(active_indices) > 1:
             result_holder['multiple'] = True
             return
-        target_id = user_active[0].get('id')
-        # Удаляем ТОЛЬКО целевую запись -- всё остальное (declined этого работника,
-        # любые записи других работников) остаётся нетронутым.
-        assignments[key] = [a for a in lst if a.get('id') != target_id]
+        # 03.08 (реальный найденный баг): раньше искали по assignment['id'], у legacy
+        # записей (созданных до введения id) это None -- фильтр `a.get('id') != None`
+        # удалял ВСЕ записи с реальным id (включая других работников) и оставлял
+        # только другие безымянные legacy-записи. Теперь удаляем по позиции в списке --
+        # работает одинаково для записей с id и без, не зависит от его наличия.
+        target_index = active_indices[0]
+        assignments[key] = [a for i, a in enumerate(lst) if i != target_index]
 
     update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
     if result_holder.get('not_found'):

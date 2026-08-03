@@ -33,6 +33,15 @@ function _allCatalogItems(catalog) {
 async function createSkillPicker(container, opts = {}) {
   const selected = new Set(opts.initialSelected || []);
   const onChange = opts.onChange || (() => {});
+  // 03.08: singleSelect -- Assignment Sheet и "Изменить вид работ" выбирают ОДИН
+  // work_type_id на назначение, но пикер по умолчанию multi-select (нужен для
+  // onboarding/профиля). Раньше вызывающий код имитировал single-select вручную --
+  // ловил onChange, если Set вырос до 2 элементов, чистил его и делал
+  // picker.destroy()+пересоздание, что физически уничтожало и заново создавало DOM
+  // (интерфейс на миг исчезал, а внешний selectedId мог не успеть обновиться до
+  // следующего рендера). Теперь single-select -- встроенный режим: toggle() сам
+  // снимает предыдущий выбор перед добавлением нового, picker никогда не уничтожается.
+  const singleSelect = !!opts.singleSelect;
   let catalog;
   try {
     catalog = await _loadSkillCatalog();
@@ -51,7 +60,14 @@ async function createSkillPicker(container, opts = {}) {
   function isSelected(id) { return selected.has(id); }
 
   function toggle(id) {
-    if (selected.has(id)) selected.delete(id); else selected.add(id);
+    if (selected.has(id)) {
+      selected.delete(id);
+    } else if (singleSelect) {
+      selected.clear();
+      selected.add(id);
+    } else {
+      selected.add(id);
+    }
     render();
     onChange(selected);
   }

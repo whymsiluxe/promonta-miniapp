@@ -474,6 +474,48 @@ class PreciseAssignmentUpdateDeleteTests(unittest.TestCase):
         remaining_ids = [a['id'] for a in self.captured['OBJ-1']]
         self.assertEqual(remaining_ids, ['a2'])  # declined осталась
 
+    def test_delete_legacy_record_without_id_does_not_wipe_other_worker(self):
+        # 03.08 (реальный найденный баг): legacy-записи (созданные до введения поля
+        # id) не имеют 'id' вообще -- старая логика искала target_id = None и
+        # `a.get('id') != None` удаляла ВСЕ записи с реальным id, включая других
+        # работников. Две legacy-записи без id, разные работники -- удаление A не
+        # должно тронуть B.
+        existing = {'OBJ-1': [
+            {'user_id': '10', 'status': 'accepted'},  # legacy, без id
+            {'user_id': '20', 'status': 'accepted'},  # legacy, другой работник, без id
+        ]}
+        with patch.object(backend, 'update_json_transaction') as mock_txn:
+            def fake_txn(path, default, mutator):
+                data = {k: list(v) for k, v in existing.items()}
+                mutator(data)
+                self.captured = data
+                return None
+            mock_txn.side_effect = fake_txn
+            result = backend.unassign_user('OBJ-1', '10', user=OWNER, _=None)
+        self.assertEqual(result['status'], 'ok')
+        remaining = self.captured['OBJ-1']
+        self.assertEqual(len(remaining), 1)
+        self.assertEqual(remaining[0]['user_id'], '20')  # worker B не тронут
+
+    def test_delete_legacy_record_mixed_with_id_records_other_worker(self):
+        # Смешанный случай: legacy-запись без id у одного работника, обычная запись
+        # с id у другого -- удаление legacy-записи не должно задеть запись с id.
+        existing = {'OBJ-1': [
+            {'user_id': '10', 'status': 'accepted'},  # legacy, без id
+            {'id': 'a2', 'user_id': '20', 'status': 'accepted'},
+        ]}
+        with patch.object(backend, 'update_json_transaction') as mock_txn:
+            def fake_txn(path, default, mutator):
+                data = {k: list(v) for k, v in existing.items()}
+                mutator(data)
+                self.captured = data
+                return None
+            mock_txn.side_effect = fake_txn
+            backend.unassign_user('OBJ-1', '10', user=OWNER, _=None)
+        remaining = self.captured['OBJ-1']
+        self.assertEqual(len(remaining), 1)
+        self.assertEqual(remaining[0].get('id'), 'a2')
+
 
 # ---------- Privacy ----------
 
