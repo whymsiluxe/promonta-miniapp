@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-03 (deploy)
+
+Задеплоено на production: commit `aff42ce` (стабилизационный раунд + chat-menu lifecycle fix,
+включая CI-фикс мокинга `_load_repo_objekte_lib`). `promonta-miniapp.service` перезапущен,
+health-check 200, deployed SHA подтверждён. Backup: `/tmp/rollback_backup_20260803_231402`.
+
 ## 2026-08-03 (стабилизационный раунд: session tokens, Owner AI freeze, worker-privacy, needs access control, business-date sweep)
 
 Второй проход того же дня, поверх `859d3dc`/`d8fc913` — 6 отдельных задач, все code+tests,
