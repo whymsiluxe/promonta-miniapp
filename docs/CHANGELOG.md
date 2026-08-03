@@ -2,6 +2,38 @@
 
 ## 2026-08-01 (worker profile v2 + onboarding v2 + unified work-type catalog + unified assignment)
 
+## 2026-08-03 (pilot-blocker fixes: photo verification + assignment-period access gate)
+
+### Fixed
+- **checkin_finish photo count bypass**: the >=2-photos check compared against
+  `len(files)` (raw upload count) instead of the actually-saved, validated
+  count returned by `_save_checkin_photos()`, which silently drops corrupt
+  or oversized files without raising. A request with 2 files where one was
+  corrupt/oversized previously passed the check and finished the shift with
+  fewer than 2 real photos. Fix now checks `len(photo_paths)` before the
+  `finish_at` write; new `_cleanup_checkin_photo_files()` removes only the
+  files saved by the current failed request.
+- **Object access ignored assignment period**: `can_access_object()` granted
+  full object access (chat, files, stages, check-in) to any worker with an
+  `accepted` assignment regardless of `date_from`/`date_to` — an accepted
+  worker with a future-dated assignment already had today's access. New
+  shared helper `has_active_object_access(user_id, object_id, today)`
+  requires accepted status AND today (Europe/Berlin) within
+  `[date_from, date_to]` inclusive; date-less legacy assignments stay
+  unbounded. `can_access_object()` and `_object_chat_participants()` both
+  delegate to it, so all ~19 `require_object_access`-gated routes plus two
+  direct call sites (Mängel photo serving, `checkin_start` owner path)
+  inherit the fix without per-endpoint changes. `checkin_start`'s date now
+  uses `_today_berlin_str()` instead of naive server-local time.
+- Per owner decision, GET-only stage/roadmap endpoints remain intentionally
+  open to any worker (prior 30.07 decision, out of scope this round) — only
+  mutation/object-data endpoints gained the period gate. Personal assignment
+  list and accept/decline endpoints remain unrestricted by design.
+
+Tests: 20 new (`tests/test_object_access_and_checkin_photos.py`). Full suite:
+310 passed, 1 skipped. Commit `859d3dc`. Deployed to production same day.
+
+
 Крупное функциональное расширение перед пилотом (не редизайн, не смена архитектуры).
 
 ### Added

@@ -122,6 +122,16 @@ App is live, in active daily use. As of this pass:
   installed manually outside of any tracked process — `deploy.sh` checks
   its presence before touching prod files but doesn't install it itself.
 
+## 2026-08-03 status
+
+Both remaining backend pilot blockers closed and deployed to production
+(commit `859d3dc`):
+- checkin_finish now verifies actually-saved photo count, not raw upload
+  count (see CHANGELOG).
+- Object access (chat/files/stages/check-in) now gated by assignment
+  `[date_from, date_to]` period via `has_active_object_access()`, not just
+  `accepted` status.
+
 ## Next recommended step
 
 1. Make the GitHub repository private, then rotate the PAT that's been in
