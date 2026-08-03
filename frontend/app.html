@@ -3024,6 +3024,27 @@ body.view-locked {
 .wo-hours-row { display: flex; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem; }
 .wo-hours-row:last-child { border-bottom: none; }
 .wo-hours-value { color: var(--accent-gold); font-weight: 600; }
+/* Раунд1: полноценный блок "Часы команды за неделю" (Old Money стиль, без chart lib) */
+.wo-th-range { font-size: 0.8rem; color: var(--text-light); margin: -0.2rem 0 0.6rem; }
+.wo-th-totals { display: flex; gap: 0.5rem; margin-bottom: 0.7rem; }
+.wo-th-total { flex: 1; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.55rem 0.4rem; text-align: center; }
+.wo-th-total-label { display: block; font-size: 0.68rem; color: var(--text-light); }
+.wo-th-total-num { display: block; font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin-top: 0.15rem; }
+.wo-th-row { padding: 0.55rem 0; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background 0.1s; border-radius: var(--radius-sm, 8px); }
+.wo-th-row:last-child { border-bottom: none; }
+.wo-th-row:active { background: var(--bg-card-raised); }
+.wo-th-row-top { display: flex; align-items: center; gap: 0.55rem; }
+.wo-th-avatar { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 0.85rem; }
+.wo-th-avatar-active { box-shadow: 0 0 0 2px var(--c-brass, var(--accent-gold, var(--accent))); }
+.wo-th-row-main { flex: 1; min-width: 0; }
+.wo-th-row-name { font-size: 0.92rem; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 0.4rem; }
+.wo-th-badge { font-size: 0.68rem; font-weight: 600; color: var(--c-brass, var(--accent-gold, var(--accent))); white-space: nowrap; }
+.wo-th-row-object { font-size: 0.78rem; color: var(--text-light); margin-top: 0.1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wo-th-row-meta { font-size: 0.8rem; color: var(--text-main); margin-top: 0.1rem; }
+.wo-th-row-meta-muted { color: var(--text-light); }
+.wo-week-progress { height: 6px; background: var(--border-color); border-radius: 4px; margin-top: 0.4rem; overflow: hidden; }
+.wo-week-progress-fill { height: 100%; background: var(--accent-gold, var(--accent)); border-radius: 4px; transition: width 0.25s ease; }
+.wo-retry-btn { margin-left: 0.5rem; background: var(--bg-card-raised); border: 1px solid var(--border-color); border-radius: var(--radius-sm, 8px); padding: 0.2rem 0.6rem; font-size: 0.8rem; color: var(--accent); cursor: pointer; }
 /* 30.07 v5: сворачиваемые секции (Отсутствуют/По объектам) */
 .wo-collapsible-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
 .wo-collapsible-header .wo-section-title { margin-bottom: 0; }

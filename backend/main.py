@@ -1243,6 +1243,21 @@ def _hours_from_session(s: dict) -> float:
     return 0.0
 
 
+def _session_hours_live(s: dict) -> float:
+    """Как _hours_from_session, но НЕзавершённую фото-смену (finish_at is None)
+    досчитывает текущим моментом как условным концом (минус накопленная live-пауза) --
+    для "часов за сегодня/неделю" на экране Команда, где идущая смена должна отражаться
+    сразу, а не как 0 до финиша. Незавершённая смена считается ОДИН раз (нет второй
+    записи с finish_at на тот же интервал). Зеркалит логику hours_today_total в
+    get_dashboard_shifts_today. Раунд1 Задача 1.6."""
+    if s.get('finish_at') is not None or s.get('manual_entry'):
+        return _hours_from_session(s)
+    if s.get('start_at'):
+        elapsed = (time.time() - s['start_at'] - (s.get('pause_accumulated_seconds') or 0)) / 3600.0
+        return max(0.0, elapsed)
+    return 0.0
+
+
 def _extra_works_summary_text(session: dict) -> str:
     """Сериализует structured extra_works[] в читаемый текст для Sheets/Telegram --
     оба места раньше показывали одну свободную строку (extra_work: str), теперь
@@ -1462,6 +1477,95 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
         'avg_session_hours': avg_session_hours,
         'work_speed': work_speed,
         'objects': objects_hist,
+    }
+
+
+@app.get("/api/dashboard/team-hours")
+def get_dashboard_team_hours(date_from: str = '', date_to: str = '',
+                             user: dict = Depends(get_current_user),
+                             _: None = Depends(require_owner)):
+    """Раунд1 Задача 1.6: часы ВСЕЙ команды за неделю для экрана Команда → Сводка.
+    owner-only (Worker -> 403, та же чувствительность что shifts-today -- агрегирует
+    личные часы всех работников). Период по умолчанию -- текущая календарная неделя
+    Пн-Вс Europe/Berlin; date_from/date_to опциональны (прошлая неделя).
+
+    profile_stats.team_hours отдаёт только {user_id,name,hours} без today/is_working_now/
+    current_object -- недостаточно для этого блока, поэтому отдельный endpoint. Часы:
+    завершённые смены -- finish-start-pause; идущая смена -- elapsed до текущего момента
+    (считается один раз, не дублируется); manual -- end-start-pause."""
+    from datetime import timedelta, date as _date
+
+    def _parse(s):
+        try:
+            return _date.fromisoformat(s)
+        except Exception:
+            return None
+
+    today = business_today()
+    d_from, d_to = _parse(date_from), _parse(date_to)
+    if not (d_from and d_to):
+        d_from = today - timedelta(days=today.weekday())   # понедельник этой недели
+        d_to = d_from + timedelta(days=6)                  # воскресенье
+    if d_from > d_to:
+        d_from, d_to = d_to, d_from
+    if (d_to - d_from).days > 62:                          # разумный предел окна
+        d_to = d_from + timedelta(days=62)
+    from_iso, to_iso, today_iso = d_from.isoformat(), d_to.isoformat(), today.isoformat()
+    today_in_range = from_iso <= today_iso <= to_iso
+
+    roles = _load_roles()
+    worker_ids = [uid for uid, r in roles.items() if r == 'worker']
+    profiles_map = _load_worker_profiles()
+    all_sessions = _load_checkin_meta()
+
+    object_names = {}
+    try:
+        rows = _cached_get_used_range('Объекты')
+        if rows:
+            hdr = rows[0]
+            for r in rows[1:]:
+                row = dict(zip(hdr, r))
+                object_names[str(row.get('ID объекта', ''))] = row.get('Объект', '')
+    except Exception:
+        object_names = {}
+
+    def _safe_team_name(wid):
+        # _sanitize_display_name fallback -- сам wid (числовой Telegram ID); ТЗ 1.2 явно
+        # запрещает показывать ID вместо имени -> fallback "Сотрудник", плюс страховка
+        # если сохранённое имя само оказалось чисто числовым.
+        nm = _sanitize_display_name(profiles_map.get(wid, {}).get('name'), 'Сотрудник')
+        return 'Сотрудник' if (nm.strip() == str(wid) or nm.strip().isdigit()) else nm
+
+    workers = []
+    for wid in worker_ids:
+        w_sessions = [s for s in all_sessions if str(s.get('user_id')) == wid]
+        in_range = [s for s in w_sessions if from_iso <= s.get('date', '') <= to_iso]
+        hours_week = round(sum(_session_hours_live(s) for s in in_range), 1)
+        today_sess = [s for s in w_sessions if s.get('date', '') == today_iso] if today_in_range else []
+        hours_today = round(sum(_session_hours_live(s) for s in today_sess), 1)
+        open_s = next((s for s in today_sess
+                       if s.get('finish_at') is None and not s.get('manual_entry')), None)
+        is_working_now = open_s is not None
+        cur_oid = str(open_s.get('object_id', '')) if open_s else ''
+        workers.append({
+            'user_id': wid,
+            'name': _safe_team_name(wid),
+            'has_avatar': bool(profiles_map.get(wid, {}).get('avatar')),
+            'hours_today': hours_today,
+            'hours_week': hours_week,
+            'is_working_now': is_working_now,
+            'current_object_id': cur_oid,
+            'current_object_name': (object_names.get(cur_oid, cur_oid) if cur_oid else ''),
+        })
+    # сортировка (ТЗ 1.2): 1) кто сейчас работает, 2) часы недели убыв., 3) с 0 часами в конце
+    workers.sort(key=lambda w: (not w['is_working_now'], -w['hours_week'], w['name'].lower()))
+    return {
+        'date_from': from_iso,
+        'date_to': to_iso,
+        'total_hours': round(sum(w['hours_week'] for w in workers), 1),
+        'today_hours': round(sum(w['hours_today'] for w in workers), 1),
+        'workers_with_hours': sum(1 for w in workers if w['hours_week'] > 0),
+        'workers': workers,
     }
 
 

@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-08-04 (Раунд 1: расширенные часы команды за неделю)
+
+Code+tests only, **без deploy** (по инструкции очереди раундов). Начальный SHA `6f6cd46`.
+
+### Added
+- **`GET /api/dashboard/team-hours`** (owner-only) — часы ВСЕЙ команды за текущую
+  неделю (Пн-Вс Europe/Berlin через `business_today()`), а не top-5 из
+  `profile/stats.team_hours`. Ответ: `total_hours`/`today_hours`/`workers_with_hours`
+  + список работников с `hours_today`/`hours_week`/`is_working_now`/`current_object_*`.
+  Идущая смена считается один раз (elapsed до текущего момента минус пауза) через новый
+  helper `_session_hours_live()`; имя никогда не голый Telegram ID (fallback «Сотрудник»);
+  сортировка: работают сейчас → часы недели убыв. → нули. `date_from`/`date_to`
+  опциональны (прошлая неделя). 8 новых тестов (`tests/test_team_hours.py`): owner/403,
+  период Пн-Вс, суммы, пауза, идущая смена не дублируется, имя не ID, текущий объект,
+  пустая неделя, прошлый диапазон исключает сегодня.
+
+### Changed
+- **Команда → Сводка → «Часы команды»** (`home.js`) переписан на новый endpoint:
+  полноценная секция после активных смен (заголовок + диапазон недели + Всего/Сегодня/
+  С часами + список всех работников с CSS progress-bar `.wo-week-progress`). Клик по
+  строке → рабочая карточка сотрудника (`openWorkerCard`, fallback `openUserCard`).
+  Состояния loading/empty/error+«Повторить». Frontend НЕ считает неделю через UTC.
+
 ## 2026-08-03 (deploy)
 
 Задеплоено на production: commit `aff42ce` (стабилизационный раунд + chat-menu lifecycle fix,

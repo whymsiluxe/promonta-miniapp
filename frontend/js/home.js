@@ -704,6 +704,94 @@ function _setWorkerBadge(elId, count) {
 }
 
 
+// ═══════════ Раунд1: блок "Часы команды за неделю" (Команда → Сводка). ═══════════
+// Формат часов -- запятая как десятичный разделитель ("7,5 ч"), как на скриншотах ТЗ.
+function _fmtHours(n) {
+  return (Math.round((Number(n) || 0) * 10) / 10).toFixed(1).replace('.', ',');
+}
+const _WO_MONTHS_ABBR = ['янв.', 'февр.', 'марта', 'апр.', 'мая', 'июня', 'июля', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.'];
+const _WO_WEEKDAYS_ABBR = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+function _fmtRangeLabel(fromIso, toIso) {
+  // "Пн, 3 авг. — Вс, 9 авг." из ISO-дат (уже посчитаны backend по Europe/Berlin,
+  // frontend не пересчитывает неделю через UTC toISOString -- ТЗ 1.5).
+  const fmtOne = (iso) => {
+    const p = String(iso || '').split('-').map(Number);
+    if (p.length !== 3 || !p[0]) return String(iso || '');
+    const d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
+    const wd = (d.getUTCDay() + 6) % 7; // 0=Пн
+    return `${_WO_WEEKDAYS_ABBR[wd]}, ${p[2]} ${_WO_MONTHS_ABBR[p[1] - 1]}`;
+  };
+  if (!fromIso || !toIso) return '';
+  return `${fmtOne(fromIso)} — ${fmtOne(toIso)}`;
+}
+
+// Возвращает HTML секции "Часы команды". Состояния: error+Повторить, empty, данные.
+function _renderTeamHoursSection(data, workersByUid) {
+  if (data && data._error) {
+    return `
+      <div class="wo-section" id="wo-anchor-team-hours">
+        <div class="wo-section-title">Часы команды</div>
+        <div class="wo-empty">Не удалось загрузить часы команды.
+          <button type="button" class="wo-retry-btn" id="wo-team-hours-retry">Повторить</button>
+        </div>
+      </div>`;
+  }
+  if (!data || !Array.isArray(data.workers)) return '';
+  const range = _fmtRangeLabel(data.date_from, data.date_to);
+  const workers = data.workers;
+  const maxWeek = Math.max(1, ...workers.map(w => Number(w.hours_week) || 0));
+  // имя: backend уже даёт безопасное ("Сотрудник", не ID); доп. fallback из /api/workers
+  const _isNum = s => /^\d+$/.test((s || '').trim());
+  const _name = w => {
+    const n = w.name || '';
+    if (n && !_isNum(n)) return n;
+    const alt = workersByUid[String(w.user_id)];
+    if (alt && !_isNum(alt)) return alt;
+    return 'Сотрудник';
+  };
+  const rowHtml = w => {
+    const wk = Number(w.hours_week) || 0;
+    const td = Number(w.hours_today) || 0;
+    const pct = Math.round(wk / maxWeek * 100);
+    let detail;
+    if (wk <= 0 && td <= 0) {
+      detail = '<div class="wo-th-row-meta wo-th-row-meta-muted">На этой неделе нет часов</div>';
+    } else {
+      detail = `<div class="wo-th-row-meta">Сегодня ${_fmtHours(td)} ч · Неделя ${_fmtHours(wk)} ч</div>`;
+    }
+    const objLine = (w.is_working_now && w.current_object_name)
+      ? `<div class="wo-th-row-object">Объект: ${esc(w.current_object_name)}</div>` : '';
+    const initials = (_name(w) || '?').trim().charAt(0).toUpperCase();
+    const avatar = `<span class="wo-th-avatar${w.is_working_now ? ' wo-th-avatar-active' : ''}" style="background:hsl(${_chatAvatarHue(w.user_id)} 42% 40%)">${esc(initials)}</span>`;
+    return `
+      <div class="wo-th-row" data-uid="${esc(w.user_id)}" role="button" tabindex="0" aria-label="Карточка сотрудника ${esc(_name(w))}">
+        <div class="wo-th-row-top">
+          ${avatar}
+          <div class="wo-th-row-main">
+            <div class="wo-th-row-name">${esc(_name(w))}${w.is_working_now ? '<span class="wo-th-badge">● на смене</span>' : ''}</div>
+            ${objLine}
+            ${detail}
+          </div>
+        </div>
+        <div class="wo-week-progress"><div class="wo-week-progress-fill" style="width:${pct}%"></div></div>
+      </div>`;
+  };
+  const listHtml = workers.length
+    ? workers.map(rowHtml).join('')
+    : '<div class="wo-empty">На этой неделе нет часов</div>';
+  return `
+    <div class="wo-section" id="wo-anchor-team-hours">
+      <div class="wo-section-title">Часы команды</div>
+      ${range ? `<div class="wo-th-range">${esc(range)}</div>` : ''}
+      <div class="wo-th-totals">
+        <div class="wo-th-total"><span class="wo-th-total-label">Всего</span><span class="wo-th-total-num">${_fmtHours(data.total_hours)} ч</span></div>
+        <div class="wo-th-total"><span class="wo-th-total-label">Сегодня</span><span class="wo-th-total-num">${_fmtHours(data.today_hours)} ч</span></div>
+        <div class="wo-th-total"><span class="wo-th-total-label">С часами</span><span class="wo-th-total-num">${data.workers_with_hours || 0}</span></div>
+      </div>
+      ${listHtml}
+    </div>`;
+}
+
 // ═══════════ "Команда" (23.07 "Объекты рабочие" → 30.07 v3 переименовано и расширено
 // по спеку): оперативный owner-экран, две внутренние вкладки -- "Сводка" (Требует внимания /
 // Активные смены / Часы команды / без объекта / отсутствуют / по объектам) и "План"
@@ -740,13 +828,17 @@ async function initWorkingObjectsView() {
   slot.innerHTML = '<div style="padding:1rem;color:var(--text-light)">Загрузка…</div>';
 
   try {
-    const [workersData, objectsData, absenceData, shifts, stats, blockersData] = await Promise.all([
+    const [workersData, objectsData, absenceData, shifts, stats, blockersData, teamHoursData] = await Promise.all([
       api('/api/workers'),
       api('/api/objects'),
       api('/api/abwesenheit/all').catch(() => ({ entries: [] })),
       api('/api/dashboard/shifts-today').catch(() => null),
       api('/api/profile/stats').catch(() => null),
       api('/api/dashboard/active-blockers').catch(() => ({ blockers: [] })),
+      // Раунд1: полный список часов всей команды за текущую неделю (не top-5 из
+      // stats.team_hours). Отдельный owner-only endpoint -- см. get_dashboard_team_hours.
+      // Помечаем ошибку как _error, чтобы блок показал retry, а не тихо исчез.
+      api('/api/dashboard/team-hours').catch(e => ({ _error: e && e.message ? e.message : 'error' })),
     ]);
 
     const workers = (workersData.workers || []).filter(w => w.role === 'worker');
@@ -851,39 +943,13 @@ async function initWorkingObjectsView() {
       // Активные смены -- отдельный заметный блок.
       const workingHtml = working.length ? working.map(activeCard).join('') : '<div class="wo-empty">Сейчас никто не работает</div>';
 
-      // Часы команды -- компактный список: максимум 5, ненулевые сначала, без ID
-      // как главного имени. Cleanup-commit (спек п.6): backend team_hours[].name уже
-      // проходит через _sanitize_display_name (Worker Profile), но fallback там --
-      // числовой Telegram ID, который тоже "проходит" как непустая строка. Порядок
-      // здесь: 1) backend name (Worker Profile) 2) имя из уже загруженного /api/workers
-      // 3) backend name если не состоит только из цифр 4) "Сотрудник".
+      // Раунд1 Задача 1: полноценный блок "Часы команды за неделю" -- весь список
+      // активных Worker (не top-5), прогресс-бары, кто работает сейчас, суммы за неделю/
+      // сегодня. Данные из отдельного /api/dashboard/team-hours (teamHoursData); имена уже
+      // безопасны на backend (никогда голый ID), плюс fallback из /api/workers.
       const workersByUid = {};
       workers.forEach(w => { workersByUid[String(w.user_id)] = w.name; });
-      const _isNumericOnly = s => /^\d+$/.test((s || '').trim());
-      const _resolveHoursName = t => {
-        const backendName = t.name || '';
-        if (backendName && !_isNumericOnly(backendName)) return backendName;
-        const workerName = workersByUid[String(t.user_id)];
-        if (workerName && !_isNumericOnly(workerName)) return workerName;
-        return 'Сотрудник';
-      };
-      const teamHours = (stats && stats.team_hours) || [];
-      const weekTotal = teamHours.reduce((sum, t) => sum + (t.hours || 0), 0);
-      const nonZeroHours = teamHours.filter(t => t.hours > 0).slice(0, 5);
-      const hoursHtml = teamHours.length ? `
-        <div class="wo-section">
-          <div class="wo-section-title">Часы команды</div>
-          <div class="wo-hours-tiles">
-            <div class="wo-hours-tile"><span class="wo-hours-tile-num">${working.length}</span><span class="wo-hours-tile-label">работают сейчас</span></div>
-            <div class="wo-hours-tile"><span class="wo-hours-tile-num">${(shifts.hours_today_total || 0).toFixed(1)}</span><span class="wo-hours-tile-label">часов сегодня</span></div>
-            <div class="wo-hours-tile"><span class="wo-hours-tile-num">${weekTotal.toFixed(1)}</span><span class="wo-hours-tile-label">часов за неделю</span></div>
-          </div>
-          ${nonZeroHours.length ? nonZeroHours.map(t => `
-            <div class="wo-hours-row">
-              <span class="wo-hours-name">${esc(_resolveHoursName(t))}</span>
-              <span class="wo-hours-value">${t.hours.toFixed(1)} ч</span>
-            </div>`).join('') : '<div class="wo-empty">На этой неделе часов пока нет</div>'}
-        </div>` : '';
+      const hoursHtml = _renderTeamHoursSection(teamHoursData, workersByUid);
 
       teamHtml = `
         ${summaryHtml}
@@ -951,6 +1017,21 @@ async function initWorkingObjectsView() {
       card.addEventListener('click', () => {
         if (typeof openUserCard === 'function') openUserCard(card.dataset.uid);
       });
+    });
+    // Раунд1 Задача 1.4: клик по строке часов -> рабочая карточка сотрудника
+    // (openWorkerCard -- отдельный режим, не подмена профиля owner). Двойной тап не
+    // открывает два overlay -- guard внутри openWorkerCard.
+    slot.querySelectorAll('.wo-th-row[data-uid]').forEach(row => {
+      const open = () => {
+        if (typeof openWorkerCard === 'function') openWorkerCard(row.dataset.uid, { view: 'working-objects' });
+        else if (typeof openUserCard === 'function') openUserCard(row.dataset.uid);
+      };
+      row.addEventListener('click', open);
+      row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+    });
+    slot.querySelector('#wo-team-hours-retry')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initWorkingObjectsView();
     });
     slot.querySelectorAll('.wo-summary-tile[data-scroll-target]').forEach(tile => {
       tile.addEventListener('click', () => {

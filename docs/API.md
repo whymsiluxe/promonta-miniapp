@@ -46,6 +46,13 @@ This is a route inventory grouped by feature area, built by grepping all `@app.g
 - `GET /api/checkin/{session_id}/photo/{which}/{index}` — serves a specific check-in photo; role-checked ownership per 2026-07-15 audit notes (not re-verified line-by-line here).
 - `GET /api/checkin/stundenzettel` — timesheet export.
 
+## Dashboard (owner)
+
+- `GET /api/dashboard/shifts-today` **[owner]** — who's working now / assigned-not-started / all today's shifts.
+- `GET /api/dashboard/active-blockers` **[owner]** — reported stage blockers.
+- `GET /api/dashboard/team-hours?date_from=&date_to=` **[owner]** — full weekly hours for every active worker (not top-5). Default period = current Mon–Sun business week (Europe/Berlin). Returns `{date_from, date_to, total_hours, today_hours, workers_with_hours, workers:[{user_id, name, has_avatar, hours_today, hours_week, is_working_now, current_object_id, current_object_name}]}`. Open shifts counted once (elapsed to now, minus pause); names never a raw Telegram ID (fallback "Сотрудник"). Worker → 403.
+- `GET /api/dashboard/team-plan` — read-only who's planned for a date.
+
 ## Absence / calendar (Abwesenheit)
 
 - `GET /api/abwesenheit` — own or relevant entries.
