@@ -546,23 +546,55 @@ def require_owner(role: str = Depends(get_role)):
         raise HTTPException(403, "owner only")
 
 
+def _today_berlin_str() -> str:
+    """03.08: единая точка для 'сегодня' по Europe/Berlin -- сервер работает в UTC,
+    прямой date.today()/datetime.now() без таймзоны даёт неверную дату вечером/ночью
+    по местному времени (тот же класс бага, что уже чинили на frontend, см.
+    shared.js todayBerlin())."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo('Europe/Berlin')).strftime('%Y-%m-%d')
+
+
+def has_active_object_access(user_id: str, object_id: str, today: str | None = None) -> bool:
+    """03.08 (доп.раунд П2): единый helper для ПОЛНОГО доступа к данным объекта --
+    отличается от простого "назначение существует". Worker должен иметь ровно ОДНО
+    accepted-назначение на этот объект, чей период [date_from, date_to] включает
+    сегодняшний день (Europe/Berlin) включительно. Назначение без date_from/date_to
+    (легаси-записи до введения периодов) трактуется как бессрочное -- backward compat,
+    та же логика уже была в _get_active_assignment_for_checkin.
+
+    НЕ вызывать напрямую для owner -- эта функция только про worker-назначения,
+    вызывающий код (require_object_access/has_active_object_access_for_role) сам
+    решает, что owner имеет доступ всегда."""
+    if today is None:
+        today = _today_berlin_str()
+    assignments = _load_assignments().get(str(object_id), [])
+    for a in assignments:
+        if str(a.get('user_id')) != str(user_id):
+            continue
+        if _assignment_status(a) != 'accepted':
+            continue
+        d_from, d_to = a.get('date_from', ''), a.get('date_to', '')
+        if not (d_from and d_to):
+            return True  # легаси-назначение без периода -- бессрочный доступ
+        if d_from <= today <= d_to:
+            return True
+    return False
+
+
 def can_access_object(user: dict, role: str, object_id: str) -> bool:
     """owner видит/управляет всем; worker -- только объекты, на которые назначен
-    (object_assignments.json). Единая точка правды для object-scoped routes --
-    раньше большинство из них проверяли только get_current_user (авторизован ли
-    вообще), не было ли это чужим объектом."""
+    И чей период назначения активен сегодня (Europe/Berlin). Единая точка правды для
+    object-scoped routes -- раньше большинство из них проверяли только
+    get_current_user (авторизован ли вообще), не было ли это чужим объектом.
+
+    03.08 (доп.раунд П2, реальный найденный баг): раньше accepted-назначение давало
+    ПОЛНЫЙ доступ независимо от периода -- worker с назначением на будущий месяц уже
+    сегодня мог открыть чат/этапы/файлы объекта, доступ к которому должен появиться
+    только в date_from. Период теперь обязательная часть проверки (has_active_object_access)."""
     if role == 'owner':
         return True
-    assignments = _load_assignments()
-    # 29.07 fix: назначение с status='pending'/'declined' НЕ даёт доступа -- иначе
-    # worker, ещё не подтвердивший или отклонивший выход на объект, всё равно мог бы
-    # писать в его roadmap/чат через require_object_access (реальная дыра, найденная
-    # при аудите после добавления assignment acknowledgement -- _assignment_status()
-    # уже существовал для UI, но не был подключён к контролю доступа).
-    return any(
-        str(a.get('user_id')) == str(user['id']) and _assignment_status(a) == 'accepted'
-        for a in assignments.get(str(object_id), [])
-    )
+    return has_active_object_access(str(user['id']), object_id)
 
 
 def require_object_access(object_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
@@ -3496,10 +3528,17 @@ def _reject_self_chat(user_id, to_user_id: str | None):
 
 
 def _object_chat_participants(object_id: str) -> list:
+    """03.08 (доп.раунд П2, реальный найденный баг): раньше ЛЮБОЕ назначение (даже
+    pending/declined, даже вне периода) давало доступ к чату объекта -- полное
+    несоответствие с can_access_object, которое уже требовало accepted+период.
+    Теперь строго через has_active_object_access -- тот же критерий доступа
+    одинаково для этапов/файлов/чата, не отдельная более слабая проверка."""
     roles = _load_roles()
     owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
     assignments = _load_assignments().get(object_id, [])
-    worker_ids = {str(a['user_id']) for a in assignments}
+    candidate_ids = {str(a['user_id']) for a in assignments}
+    today = _today_berlin_str()
+    worker_ids = {uid for uid in candidate_ids if has_active_object_access(uid, object_id, today)}
     if owner_id:
         worker_ids.add(str(owner_id))
     return list(worker_ids)
@@ -5636,13 +5675,35 @@ async def _save_checkin_photos(files: list, object_id: str, date_str: str) -> li
     return saved
 
 
+def _cleanup_checkin_photo_files(relative_paths: list) -> None:
+    """03.08: удаляет файлы, сохранённые _save_checkin_photos() ТЕКУЩЕГО неуспешного
+    запроса (когда итоговое количество валидных фото < 2) -- не оставляет orphan-файлы
+    на диске без ссылки в metadata. Не трогает фото прошлых успешных запросов -- те
+    приходят отдельным списком путей, никогда не пересекаются с этим вызовом."""
+    for rel_path in relative_paths:
+        # os.path.basename на каждом сегменте -- та же defense-in-depth привычка,
+        # что и при сохранении (rel_path здесь свой же вывод _save_checkin_photos,
+        # но не доверяем этому неявно на случай будущих изменений вызывающего кода).
+        abs_path = os.path.join(CHECKIN_PHOTO_BASE, rel_path)
+        try:
+            os.remove(abs_path)
+        except OSError:
+            pass
+
+
 def _get_active_assignment_for_checkin(user_id: str, object_id: str, today: str) -> str:
     """Единая проверка для /api/checkin/start (30.07, аудит п.5) -- owner вызывающий
     код не проверяет вообще (owner проходит can_access_object безусловно), эта функция
     только для worker-пути. Возвращает assignment_id при успехе, иначе бросает 403
     с конкретным сообщением (pending/declined/вне периода/нет назначения -- разные
     тексты, не один общий "нет доступа"). Backward compat: назначение без 'status'
-    трактуется как accepted (_assignment_status), без date_from/date_to -- не блокируется."""
+    трактуется как accepted (_assignment_status), без date_from/date_to -- не блокируется.
+
+    03.08: критерий "успех" здесь ТОТ ЖЕ, что has_active_object_access() (accepted +
+    сегодня внутри [date_from, date_to] либо период не задан) -- не дублирующая
+    независимая проверка дат, просто эта функция дополнительно резолвит конкретный
+    assignment_id и даёт разные сообщения об ошибке (pending/declined/вне периода),
+    чего bool-helper намеренно не делает."""
     candidates = [a for a in _load_assignments().get(object_id, []) if str(a.get('user_id')) == str(user_id)]
     if not candidates:
         raise HTTPException(403, "У вас нет принятого назначения на этот объект")
@@ -5689,7 +5750,11 @@ async def checkin_start(
         raise HTTPException(400, "object_id обязателен")
     if not lat.strip() or not lon.strip():
         raise HTTPException(400, "Включи геолокацию, чтобы начать смену")
-    date_str = datetime.now().strftime('%Y-%m-%d')
+    # 03.08: Europe/Berlin, не UTC сервера -- проверка периода назначения
+    # (_get_active_assignment_for_checkin ниже) должна сверяться с той же датой, что
+    # реально "сегодня" по местному времени, иначе вечером/ночью Berlin worker мог бы
+    # получить доступ на день раньше/позже реального начала/конца периода.
+    date_str = _today_berlin_str()
 
     # 30.07 (аудит п.5): единая проверка ДО сохранения фото/создания сессии -- нельзя
     # сначала записать файлы, а потом вернуть 403. Owner не назначается вообще
@@ -5866,7 +5931,18 @@ async def checkin_finish(
     # Сохранение фото (I/O, await) — вне лока, как и в checkin_start. Раньше await стоял
     # внутри with _checkin_lock: — второй параллельный check-in-запрос (частый сценарий,
     # два работника жмут "Финиш" в конце смены одновременно) блокировал event loop навсегда.
+    #
+    # 03.08 (реальный найденный баг): len(files) < 2 проверяет ПЕРЕДАННОЕ количество,
+    # не РЕАЛЬНО СОХРАНЁННОЕ -- _save_checkin_photos() молча пропускает (continue)
+    # битые/слишком большие/не-изображение файлы, ничего не бросая. Раньше finish_at
+    # мог записаться после отправки 2 файлов, из которых 0-1 реально сохранились.
+    # Теперь: сохраняем, считаем РЕАЛЬНО сохранённые, при недостатке -- удаляем файлы
+    # ИМЕННО этого неуспешного запроса (не трогаем фото прошлых успешных попыток) и
+    # 400 ДО захвата _checkin_lock -- session['finish_at'] не пишется вообще.
     photo_paths = await _save_checkin_photos(files, object_id, date_str)
+    if len(photo_paths) < 2:
+        _cleanup_checkin_photo_files(photo_paths)
+        raise HTTPException(400, "Для завершения смены необходимо минимум 2 корректных фото")
 
     with _checkin_lock:
         items = _load_checkin_meta()
