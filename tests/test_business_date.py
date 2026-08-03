@@ -14,7 +14,7 @@ import os
 import sys
 import unittest
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
@@ -106,12 +106,15 @@ class StageCompletionDateBoundaryTests(unittest.TestCase):
 
 class DashboardTodayBoundaryTests(unittest.TestCase):
     def test_team_plan_defaults_to_berlin_today(self):
+        fake_objekte_lib = MagicMock()
+        fake_objekte_lib.all_stages_grouped.return_value = {}
         with patch.object(backend, 'business_now', return_value=MIDNIGHT_EDGE_BERLIN), \
              patch.object(backend, '_cached_get_used_range', return_value=None), \
              patch.object(backend, '_load_worker_profiles', return_value={}), \
              patch.object(backend, '_load_assignments', return_value={}), \
              patch.object(backend, '_load_roles', return_value={'1': 'owner'}), \
-             patch.object(backend, '_load_checkin_meta', return_value=[]):
+             patch.object(backend, '_load_checkin_meta', return_value=[]), \
+             patch.object(backend, '_load_repo_objekte_lib', return_value=fake_objekte_lib):
             result = backend.get_team_plan(date='', user=OWNER, _=None)
         self.assertEqual(result['date'], MIDNIGHT_EDGE_BERLIN_DATE)
 
