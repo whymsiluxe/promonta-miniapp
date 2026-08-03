@@ -132,11 +132,58 @@ Both remaining backend pilot blockers closed and deployed to production
   `[date_from, date_to]` period via `has_active_object_access()`, not just
   `accepted` status.
 
+## 2026-08-03 second pass (session tokens, Owner AI freeze, worker-privacy, needs ACL, business-date sweep)
+
+Code + tests only, pushed to `main`, **NOT deployed** (per explicit instruction
+this round — `scripts/deploy.sh` not run). Production backend still serves
+`859d3dc`; `main` HEAD after this pass is ahead of it (see CHANGELOG entry
+"стабилизационный раунд" for full detail). Full local suite: 355 passed,
+1 skipped (pre-existing) — test count has grown since the "202 automated
+backend tests" figure quoted above (2026-08-01 entry); that number is stale,
+current count is visible directly from `pytest tests/ -q` output, not tracked
+as a fixed figure in this doc going forward.
+
+Closed this pass:
+- 12-hour backend session token over Telegram initData (was: hard 1h initData
+  TTL, worker got 401 mid-shift).
+- Owner AI (Claude CLI subprocess) safe freeze: `OWNER_AI_ENABLED` env flag
+  (default false), `--dangerously-skip-permissions` removed, subprocess env
+  reduced to an explicit allowlist instead of full `os.environ`.
+- `GET /api/objects` no longer leaks colleague assignment metadata
+  (`task_note`/`decline_reason`/`assignment_id`/dates/pending-declined status)
+  to Worker — new `_serialize_object_for_worker()` DTO.
+- Access control added to `/api/tasks` (Потребности) GET+POST when `object_id`
+  is passed — worker now needs `has_active_object_access`.
+- `business_now()`/`business_today()`/`business_today_str()` — remaining UTC
+  `date.today()`/`datetime.now()` call sites (assignment matching, profile
+  aggregates, stage completion dates, dashboard "today") moved onto the
+  Europe/Berlin business-date helper introduced in the prior pass.
+
+Explicitly deferred this pass (owner decision, not forgotten):
+- **Manager/Bauleiter role** — out of scope, not requested for this round.
+- **Owner AI real sandbox** (separate Unix user, read-only checkout, process
+  isolation) — the env-flag freeze above is a stopgap, not the real fix.
+  Re-enabling `OWNER_AI_ENABLED=true` in production without that sandbox
+  reintroduces full-repo subprocess access risk.
+- **PostgreSQL / DB migration** — flat JSON storage stays as-is.
+- **Offline queue** (full client-side offline-first write queue) — not built.
+- **`main.py` decomposition** — still one large file, no split into routers.
+- **Redesign** — no UI/IA changes this pass, fixes only.
+- **Rate limiting on all upload endpoints** — not extended beyond what
+  already existed (AI chat rate limit only).
+- **New access model for `GET` stages/roadmap** — stays open to any worker,
+  per prior explicit owner decision, unchanged this round.
+
 ## Next recommended step
 
 1. Make the GitHub repository private, then rotate the PAT that's been in
-   use.
+   use, enable secret scanning, add branch protection on `main` (see
+   CHANGELOG "manual checklist" — none of these four executed automatically
+   per instruction).
 2. Perform the live Telegram Worker A / Worker B / Owner E2E walkthrough —
    this is the one thing automated agents in this environment could not do.
-3. Once E2E passes and repo is private: this becomes genuinely READY FOR
-   PILOT, not before.
+3. Review this pass's diff (session tokens / Owner AI freeze / worker-privacy
+   DTO / needs ACL / business-date sweep), then run `scripts/deploy.sh`
+   explicitly when ready — not part of this pass.
+4. Once E2E passes, repo is private, and this pass is deployed: this becomes
+   genuinely READY FOR PILOT, not before.

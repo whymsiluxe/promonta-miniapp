@@ -18,9 +18,9 @@ Role is looked up from `roles.json` by Telegram user ID; unknown IDs get a hard 
 ## Tech stack
 
 - **Frontend**: vanilla HTML/CSS/JS, no build step, no framework, no bundler. Single-page shell (`app.html`) + per-feature JS modules loaded as plain `<script>` tags from `js/`. Telegram WebApp JS SDK for host integration (initData, haptics, theming, safe-area).
-- **Backend**: Python 3.12, FastAPI (`main.py`, 140 routes, single file). Auth via Telegram WebApp `initData` HMAC validation — no separate login system, no JWT, no session cookies.
+- **Backend**: Python 3.12, FastAPI (`main.py`, 148 routes, single file). Auth via Telegram WebApp `initData` HMAC validation, plus (since 2026-08-03) a 12-hour backend session token (`POST /api/session`) issued after one initData check — no separate login system, no JWT library, no session cookies.
 - **Data storage**: flat JSON files on disk (no database, no ORM, no migrations). See [docs/DATABASE.md](docs/DATABASE.md) for the full list of stores and known race-condition mitigations (atomic write + per-file locks). Critical stores (`checkin_meta.json`, `chat_messages.json`, `mangel_tickets.json`, and most others) write atomically (temp-file + `os.replace`) — see [docs/RELEASE_AUDIT.md](docs/RELEASE_AUDIT.md) for the full audit.
-- **Shared modules** (`objekte_lib.py`, `mangel_lib.py`, `tools_lib.py`, `roadmap_lib.py`): historically these lived only on the VPS outside git. `tools_lib.py` and `roadmap_lib.py` are now tracked in `backend/` and loaded via an isolated `importlib`-based loader (not a plain `import`) so `main.py` always resolves the repo-tracked version, not a possibly-stale copy on disk. `objekte_lib.py` and `mangel_lib.py` — same fix applied for `mangel_lib.py`; `objekte_lib.py` is still untracked (known gap, see RELEASE_AUDIT.md).
+- **Shared modules** (`objekte_lib.py`, `mangel_lib.py`, `tools_lib.py`, `roadmap_lib.py`): historically these lived only on the VPS outside git. All four are now tracked in `backend/` and loaded via an isolated `importlib`-based loader (not a plain `import`) so `main.py` always resolves the repo-tracked version, not a possibly-stale copy on disk — a clean `git clone` + deploy reproduces working code for all of them (see RELEASE_AUDIT.md, marked historical, for the original untracked-module findings).
 - **AI features**: Claude (via `CLAUDE_BIN` CLI bridge) and GLM as fallback, for chat assistant and voice-note transcript extraction (`faster-whisper` for STT).
 - **PDF generation**: `pypdf`, for Angebot (quotes) and Rechnung (invoices).
 
@@ -60,7 +60,7 @@ Frontend has no build step — open `frontend/app.html` directly, but it expects
 
 ## Checks
 
-- **Automated tests**: `tests/*.py`, plain stdlib `unittest` (no framework installed), runnable via `pytest tests/` or `python3 -m unittest tests.test_X`. As of the last release-readiness pass: 151 tests, all passing, fully offline (no real Google Sheets/Telegram calls — route handlers called directly with mocked dependencies, `BOT_TOKEN` can be any dummy string for HMAC-signature tests). See [docs/TESTING.md](docs/TESTING.md).
+- **Automated tests**: `tests/*.py`, plain stdlib `unittest` (runnable directly via `pytest` — installed as a test-only dependency, see `requirements-test.txt` — or `python3 -m unittest tests.test_X`). As of 2026-08-03: 355 tests passing + 1 pre-existing skip, fully offline (no real Google Sheets/Telegram calls — route handlers called directly with mocked dependencies, `BOT_TOKEN` can be any dummy string for HMAC-signature tests). See [docs/TESTING.md](docs/TESTING.md).
 - **CI**: `.github/workflows/ci.yml` runs the same checks (Python syntax, JS syntax, full test suite, required-file presence, merge-conflict markers, obvious-secrets scan) on every push/PR. *(Note: this workflow file exists in the repo working tree but could not be pushed in the session that authored it — the deploying GitHub OAuth token lacked the `workflow` scope required to create/update `.github/workflows/*.yml`. Push it manually or with a token that has that scope before relying on it.)*
 - **No lint/typecheck configured** — Python has no `ruff`/`mypy`, JS has no `eslint`/TypeScript. Only `py_compile`/`node --check` syntax validation.
 - Manual pre-deploy checklist: [docs/TESTING.md](docs/TESTING.md), release checklist: [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
@@ -98,7 +98,6 @@ Frontend has no build step — open `frontend/app.html` directly, but it expects
 ## Known limitations
 
 - No local dev environment (see "Local development" above) — all iteration happens against the live VPS.
-- `objekte_lib.py` (object/stage data via Google Sheets) is still untracked in git — a clean clone of this repo alone will not run a fully working backend; see [docs/RELEASE_AUDIT.md](docs/RELEASE_AUDIT.md).
 - No automated visual/UI testing — Safari MCP browser automation is not currently functional in this environment; UI changes are verified by code review and manual Telegram testing, not automated screenshots.
 - Full data-deletion-on-request ("right to be forgotten") is not implemented — see [docs/DATA_PROTECTION.md](docs/DATA_PROTECTION.md).
 

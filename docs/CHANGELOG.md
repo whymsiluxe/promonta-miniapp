@@ -1,5 +1,98 @@
 # Changelog
 
+## 2026-08-03 (стабилизационный раунд: session tokens, Owner AI freeze, worker-privacy, needs access control, business-date sweep)
+
+Второй проход того же дня, поверх `859d3dc`/`d8fc913` — 6 отдельных задач, все code+tests,
+без deploy (по инструкции). Не редизайн, не новые экраны, не смена архитектуры.
+
+### Added
+- **12-часовой backend session token** поверх Telegram initData (`create_session_token`/
+  `verify_session_token`, `POST /api/session`). initData сам протухает через
+  `INIT_DATA_MAX_AGE` (1 час) и не переподписывается Telegram без реального переоткрытия
+  WebView — воркер получал 401 посреди смены. Токен = `base64url(user_id.exp).hmac_hex`,
+  HMAC-SHA256 с доменно-разделённым секретом (`_session_secret()`, отдельная производная от
+  `BOT_TOKEN`, не тот же ключ, что подпись initData), сравнение через `hmac.compare_digest`
+  (constant-time). Полезная нагрузка содержит ТОЛЬКО `user_id` + `exp` — ни роль, ни пароли/
+  ключи; whitelist и роль проверяются заново на каждый запрос из актуального `roles.json`
+  (`get_current_user`), не кэшируются в токене. `Authorization: Bearer <token>` — приоритетный
+  путь в `get_current_user`; `X-Telegram-Init-Data` остаётся рабочим fallback для обратной
+  совместимости (временно, до полного перехода трафика). Frontend: `frontend/js/shared.js`
+  (`ensureSessionToken()`, `_authHeaders()`, `sessionStorage`, не `localStorage`) обменивает
+  initData на токен один раз при старте (`frontend/app.html`); все fetch-вызовы across
+  `frontend/js/*.js` переведены на `_authHeaders()`. При 401 с уже выданным токеном —
+  `_handleSessionExpired()` показывает "Сессия устарела. Переоткройте приложение." (не
+  silent redirect/белый экран).
+- **`business_now()`/`business_today()`/`business_today_str()`** (`backend/main.py`) —
+  единый набор helpers для Europe/Berlin business-date, расширяет прошлый `_today_berlin_str()`
+  (оставлен как тонкий алиас). Заменены оставшиеся `date.today()`/`datetime.now()` (UTC) в:
+  `assignment_matching.py` (доступность кандидата "сегодня"), `profile_stats` (week/month/
+  3months/year агрегаты), `update_stage`/`worker_complete_stage`/stage-request approval (даты
+  завершения этапа), `get_team_plan` (dashboard "сегодня" по умолчанию). НЕ тронуты:
+  `datetime.utcnow()` для created_at/updated_at/audit/technical timestamps и expiry-расчёты
+  session-токена (намеренно UTC/unix time, не business-date).
+
+### Changed
+- **Owner AI (Claude CLI subprocess) safe freeze в production**: env-флаг
+  `OWNER_AI_ENABLED` (default `false`) — выключенный субпроцесс НЕ запускается вообще,
+  `/api/ai-chat` с моделью sonnet/opus отдаёт 503 с понятным сообщением (GLM-режим
+  остаётся доступен). Убран `--dangerously-skip-permissions` из команды запуска. Subprocess
+  больше не получает полный `os.environ` (раньше видел `BOT_TOKEN`/`GLM_KEY`/весь секретный
+  контекст процесса) — только allowlist (`PATH`, `HOME`, `ANTHROPIC_API_KEY`, `LANG`,
+  `LC_ALL`) через `_owner_ai_subprocess_env()`. Production config/deploy не проставляет флаг
+  сам — включение остаётся ручным осознанным действием владельца. Полный sandbox (отдельный
+  unix-юзер, read-only checkout) — следующий раунд, НЕ этот.
+- **`GET /api/objects` — worker больше не видит assignment-метаданные коллег**: новая DTO-
+  функция `_serialize_object_for_worker()` (единая точка, не разбросанное удаление полей).
+  Worker получает базовые поля объекта (id/название/адрес/статус/этапы/фото), публичный
+  список команды (`assigned_users`: user_id/name/has_avatar, без единого assignment-поля
+  коллеги) и отдельно `my_assignments` — свои собственные назначения целиком, включая
+  future/pending (нужно, чтобы принять/отклонить). Раньше worker видел `assignment_id`,
+  `task_note`, `decline_reason`, `date_from`/`date_to`, `work_type_id`, pending/declined
+  статус ЛЮБОГО коллеги на объекте. Owner путь не изменился (полный DTO как раньше).
+  Frontend-потребители `assigned_users` (`home.js`, `worker-checkin-fab.js`, `objects.js`)
+  используют только `user_id`/`name`/`has_avatar` — не сломаны; owner-only детальный
+  team-view (`object-info.js` `_renderObjTeamAndShifts`) не вызывается для worker вообще.
+- **Access control на Потребности (`GET`/`POST /api/tasks`)**: worker с `object_id`
+  теперь должен иметь `has_active_object_access(user_id, object_id)` — раньше любой
+  whitelisted worker мог передать чужой `object_id` и увидеть/создать потребность на
+  объекте, к которому не назначен. Запрос без `object_id` (глобальный "мои потребности")
+  не тронут. Owner — доступ всегда (не создаёт потребности по существующей логике, роль-
+  проверка идёт раньше access-проверки). `GET`/roadmap/stages НЕ тронуты (осознанное решение
+  владельца остаётся в силе).
+
+### Fixed
+- **`GET /api/my-assignments` неверный fallback колонки имени объекта**: читалось
+  `obj.get('Название')` — колонка, которой нет в Google Sheets "Объекты" (реальная —
+  `'Объект'`), так что имя объекта в "Моих назначениях" почти всегда падало на адрес или
+  пустую строку. Полная цепочка: `Объект → Название → Адрес → сам object_id`.
+- **`objects.js` карточка объекта — inline `onclick="openExternalLink('${mapsUrl}')"`**
+  заменён на `data-url` + делегированный `addEventListener` в `attachObjectsHandlers()`.
+  Раньше адрес интерполировался прямо в JS string literal без экранирования кавычек —
+  адрес с апострофом ломал сгенерированный onclick целиком (клик молча не работал).
+  Только это одно место, остальные inline handlers не тронуты массово.
+- **Finish-shift wizard idempotency key не переиспользовался на retry**: `crypto.randomUUID()`
+  генерировался заново на КАЖДЫЙ вызов `_fwSubmitFinish()`, так что повторная отправка после
+  сетевой ошибки слала новый ключ и backend не мог распознать дубликат запроса. Ключ теперь
+  персистентен на весь wizard-flow (`_fwIdempotencyKey`), сбрасывается только при
+  `openFinishShiftWizard()` (новая смена). Форма не очищалась на клиенте до успешного ответа
+  и раньше — подтверждено, изменений не потребовалось.
+
+### Tests
+5 новых файлов (45 тестов), все проходят зелёным вместе с существующим набором:
+`tests/test_session_token.py` (14), `tests/test_owner_ai_freeze.py` (6),
+`tests/test_worker_object_privacy.py` (6), `tests/test_needs_access_control.py` (12),
+`tests/test_business_date.py` (7). Один существующий тест
+(`test_access_control.py::test_user_id_cannot_be_spoofed_via_body_alone`) обновлён — сигнатура
+`get_current_user` расширена параметром `authorization` (session token), regression guard
+адаптирован под новый (всё ещё header-only, не body) контракт identity.
+Full suite (`pytest tests/ -q`): 355 passed, 1 skipped (pre-existing skip, не новый).
+
+### Not done this round (см. PROJECT_STATE.md)
+Manager/Bauleiter role, sandbox для Owner AI (отдельный unix-юзер + read-only checkout),
+PostgreSQL/DB migration, offline queue, полный `main.py` decomposition, редизайн, rate
+limiting всех upload endpoints, новая модель доступа к GET stages/roadmap. Deploy НЕ
+выполнялся — код+тесты+push только.
+
 ## 2026-08-01 (worker profile v2 + onboarding v2 + unified work-type catalog + unified assignment)
 
 ## 2026-08-03 (pilot-blocker fixes: photo verification + assignment-period access gate)
