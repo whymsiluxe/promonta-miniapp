@@ -113,13 +113,18 @@ class InitDataHmacTests(unittest.TestCase):
         self.assertIn('hmac.compare_digest', source)
 
     def test_user_id_cannot_be_spoofed_via_body_alone(self):
-        # get_current_user получает user ТОЛЬКО из validate_init_data(x_telegram_init_data) --
-        # нет пути, которым JSON body с произвольным user_id повлиял бы на identity.
-        # Regression guard: проверяем сигнатуру -- единственный источник user это initData header.
+        # get_current_user получает user ТОЛЬКО из validate_init_data(x_telegram_init_data)
+        # ИЛИ verify_session_token(authorization) -- нет пути, которым JSON body с
+        # произвольным user_id повлиял бы на identity.
+        # 03.08 (ТЗ Задача 1): сигнатура расширена authorization-параметром для
+        # 12-часового session token (см. tests/test_session_token.py) -- сам regression
+        # guard теперь проверяет, что оба источника identity -- ТОЛЬКО заголовки
+        # (initData/Bearer token), не тело запроса, и что оба параметра проходят через
+        # Header(...), а не через body-модель.
         import inspect
         sig = inspect.signature(backend.get_current_user)
         params = list(sig.parameters.keys())
-        self.assertEqual(params, ['x_telegram_init_data'])
+        self.assertEqual(set(params), {'authorization', 'x_telegram_init_data'})
 
 
 class CrossWorkerAuthorizationTests(unittest.TestCase):

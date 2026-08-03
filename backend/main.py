@@ -289,6 +289,62 @@ def validate_init_data(init_data: str) -> dict:
         raise HTTPException(401, "initData: no user")
 
 
+# ---------- Session tokens (03.08, ТЗ Задача 1) ----------
+# initData протухает через INIT_DATA_MAX_AGE (1 час) -- Telegram переподписывает его сам
+# при каждом реальном открытии мини-аппы, но WebView НЕ переоткрывает приложение сам по
+# себе посреди долгой смены, так что фронтенд слал один и тот же initData часами и
+# получал 401 в середине смены. Решение: после ОДНОЙ успешной HMAC-проверки initData
+# backend выдаёт свой собственный подписанный token на 12 часов -- НЕ продлевает доверие
+# к initData бесконечно, просто переносит источник truth на отдельный, backend-контролируемый
+# срок жизни. Whitelist/роль НЕ кэшируются в токене (token несёт только user_id + exp) --
+# каждый запрос по-прежнему смотрит актуальный roles.json, так что revoke долступа
+# работает мгновенно даже с валидным токеном.
+SESSION_TOKEN_MAX_AGE = 12 * 3600  # 12 часов
+
+
+def _session_secret() -> bytes:
+    """Домен-разделённый от _secret_key() (initData HMAC) -- разный "usage" в HMAC над
+    тем же BOT_TOKEN, так что компрометация одного не равна компрометации другого."""
+    return hmac.new(b"SessionToken", BOT_TOKEN.encode(), hashlib.sha256).digest()
+
+
+def create_session_token(user_id) -> str:
+    """Token = base64url(user_id.exp).hex(hmac). Полезная нагрузка содержит ТОЛЬКО
+    user_id и unix-время истечения -- никаких паролей/ключей/ролей внутри, роль каждый
+    раз проверяется заново по актуальному roles.json (см. get_current_user)."""
+    exp = int(time.time()) + SESSION_TOKEN_MAX_AGE
+    payload = f"{user_id}.{exp}"
+    payload_b64 = base64.urlsafe_b64encode(payload.encode()).decode().rstrip('=')
+    sig = hmac.new(_session_secret(), payload_b64.encode(), hashlib.sha256).hexdigest()
+    return f"{payload_b64}.{sig}"
+
+
+def verify_session_token(token: str) -> str:
+    """Возвращает user_id (str) при валидной подписи и не истёкшем токене, иначе 401.
+    hmac.compare_digest -- constant-time сравнение, не `==` (timing-attack защита)."""
+    try:
+        payload_b64, sig = token.rsplit('.', 1)
+    except ValueError:
+        raise HTTPException(401, "session token: malformed")
+
+    expected_sig = hmac.new(_session_secret(), payload_b64.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_sig, sig):
+        raise HTTPException(401, "session token: invalid signature")
+
+    try:
+        padded = payload_b64 + '=' * (-len(payload_b64) % 4)
+        payload = base64.urlsafe_b64decode(padded.encode()).decode()
+        user_id_str, exp_str = payload.split('.', 1)
+        exp = int(exp_str)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(401, "session token: malformed payload")
+
+    if time.time() > exp:
+        raise HTTPException(401, "session token: expired")
+
+    return user_id_str
+
+
 _json_locks: dict = {}
 _json_locks_guard = __import__('threading').Lock()
 
@@ -524,13 +580,33 @@ _last_seen: dict = {}
 ONLINE_THRESHOLD_SECONDS = 5 * 60
 
 
-def get_current_user(x_telegram_init_data: str = Header(...)) -> dict:
-    user = validate_init_data(x_telegram_init_data)
+def get_current_user(
+    authorization: str | None = Header(default=None),
+    x_telegram_init_data: str | None = Header(default=None),
+) -> dict:
+    """03.08 (ТЗ Задача 1): предпочитаем Authorization: Bearer <session token> --
+    12-часовой backend-token, не требует свежего initData на каждый запрос.
+    X-Telegram-Init-Data остаётся как fallback для обратной совместимости со старыми
+    клиентами/вкладками, которые ещё не обновились на новый auth-путь -- временно,
+    убрать после того, как весь трафик перейдёт на токены (см. PROJECT_STATE.md)."""
+    if authorization and authorization.lower().startswith('bearer '):
+        token = authorization[7:].strip()
+        user_id = verify_session_token(token)
+        user = {'id': int(user_id)} if user_id.lstrip('-').isdigit() else {'id': user_id}
+    elif x_telegram_init_data:
+        user = validate_init_data(x_telegram_init_data)
+    else:
+        raise HTTPException(401, "Нет initData и нет session token")
+
     # Whitelist (Фаза 10.1): доступ только тем, кого владелец явно добавил в roles.json —
     # раньше любой Telegram user_id молча получал worker-права по умолчанию (см. get_role ниже).
+    # 03.08: проверяется на КАЖДЫЙ запрос заново независимо от источника auth (initData
+    # или session token) -- владелец, удаливший работника из whitelist, обрывает доступ
+    # немедленно, даже если у клиента ещё живой 12-часовой токен.
     roles = _load_roles()
     if str(user['id']) not in roles:
-        _notify_owner_new_user(user, roles)
+        if x_telegram_init_data and not (authorization and authorization.lower().startswith('bearer ')):
+            _notify_owner_new_user(user, roles)
         raise HTTPException(403, "Доступ не предоставлен. Обратитесь к владельцу.")
     _last_seen[str(user['id'])] = time.time()
     return user
@@ -546,13 +622,39 @@ def require_owner(role: str = Depends(get_role)):
         raise HTTPException(403, "owner only")
 
 
+def business_now():
+    """03.08 (доп.раунд, ТЗ Задача 5): единая точка для ТЕКУЩЕГО момента по бизнес-
+    таймзоне (Europe/Berlin) -- в отличие от datetime.utcnow()/technical timestamps
+    (created_at/updated_at/audit/expiry), которые ОСТАЮТСЯ в UTC намеренно (не
+    business-date). Используется везде, где "сегодня"/"сейчас" должно совпадать с тем,
+    что видит владелец/работник на часах в Chemnitz, не с UTC-датой сервера."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo('Europe/Berlin'))
+
+
+def business_today():
+    """date-объект 'сегодня' по Europe/Berlin -- для арифметики с timedelta
+    (week_start = business_today() - timedelta(days=6) и т.п.)."""
+    return business_now().date()
+
+
+def business_today_str() -> str:
+    """'YYYY-MM-DD' по Europe/Berlin -- для сравнения со строковыми датами в JSON-сторах
+    (assignments date_from/date_to и т.п., которые уже хранятся как ISO-строки)."""
+    return business_now().strftime('%Y-%m-%d')
+
+
 def _today_berlin_str() -> str:
     """03.08: единая точка для 'сегодня' по Europe/Berlin -- сервер работает в UTC,
     прямой date.today()/datetime.now() без таймзоны даёт неверную дату вечером/ночью
     по местному времени (тот же класс бага, что уже чинили на frontend, см.
-    shared.js todayBerlin())."""
-    from zoneinfo import ZoneInfo
-    return datetime.now(ZoneInfo('Europe/Berlin')).strftime('%Y-%m-%d')
+    shared.js todayBerlin()).
+
+    03.08 (доп.раунд): оставлен как тонкая обёртка над business_today_str() --
+    has_active_object_access() уже использовала это имя до появления единого
+    business_*() набора хелперов (ТЗ Задача 5), переименовывать вызывающий код везде
+    не требовалось, раз поведение идентично."""
+    return business_today_str()
 
 
 def has_active_object_access(user_id: str, object_id: str, today: str | None = None) -> bool:
@@ -754,6 +856,22 @@ def health_ready(user: dict = Depends(get_current_user), _: None = Depends(requi
 @app.get("/api/me")
 def me(user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     return {"user_id": user['id'], "name": user.get('first_name'), "role": role}
+
+
+@app.post("/api/session")
+def create_session(x_telegram_init_data: str = Header(...)) -> dict:
+    """03.08 (ТЗ Задача 1): выдаёт 12-часовой session token. Требует ЖИВОЙ initData
+    (обычная HMAC + 1-час TTL проверка через get_current_user-путь ниже, не отдельный
+    ослабленный код) -- токен можно получить только пройдя ту же проверку, что раньше
+    требовалась на каждый запрос. Whitelist-проверка тоже здесь: не-whitelisted юзер
+    не получает токен вообще, не только 403 на защищённых эндпоинтах."""
+    user = get_current_user(authorization=None, x_telegram_init_data=x_telegram_init_data)
+    token = create_session_token(user['id'])
+    return {
+        "token": token,
+        "expires_in": SESSION_TOKEN_MAX_AGE,
+        "user_id": user['id'],
+    }
 
 
 # ---------- Workers list (для bubble-assign, Фаза 2 → доделано в Фазе 3) ----------
@@ -1195,7 +1313,7 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
     Работник видит только себя; owner может запросить любого через ?user_id=.
     period: week (7 колец, дефолт, обратная совместимость) | month (heatmap 30 дней) |
     3months | year (агрегация по неделям/месяцам — 3 разных визуальных режима, не один рендер с другим диапазоном)."""
-    from datetime import date, timedelta
+    from datetime import timedelta
     target = user_id if (role == 'owner' and user_id) else str(user['id'])
     sessions = [s for s in _load_checkin_meta() if str(s.get('user_id')) == target]
 
@@ -1206,7 +1324,7 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
         roles = _load_roles()
         worker_ids = [uid for uid, r in roles.items() if r == 'worker']
         profiles_map = _load_worker_profiles()
-        today0 = date.today()
+        today0 = business_today()  # 03.08 (ТЗ Задача 5): было date.today() (UTC) -- вечером Berlin это уже "завтра" UTC
         week_start = today0 - timedelta(days=6)
         team_hours = []
         for wid in worker_ids:
@@ -1223,7 +1341,7 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
     # period-агрегаты (batch 1 Kalo референс): month = heatmap по дням, 3months/year = bar по неделям/месяцам
     period_data = None
     if period == 'month':
-        today0 = date.today()
+        today0 = business_today()  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
         days = []
         for i in range(29, -1, -1):
             d = today0 - timedelta(days=i)
@@ -1233,7 +1351,7 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
         period_data = {'kind': 'heatmap', 'days': days, 'total_hours': round(sum(d['hours'] for d in days), 1)}
     elif period in ('3months', 'year'):
         weeks_back = 13 if period == '3months' else 52
-        today0 = date.today()
+        today0 = business_today()  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
         buckets = []
         for i in range(weeks_back - 1, -1, -1):
             week_end = today0 - timedelta(days=i * 7)
@@ -1244,7 +1362,7 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
         period_data = {'kind': 'bar', 'buckets': buckets, 'total_hours': round(sum(b['hours'] for b in buckets), 1)}
 
     # 7 кругов дней недели: последние 7 дней, часы на день
-    today = date.today()
+    today = business_today()  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
     week = []
     for i in range(6, -1, -1):
         d = today - timedelta(days=i)
@@ -1529,15 +1647,58 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
     for r in data:
         obj = dict(zip(header, r))
         oid = str(obj.get('ID объекта', ''))
-        obj['assigned_users'] = [_user_info(a['user_id'], a) for a in assignments.get(oid, [])]
-        obj['photo_count'] = len(images.get(oid) or [])
-        obj['stage_summary'] = _stage_summary(oid)
-        if role != 'owner':
-            # 10.5: бюджет — финансовая информация, работнику видеть не должен.
-            for f in BUDGET_FIELDS:
-                obj.pop(f, None)
+        obj_assignments = assignments.get(oid, [])
+        if role == 'owner':
+            obj['assigned_users'] = [_user_info(a['user_id'], a) for a in obj_assignments]
+            obj['photo_count'] = len(images.get(oid) or [])
+            obj['stage_summary'] = _stage_summary(oid)
+        else:
+            obj = _serialize_object_for_worker(obj, str(user['id']), obj_assignments, _user_info, _stage_summary, images)
         objects.append(obj)
     return {"objects": objects}
+
+
+def _serialize_object_for_worker(obj: dict, viewer_user_id: str, obj_assignments: list,
+                                  user_info_fn, stage_summary_fn, images: dict) -> dict:
+    """03.08 (ТЗ Задача 3): единая точка, ГДЕ worker теряет доступ к чужим assignment-
+    метаданным -- раньше list_objects просто снимал BUDGET_FIELDS и отдавал ВСЁ
+    остальное как есть, включая assignment_id/task_note/decline_reason/date_from/
+    date_to/work_type/pending-declined статус КАЖДОГО работника на объекте (реальная
+    находка: worker A мог прочитать, что worker B отказался от смены и почему).
+
+    Worker получает:
+      - object_id/название/адрес/общий статус/этапы/фото -- как раньше (уже public)
+      - assigned_users: ПУБЛИЧНЫЙ список команды (user_id/name/has_avatar), без
+        assignment-полей коллег вообще
+      - my_assignments: ПОЛНЫЕ собственные назначения (включая future/pending/declined --
+        нужно, чтобы принять/отклонить), той же формы, что owner видит для всех.
+
+    oid берётся из obj САМ (та же 'ID объекта' колонка, что уже читает list_objects) --
+    не передаётся отдельным параметром, чтобы не рассинхронизировать с images/stage_summary
+    lookup, которые тоже keyed по этому oid."""
+    oid = str(obj.get('ID объекта', ''))
+    public_team = []
+    my_assignments = []
+    for a in obj_assignments:
+        uid = str(a.get('user_id'))
+        if uid == viewer_user_id:
+            my_assignments.append(user_info_fn(uid, a))
+        # Публичный список команды -- только user_id/name/has_avatar, без единого
+        # assignment-поля (см. docstring выше). user_info_fn(uid) без assignment
+        # аргумента уже возвращает ровно этот узкий набор (см. _user_info в list_objects).
+        if not any(t.get('user_id') == uid for t in public_team):
+            public_team.append(user_info_fn(uid))
+
+    obj = dict(obj)
+    obj['assigned_users'] = public_team
+    obj['my_assignments'] = my_assignments
+    obj['photo_count'] = len(images.get(oid) or [])
+    obj['stage_summary'] = stage_summary_fn(oid)
+    for f in BUDGET_FIELDS:
+        # 10.5: бюджет — финансовая информация, работнику видеть не должен (сохранено
+        # как было до этого рефакторинга).
+        obj.pop(f, None)
+    return obj
 
 
 @app.get("/api/my-assignments")
@@ -1553,7 +1714,14 @@ def my_assignments(user: dict = Depends(get_current_user)):
         header, data = rows[0], rows[1:]
         for r in data:
             obj = dict(zip(header, r))
-            names[str(obj.get('ID объекта', ''))] = obj.get('Название', '') or obj.get('Адрес', '')
+            oid_key = str(obj.get('ID объекта', ''))
+            # 03.08 (ТЗ Задача 6a, реальный найденный баг): читалось obj.get('Название')
+            # -- эта колонка не существует в Google Sheets 'Объекты' (реальная колонка
+            # называется 'Объект', см. list_objects/везде остальном в этом файле), так
+            # что имя объекта в "Моих назначениях" всегда падало на obj.get('Адрес')
+            # или пустую строку. Полная fallback-цепочка: Объект -> Название (на
+            # случай, если колонку когда-то переименуют/добавят) -> Адрес -> сам id.
+            names[oid_key] = obj.get('Объект') or obj.get('Название') or obj.get('Адрес') or oid_key
 
     result = []
     for oid, lst in assignments.items():
@@ -2236,8 +2404,7 @@ def get_team_plan(date: str = '', user: dict = Depends(get_current_user), _: Non
     отдельно. Для date == сегодня дополнительно отдаёт фактический статус смены
     (идёт/не начата/завершена) из checkin_meta; для будущих дат факт не считается --
     его физически ещё не может быть."""
-    from datetime import date as date_cls
-    target_date = date or date_cls.today().isoformat()
+    target_date = date or business_today_str()  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
 
     rows = _cached_get_used_range('Объекты')
     object_names = {}
@@ -2266,7 +2433,7 @@ def get_team_plan(date: str = '', user: dict = Depends(get_current_user), _: Non
         names = stage_names_by_object.get(oid, {})
         return names.get((stage_id or '').strip().lower(), '')
 
-    is_today = target_date == date_cls.today().isoformat()
+    is_today = target_date == business_today_str()  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
     sessions_by_uid = {}
     if is_today:
         for s in _load_checkin_meta():
@@ -4467,6 +4634,26 @@ AI_MODELS = ('glm', 'sonnet', 'opus')
 AI_MODEL_DEFAULT = 'glm'
 CLAUDE_BIN = os.environ.get('CLAUDE_BIN', 'claude')
 
+# 03.08 (ТЗ Задача 2, safe freeze): Owner AI (sonnet/opus) запускает `claude` CLI как
+# полноценный subprocess с доступом ко всему /home/promonta/agent -- до отдельного
+# unix-юзера/read-only checkout/sandbox (следующий раунд, НЕ этот) единственный
+# безопасный default для production -- ВЫКЛЮЧЕНО. Owner может включить явно через env,
+# осознанно принимая риск, пока sandbox не готов; deploy/production config НЕ должен
+# сам проставлять true.
+OWNER_AI_ENABLED = os.environ.get('OWNER_AI_ENABLED', 'false').strip().lower() in ('1', 'true', 'yes')
+
+# 03.08: subprocess получает ТОЛЬКО эти переменные, не полный os.environ -- claude CLI
+# реально нужен PATH (найти бинарники node/git/etc), HOME (конфиг/кэш ~/.claude),
+# ANTHROPIC_API_KEY если используется вместо OAuth-подписки (если её нет в окружении --
+# claude CLI работает по уже сохранённому OAuth-токену в HOME, тоже ок). Полный
+# os.environ до этого включал BOT_TOKEN/GLM_KEY/DATA_ROOT/все остальные секреты
+# процесса -- subprocess их не использует и не должен их видеть.
+_OWNER_AI_ENV_ALLOWLIST = ('PATH', 'HOME', 'ANTHROPIC_API_KEY', 'LANG', 'LC_ALL')
+
+
+def _owner_ai_subprocess_env() -> dict:
+    return {k: os.environ[k] for k in _OWNER_AI_ENV_ALLOWLIST if k in os.environ}
+
 AI_SYSTEM_PROMPT = (
     "Ты ИИ-ассистент строительной фирмы Promonta Multiservice UG (Chemnitz, Sachsen, Германия). "
     "Специализация: Trockenbau, Malerarbeiten, Spachtel Q2/Q3, Fliesen, Bodenbelag, WDVS/Fassade. "
@@ -4599,14 +4786,19 @@ def _call_claude_cli(messages: list, model: str) -> str:
     чтобы этот ассистент видел всё, что видит Claude Code сам). Lock -- не security-
     ограничение, а просто защита от нескольких параллельных 120-секундных subprocess
     (rate limit 20/час уже ограничивает частоту, но не одновременность)."""
+    if not OWNER_AI_ENABLED:
+        # 03.08 (ТЗ Задача 2): safe freeze -- пока не готов sandbox (отдельный unix-юзер +
+        # read-only checkout, следующий раунд), subprocess НЕ запускается вообще.
+        raise HTTPException(503, "Owner AI (Sonnet/Opus) временно отключён в production "
+                                  "(OWNER_AI_ENABLED=false) -- доступен GLM-режим")
     prompt = _messages_to_prompt(messages)
     if not _claude_cli_lock.acquire(timeout=1):
         raise HTTPException(429, "Уже выполняется другой запрос к Claude — подожди и повтори")
     try:
         r = subprocess.run(
-            [CLAUDE_BIN, '-p', '--dangerously-skip-permissions', '--model', model, prompt],
+            [CLAUDE_BIN, '-p', '--model', model, prompt],
             cwd='/home/promonta/agent', capture_output=True, stdin=subprocess.DEVNULL,
-            text=True, timeout=120, env={**os.environ},
+            text=True, timeout=120, env=_owner_ai_subprocess_env(),
         )
     except subprocess.TimeoutExpired:
         raise HTTPException(504, f"Claude ({model}) не ответил за 120 сек")
@@ -4854,9 +5046,8 @@ class StageStatusBody(BaseModel):
 @app.patch("/api/objects/{object_id}/stages/{row_num}")
 def update_stage(object_id: str, row_num: int, body: StageStatusBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     o = _load_repo_objekte_lib()
-    from datetime import date
     try:
-        o.update_stage_status(row_num, body.status, date.today().isoformat())
+        o.update_stage_status(row_num, body.status, business_today_str())  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
     except ValueError as e:
         raise HTTPException(400, str(e))
     o.sync_current_stage(object_id)
@@ -4894,9 +5085,8 @@ def swap_stage(object_id: str, row_num: int, body: StageSwapBody, user: dict = D
 @app.post("/api/objects/{object_id}/stages/{row_num}/complete")
 def worker_complete_stage(object_id: str, row_num: int, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     o = _load_repo_objekte_lib()
-    from datetime import date
     try:
-        o.worker_complete_stage(object_id, row_num, str(user['id']), date.today().isoformat())
+        o.worker_complete_stage(object_id, row_num, str(user['id']), business_today_str())  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"status": "ok"}
@@ -5257,7 +5447,6 @@ class StageRequestDecisionBody(BaseModel):
 def decide_stage_request_endpoint(object_id: str, request_id: str, body: StageRequestDecisionBody,
                                    user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     o = _load_repo_objekte_lib()
-    from datetime import date
 
     # Проверка существования/принадлежности -- read-only, до транзакции (тот же паттерн,
     # что _find_stage_by_row -- отдельно от самой мутации).
@@ -5285,7 +5474,7 @@ def decide_stage_request_endpoint(object_id: str, request_id: str, body: StageRe
                 o.delete_stage(decided['object_id'], decided['stage_row'])
                 o.sync_current_stage(decided['object_id'])
             elif decided['kind'] == 'change_status':
-                o.update_stage_status(decided['stage_row'], decided['payload']['new_status'], date.today().isoformat())
+                o.update_stage_status(decided['stage_row'], decided['payload']['new_status'], business_today_str())  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
                 o.sync_current_stage(decided['object_id'])
         except ValueError as e:
             raise HTTPException(400, str(e))
@@ -5336,6 +5525,15 @@ TASK_STATUSES = ('открыто', 'в работе', 'закрыто', 'при�
 
 @app.get("/api/tasks")
 def list_tasks(object_id: str = '', user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    # 03.08 (ТЗ Задача 4): worker с object_id должен иметь активный доступ к этому
+    # конкретному объекту -- раньше ЛЮБОЙ whitelisted worker мог передать чужой
+    # object_id и увидеть командную видимость Потребностей объекта, на который его
+    # никогда не назначали (get_current_user проверяет только whitelist, не привязку
+    # к объекту). Запрос БЕЗ object_id не трогаем -- он и так уже сужен до "только
+    # свои" двумя строками ниже, никакой object-level дыры там нет.
+    if object_id and role != 'owner' and not has_active_object_access(str(user['id']), object_id):
+        raise HTTPException(403, "Нет доступа к этому объекту")
+
     items = _load_tasks()
     # 25.07: object_id передан -- worker смотрит вкладку Потребности ВНУТРИ конкретного
     # объекта, там нужна командная видимость (как в чате объекта), не только свои заявки.
@@ -5356,6 +5554,12 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
         raise HTTPException(400, "Название обязательно")
     if not body.object_id.strip():
         raise HTTPException(400, "Объект обязателен")
+    # 03.08 (ТЗ Задача 4): worker может создать потребность только на объекте, к
+    # которому у него активный доступ -- раньше object_id принимался как есть без
+    # проверки, worker мог создать заявку (видимую всей команде объекта) на объект,
+    # к которому вообще не назначен.
+    if not has_active_object_access(str(user['id']), body.object_id.strip()):
+        raise HTTPException(403, "Нет доступа к этому объекту")
     priority = body.priority.strip() or 'обычная'
     if priority not in TASK_PRIORITIES:
         raise HTTPException(400, "Недопустимый приоритет")
