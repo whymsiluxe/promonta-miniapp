@@ -80,8 +80,57 @@ function _objWeatherIslandHtml(obj) {
   if (!today) return '';
   const tmax = Math.round(today.tmax);
   const code = today.hourly && today.hourly[3] ? today.hourly[3].weather_code : 0;
-  const cond = code >= 61 ? 'Дождь' : code >= 45 ? 'Туман' : code >= 2 ? 'Облачно' : 'Ясно';
-  return `<div class="obj-weather-island"><b>${tmax}°C</b><span>${cond}</span></div>`;
+  // Раунд 4: жара приоритетнее кода погоды -- при tmax>=30 показываем Жарко/Сильная/Экстремальная.
+  const heatLabel = (typeof weatherHeatLabel === 'function') ? weatherHeatLabel(today.tmax) : null;
+  const heatKind = (typeof weatherHeatKind === 'function') ? weatherHeatKind(today.tmax) : null;
+  const cond = heatLabel || (code >= 61 ? 'Дождь' : code >= 45 ? 'Туман' : code >= 2 ? 'Облачно' : 'Ясно');
+  const heatCls = heatKind ? ` obj-weather-island-${heatKind}` : '';
+  return `<div class="obj-weather-island${heatCls}"><b>${tmax}°C</b><span>${cond}</span></div>`;
+}
+
+// Раунд 4: понятный блок этапов вместо цепочки ✓●○→. Заголовок + счётчик + progress
+// bar + % + Сейчас/Далее. Состояния: есть current / ничего не начато / всё готово /
+// нет этапов / приостановлено (blocker в stage_summary, если данные есть).
+function _objStageBlockHtml(obj, oid) {
+  const summary = obj.stage_summary;
+  const objName = esc(obj['Объект']) || '';
+  const attrs = `data-object-id="${oid}" data-object-name="${objName}"`;
+  if (!summary || !summary.total) {
+    return `<div class="obj-stage-block stage-clickable" ${attrs} role="button" tabindex="0" aria-label="Открыть план работ">
+      <div class="obj-stage-head"><span class="obj-stage-title">Этапы</span></div>
+      <div class="obj-stage-empty">План работ не создан</div>
+    </div>`;
+  }
+  const total = summary.total;
+  const done = summary.completed_count || 0;
+  const pct = Math.round(done / total * 100);
+  const allDone = done >= total;
+
+  let lines;
+  if (summary.blocker) {
+    lines = `<div class="obj-stage-line"><span class="obj-stage-line-label">Приостановлено:</span> ${esc(summary.blocker)}</div>`;
+  } else if (allDone) {
+    lines = `<div class="obj-stage-line obj-stage-line-done">Все работы завершены</div>`;
+  } else if (summary.current) {
+    const next = summary.next
+      ? `<div class="obj-stage-line"><span class="obj-stage-line-label">Далее:</span> ${esc(summary.next)}</div>` : '';
+    lines = `<div class="obj-stage-line"><span class="obj-stage-line-label">Сейчас:</span> ${esc(summary.current)}</div>${next}`;
+  } else {
+    // Ничего не начато -- показываем следующий (первый незавершённый) этап.
+    lines = `<div class="obj-stage-line"><span class="obj-stage-line-label">Следующий:</span> ${esc(summary.next || '—')}</div>`;
+  }
+
+  return `<div class="obj-stage-block stage-clickable" ${attrs} role="button" tabindex="0" aria-label="Открыть план работ">
+    <div class="obj-stage-head">
+      <span class="obj-stage-title">Этапы</span>
+      <span class="obj-stage-count">${done} из ${total}</span>
+    </div>
+    <div class="obj-stage-progrow">
+      <div class="obj-stage-bar"><div class="obj-stage-bar-fill" style="width:${pct}%"></div></div>
+      <span class="obj-stage-pct">${pct}%</span>
+    </div>
+    ${lines}
+  </div>`;
 }
 
 function renderObjectCard(obj) {
@@ -142,32 +191,7 @@ function renderObjectCard(obj) {
   const startDateLabel = _objStartDateLabel(obj);
   const mapsUrl = obj['Адрес'] ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(obj['Адрес'])}` : '';
 
-  // 28.07 (external audit ТЗ п.20): краткий roadmap вместо одной строки текущего этапа --
-  // stage_summary приходит батчем с backend (list_objects читает всю таблицу Этапы один
-  // раз, не N+1 запрос на карточку). completed показываем только последний завершённый
-  // (не весь список -- на узкой карточке место ограничено), current + next для контекста.
-  const summary = obj.stage_summary;
-  let stagesStripHtml;
-  if (summary && summary.total > 0) {
-    const parts = [];
-    if (summary.completed_count > 0) {
-      const lastCompleted = summary.completed[summary.completed.length - 1];
-      parts.push(`<span class="obj-stage-strip-item obj-stage-strip-done">✓ ${esc(lastCompleted)}</span>`);
-    }
-    if (summary.current) {
-      parts.push(`<span class="obj-stage-strip-item obj-stage-strip-active">● ${esc(summary.current)}</span>`);
-    }
-    if (summary.next) {
-      parts.push(`<span class="obj-stage-strip-item obj-stage-strip-next">○ ${esc(summary.next)}</span>`);
-    }
-    if (!parts.length) {
-      // Все этапы "предстоит", ни один не в процессе/готово -- показываем первый как next.
-      parts.push(`<span class="obj-stage-strip-item obj-stage-strip-next">○ ${esc(summary.completed[0] || '')}</span>`);
-    }
-    stagesStripHtml = `<div class="obj-stage-strip obj-stage-strip-roadmap stage-clickable" data-object-id="${oid}" data-object-name="${esc(obj['Объект']) || ''}">${parts.join('<span class="obj-stage-strip-arrow">→</span>')}</div>`;
-  } else {
-    stagesStripHtml = `<div class="obj-stage-strip stage-clickable" data-object-id="${oid}" data-object-name="${esc(obj['Объект']) || ''}"><span style="color:var(--text-light)">Этапы не добавлены</span></div>`;
-  }
+  const stagesStripHtml = _objStageBlockHtml(obj, oid);
 
   return `
   <div class="card obj-card-v2" data-id="${oid}" data-status="${esc(obj['Статус'] || '')}">

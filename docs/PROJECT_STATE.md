@@ -1,9 +1,12 @@
 # Project state
 
-**Last updated**: 2026-08-04, Раунд 3 (Дефекты/Потребности/контекстный чат/
-Worker Card), pushed to `main` and CI-green at `082d29d`, **NOT deployed**
+**Last updated**: 2026-08-04, Раунд 4 (Погода-жара / расширенные новости /
+понятные этапы объекта), pushed to `main` and CI-green, **NOT deployed**
 (round instruction: no deploy). See `docs/CHANGELOG.md` entry
-"2026-08-04 (Раунд 3…)" for detail. Previous: 2026-08-01, worker profile v2 /
+"2026-08-04 (Раунд 4…)" for detail. Note: правка промпта генератора новостей
+и backend weather constants — вне scope (файлы вне `miniapp-repo`). Previous:
+Раунд 3 (Дефекты/Потребности/контекстный чат/Worker Card) at `082d29d`.
+See `docs/CHANGELOG.md` entry "2026-08-04 (Раунд 3…)" for detail. Previous: 2026-08-01, worker profile v2 /
 onboarding v2 / unified work-type catalog / unified assignment feature
 (also not deployed). Earlier: 2026-07-31 4-round release-hardening pass,
 deployed as `526922f`.

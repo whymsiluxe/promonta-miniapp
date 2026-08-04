@@ -1738,7 +1738,12 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
         completed = [s.get('Название этапа', '') for s in stages if s.get('Статус') == 'готово']
         current = next((s for s in stages if s.get('Статус') == 'в процессе'), None)
         current_idx = stages.index(current) if current else -1
-        next_stage = stages[current_idx + 1] if current and current_idx + 1 < len(stages) else None
+        if current:
+            next_stage = stages[current_idx + 1] if current_idx + 1 < len(stages) else None
+        else:
+            # Раунд 4: ни один этап не в работе -> "next" = первый незавершённый (для состояния
+            # "Ничего не начато: Следующий: Демонтаж"). Если все готово -> next=None.
+            next_stage = next((s for s in stages if s.get('Статус') != 'готово'), None)
         return {
             "completed": completed,
             "completed_count": len(completed),

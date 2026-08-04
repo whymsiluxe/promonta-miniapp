@@ -455,6 +455,43 @@ function shareNewsLink(idx) {
   try { navigator.clipboard.writeText(n.url); showToast('Ссылка скопирована', 'success'); } catch (e) {}
 }
 
+// Раунд 4: резюме новости абзацами (split по пустой строке), esc() каждого абзаца.
+// Длинное (>2 абзацев или >600 симв) сворачивается по абзацам с кнопкой "Читать полностью".
+// Раскрывается только выбранная карточка; tap по раскрытию не открывает источник (stopPropagation).
+function _renderNewsSummary(n, i) {
+  const raw = (n.summary || '').trim();
+  if (!raw) return '';
+  const paras = raw.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  if (paras.length <= 1 && raw.length <= 600) {
+    return `<div class="news-summary">${esc(raw)}</div>`;
+  }
+  // Свёрнутое состояние: абзацы в пределах ~450 симв (минимум первый), остальное скрыто.
+  let acc = 0, cut = 0;
+  for (let k = 0; k < paras.length; k++) {
+    if (k === 0 || acc + paras[k].length <= 450) { acc += paras[k].length; cut = k + 1; }
+    else break;
+  }
+  const wrapP = arr => arr.map(p => `<p>${esc(p)}</p>`).join('');
+  if (cut >= paras.length) {
+    return `<div class="news-summary">${wrapP(paras)}</div>`;
+  }
+  return `<div class="news-summary" data-news-idx="${i}">
+    <div class="news-summary-head">${wrapP(paras.slice(0, cut))}</div>
+    <div class="news-summary-tail" hidden>${wrapP(paras.slice(cut))}</div>
+    <button type="button" class="news-more-btn" onclick="event.stopPropagation();toggleNewsSummary(${i},this)">Читать полностью</button>
+  </div>`;
+}
+
+function toggleNewsSummary(i, btn) {
+  const wrap = btn.closest('.news-summary');
+  if (!wrap) return;
+  const tail = wrap.querySelector('.news-summary-tail');
+  if (!tail) return;
+  const expanded = !tail.hidden;
+  tail.hidden = expanded;
+  btn.textContent = expanded ? 'Читать полностью' : 'Свернуть';
+}
+
 function _newsCardHtml(n, i) {
   const catColor = NEWS_CAT_COLORS[n.category] || 'var(--accent)';
   const likeActive = n.my_reaction === 'like' ? 'active' : '';
@@ -467,7 +504,7 @@ function _newsCardHtml(n, i) {
         <span class="news-src">${esc(n.source) || ''}</span>
       </div>
       <div class="news-title">${esc(n.title)}</div>
-      <div class="news-summary">${esc(n.summary)}</div>
+      ${_renderNewsSummary(n, i)}
       <div class="news-foot">${esc(n.published_at) || ''}${n.url ? ' · Читать источник\u2197' : ''}</div>
     </div>
     <div class="news-actions">

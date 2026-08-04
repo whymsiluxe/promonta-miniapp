@@ -3257,6 +3257,25 @@ body.view-locked {
 .obj-stage-strip-next { color: var(--text-light); }
 .obj-stage-strip-arrow { flex-shrink: 0; color: var(--text-light); opacity: 0.4; margin: 0 0.4rem; font-size: 0.75rem; }
 
+/* Раунд 4: понятный блок этапов (заголовок + счётчик + progress bar + Сейчас/Далее).
+   Progress bar 7px, спокойный forest-зелёный, названия максимум 2 строки, читаемо на 320px. */
+.obj-stage-block {
+  margin: 0.8rem 0.75rem 0.75rem; background: var(--bg-card-raised); border-radius: var(--radius-md, 16px);
+  padding: 0.7rem 0.9rem; cursor: pointer; transition: transform 0.12s ease;
+}
+.obj-stage-block:active { transform: scale(0.99); }
+.obj-stage-head { display: flex; align-items: baseline; justify-content: space-between; }
+.obj-stage-title { font-size: 0.9rem; font-weight: 700; color: var(--text); }
+.obj-stage-count { font-size: 0.85rem; font-weight: 700; color: var(--text-light); }
+.obj-stage-progrow { display: flex; align-items: center; gap: 0.6rem; margin: 0.5rem 0 0.45rem; }
+.obj-stage-bar { flex: 1; height: 7px; border-radius: 7px; background: rgba(120,120,120,0.22); overflow: hidden; }
+.obj-stage-bar-fill { height: 100%; border-radius: 7px; background: var(--c-forest, #3f6b4c); transition: width 0.5s ease; }
+.obj-stage-pct { flex-shrink: 0; font-size: 0.82rem; font-weight: 700; color: var(--c-forest, #3f6b4c); min-width: 34px; text-align: right; }
+.obj-stage-line { font-size: 0.85rem; color: var(--text); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.obj-stage-line-label { color: var(--text-light); font-weight: 600; }
+.obj-stage-line-done { color: var(--c-forest, #3f6b4c); font-weight: 600; }
+.obj-stage-empty { font-size: 0.85rem; color: var(--text-light); margin-top: 0.3rem; }
+
 /* ═══════════ BUBBLE ASSIGN PANEL (Фаза 2d) ═══════════ */
 /* ── Bubble Assignment -- полный layout rebuild (29.07 v2) ──────────────────────
    Owner screenshot report: title/hint сидели ПОД Telegram system row (header не учитывал
@@ -3576,7 +3595,12 @@ body.view-locked {
 .news-cat { font-size: 0.7rem; font-weight: 700; padding: 0.18rem 0.55rem; border-radius: 999px; letter-spacing: 0.04em; }
 .news-src { font-size: 0.75rem; color: var(--text-light); }
 .news-title { font-weight: 800; font-size: 1.2rem; line-height: 1.32; }
-.news-summary { font-size: 0.95rem; color: var(--text-light); margin-top: 0.35rem; line-height: 1.5; }
+.news-summary { font-size: 0.95rem; color: var(--text-light); margin-top: 0.35rem; line-height: 1.5; white-space: pre-line; }
+/* Раунд 4: абзацы новости + кнопка "Читать полностью"/"Свернуть" */
+.news-summary p { margin: 0 0 0.5rem; white-space: normal; }
+.news-summary p:last-child { margin-bottom: 0; }
+.news-summary-tail p:first-child { margin-top: 0.5rem; }
+.news-more-btn { margin-top: 0.4rem; padding: 0; background: none; border: none; color: var(--accent); font-size: 0.9rem; font-weight: 600; cursor: pointer; }
 .news-foot { font-size: 0.75rem; color: var(--text-light); margin-top: 0.5rem; opacity: 0.8; }
 .news-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.6rem; }
 .news-react-btn { background: none; border: none; display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; color: var(--text-light); padding: 0.2rem 0.4rem; cursor: pointer; border-radius: var(--radius-sm); transition: color 0.12s ease; }
