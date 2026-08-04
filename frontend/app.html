@@ -3197,6 +3197,8 @@ body.view-locked {
 }
 .obj-weather-island b { font-size: 1rem; font-weight: 700; }
 .obj-weather-island span { font-size: 0.72rem; opacity: 0.85; }
+.obj-weather-island-heat { background: rgba(146,64,14,0.62); border-color: rgba(245,158,11,0.4); }
+.obj-weather-island-extreme_heat { background: rgba(153,27,27,0.66); border-color: rgba(249,115,22,0.5); }
 
 .obj-hero-people { position: absolute; bottom: 0.7rem; left: 0.7rem; display: flex; align-items: center; }
 .obj-people-dot {
@@ -3795,6 +3797,14 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .wx-status-snow, .wx-status-wind { color: #60a5fa; }
 .wx-status-cloudy { color: #94a3b8; }
 .wx-status-sunny { color: #fbbf24; }
+.wx-status-heat { color: #f59e0b; }
+.wx-status-extreme_heat { color: #f97316; }
+
+/* Раунд 4: вторичные риски "Дополнительно" + рекомендация по жаре */
+.weather-card-extra { margin: 0.55rem auto 0; max-width: 320px; text-align: center; }
+.weather-card-extra-title { font-size: 0.78rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.15rem; }
+.weather-card-extra-item { font-size: 0.85rem; color: var(--text-light); line-height: 1.4; }
+.weather-card-rec { margin: 0.85rem 0.4rem 0; padding-top: 0.7rem; border-top: 1px solid rgba(255,255,255,0.08); font-size: 0.85rem; line-height: 1.5; color: #f8d9a8; text-align: center; }
 
 .wx-strip { display: flex; justify-content: space-between; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.08); }
 .wx-strip-day { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; flex: 1; }
@@ -3813,6 +3823,18 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
   animation: wx-sun-rotate 20s linear infinite; }
 @keyframes wx-sun-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
 @keyframes wx-sun-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* Heat / extreme heat: тёплое солнце + восходящие волны жара (Раунд 4, Old Money амбр/оранж) */
+.wx-illust-heat .wx-sun-heat .wx-sun-core { background: radial-gradient(circle at 32% 26%, #fff1cf 0%, #fcd34d 26%, #f59e0b 60%, #d97706 84%, #b45309 100%); box-shadow: inset -8px -10px 16px rgba(146,64,14,0.5), inset 6px 8px 14px rgba(255,255,255,0.5), 0 0 46px rgba(245,158,11,0.6); }
+.wx-illust-extreme-heat .wx-sun-heat .wx-sun-core { background: radial-gradient(circle at 32% 26%, #ffe0c2 0%, #fb923c 24%, #f97316 54%, #ea580c 80%, #b91c1c 100%); box-shadow: inset -8px -10px 16px rgba(153,27,27,0.55), inset 6px 8px 14px rgba(255,255,255,0.45), 0 0 54px rgba(249,115,22,0.7); }
+.wx-illust-heat .wx-sun-rays { background: repeating-conic-gradient(from 0deg, rgba(245,158,11,0.35) 0deg 8deg, transparent 8deg 30deg); }
+.wx-illust-extreme-heat .wx-sun-rays { background: repeating-conic-gradient(from 0deg, rgba(249,115,22,0.4) 0deg 8deg, transparent 8deg 30deg); }
+.wx-heat-waves { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; }
+.wx-heat-waves span { display: block; width: 5px; height: 26px; border-radius: 5px; background: linear-gradient(180deg, rgba(245,158,11,0) 0%, rgba(245,158,11,0.55) 45%, rgba(217,119,6,0.75) 100%); animation: wx-heat-rise 2.2s ease-in-out infinite; }
+.wx-illust-extreme-heat .wx-heat-waves span { background: linear-gradient(180deg, rgba(249,115,22,0) 0%, rgba(249,115,22,0.6) 45%, rgba(185,28,28,0.8) 100%); }
+.wx-heat-waves span:nth-child(2) { animation-delay: 0.4s; height: 32px; }
+.wx-heat-waves span:nth-child(3) { animation-delay: 0.8s; }
+@keyframes wx-heat-rise { 0%,100% { transform: translateY(4px) scaleY(0.9); opacity: 0.5; } 50% { transform: translateY(-4px) scaleY(1.1); opacity: 1; } }
 
 /* Cloud base shape, reused by storm/rain/snow/wind/cloudy */
 .wx-cloud { position: relative; width: 92px; height: 44px; margin: 30px auto 0; border-radius: 50px; background: radial-gradient(ellipse at 32% 28%, #ffffff 0%, #e4e4e7 45%, #b8b8bf 100%); box-shadow: inset -8px -10px 18px rgba(0,0,0,0.18), inset 6px 8px 14px rgba(255,255,255,0.9), 0 14px 22px rgba(0,0,0,0.35); }

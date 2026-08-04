@@ -4,7 +4,31 @@
 // до генерации арта, как splash), prognosis-волна (SVG по wave-данным weather_check.py),
 // лайк (localStorage) / коммент (ведёт в чат) / share.
 
+// Единые температурные пороги жары (Раунд 4). Объявлены ЗДЕСЬ один раз.
+const WEATHER_HEAT_THRESHOLD = 30;
+const WEATHER_HIGH_HEAT_THRESHOLD = 33;
+const WEATHER_EXTREME_HEAT_THRESHOLD = 35;
+
+// Тип жары по tmax (не по тексту risks).
+function weatherHeatKind(tmax) {
+  if (typeof tmax !== 'number' || isNaN(tmax)) return null;
+  if (tmax >= WEATHER_EXTREME_HEAT_THRESHOLD) return 'extreme_heat';
+  if (tmax >= WEATHER_HEAT_THRESHOLD) return 'heat';
+  return null;
+}
+
+// Русская подпись жары по tmax (30-32 Жарко, 33-34 Сильная жара, 35+ Экстремальная).
+function weatherHeatLabel(tmax) {
+  if (typeof tmax !== 'number' || isNaN(tmax)) return null;
+  if (tmax >= WEATHER_EXTREME_HEAT_THRESHOLD) return 'Экстремальная жара';
+  if (tmax >= WEATHER_HIGH_HEAT_THRESHOLD) return 'Сильная жара';
+  if (tmax >= WEATHER_HEAT_THRESHOLD) return 'Жарко';
+  return null;
+}
+
 const WX_TYPES = {
+  extreme_heat: { icon: '\uD83C\uDF21\uFE0F', label: 'Экстремальная жара', grad: 'linear-gradient(160deg,#7c2d12 0%,#b91c1c 55%,#431407 100%)', hue: '#f97316' },
+  heat:  { icon: '\uD83C\uDF21\uFE0F', label: 'Жара', grad: 'linear-gradient(160deg,#7c4a0f 0%,#b45309 55%,#3a1d04 100%)', hue: '#f59e0b' },
   frost: { icon: '\u2744\uFE0F', label: 'Мороз', grad: 'linear-gradient(160deg,#274060 0%,#0d1b2a 100%)', hue: '#7dd3fc' },
   rain:  { icon: '\uD83C\uDF27\uFE0F', label: 'Дождь', grad: 'linear-gradient(160deg,#1e3a5f 0%,#0f1f33 100%)', hue: '#60a5fa' },
   wind:  { icon: '\uD83D\uDCA8', label: 'Ветер', grad: 'linear-gradient(160deg,#2f4f4f 0%,#101820 100%)', hue: '#a7f3d0' },
@@ -17,6 +41,7 @@ function pickWeatherIcon(riskText) {
 }
 
 function _riskType(riskText) {
+  if (riskText.includes('жар')) return 'heat';
   if (riskText.includes('заморозки')) return 'frost';
   if (riskText.includes('дождь')) return 'rain';
   if (riskText.includes('ветер')) return 'wind';
@@ -24,13 +49,27 @@ function _riskType(riskText) {
   return 'warn';
 }
 
-// Доминантный тип погоды поста: по серьёзности, не по первому упоминанию.
+// Доминантный тип: жару по tmax, остальное по тексту. Экстр.жара>ветер>мороз>жара>дождь>холод.
 function _dominantWxType(entry) {
   const all = entry.forecast.flatMap(d => d.risks).map(_riskType);
-  for (const type of ['frost', 'rain', 'wind', 'cold']) {
-    if (all.includes(type)) return type;
-  }
+  const tmax = (entry.wave && entry.wave.length) ? Math.max(...entry.wave.map(d => d.tmax)) : null;
+  if (weatherHeatKind(tmax) === 'extreme_heat') return 'extreme_heat';
+  if (all.includes('wind')) return 'wind';
+  if (all.includes('frost')) return 'frost';
+  if (weatherHeatKind(tmax) === 'heat' || all.includes('heat')) return 'heat';
+  if (all.includes('rain')) return 'rain';
+  if (all.includes('cold')) return 'cold';
   return 'warn';
+}
+
+// Основная подпись поста: при жаре -- температурная, иначе первый risk или label типа.
+function _wxPrimaryLabel(entry) {
+  const type = _dominantWxType(entry);
+  if (type === 'heat' || type === 'extreme_heat') {
+    const tmax = (entry.wave && entry.wave.length) ? Math.max(...entry.wave.map(d => d.tmax)) : null;
+    return weatherHeatLabel(tmax) || WX_TYPES[type].label;
+  }
+  return (entry.forecast[0] && entry.forecast[0].risks[0]) || WX_TYPES[type].label;
 }
 
 function fmtFeedDate(iso) {
@@ -101,7 +140,7 @@ async function toggleWxLike(btn, idx) {
 }
 
 function shareWxPost(entry) {
-  const text = `\u26A0 Погода на объекте «${entry.object}»: ` +
+  const text = `\u26A0 Погода на объекте «${entry.object}» — ${_wxPrimaryLabel(entry)}: ` +
     entry.forecast.map(d => `${fmtForecastDay(d.date, d.day_offset)} — ${d.risks.join('; ')}`).join(' | ');
   try {
     if (navigator.share) { navigator.share({ text }); return; }
@@ -121,7 +160,7 @@ function renderFeedCard(entry, idx, isActive) {
   const tempNow = today ? Math.round(today.tmax) : null;
   const tmin = entry.wave ? Math.round(Math.min(...entry.wave.map(d => d.tmin))) : null;
   const tmax = entry.wave ? Math.round(Math.max(...entry.wave.map(d => d.tmax))) : null;
-  const eventName = (entry.forecast[0]?.risks[0] || type.label).split('(')[0].trim();
+  const eventName = _wxPrimaryLabel(entry).split('(')[0].trim();
 
   // \u0420\u0435\u0444\u0435\u0440\u0435\u043D\u0441 "Brooklyn": \u0433\u043E\u0440\u0438\u0437\u043E\u043D\u0442\u0430\u043B\u044C\u043D\u0430\u044F \u043F\u043E\u043B\u043E\u0441\u0430 \u0434\u043D\u0435\u0439 \u0441 \u043C\u0438\u043D\u0438-\u0438\u043A\u043E\u043D\u043A\u043E\u0439 + \u0442\u0435\u043C\u043F \u043F\u043E\u0434 prognosis-\u0432\u043E\u043B\u043D\u043E\u0439.
   const dayStrip = (entry.wave && entry.wave.length > 1)
@@ -198,7 +237,7 @@ function _renderCompactWeatherRow(entry, idx) {
   const type = WX_TYPES[_dominantWxType(entry)];
   const today = entry.wave && entry.wave[0];
   const tempNow = today ? Math.round(today.tmax) : null;
-  const topRisk = entry.forecast[0]?.risks[0] || type.label;
+  const topRisk = _wxPrimaryLabel(entry);
   const expanded = _wxExpandedIdx === idx;
   return `
   <div class="wx-compact-row ${expanded ? 'expanded' : ''}" data-wx-idx="${idx}">

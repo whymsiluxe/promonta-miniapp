@@ -147,19 +147,63 @@ async function _loadHomeChatSummary() {
 
 const WEATHER_DAY_NAMES = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
 
-function _weatherKind(dayWave, risks) {
+// Severity scorer (Раунд 4): единый порядок серьёзности + вторичные риски.
+// Жару определяем по tmax (weatherHeatKind из feed.js), не только по тексту risks.
+// Порядок: extreme_heat > storm > wind > snow > heat > rain > cloudy > sunny.
+function weatherRiskSeverity(dayWave, risks) {
   const riskText = (risks || []).join(' ').toLowerCase();
-  if (riskText.includes('гроза') || riskText.includes('молни')) return 'storm';
-  if (riskText.includes('снег') || riskText.includes('заморозки')) return 'snow';
-  if ((dayWave && dayWave.precip_prob >= 60) || riskText.includes('дождь')) return 'rain';
-  if ((dayWave && dayWave.wind >= 30) || riskText.includes('ветер')) return 'wind';
-  if (dayWave && dayWave.precip_prob >= 30) return 'cloudy';
-  return 'sunny';
+  const tmax = dayWave && typeof dayWave.tmax === 'number' ? dayWave.tmax : null;
+  const precip = dayWave && typeof dayWave.precip_prob === 'number' ? dayWave.precip_prob : null;
+  const wind = dayWave && typeof dayWave.wind === 'number' ? dayWave.wind : null;
+  const heatKind = weatherHeatKind(tmax); // 'extreme_heat' | 'heat' | null
+
+  const flags = {
+    extreme_heat: heatKind === 'extreme_heat',
+    storm: riskText.includes('гроза') || riskText.includes('молни'),
+    wind: (wind !== null && wind >= 30) || riskText.includes('ветер') || riskText.includes('шторм'),
+    snow: riskText.includes('снег') || riskText.includes('заморозки') || riskText.includes('гололёд') || riskText.includes('гололед'),
+    heat: heatKind === 'heat',
+    rain: (precip !== null && precip >= 60) || riskText.includes('дождь'),
+    cloudy: precip !== null && precip >= 30,
+    sunny: true,
+  };
+  const order = ['extreme_heat', 'storm', 'wind', 'snow', 'heat', 'rain', 'cloudy', 'sunny'];
+  const kind = order.find(k => flags[k]);
+
+  // Вторичные риски (кроме основного) -> блок "Дополнительно". Ничего не скрываем.
+  const secondary = [];
+  if (kind !== 'storm' && flags.storm) secondary.push('гроза');
+  if (kind !== 'wind' && flags.wind) secondary.push(wind !== null ? `порывы ветра ${Math.round(wind)} км/ч` : 'сильный ветер');
+  if (kind !== 'snow' && flags.snow) secondary.push('снег/заморозки');
+  const showRain = flags.rain || (precip !== null && precip >= 30);
+  if (kind !== 'rain' && kind !== 'cloudy' && showRain) {
+    secondary.push(precip !== null ? `вероятность дождя ${Math.round(precip)}%` : 'дождь');
+  }
+  return { kind, secondary };
+}
+
+function _weatherKind(dayWave, risks) {
+  return weatherRiskSeverity(dayWave, risks).kind;
 }
 
 const WEATHER_KIND_LABEL = {
-  storm: 'Гроза', rain: 'Дождь', snow: 'Снег', wind: 'Ветрено', cloudy: 'Облачно', sunny: 'Ясно',
+  storm: 'Гроза', rain: 'Дождь', snow: 'Снег', wind: 'Сильный ветер', cloudy: 'Облачно', sunny: 'Ясно',
 };
+
+// Подпись типа погоды. Для жары -- температурная (weatherHeatLabel из feed.js).
+function _weatherKindLabel(kind, dayWave) {
+  if (kind === 'heat' || kind === 'extreme_heat') {
+    return weatherHeatLabel(dayWave && dayWave.tmax) || (kind === 'extreme_heat' ? 'Экстремальная жара' : 'Жарко');
+  }
+  return WEATHER_KIND_LABEL[kind] || 'Ясно';
+}
+
+// Рекомендации только для жары (без мед. диагнозов, не позиционировать как охрану труда).
+function _weatherRecommendation(kind) {
+  if (kind === 'extreme_heat') return 'Экстремальная жара. Проверьте условия работы на объекте и перенесите тяжёлые наружные работы на более прохладное время.';
+  if (kind === 'heat') return 'Высокая тепловая нагрузка. Запланируйте воду, перерывы и по возможности тяжёлые работы на утро.';
+  return '';
+}
 
 function _weatherIllustration(kind) {
   if (kind === 'storm') {
@@ -190,6 +234,12 @@ function _weatherIllustration(kind) {
     return `<div class="wx-illust wx-illust-cloudy">
       <div class="wx-sun wx-sun-behind"></div>
       <div class="wx-cloud wx-cloud-main"><div class="wx-cloud-lobe3"></div></div>
+    </div>`;
+  }
+  if (kind === 'heat' || kind === 'extreme_heat') {
+    return `<div class="wx-illust wx-illust-heat${kind === 'extreme_heat' ? ' wx-illust-extreme-heat' : ''}">
+      <div class="wx-sun wx-sun-heat"><div class="wx-sun-core"></div><div class="wx-sun-rays"></div></div>
+      <div class="wx-heat-waves"><span></span><span></span><span></span></div>
     </div>`;
   }
   return `<div class="wx-illust wx-illust-sunny">
@@ -237,7 +287,14 @@ function _renderWeatherCard() {
   const forecast = active.forecast || [];
   const today = wave[0] || {};
   const todayRisks = (forecast[0] && forecast[0].risks) || [];
-  const kind = _weatherKind(today, todayRisks);
+  const severity = weatherRiskSeverity(today, todayRisks);
+  const kind = severity.kind;
+  const statusLabel = _weatherKindLabel(kind, today);
+  const secondaryHtml = severity.secondary.length
+    ? `<div class="weather-card-extra"><div class="weather-card-extra-title">Дополнительно</div>${severity.secondary.map(x => `<div class="weather-card-extra-item">• ${esc(x)}</div>`).join('')}</div>`
+    : '';
+  const recText = _weatherRecommendation(kind);
+  const recHtml = recText ? `<div class="weather-card-rec">${esc(recText)}</div>` : '';
   const dayName = WEATHER_DAY_NAMES[new Date().getDay()];
   const tmax = today.tmax !== undefined ? Math.round(today.tmax) : '—';
   const tmin = today.tmin !== undefined ? Math.round(today.tmin) : '—';
@@ -268,8 +325,10 @@ function _renderWeatherCard() {
     ${_weatherIllustration(kind)}
     <div class="weather-card-temp">${tmax}°</div>
     <div class="weather-card-minmax">↓${tmin}° &nbsp; ↑${tmax}°</div>
-    <div class="weather-card-status wx-status-${kind}">${dayName}: ${WEATHER_KIND_LABEL[kind]}</div>
+    <div class="weather-card-status wx-status-${kind}">${dayName}: ${esc(statusLabel)}</div>
+    ${secondaryHtml}
     <div class="wx-strip">${stripDays}</div>
+    ${recHtml}
   `;
 
   card.querySelectorAll('.wx-object-tab').forEach(tab => {
@@ -284,7 +343,7 @@ function _renderWeatherCard() {
 }
 
 function _weatherMiniIcon(kind) {
-  const map = { storm: '⛈️', rain: '🌧️', snow: '🌨️', wind: '💨', cloudy: '⛅', sunny: '☀️' };
+  const map = { storm: '⛈️', rain: '🌧️', snow: '🌨️', wind: '💨', cloudy: '⛅', sunny: '☀️', heat: '🌡️', extreme_heat: '🌡️' };
   return map[kind] || '☀️';
 }
 
