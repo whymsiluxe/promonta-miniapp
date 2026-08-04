@@ -782,23 +782,47 @@ async function _renderObjDefectsSummary(objectId) {
   if (!wrap) return;
   try {
     const { tickets } = await api(`/api/mangel?object_id=${encodeURIComponent(objectId)}`);
-    const open = tickets.filter(t => t.status !== 'закрыт');
+    // 04.08 (Раунд 3): "открытые" = не устранённые и не отклонённые.
+    const open = tickets.filter(t => t.status !== 'behoben' && t.status !== 'rejected');
     if (countEl) countEl.textContent = open.length ? `${open.length} открытых` : '';
     if (!tickets.length) {
       wrap.innerHTML = `<div class="obj-info-empty-row"><span>Дефектов нет</span><button class="obj-info-empty-action" id="obj-defect-add-btn" type="button">+ Создать</button></div>`;
     } else {
       const preview = open.slice(0, 3);
-      wrap.innerHTML = preview.map(t => `
-        <div class="obj-info-item-row" data-ticket-id="${t.id}" style="cursor:pointer;">
-          <span class="obj-info-item-text">${esc(t.title || t.description || '')}</span>
-          <span class="obj-info-item-qty">${esc(t.status || '')}</span>
-        </div>`).join('')
+      // 04.08 (задача 3.1): описание + русский статус + ответственный + индикаторы фото/комментариев.
+      const statusLabel = t => (typeof mangelStatusLabel === 'function' ? mangelStatusLabel(t.status) : t.status);
+      wrap.innerHTML = preview.map(t => {
+        const resp = t.assigned_worker_name || t.created_by_name || 'Нет ответственного';
+        const photoIcon = t.photo_paths?.length ? ' 📷' : '';
+        const cmt = t.comments?.length ? ` · 💬 ${t.comments.length}` : '';
+        return `
+        <div class="obj-info-defect-row" data-ticket-id="${t.id}">
+          <div class="obj-info-defect-main">
+            <div class="obj-info-defect-title">${esc(t.description || '')}${photoIcon}</div>
+            <div class="obj-info-defect-sub">${esc(statusLabel(t))} · ${esc(resp)}${cmt}</div>
+          </div>
+          <button type="button" class="obj-info-defect-menu-btn" data-defect-menu="${t.id}" aria-label="Действия">⋯</button>
+        </div>`;
+      }).join('')
         + `<div class="obj-info-actions-row">
              <button class="obj-info-empty-action" id="obj-defects-all-btn" type="button">Все дефекты</button>
              <button class="obj-info-empty-action" id="obj-defect-add-btn" type="button">+ Добавить дефект</button>
            </div>`;
-      wrap.querySelectorAll('[data-ticket-id]').forEach(row => {
-        row.addEventListener('click', () => openMangelTicketModal(row.dataset.ticketId));
+      wrap.querySelectorAll('.obj-info-defect-row').forEach(row => {
+        const tid = row.dataset.ticketId;
+        // tap по строке (не по ⋯) — подробности; long-press и ⋯ — одно контекстное меню.
+        row.addEventListener('click', e => {
+          if (e.target.closest('[data-defect-menu]')) return;
+          openMangelTicketModal(tid);
+        });
+        _attachDefectLongPress(row, tid, objectId);
+      });
+      wrap.querySelectorAll('[data-defect-menu]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          if (typeof openMangelActionMenu === 'function')
+            openMangelActionMenu(btn.dataset.defectMenu, { onChange: () => _renderObjDefectsSummary(objectId) });
+        });
       });
     }
     document.getElementById('obj-defects-all-btn')?.addEventListener('click', () => {
@@ -806,14 +830,45 @@ async function _renderObjDefectsSummary(objectId) {
       switchView('mangel');
     });
     document.getElementById('obj-defect-add-btn')?.addEventListener('click', () => {
-      // Переиспользуем существующую кнопку создания дефекта на экране Дефекты --
-      // programmatic click вместо дублирования её open-form логики здесь.
+      // 04.08 (задача 1.4): запоминаем, что форму открыли из Object Info — после
+      // создания дефекта вернёмся сюда и обновим секцию (см. submitMangelTicket).
       window._pendingMangelObjectFilter = objectId;
+      window._mangelReturnToObject = { objectId, objectName: (typeof _objDetailCurrentName !== 'undefined' ? _objDetailCurrentName : objectId) };
       switchView('mangel');
       setTimeout(() => document.getElementById('mangel-new-btn')?.click(), 150);
     });
   } catch (e) {
     wrap.innerHTML = `<div class="obj-info-empty-row"><span>Ошибка: ${esc(e.message)}</span></div>`;
+  }
+}
+
+// 04.08 (задача 3.2): long-press на строке дефекта → то же меню, что ⋯. Подавляем
+// последующий click, чтобы long-press не открыл ещё и модалку.
+function _attachDefectLongPress(row, ticketId, objectId) {
+  let timer = null;
+  let longFired = false;
+  const start = () => {
+    longFired = false;
+    timer = setTimeout(() => {
+      longFired = true;
+      if (typeof openMangelActionMenu === 'function')
+        openMangelActionMenu(ticketId, { onChange: () => _renderObjDefectsSummary(objectId) });
+    }, 500);
+  };
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  row.addEventListener('pointerdown', start);
+  row.addEventListener('pointerup', cancel);
+  row.addEventListener('pointermove', cancel);
+  row.addEventListener('pointercancel', cancel);
+  // click, наступивший сразу после long-press, гасим один раз.
+  row.addEventListener('click', e => { if (longFired) { e.stopPropagation(); e.preventDefault(); longFired = false; } }, true);
+}
+
+// Хук для mangel.js (_deleteMangelTicket) — обновить секцию Дефекты, если Object Info открыт.
+function _refreshObjInfoDefects() {
+  if (typeof _objDetailCurrentId !== 'undefined' && _objDetailCurrentId &&
+      document.getElementById('obj-info-defects-summary')) {
+    _renderObjDefectsSummary(_objDetailCurrentId);
   }
 }
 

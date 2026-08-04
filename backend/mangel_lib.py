@@ -42,6 +42,10 @@ def _save(tickets: list):
 
 def list_tickets(object_id: str = None) -> list:
     tickets = _load()
+    # 04.08 (Раунд 3, задача 3.3): soft-deleted тикеты не возвращаются ни в
+    # списках, ни в get_ticket -- они помечены deleted_at, но остаются на диске
+    # (не физически удаляем: сохраняем историю чата/audit/фото).
+    tickets = [t for t in tickets if not t.get('deleted_at')]
     if object_id:
         tickets = [t for t in tickets if t.get('object_id') == object_id]
     return sorted(tickets, key=lambda t: t.get('created_at', ''), reverse=True)
@@ -72,7 +76,7 @@ def update_status(ticket_id: str, status: str) -> dict:
     with _mangel_lock:
         tickets = _load()
         for t in tickets:
-            if t['id'] == ticket_id:
+            if t['id'] == ticket_id and not t.get('deleted_at'):
                 t['status'] = status
                 _atomic_write(MANGEL_FILE, tickets)
                 return t
@@ -83,7 +87,7 @@ def add_comment(ticket_id: str, user_id: str, text: str, name: str = None) -> di
     with _mangel_lock:
         tickets = _load()
         for t in tickets:
-            if t['id'] == ticket_id:
+            if t['id'] == ticket_id and not t.get('deleted_at'):
                 comment = {
                     'id': str(uuid.uuid4()),
                     'user_id': str(user_id),
@@ -99,14 +103,32 @@ def add_comment(ticket_id: str, user_id: str, text: str, name: str = None) -> di
 
 def get_ticket(ticket_id: str) -> dict:
     for t in _load():
-        if t['id'] == ticket_id:
+        if t['id'] == ticket_id and not t.get('deleted_at'):
             return t
+    raise KeyError(f"Тикет {ticket_id!r} не найден")
+
+
+def soft_delete_ticket(ticket_id: str, deleted_by: str) -> dict:
+    """04.08 (Раунд 3, задача 3.3): Owner-only мягкое удаление. Тикет остаётся
+    в файле с меткой deleted_at/deleted_by -- фото на диске, история чата и
+    audit не трогаются. Повторное удаление уже удалённого безопасно (идемпотентно)."""
+    with _mangel_lock:
+        tickets = _load()
+        for t in tickets:
+            if t['id'] == ticket_id:
+                if not t.get('deleted_at'):
+                    t['deleted_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+                    t['deleted_by'] = str(deleted_by)
+                    _atomic_write(MANGEL_FILE, tickets)
+                return t
     raise KeyError(f"Тикет {ticket_id!r} не найден")
 
 
 def count_by_status() -> dict:
     counts = {s: 0 for s in MANGEL_STATUSES}
     for t in _load():
+        if t.get('deleted_at'):
+            continue
         s = t.get('status', 'gemeldet')
         if s in counts:
             counts[s] += 1

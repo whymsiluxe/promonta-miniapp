@@ -5772,6 +5772,11 @@ def _enrich_mangel_tickets_with_author(tickets: list) -> list:
         created_by = t.get('created_by')
         if created_by:
             t['created_by_name'] = _sanitize_display_name(profiles.get(str(created_by), {}).get('name'), str(created_by))
+        # 04.08 (Раунд 3, задача 3.1/4): резолвим имя ответственного (назначенного)
+        # работника, чтобы UI показывал "Ответственный: Иван", а не сырой user_id.
+        assigned = t.get('assigned_worker_id')
+        if assigned:
+            t['assigned_worker_name'] = _sanitize_display_name(profiles.get(str(assigned), {}).get('name'), str(assigned))
     return tickets
 
 
@@ -5896,6 +5901,18 @@ def add_mangel_comment(ticket_id: str, body: MangelCommentBody, user: dict = Dep
                                name=user.get('first_name', str(user['id'])))
     except KeyError as e:
         raise HTTPException(404, str(e))
+
+
+@app.delete("/api/mangel/{ticket_id}")
+def delete_mangel_ticket(ticket_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    # 04.08 (Раунд 3, задача 3.3): Owner-only мягкое удаление дефекта. Тикет
+    # исчезает из рабочих списков (list/get фильтруют deleted_at), но остаётся
+    # на диске с меткой -- фото/чат/audit не трогаем. Идемпотентно.
+    try:
+        ml.soft_delete_ticket(ticket_id, str(user['id']))
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True, "id": ticket_id}
 
 
 @app.get("/api/mangel/{ticket_id}/comments")

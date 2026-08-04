@@ -516,6 +516,37 @@ header h1 {
 .mangel-photo-preview { width: 100%; height: 120px; border-radius: var(--radius-md); background-size: cover; background-position: center; margin-bottom: 0.6rem; }
 .mangel-form-actions { display: flex; gap: 0.5rem; }
 .mangel-form-actions .submit-btn { flex: 1; }
+
+/* ── 04.08 (Раунд 3) — статус-пилюля, подробности тикета, контекстные действия ── */
+.mangel-card-status-pill { display: inline-block; margin: 0.35rem 0 0.15rem; padding: 0.12rem 0.5rem; font-size: 0.72rem; font-weight: 600; border-radius: 999px; background: var(--bg-card-raised); color: var(--text-light); }
+.mangel-card-status-pill[data-mst="gemeldet"] { color: var(--red, #c0392b); }
+.mangel-card-status-pill[data-mst="in Bearbeitung"] { color: var(--accent); }
+.mangel-card-status-pill[data-mst="needs_review"] { color: var(--c-brass, var(--accent)); }
+.mangel-card-status-pill[data-mst="behoben"] { color: var(--c-forest, #1F513E); }
+.mangel-card-status-pill[data-mst="rejected"] { color: var(--text-light); }
+.mangel-modal-detail-grid { margin: 0.6rem 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.mangel-modal-detail-row { display: flex; justify-content: space-between; gap: 0.75rem; font-size: 0.9rem; }
+.mangel-modal-detail-row span { color: var(--text-light); }
+.mangel-modal-detail-row b { color: var(--text-main); text-align: right; }
+.mangel-modal-secondary-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+.mangel-modal-secondary-btn { flex: 1 1 auto; padding: 0.4rem 0.7rem; font-size: 0.82rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card-raised); color: var(--text-main); cursor: pointer; }
+.mangel-modal-delete-btn { display: block; width: 100%; margin-top: 0.8rem; padding: 0.5rem; font-size: 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--red, #c0392b); background: transparent; color: var(--red, #c0392b); cursor: pointer; }
+
+/* Контекстное меню дефекта (long-press / ⋯) — bottom sheet поверх Object Detail */
+.mangel-action-menu-overlay { position: fixed; inset: 0; z-index: 3000; background: rgba(0,0,0,0.5); display: flex; align-items: flex-end; }
+.mangel-action-menu-sheet { width: 100%; max-width: 480px; margin: 0 auto; background: var(--bg-card); border-radius: 18px 18px 0 0; padding: 0.6rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom)); }
+.mangel-action-menu-title { font-size: 0.85rem; color: var(--text-light); padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border-color); margin-bottom: 0.35rem; }
+.mangel-action-menu-item { display: block; width: 100%; text-align: left; padding: 0.75rem 0.6rem; font-size: 1rem; background: none; border: none; color: var(--text-main); cursor: pointer; border-radius: var(--radius-md); }
+.mangel-action-menu-item:active { background: var(--bg-card-raised); }
+.mangel-action-menu-item.danger { color: var(--red, #c0392b); }
+
+/* Строка дефекта внутри Object Info (описание + статус/ответственный + ⋯) */
+.obj-info-defect-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); cursor: pointer; }
+.obj-info-defect-main { flex: 1; min-width: 0; }
+.obj-info-defect-title { font-size: 0.92rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obj-info-defect-sub { font-size: 0.78rem; color: var(--text-light); margin-top: 0.1rem; }
+.obj-info-defect-menu-btn { flex-shrink: 0; width: 32px; height: 32px; border: none; background: none; color: var(--text-light); font-size: 1.1rem; cursor: pointer; border-radius: 50%; }
+.obj-info-defect-menu-btn:active { background: var(--bg-card-raised); }
 /* 22.07: голосовая надиктовка для форм Потребности/Дефекты */
 .voice-input-row { position: relative; }
 .voice-input-row .mangel-textarea { padding-right: 3rem; }
@@ -3634,6 +3665,40 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .objects-fab.visible:active { transform: scale(0.92); }
 body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; }
 
+/* ── Дефекты FAB (04.08, Раунд 3 задача 1.2) — тот же squircle-язык, что objects-fab,
+   но brass-акцент (действие "добавить"). Позиция над реально измеренной nav-высотой,
+   touch target 48px+. Виден только когда экран Дефекты активен и форма/модалка закрыты. ── */
+.mangel-fab {
+  position: fixed;
+  right: max(18px, calc(env(safe-area-inset-right, 0px) + 12px));
+  bottom: calc(var(--app-bottom-nav-height, 70px) + max(12px, env(safe-area-inset-bottom)) + 14px);
+  width: 56px; height: 56px;
+  border-radius: 19px;
+  background: var(--c-brass, var(--accent));
+  color: var(--primary-dark, #1a1a1a);
+  border: none;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 10px 24px -8px rgba(15,20,15,0.45), 0 2px 6px -2px rgba(15,20,15,0.3);
+  cursor: pointer;
+  z-index: 60;
+  opacity: 0;
+  transform: translateY(16px) scale(0.9);
+  transition: transform 220ms cubic-bezier(.22,.7,.32,1), opacity 220ms ease;
+  pointer-events: none;
+}
+/* видим только на активном экране Дефекты; JS дополнительно снимает .visible при открытой форме/модалке */
+body:has(#view-mangel.active) .mangel-fab.visible { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+.mangel-fab:active { transform: scale(0.92); }
+body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
+
+/* Две кнопки фото (камера/галерея) в форме дефекта */
+.mangel-photo-actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+.mangel-photo-actions .mangel-photo-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.35rem; background: var(--bg-card-raised); color: var(--text-main); font-size: 0.92rem; }
+.mangel-photo-actions .mangel-photo-btn svg { flex-shrink: 0; }
+.mangel-photo-preview-actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+.mangel-photo-preview-actions button { flex: 1; padding: 0.45rem; font-size: 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--border-soft, rgba(0,0,0,0.1)); background: var(--bg-card-raised); color: var(--text-main); cursor: pointer; }
+.mangel-photo-preview-actions button.danger { color: var(--red); }
+
 /* ── Worker object picker modal (Фаза 10.14) ── */
 #worker-object-picker-modal { position: fixed; inset: 0; z-index: 1400; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; }
 .worker-picker-inner { width: 100%; background: var(--bg-card); border-radius: 20px 20px 0 0; padding: 1rem; max-height: 70vh; display: flex; flex-direction: column; }
@@ -4532,7 +4597,6 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
   <header>
     <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>Дефекты</h1>
-    <button class="fab" id="mangel-new-btn" type="button" aria-label="Новый тикет">+</button>
   </header>
 
   <div id="mangel-tab-content">
@@ -4543,10 +4607,18 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
         <textarea id="mangel-description" class="mangel-textarea" placeholder="Описание дефекта…" rows="3"></textarea>
         <button type="button" id="mangel-voice-btn" class="voice-input-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 11a7 7 0 0014 0M12 18v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       </div>
-      <label class="submit-btn mangel-photo-label">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="2"/></svg> Добавить фото
-        <input type="file" id="mangel-photo-input" accept="image/*" capture="environment" style="display:none;">
-      </label>
+      <!-- 04.08 (Раунд 3, задача 1.3): два явных input -- камера (capture) и галерея (без capture).
+           Один input с capture="environment" не давал открыть галерею на части устройств. -->
+      <div class="mangel-photo-actions">
+        <button type="button" class="submit-btn mangel-photo-btn" id="mangel-camera-btn">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="2"/></svg> Снять фото
+        </button>
+        <button type="button" class="submit-btn mangel-photo-btn" id="mangel-gallery-btn">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 16l4-4 3 3 4-5 7 7" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8.5" cy="9.5" r="1.5" fill="currentColor"/></svg> Из галереи
+        </button>
+      </div>
+      <input type="file" id="mangel-camera-input" accept="image/*" capture="environment" style="display:none;">
+      <input type="file" id="mangel-gallery-input" accept="image/*" style="display:none;">
       <div id="mangel-photo-preview" class="mangel-photo-preview" style="display:none;"></div>
       <div class="mangel-form-actions">
         <button class="submit-btn" id="mangel-cancel-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);">Отмена</button>
@@ -4579,6 +4651,13 @@ body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; 
       <div id="mangel-modal-body"></div>
     </div>
   </div>
+
+  <!-- 04.08 (Раунд 3, задача 1.2): FAB создания дефекта -- перенесён из шапки (там
+       попадал под системную кнопку Telegram) в плавающую кнопку над нижней навигацией.
+       Виден только на экране Дефекты, скрыт при открытой форме/модалке/клавиатуре. -->
+  <button class="mangel-fab" id="mangel-new-btn" type="button" aria-label="Добавить дефект" title="Добавить дефект">
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+  </button>
 </div>
 
 <!-- ═══════════ Комментарии к фото (Инстаграм-стиль, 10.4) ═══════════ -->

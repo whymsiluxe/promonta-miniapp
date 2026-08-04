@@ -2,12 +2,39 @@
 // 3 колонки: gemeldet → in Bearbeitung → behoben. Смена статуса — реальный pointer-based
 // drag карточки между колонками (тот же паттерн что bubble-assign.js) + tap-to-cycle как fallback
 // внутри модалки тикета (для случаев когда drag неудобен/долго тапать одной рукой).
+//
+// 04.08 (Раунд 3): backend знает 5 статусов (gemeldet/in Bearbeitung/needs_review/behoben/
+// rejected). Kanban остаётся 3-колоночным (не большой рефактор): needs_review визуально
+// живёт в колонке "В работе", rejected — в "Устранено", но точный русский статус всегда
+// виден на карточке через mangelStatusLabel(). Контекстные действия в модалке умеют
+// выставлять все 5 значений; тикет при этом не пропадает из Kanban.
 
-const MANGEL_STATUS_ORDER = ['gemeldet', 'in Bearbeitung', 'behoben'];
+const MANGEL_STATUS_ORDER = ['gemeldet', 'in Bearbeitung', 'behoben']; // колонки Kanban
 const MANGEL_STATUS_LABEL = { 'gemeldet': 'gemeldet', 'in Bearbeitung': 'in-bearbeitung', 'behoben': 'behoben' };
-const MANGEL_STATUS_LABEL_RU = { 'gemeldet': 'Новая', 'in Bearbeitung': 'В работе', 'behoben': 'Устранено' };
+
+// 04.08 (Раунд 3, задача 2): единый резолвер русских подписей статусов дефекта.
+// Backend-значения (включая немецкие) НЕ мигрируем — переводим только на показ.
+const MANGEL_STATUS_LABEL_RU = {
+  'gemeldet': 'Новая',
+  'in Bearbeitung': 'В работе',
+  'needs_review': 'На проверке',
+  'behoben': 'Устранено',
+  'rejected': 'Отклонено',
+};
+function mangelStatusLabel(status) {
+  return MANGEL_STATUS_LABEL_RU[status] || status;
+}
+// В какую из 3 колонок Kanban попадает тикет (needs_review→«В работе», rejected→«Устранено»).
+function _mangelColumnFor(status) {
+  if (status === 'needs_review') return 'in Bearbeitung';
+  if (status === 'rejected') return 'behoben';
+  return status;
+}
+
 let _mangelPhotoFile = null;
 let _mangelTickets = [];
+let _mangelWorkers = [];        // 04.08 (1.1): кэш /api/workers, чтобы перестраивать optgroup без повторного GET
+let _mangelObjectsCache = [];   // 04.08 (1.1): кэш /api/objects (owner видит assigned_users)
 
 // Drag state
 let _mangelDragEl = null;
@@ -44,10 +71,14 @@ function renderMangelTicketCard(ticket) {
   const chipsHtml = chips.map(c =>
     `<div class="obj-stat-chip"><span class="obj-chip-val" style="color:${c.color}">${c.label}</span><span class="obj-chip-sub">${c.sub}</span></div>`
   ).join('');
+  // 04.08 (задача 2): точный русский статус пилюлей на карточке — важно для
+  // needs_review/rejected, которые лежат в чужой колонке.
+  const statusPill = `<span class="mangel-card-status-pill" data-mst="${esc(ticket.status)}">${esc(mangelStatusLabel(ticket.status))}</span>`;
   return `
   <div class="mangel-card" data-ticket-id="${ticket.id}" data-status="${esc(ticket.status)}">
     ${photoThumb}
     <div class="mangel-card-desc">${esc(ticket.description)}</div>
+    ${statusPill}
     <div class="obj-chips-row">${chipsHtml}</div>
   </div>`;
 }
@@ -74,10 +105,10 @@ function renderMangelKanban() {
   // флаг разовый, применяется один раз и сбрасывается, чтобы не залипал при обычном открытии Дефектов.
   const objectFilter = window._pendingMangelObjectFilter || null;
   window._pendingMangelObjectFilter = null;
-  MANGEL_STATUS_ORDER.forEach(status => {
-    const col = document.getElementById(_mangelStatusColId(status));
-    const countEl = document.getElementById(_mangelCountId(status));
-    let tickets = _mangelTickets.filter(t => t.status === status);
+  MANGEL_STATUS_ORDER.forEach(colStatus => {
+    const col = document.getElementById(_mangelStatusColId(colStatus));
+    const countEl = document.getElementById(_mangelCountId(colStatus));
+    let tickets = _mangelTickets.filter(t => _mangelColumnFor(t.status) === colStatus);
     if (objectFilter) tickets = tickets.filter(t => t.object_id === objectFilter);
     if (col) col.innerHTML = tickets.map(renderMangelTicketCard).join('') ||
       '<div style="padding:1rem 0;text-align:center;color:var(--text-light);font-size:0.85rem">Пусто</div>';
@@ -161,7 +192,9 @@ async function _mangelDragPointerUp(e) {
   _mangelDragEl.classList.remove('mangel-card-dragging');
   _mangelDragEl = null;
 
-  if (droppedStatus && ticket && droppedStatus !== ticket.status) {
+  // Сравниваем по колонке, а не по сырому статусу: тащить needs_review-тикет в
+  // колонку «В работе» не должно триггерить бессмысленный PATCH.
+  if (droppedStatus && ticket && droppedStatus !== _mangelColumnFor(ticket.status)) {
     try {
       await api(`/api/mangel/${ticketId}/status`, { method: 'PATCH', body: JSON.stringify({ status: droppedStatus }) });
       hapticImpact('medium');
@@ -178,22 +211,29 @@ async function _mangelDragPointerUp(e) {
   setTimeout(() => { _mangelDragStarted = false; }, 50);
 }
 
-function _mangelNextStatus(current) {
-  const idx = MANGEL_STATUS_ORDER.indexOf(current);
-  return MANGEL_STATUS_ORDER[Math.min(idx + 1, MANGEL_STATUS_ORDER.length - 1)];
+// 04.08 (задача 4): контекстные действия по статусу — вместо сырого "Далее →".
+// Возвращает список { label, status } возможных переходов для текущего статуса.
+// Только owner может менять статус (backend require_owner), поэтому вызывается под гейтом роли.
+function _mangelContextActions(status) {
+  switch (status) {
+    case 'gemeldet':        return [{ label: 'Взять в работу', status: 'in Bearbeitung' }, { label: 'Отклонить', status: 'rejected' }];
+    case 'in Bearbeitung':  return [{ label: 'Отправить на проверку', status: 'needs_review' }, { label: 'Отметить устранённым', status: 'behoben' }, { label: 'Вернуть в новые', status: 'gemeldet' }];
+    case 'needs_review':    return [{ label: 'Отметить устранённым', status: 'behoben' }, { label: 'Вернуть в работу', status: 'in Bearbeitung' }];
+    case 'behoben':         return [{ label: 'Вернуть в работу', status: 'in Bearbeitung' }];
+    case 'rejected':        return [{ label: 'Вернуть в новые', status: 'gemeldet' }];
+    default:                return [];
+  }
 }
 
-async function cycleMangelStatus(ticketId) {
-  const ticket = _mangelTickets.find(t => t.id === ticketId);
-  if (!ticket) return;
-  const next = _mangelNextStatus(ticket.status);
-  if (next === ticket.status) return; // уже в конечном статусе behoben
+async function _setMangelStatus(ticketId, status) {
   try {
-    await api(`/api/mangel/${ticketId}/status`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
+    await api(`/api/mangel/${ticketId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
     hapticImpact('light');
     await loadMangelTickets();
+    return true;
   } catch (e) {
     showToast('Ошибка смены статуса: ' + e.message, 'error');
+    return false;
   }
 }
 
@@ -206,28 +246,62 @@ async function openMangelTicketModal(ticketId) {
     ? `<div class="mangel-modal-photo" data-auth-bg="/api/mangel/photos/${ticket.photo_paths[0]}/file"></div>` : '';
   const commentsHtml = (ticket.comments || []).map(c =>
     `<div class="mangel-comment"><b>${esc(c.name || c.user_id)}</b><div>${esc(c.text)}</div></div>`).join('');
+
+  const isOwner = currentRole === 'owner';
+  const actions = isOwner ? _mangelContextActions(ticket.status) : [];
+  // Первое действие — главная кнопка, остальные — вторичные.
+  const primary = actions[0];
+  const secondary = actions.slice(1);
+  const primaryHtml = primary
+    ? `<button class="submit-btn" id="mangel-modal-primary-action" type="button" data-next="${esc(primary.status)}" style="margin-top:0.5rem;">${esc(primary.label)}</button>`
+    : '';
+  const secondaryHtml = secondary.length
+    ? `<div class="mangel-modal-secondary-actions">${secondary.map(a =>
+        `<button class="mangel-modal-secondary-btn" type="button" data-next="${esc(a.status)}">${esc(a.label)}</button>`).join('')}</div>`
+    : '';
+  const deleteHtml = isOwner
+    ? `<button class="mangel-modal-delete-btn" id="mangel-modal-delete-btn" type="button">Удалить дефект</button>`
+    : '';
+
   body.innerHTML = `
     ${photoBlock}
     <div class="mangel-modal-desc">${esc(ticket.description)}</div>
-    <div class="mangel-modal-status">Статус: <b>${esc(MANGEL_STATUS_LABEL_RU[ticket.status] || ticket.status)}</b> <button class="submit-btn" id="mangel-modal-cycle-btn" type="button" style="display:inline-block;padding:0.3rem 0.8rem;">Далее →</button></div>
+    <div class="mangel-modal-detail-grid">
+      <div class="mangel-modal-detail-row"><span>Статус</span><b>${esc(mangelStatusLabel(ticket.status))}</b></div>
+      <div class="mangel-modal-detail-row"><span>Ответственный</span><b>${ticket.assigned_worker_name ? esc(ticket.assigned_worker_name) : (ticket.created_by_name ? esc(ticket.created_by_name) : 'Нет ответственного')}</b></div>
+      <div class="mangel-modal-detail-row"><span>Объект</span><b>${esc(ticket.object_id || '—')}</b></div>
+      ${ticket.created_by_name ? `<div class="mangel-modal-detail-row"><span>Создал</span><b>${esc(ticket.created_by_name)}</b></div>` : ''}
+    </div>
+    ${primaryHtml}
+    ${secondaryHtml}
     <div class="mangel-comments-list">${commentsHtml || '<div style="color:var(--text-light);font-size:0.85rem">Комментариев нет</div>'}</div>
     <div class="mangel-comment-input-row">
       <input type="text" id="mangel-comment-input" placeholder="Комментарий…" class="mangel-select">
       <button class="submit-btn" id="mangel-comment-send-btn" type="button" style="padding:0.5rem 1rem;">➤</button>
     </div>
-    <button class="submit-btn" id="mangel-open-chat-btn" type="button" style="margin-top:0.6rem;background:var(--bg-card-raised);color:var(--text-main);">💬 Полный чат по тикету</button>
+    <button class="submit-btn" id="mangel-open-chat-btn" type="button" style="margin-top:0.6rem;background:var(--bg-card-raised);color:var(--text-main);">Открыть чат</button>
+    ${deleteHtml}
   `;
   body.querySelectorAll('[data-auth-bg]').forEach(el => authBgImage(el, el.dataset.authBg));
+
   document.getElementById('mangel-open-chat-btn').addEventListener('click', () => {
     if (typeof openObjectOrMangelChat === 'function') {
       document.getElementById('mangel-ticket-modal').style.display = 'none';
-      openObjectOrMangelChat(`mangel:${ticketId}`, `Тикет: ${ticket.object_id || ticketId}`, 'mangel');
+      // 04.08 (задача 6): структурированный контекст возврата — назад в этот тикет.
+      openObjectOrMangelChat(`mangel:${ticketId}`, `Тикет: ${ticket.object_id || ticketId}`, { view: 'mangel', ticketId });
     }
   });
-  document.getElementById('mangel-modal-cycle-btn').addEventListener('click', async () => {
-    await cycleMangelStatus(ticketId);
-    openMangelTicketModal(ticketId);
+
+  document.getElementById('mangel-modal-primary-action')?.addEventListener('click', async (e) => {
+    if (await _setMangelStatus(ticketId, e.currentTarget.dataset.next)) openMangelTicketModal(ticketId);
   });
+  body.querySelectorAll('.mangel-modal-secondary-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (await _setMangelStatus(ticketId, btn.dataset.next)) openMangelTicketModal(ticketId);
+    });
+  });
+  document.getElementById('mangel-modal-delete-btn')?.addEventListener('click', () => _deleteMangelTicket(ticketId));
+
   document.getElementById('mangel-comment-send-btn').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     const input = document.getElementById('mangel-comment-input');
@@ -247,6 +321,70 @@ async function openMangelTicketModal(ticketId) {
     }
   });
   document.getElementById('mangel-ticket-modal').style.display = 'flex';
+  _updateMangelFab();
+}
+
+// 04.08 (задача 3.2): единое контекстное меню дефекта. Открывается и long-press,
+// и кнопкой ⋯ на строке дефекта в Object Info. Одно меню одновременно; закрывается
+// backdrop/Telegram Back (registerOverlay); z-index выше Object Detail.
+let _mangelMenuEl = null;
+let _mangelMenuUnreg = null;
+function closeMangelActionMenu() {
+  if (_mangelMenuEl) { _mangelMenuEl.remove(); _mangelMenuEl = null; }
+  if (_mangelMenuUnreg) { _mangelMenuUnreg(); _mangelMenuUnreg = null; }
+}
+function openMangelActionMenu(ticketId, opts = {}) {
+  if (_mangelMenuEl) return; // одно меню одновременно
+  const ticket = (opts.ticket) || _mangelTickets.find(t => t.id === ticketId);
+  if (!ticket) return;
+  const isOwner = currentRole === 'owner';
+  hapticImpact('light');
+
+  const items = [];
+  items.push({ label: 'Открыть', act: () => { closeMangelActionMenu(); openMangelTicketModal(ticketId); } });
+  items.push({ label: 'Перейти в чат', act: () => {
+    closeMangelActionMenu();
+    if (typeof openObjectOrMangelChat === 'function')
+      openObjectOrMangelChat(`mangel:${ticketId}`, `Тикет: ${ticket.object_id || ticketId}`, { view: 'mangel', ticketId });
+  }});
+  if (isOwner) {
+    // Контекстные переходы по статусу — только осмысленные для текущего статуса.
+    _mangelContextActions(ticket.status).forEach(a => {
+      items.push({ label: a.label, act: async () => { closeMangelActionMenu(); if (await _setMangelStatus(ticketId, a.status) && opts.onChange) opts.onChange(); } });
+    });
+    items.push({ label: 'Удалить', danger: true, act: async () => { closeMangelActionMenu(); await _deleteMangelTicket(ticketId); if (opts.onChange) opts.onChange(); } });
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'mangel-action-menu-overlay';
+  overlay.innerHTML = `<div class="mangel-action-menu-sheet">
+    <div class="mangel-action-menu-title">${esc(ticket.description || 'Дефект').slice(0, 60)}</div>
+    ${items.map((it, i) => `<button type="button" class="mangel-action-menu-item${it.danger ? ' danger' : ''}" data-idx="${i}">${esc(it.label)}</button>`).join('')}
+  </div>`;
+  document.body.appendChild(overlay);
+  _mangelMenuEl = overlay;
+  _mangelMenuUnreg = (typeof NavigationManager !== 'undefined') ? NavigationManager.registerOverlay(closeMangelActionMenu) : null;
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeMangelActionMenu(); });
+  overlay.querySelectorAll('.mangel-action-menu-item').forEach(btn => {
+    btn.addEventListener('click', () => items[+btn.dataset.idx].act());
+  });
+}
+
+// 04.08 (задача 3.3): Owner-only soft delete. Подтверждение обязательно.
+async function _deleteMangelTicket(ticketId) {
+  if (currentRole !== 'owner') return;
+  if (!confirm('Удалить дефект? Дефект исчезнет из рабочих списков.')) return;
+  try {
+    await api(`/api/mangel/${ticketId}`, { method: 'DELETE' });
+    hapticImpact('medium');
+    document.getElementById('mangel-ticket-modal').style.display = 'none';
+    await loadMangelTickets();
+    // Синхронизируем Object Info, если оно открыто на этом объекте.
+    if (typeof _refreshObjInfoDefects === 'function') _refreshObjInfoDefects();
+    showToast('Дефект удалён', 'success');
+  } catch (e) {
+    showToast('Ошибка удаления: ' + e.message, 'error');
+  }
 }
 
 async function _populateMangelObjectSelect() {
@@ -254,7 +392,8 @@ async function _populateMangelObjectSelect() {
   if (select.dataset.populated) return;
   try {
     const res = await api('/api/objects');
-    (res.objects || []).forEach(obj => {
+    _mangelObjectsCache = res.objects || [];
+    _mangelObjectsCache.forEach(obj => {
       const opt = document.createElement('option');
       opt.value = obj['ID объекта'] || obj['Объект'];
       opt.textContent = obj['Объект'] || opt.value;
@@ -270,26 +409,58 @@ async function _populateMangelObjectSelect() {
   }
 }
 
+// 04.08 (задача 1.1): список работников с назначенными на объект первыми.
+// Загружает /api/workers один раз в кэш, а optgroup-структуру перестраивает
+// при каждой смене объекта (без повторного GET).
 async function _populateMangelWorkerSelect() {
   const select = document.getElementById('mangel-worker-select');
   if (currentRole !== 'owner') { select.style.display = 'none'; return; }
   select.style.display = 'block';
-  if (select.dataset.populated) return;
-  try {
-    const res = await api('/api/workers');
-    (res.workers || []).filter(w => w.role === 'worker').forEach(w => {
-      const opt = document.createElement('option');
-      opt.value = w.user_id;
-      opt.textContent = w.name;
-      select.appendChild(opt);
+  if (!_mangelWorkers.length) {
+    try {
+      const res = await api('/api/workers');
+      _mangelWorkers = (res.workers || []).filter(w => w.role === 'worker');
+    } catch (e) { _mangelWorkers = []; }
+  }
+  _rebuildMangelWorkerOptions(document.getElementById('mangel-object-select').value);
+}
+
+function _rebuildMangelWorkerOptions(objectId) {
+  const select = document.getElementById('mangel-worker-select');
+  if (!select) return;
+  const prev = select.value; // сохранить выбор если возможно (не сбрасывать без причины)
+  // accepted-назначения на выбранный объект (owner /api/objects даёт assigned_users).
+  let assignedIds = new Set();
+  if (objectId) {
+    const obj = _mangelObjectsCache.find(o => (o['ID объекта'] || o['Объект']) === objectId);
+    (obj?.assigned_users || []).forEach(u => {
+      if ((u.assignment_status || 'accepted') === 'accepted') assignedIds.add(String(u.user_id));
     });
-    select.dataset.populated = '1';
-  } catch (e) {}
+  }
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '', 'ru');
+  const assigned = _mangelWorkers.filter(w => assignedIds.has(String(w.user_id))).sort(byName);
+  const rest = _mangelWorkers.filter(w => !assignedIds.has(String(w.user_id))).sort(byName);
+
+  const optHtml = w => `<option value="${esc(w.user_id)}">${esc(w.name || 'Сотрудник')}</option>`;
+  let html = '<option value="">Назначить работника (необязательно)…</option>';
+  if (objectId && assigned.length) {
+    html += `<optgroup label="Назначены на объект">${assigned.map(optHtml).join('')}</optgroup>`;
+    if (rest.length) html += `<optgroup label="Остальные сотрудники">${rest.map(optHtml).join('')}</optgroup>`;
+  } else {
+    // без объекта или без назначенных — обычный алфавитный список
+    html += [...assigned, ...rest].sort(byName).map(optHtml).join('');
+  }
+  select.innerHTML = html;
+  // восстановить прежний выбор, если работник ещё присутствует
+  if (prev && select.querySelector(`option[value="${CSS.escape(prev)}"]`)) select.value = prev;
 }
 
 async function submitMangelTicket() {
+  const submitBtn = document.getElementById('mangel-submit-btn');
+  if (submitBtn.disabled) return; // 04.08 (1.4): двойной тап не создаёт два тикета
   const objectId = document.getElementById('mangel-object-select').value;
   const description = document.getElementById('mangel-description').value.trim();
+  if (!objectId) { showToast('Выберите объект'); return; }
   if (!description) { showToast('Опишите дефект'); return; }
 
   const workerSelect = document.getElementById('mangel-worker-select');
@@ -301,6 +472,9 @@ async function submitMangelTicket() {
   if (assignedWorkerId) formData.append('assigned_worker_id', assignedWorkerId);
   if (_mangelPhotoFile) formData.append('file', _mangelPhotoFile);
 
+  const origLabel = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Создание…';
   try {
     await fetch(`${API_BASE}/api/mangel`, {
       method: 'POST',
@@ -311,31 +485,81 @@ async function submitMangelTicket() {
       return res.json();
     });
     hapticImpact('light');
+    const returnObj = window._mangelReturnToObject || null;
     _closeMangelForm();
     await loadMangelTickets();
+    showToast('Дефект создан', 'success');
+    // 04.08 (1.4): если форму открыли из Object Info — вернуться туда и обновить секцию Дефекты.
+    if (returnObj && typeof openObjectDetail === 'function') {
+      window._mangelReturnToObject = null;
+      openObjectDetail(returnObj.objectId, returnObj.objectName, 'info');
+    }
   } catch (e) {
+    // При ошибке НЕ очищаем поля/фото — юзер не теряет введённое.
     showToast('Ошибка создания тикета: ' + e.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = origLabel;
   }
+}
+
+function _openMangelForm() {
+  document.getElementById('mangel-form').style.display = 'block';
+  _updateMangelFab();
+  hapticImpact('light');
 }
 
 function _closeMangelForm() {
   document.getElementById('mangel-form').style.display = 'none';
   document.getElementById('mangel-description').value = '';
-  document.getElementById('mangel-photo-preview').style.display = 'none';
-  document.getElementById('mangel-photo-preview').innerHTML = '';
-  document.getElementById('mangel-photo-input').value = '';
+  _clearMangelPhoto();
+  _updateMangelFab();
+}
+
+function _clearMangelPhoto() {
   _mangelPhotoFile = null;
+  const preview = document.getElementById('mangel-photo-preview');
+  preview.style.display = 'none';
+  preview.style.backgroundImage = '';
+  preview.innerHTML = '';
+  // сброс value обоих input, чтобы повторный выбор того же файла тоже сработал (change)
+  const cam = document.getElementById('mangel-camera-input');
+  const gal = document.getElementById('mangel-gallery-input');
+  if (cam) cam.value = '';
+  if (gal) gal.value = '';
+}
+
+function _showMangelPhotoPreview(file) {
+  _mangelPhotoFile = file;
+  const preview = document.getElementById('mangel-photo-preview');
+  preview.style.display = 'block';
+  preview.style.backgroundImage = `url('${URL.createObjectURL(file)}')`;
+  preview.innerHTML = `
+    <div class="mangel-photo-preview-actions">
+      <button type="button" id="mangel-photo-replace" data-target="gallery">Заменить</button>
+      <button type="button" id="mangel-photo-remove" class="danger">Удалить фото</button>
+    </div>`;
+  document.getElementById('mangel-photo-replace').addEventListener('click', () => {
+    document.getElementById('mangel-gallery-input').click();
+  });
+  document.getElementById('mangel-photo-remove').addEventListener('click', _clearMangelPhoto);
+}
+
+// FAB виден только когда экран Дефекты активен, форма и модалка закрыты.
+function _updateMangelFab() {
+  const fab = document.getElementById('mangel-new-btn');
+  if (!fab) return;
+  const formOpen = document.getElementById('mangel-form')?.style.display === 'block';
+  const modalOpen = document.getElementById('mangel-ticket-modal')?.style.display === 'flex';
+  fab.classList.toggle('visible', !formOpen && !modalOpen);
 }
 
 function initMangelView() {
   loadMangelTickets();
-  _populateMangelObjectSelect();
-  _populateMangelWorkerSelect();
+  _populateMangelObjectSelect().then(() => _populateMangelWorkerSelect());
+  _updateMangelFab();
 
-  document.getElementById('mangel-new-btn').addEventListener('click', () => {
-    document.getElementById('mangel-form').style.display = 'block';
-    hapticImpact('light');
-  });
+  document.getElementById('mangel-new-btn').addEventListener('click', _openMangelForm);
   document.getElementById('mangel-cancel-btn').addEventListener('click', _closeMangelForm);
   document.getElementById('mangel-submit-btn').addEventListener('click', submitMangelTicket);
   attachVoiceInputButton(document.getElementById('mangel-voice-btn'), transcript => {
@@ -343,14 +567,17 @@ function initMangelView() {
     input.value = input.value ? `${input.value} ${transcript}` : transcript;
   });
 
-  document.getElementById('mangel-photo-input').addEventListener('change', e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    _mangelPhotoFile = file;
-    const preview = document.getElementById('mangel-photo-preview');
-    preview.style.display = 'block';
-    preview.style.backgroundImage = `url('${URL.createObjectURL(file)}')`;
+  // 04.08 (1.1): при смене объекта пересчитываем список работников (назначенные — первыми).
+  document.getElementById('mangel-object-select').addEventListener('change', e => {
+    _rebuildMangelWorkerOptions(e.target.value);
   });
+
+  // 04.08 (1.3): две явные кнопки камера/галерея + preview с заменой/удалением.
+  document.getElementById('mangel-camera-btn').addEventListener('click', () => document.getElementById('mangel-camera-input').click());
+  document.getElementById('mangel-gallery-btn').addEventListener('click', () => document.getElementById('mangel-gallery-input').click());
+  const onPhotoPicked = e => { const f = e.target.files[0]; if (f) _showMangelPhotoPreview(f); };
+  document.getElementById('mangel-camera-input').addEventListener('change', onPhotoPicked);
+  document.getElementById('mangel-gallery-input').addEventListener('change', onPhotoPicked);
 
   document.querySelector('.mangel-kanban').addEventListener('click', e => {
     if (_mangelDragStarted) return; // клик после реального drag — игнорировать, иначе модалка откроется вдобавок к DnD
@@ -360,5 +587,6 @@ function initMangelView() {
 
   document.getElementById('mangel-modal-close-btn').addEventListener('click', () => {
     document.getElementById('mangel-ticket-modal').style.display = 'none';
+    _updateMangelFab();
   });
 }
