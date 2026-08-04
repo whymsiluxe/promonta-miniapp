@@ -1,9 +1,9 @@
 # Changelog
 
-## 2026-08-04 (Раунд 5: Полный UI/UX stabilization) — IN PROGRESS
+## 2026-08-04 (Раунд 5: Полный UI/UX stabilization) — DONE
 
-Frontend-first, **без deploy** (по инструкции очереди раундов). Начальный SHA `58bda01`.
-Максимум 4 коммита.
+Frontend-first, **без deploy** (по инструкции очереди раундов). Начальный SHA `58bda01`,
+итоговый `52e118f`. 4 коммита (`bc5bb4d`, `702cc26`, `4d4f13a`, `52e118f`). Тесты: 406 passed, 1 skipped.
 
 ### Commit 1 — `refactor: stabilize navigation typography and app bootstrap`
 - **§1 Отступ контента под nav** (`tokens.css`, `app.html`): единый токен
@@ -25,6 +25,47 @@ Frontend-first, **без deploy** (по инструкции очереди ра
   критический сбой (авторизация) → экран ошибки с «Повторить», медиа первой страницы фото
   прогреваются во время splash. Data-prefetch (объекты/инструменты/погода/новости/фото/
   алерты/чат/абсанс/этапы) зарегистрированы как некритичные задачи.
+
+### Commit 3 — `fix: clarify weather object progress and mobile search`
+- **§5 Бюджет карточки объекта** (`app.html`, `objects.js`): процент был `0.8rem` (~13px) →
+  22px/`font-weight:700`, подпись «Бюджет использован» ≥15px, bar 8px. Расчёт/цвет не тронуты.
+- **§11 Object search при клавиатуре** (`app.html`): `.obj-filter-row` → `flex-wrap`,
+  `@media(max-width:380px)` фильтры в 2 строки, `min-width:0`/`box-sizing:border-box` не дают
+  выйти за viewport. Nav прячется глобально `body.keyboard-open`, запрос не сбрасывается.
+- **§12 Вкладка Инфо** (`feed.js`, `app.html`): `weatherSeverityLevel()` + `WX_SEVERITY_SECTIONS`
+  — Инфо-лента группируется в Критично/Предупреждения/Информация (секция только если есть
+  элементы). Красная левая полоса — только critical (экстремальная жара/шторм); янтарь —
+  предупреждения (сильная жара/ветер/мороз). §6 (этапы) / §7 (weather severity) — сделаны в
+  Раунде 4, не дублированы.
+
+### Commit 2 — `feat: add unified comments and unread activity`
+- **§8 Комментарии к новостям** (`main.py`, `feed.js`, `app.html`): новый store
+  `news_comments.json` (отдельно от cron-ленты) + `POST/GET/DELETE /api/feed/news/{id}/comments`
+  (автор или Owner удаляют), модалка `news-comments-modal` (тот же lifecycle/визуал, что фото).
+  Лента отдаёт `comment_count`/`last_comment_at`.
+- **§8 Unread** (`main.py`, `feed.js`): per-user `feed_reads.json`
+  (`last_news/photos/info_read_at`), `POST /api/feed/read`, `GET /api/feed/unread` (badge =
+  НЕПРОЧИТАННОЕ, не общее число; новая публикация или новый комментарий новее отметки; `>99`
+  → `99+`). `_loadFeedTabBadges` переведён с total-counts на unread. Секция «Сейчас обсуждают»
+  (≤3 новости с комментариями за 24ч, сортировка по `last_comment_at`).
+- **§10 Читаемость чата** (`app.html`): `.chat-text` 18px (`--font-chat`), имя 14px, время
+  13px, reply/forward 13-14px, `⋯` touch-target 44×44px. Комментарии (`.pc-comment-text`) 16px.
+- **NOTE**: forward комментария в чаты и in-app activity-alert («Иван прокомментировал») —
+  крупные фичи, не реализованы (badge + «обсуждают» покрывают уведомление).
+
+### Commit 4 — `feat: add worker calendar reports and birthday alerts`
+- **§13 Календарь работника** (`main.py`, `profile.js`): `GET /api/workers/{id}/calendar-stats`
+  (`days_worked` уникальные дни — активная смена не дублируется, `total_hours` с паузами, avg,
+  `sick_days`/`vacation_days` из одобренных отсутствий, Owner|self, Europe/Berlin).
+  `export_stundenzettel` принимает `date_from`/`date_to` (имя файла с датами); worker-card CSV
+  выгружается по выбранному периоду (`_wcPeriodRange`).
+- **§14 Дни рождения** (`main.py`): `_check_upcoming_birthdays` переписан на два алерта —
+  «за 3 дня» и «в день рождения» — с idempotency `birthday:<uid>:<year>:3days`/`:today`
+  (Europe/Berlin), feed birthdays на `business_today_str`.
+- **NOTE**: полный period-picker UI (§13) — backend готов/покрыт тестами, отдельный
+  calendar-экран не расширялся. Onboarding-поле ДР (§14) не добавлено — противоречит
+  зафиксированному owner-решению (`main.py:1096`); backend принимает ДР через profile-edit.
+- Тесты: `test_news_comments.py` (11), `test_worker_calendar_birthday.py` (13).
 
 ## 2026-08-04 (Раунд 4: Погода-жара, новости, этапы объекта)
 
