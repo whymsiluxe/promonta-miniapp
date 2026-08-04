@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-08-04 (Раунд 2: починка кнопки «Добавить работника» на карточке объекта)
+
+Frontend only, **без deploy** (по инструкции очереди раундов). Начальный SHA `30aac96`.
+
+### Fixed
+- **Кнопка «+» на карточке объекта** (`objects.js`, `app.html`) теперь открывает
+  Assignment Sheet. Причина: кнопка была `<div class="obj-people-add">` с
+  `margin-left:-14px`, задвинутая под соседние аватары (у них z-index 3–6, у кнопки —
+  auto), из-за чего аватары перехватывали клик; плюс вызывался legacy
+  `openBubbleAssign()`, делавший лишний `GET /api/objects` ради имени объекта.
+  Заменено на настоящую `<button type="button" class="obj-add-worker-btn">` 44×44px
+  с `position:relative; z-index:8`, SVG «человек+плюс» (не голый `+`), brass-фоном без
+  avatar-рамки, `:active`/`:disabled` состояниями. Клик обрабатывается делегированием на
+  `#objects-cards` (guard `dataset.addWorkerBound`, без дублей listener'ов при
+  `loadObjects()`), с `typeof openAssignmentSheet` guard + `showToast`, `disabled` на
+  600мс против двойного тапа. `objectName` берётся из уже загруженного `obj` (без GET).
+  Обе точки входа (карточка объекта и Object Info → «Команда и смены» → «+ Добавить»,
+  `object-info.js:154`) зовут один и тот же `openAssignmentSheet({objectId, objectName})`.
+
 ## 2026-08-04 (Раунд 1: расширенные часы команды за неделю)
 
 Code+tests only, **без deploy** (по инструкции очереди раундов). Начальный SHA `6f6cd46`.

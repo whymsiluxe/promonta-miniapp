@@ -132,8 +132,12 @@ function renderObjectCard(obj) {
   // не строим, это редкий edge case при 4+ работниках на одном объекте).
   const extraDots = assignedUsers.length > 3
     ? `<div class="obj-people-dot obj-people-more obj-extra-dots-btn" data-object-id="${esc(oid)}" data-object-name="${esc(obj['Объект']||'')}" style="margin-left:-14px;">+${assignedUsers.length - 3}</div>` : '';
+  // 04.08 (Раунд 2): настоящая <button> вместо div -- отдельный touch target,
+  // не сливается с аватарами (нет margin-left:-14px, свой z-index), человек-с-плюсом
+  // SVG вместо голого "+", вызывает единый openAssignmentSheet (см. attachObjectsHandlers).
+  // objectName передаём из obj -- не делаем лишний GET /api/objects ради имени.
   const addBtn = currentRole === 'owner'
-    ? `<div class="obj-people-add obj-add-worker-btn" data-object-id="${esc(oid)}" data-stage="${esc(stage||'')}" title="Назначить"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#000" stroke-width="2.5" stroke-linecap="round"/></svg></div>` : '';
+    ? `<button type="button" class="obj-add-worker-btn" data-object-id="${esc(oid)}" data-object-name="${esc(obj['Объект']||oid)}" aria-label="Добавить работника" title="Добавить работника"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"></circle><path d="M3.5 19c.8-3.4 3-5 5.5-5s4.7 1.6 5.5 5"></path><path d="M18 7v6M15 10h6"></path></svg></button>` : '';
 
   const startDateLabel = _objStartDateLabel(obj);
   const mapsUrl = obj['Адрес'] ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(obj['Адрес'])}` : '';
@@ -467,12 +471,30 @@ function attachObjectsHandlers() {
     });
   });
 
-  document.querySelectorAll('#objects-cards .obj-add-worker-btn').forEach(el => {
-    el.addEventListener('click', (e) => {
+  // 04.08 (Раунд 2): делегирование на контейнере вместо per-button listener --
+  // loadObjects() пере-рендерит карточки и заново зовёт attachObjectsHandlers(),
+  // при прямом binding это добавляло бы дубли listener'ов. dataset.bound -- guard,
+  // чтобы навесить делегат ровно один раз на живой контейнер.
+  const objCardsContainer = document.getElementById('objects-cards');
+  if (objCardsContainer && objCardsContainer.dataset.addWorkerBound !== '1') {
+    objCardsContainer.dataset.addWorkerBound = '1';
+    objCardsContainer.addEventListener('click', (e) => {
+      const btn = e.target.closest('.obj-add-worker-btn');
+      if (!btn) return;
+      e.preventDefault();
       e.stopPropagation();
-      openBubbleAssign(el.dataset.objectId, el.dataset.stage, el);
+      if (typeof openAssignmentSheet !== 'function') {
+        showToast('Форма назначения недоступна', 'error');
+        console.error('openAssignmentSheet is not loaded');
+        return;
+      }
+      // disabled на время открытия -- двойной тап не создаёт два sheet.
+      if (btn.disabled) return;
+      btn.disabled = true;
+      setTimeout(() => { btn.disabled = false; }, 600);
+      openAssignmentSheet({ objectId: btn.dataset.objectId, objectName: btn.dataset.objectName || btn.dataset.objectId });
     });
-  });
+  }
 
   // 24.07: клик по всей карточке объекта -> новый 6-таб экран (было доступно только
   // через узкую строку "Текущий этап"). Исключаем интерактивные элементы внутри карточки
@@ -480,7 +502,7 @@ function attachObjectsHandlers() {
   // триггерить открытие -- card.dataset.wasDragged ставится в endObjectDrag().
   document.querySelectorAll('#objects-cards .card').forEach(card => {
     card.addEventListener('click', (e) => {
-      if (e.target.closest('.status-switch, .take-btn, .checkbox, .add-task, .tasks-label, .obj-people-add, .obj-people-more, .obj-address-link, .obj-mangel-link, .stage-clickable, .stage-edit-icon')) return;
+      if (e.target.closest('.status-switch, .take-btn, .checkbox, .add-task, .tasks-label, .obj-add-worker-btn, .obj-people-add, .obj-people-more, .obj-address-link, .obj-mangel-link, .stage-clickable, .stage-edit-icon')) return;
       if (card.dataset.wasDragged === '1') { card.dataset.wasDragged = ''; return; }
       openObjectDetail(card.dataset.id, card.querySelector('.obj-card-title')?.textContent || '', 'chat', card.dataset.status);
     });

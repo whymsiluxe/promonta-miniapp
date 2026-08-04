@@ -3149,11 +3149,21 @@ body.view-locked {
 .obj-people-dot[data-auth-avatar] { transition: background-image 200ms ease; }
 .obj-people-dot-has-photo { color: transparent; } /* инициалы скрыты, фото в background виднее без наложенного текста */
 .obj-people-more { background: rgba(20,22,18,0.75); color: #F5F1E8; }
-.obj-people-add {
-  width: 36px; height: 36px; border-radius: 50%; background: var(--c-brass, var(--accent));
-  border: 2.5px solid rgba(245,241,232,0.85); display: flex; align-items: center; justify-content: center;
-  cursor: pointer; margin-left: -14px; flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+/* 04.08 (Раунд 2): add-worker -- action-button, а НЕ ещё один аватар.
+   Отдельный touch target 44x44, brass-фон, тёмная иконка человек+плюс,
+   свой z-index и отступ от аватаров (без margin-left:-14px), без белой avatar-рамки. */
+.obj-add-worker-btn {
+  position: relative; z-index: 8; pointer-events: auto; flex-shrink: 0;
+  width: 44px; height: 44px; margin-left: 10px; padding: 0;
+  border-radius: 13px; border: none; cursor: pointer;
+  background: var(--c-brass, var(--accent)); color: var(--primary-dark, #1a1a1a);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
 }
+.obj-add-worker-btn svg { width: 22px; height: 22px; }
+.obj-add-worker-btn:active { transform: scale(0.92); box-shadow: 0 1px 4px rgba(0,0,0,0.3); filter: brightness(0.94); }
+.obj-add-worker-btn:disabled { opacity: 0.55; cursor: default; }
 
 .obj-hero-status-pill {
   position: absolute; bottom: 0.7rem; right: 0.7rem;
