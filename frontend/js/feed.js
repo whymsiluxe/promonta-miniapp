@@ -62,6 +62,27 @@ function _dominantWxType(entry) {
   return 'warn';
 }
 
+// Раунд 5 §7/§12: уровень серьёзности для группировки Инфо-ленты и цвета алерта.
+// Красный (critical) только для действительно критичного (экстремальная жара, шторм);
+// warning — сильная жара/ветер/мороз; info — обычные/лёгкие условия. Не «первое слово».
+function weatherSeverityLevel(entry) {
+  const type = _dominantWxType(entry);
+  // Критично только для действительно критичного: экстремальная жара, шторм/ураган/гроза.
+  // Сильная жара (33-34°C) — предупреждение, не критично (см. §7 уровни алерта).
+  if (type === 'extreme_heat') return 'critical';
+  const risksText = (entry.forecast || []).flatMap(d => d.risks || []).join(' ');
+  if (/шторм|ураган|гроза|гололёд|гололед/i.test(risksText)) return 'critical';
+  if (type === 'heat' || type === 'wind' || type === 'frost') return 'warning';
+  if (type === 'rain' || type === 'cold') return 'warning';
+  return 'info';
+}
+
+const WX_SEVERITY_SECTIONS = [
+  { level: 'critical', label: 'Критично' },
+  { level: 'warning', label: 'Предупреждения' },
+  { level: 'info', label: 'Информация' },
+];
+
 // Основная подпись поста: при жаре -- температурная, иначе первый risk или label типа.
 function _wxPrimaryLabel(entry) {
   const type = _dominantWxType(entry);
@@ -256,7 +277,18 @@ function _renderCompactWeatherRow(entry, idx) {
 function _renderActiveWeatherCard() {
   const container = document.getElementById('feed-list');
   if (!_wxEntries.length) return;
-  container.innerHTML = _wxEntries.map((e, i) => _renderCompactWeatherRow(e, i)).join('');
+  // Раунд 5 §12: группировка Инфо-ленты по серьёзности (Критично/Предупреждения/
+  // Информация). Секция рендерится только если в ней есть объекты; исходный индекс
+  // сохраняется для expand-логики, чтобы клик по строке разворачивал нужную запись.
+  const indexed = _wxEntries.map((e, i) => ({ e, i, level: weatherSeverityLevel(e) }));
+  container.innerHTML = WX_SEVERITY_SECTIONS.map(sec => {
+    const rows = indexed.filter(x => x.level === sec.level);
+    if (!rows.length) return '';
+    return `<div class="wx-sev-section wx-sev-${sec.level}">
+      <div class="wx-sev-head">${sec.label}</div>
+      ${rows.map(x => _renderCompactWeatherRow(x.e, x.i)).join('')}
+    </div>`;
+  }).join('');
   container.querySelectorAll('.wx-compact-head').forEach(head => {
     head.addEventListener('click', () => {
       const idx = parseInt(head.closest('.wx-compact-row').dataset.wxIdx, 10);

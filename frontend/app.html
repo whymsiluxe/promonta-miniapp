@@ -879,16 +879,20 @@ header h1 {
 .metric { flex: 1; }
 
 .metric-row {
+  /* Раунд 5 §5: подпись «Бюджет использован» ≥15px, процент крупный и жирный */
   display: flex;
   justify-content: space-between;
-  font-size: 0.95rem;
+  align-items: baseline;
+  font-size: var(--font-secondary, 15px);
   color: var(--text-light);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
-.metric-row b { color: var(--text-main); font-weight: 600; font-size: 0.8rem; }
+/* Раунд 5 §5: процент был 0.8rem (~13px, «слишком мелкий») — теперь 22px/700,
+   высокий контраст, визуально отличается от блока этапов. */
+.metric-row b { color: var(--text-main); font-weight: 700; font-size: 22px; line-height: 1; }
 
-.metric-bar { height: 10px; border-radius: 999px; background: var(--border-color); overflow: hidden; }
+.metric-bar { height: 8px; border-radius: 999px; background: var(--border-color); overflow: hidden; }
 
 .metric-fill { height: 100%; border-radius: 999px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
 .metric-fill.green { background: linear-gradient(90deg, #22c55e, var(--green)); }
@@ -1981,6 +1985,15 @@ header h1 {
 #feed-list { display: flex; flex-direction: column; gap: var(--spacing-sm); padding: 0 1rem; }
 
 /* ── Weather compact rows (10.32) — свёрнутый вид ленты "Инфо" ── */
+/* Раунд 5 §12: секции серьёзности в Инфо-ленте. Красная левая полоса — только для
+   критичного (экстремальная жара/шторм); янтарь — предупреждения; спокойный — информация.
+   Никакого одинокого жёлтого треугольника без подписи: заголовок секции = текст. */
+.wx-sev-section { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.9rem; }
+.wx-sev-head { font-size: var(--font-secondary, 15px); font-weight: 700; color: var(--text-light); padding: 0 0.2rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.wx-sev-critical .wx-sev-head { color: var(--red, #c0392b); }
+.wx-sev-warning .wx-sev-head { color: var(--c-brass, #B38B4D); }
+.wx-sev-critical .wx-compact-row { border-left: 3px solid var(--red, #c0392b); }
+.wx-sev-warning .wx-compact-row { border-left: 3px solid var(--c-brass, #B38B4D); }
 .wx-compact-row { background: var(--bg-card); border-radius: var(--radius-lg); overflow: hidden; }
 .wx-compact-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 0.9rem; cursor: pointer; }
 .wx-compact-icon { font-size: 1.4rem; flex-shrink: 0; }
@@ -3176,8 +3189,14 @@ body.view-locked {
 /* ═══════════ Objects toolbar: search + filters + sort (23.07) ═══════════ */
 .obj-toolbar { padding: 0 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .obj-search-input { width: 100%; box-sizing: border-box; padding: 0.6rem 0.9rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9rem; font-family: var(--font-family-body); }
-.obj-filter-row { display: flex; gap: 0.4rem; }
-.obj-filter-select { flex: 1 1 0; min-width: 0; padding: 0.4rem 0.3rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.74rem; font-family: var(--font-family-body); }
+.obj-filter-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.obj-filter-select { flex: 1 1 0; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 0.5rem 0.4rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: var(--font-meta, 14px); font-family: var(--font-family-body); }
+/* Раунд 5 §11: на узком экране (iPhone SE/mini) 3 select в одну строку нечитаемы и
+   обрезаются справа — переносим в 2 строки (min-width:0/box-sizing уже не дают выйти
+   за viewport). Клавиатура прячет nav глобально (body.keyboard-open), запрос не сбрасывается. */
+@media (max-width: 380px) {
+  .obj-filter-select { flex: 1 1 calc(50% - 0.4rem); font-size: var(--font-secondary, 15px); }
+}
 
 /* ═══════════ OBJECT CARD V3 — Referenz-Komposition (25.07 v3) ═══════════
    Композиция по референсу горнолыжного курорта: фото сверху с 3 overlay-элементами

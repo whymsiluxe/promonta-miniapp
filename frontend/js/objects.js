@@ -214,7 +214,7 @@ function renderObjectCard(obj) {
     ${currentRole === 'owner' ? `
     <div class="metrics">
       <div class="metric">
-        <div class="metric-row"><span>Бюджет</span><b style="color:${bColor}">${budgetPct}%</b></div>
+        <div class="metric-row"><span>Бюджет использован</span><b style="color:${bColor}">${budgetPct}%</b></div>
         <div class="metric-bar"><div class="metric-fill ${budgetColor(budgetPct)}" style="width:${budgetPct}%"></div></div>
       </div>
     </div>` : ''}
