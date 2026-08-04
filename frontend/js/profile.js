@@ -761,7 +761,9 @@ function openWorkerCard(uid, returnCtx) {
         <div class="worker-card-name" id="wc-name">Загрузка…</div>
         <div class="worker-card-role" id="wc-role">Работник</div>
         <div class="worker-card-shift" id="wc-shift"></div>
+        <div class="worker-card-actions" id="wc-actions"></div>
       </div>
+      <div class="worker-card-ops" id="wc-ops"></div>
       <div class="profile-period-pills" id="wc-period-pills">
         ${Object.keys(PROFILE_PERIOD_LABEL).map(p =>
           `<div class="profile-period-pill${p === _workerCardPeriod ? ' active' : ''}" data-period="${p}">${PROFILE_PERIOD_LABEL[p]}</div>`
@@ -849,6 +851,35 @@ async function _loadWorkerCard() {
     }
   }
 
+  // 04.08 (задача 7.1): действия — Написать / Календарь / Назначить.
+  const actionsEl = document.getElementById('wc-actions');
+  if (actionsEl) {
+    const nm = stats.name || 'Сотрудник';
+    actionsEl.innerHTML = `
+      <button type="button" class="wc-action-btn" id="wc-act-message">Написать</button>
+      <button type="button" class="wc-action-btn" id="wc-act-calendar">Календарь</button>
+      <button type="button" class="wc-action-btn" id="wc-act-assign">Назначить</button>`;
+    document.getElementById('wc-act-message').addEventListener('click', () => {
+      // Написать → DM; Back из диалога вернёт на Worker Card (returnContext).
+      closeWorkerCard();
+      if (typeof openDirectChatWithReturn === 'function') openDirectChatWithReturn(uid, nm, { view: 'worker-card', userId: uid });
+    });
+    document.getElementById('wc-act-calendar').addEventListener('click', () => {
+      // Календарь недоступностей — существующий экран (фильтр по работнику — Раунд 5).
+      closeWorkerCard();
+      if (typeof switchView === 'function') switchView('abwesenheit');
+    });
+    document.getElementById('wc-act-assign').addEventListener('click', () => {
+      // Assignment Sheet с предвыбранным работником (overlay поверх карточки).
+      if (typeof openAssignmentSheet === 'function') openAssignmentSheet({ userId: uid, userName: nm });
+      else showToast('Форма назначения недоступна', 'error');
+    });
+  }
+
+  // 04.08 (задача 7.2): оперативная информация сразу под шапкой.
+  const opsEl = document.getElementById('wc-ops');
+  if (opsEl) opsEl.innerHTML = _workerCardOpsHtml(stats, card);
+
   body.innerHTML = _workerCardBodyHtml(stats, uid);
 
   // CSV табель (Owner-only).
@@ -872,6 +903,25 @@ async function _loadWorkerCard() {
       btn.disabled = false;
     }
   });
+}
+
+// 04.08 (задача 7.2): блок оперативной информации — на смене/объект/работа/сегодня/неделя.
+function _workerCardOpsHtml(stats, card) {
+  const working = card && card.shift_status === 'working';
+  // Сегодня — часы из недельного массива за текущий день недели (Пн=0), Europe/Berlin
+  // считается на бэкенде; здесь сопоставляем локальный день только для выбора элемента.
+  const todayIdx = (new Date().getDay() + 6) % 7;
+  const todayEntry = (stats.week || []).find(d => d.weekday === todayIdx);
+  const todayHours = todayEntry ? (Math.round(todayEntry.hours * 10) / 10) : 0;
+  const weekHours = stats.week_total_hours || 0;
+  const rows = [
+    `<div class="wc-ops-row"><span>Сейчас</span><b>${working ? 'на смене' : 'не на смене'}</b></div>`,
+  ];
+  if (working && card.object_name) rows.push(`<div class="wc-ops-row"><span>Объект</span><b>${esc(card.object_name)}</b></div>`);
+  if (working && card.stage_name) rows.push(`<div class="wc-ops-row"><span>Работа</span><b>${esc(card.stage_name)}</b></div>`);
+  rows.push(`<div class="wc-ops-row"><span>Сегодня</span><b>${todayHours} ч</b></div>`);
+  rows.push(`<div class="wc-ops-row"><span>Неделя</span><b>${weekHours} ч</b></div>`);
+  return `<div class="wc-ops-card">${rows.join('')}</div>`;
 }
 
 function _workerCardBodyHtml(stats, uid) {

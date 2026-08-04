@@ -1138,6 +1138,14 @@ async function _loadUnreadByThread() {
   } catch (e) {}
 }
 
+// 04.08 (Раунд 3, задача 7.1): открыть личный чат из Worker Card так, чтобы Back
+// из диалога вернул на карточку работника (структурированный returnContext).
+function openDirectChatWithReturn(threadUserId, title, returnCtx) {
+  switchView('chat');
+  openChatThread(threadUserId, title);
+  _chatReturnToView = returnCtx || null;
+}
+
 function openChatThread(threadUserId, title) {
   _closeChatMessageOverlays(); // не тащить меню/forward-модалку предыдущего треда в новый
   _chatActiveThread = threadUserId;

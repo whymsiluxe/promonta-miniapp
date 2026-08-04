@@ -3408,6 +3408,15 @@ body.view-locked {
 .worker-card-role { font-size: 0.8rem; color: var(--text-light); margin-top: 0.15rem; }
 .worker-card-shift { font-size: 0.82rem; color: var(--text-light); margin-top: 0.4rem; }
 .worker-card-shift-active { color: var(--c-brass, var(--accent-gold, var(--accent))); font-weight: 600; }
+/* 04.08 (Раунд 3, задача 7.1/7.2) — действия и оперативная инфо Worker Card */
+.worker-card-actions { display: flex; gap: 0.5rem; margin-top: 0.7rem; width: 100%; max-width: 340px; }
+.wc-action-btn { flex: 1; padding: 0.5rem 0.4rem; font-size: 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card-raised); color: var(--text-main); cursor: pointer; }
+.wc-action-btn:active { transform: scale(0.96); }
+.worker-card-ops { padding: 0.4rem 0.75rem 0; }
+.wc-ops-card { background: var(--bg-card); border-radius: var(--radius-lg); padding: 0.6rem 0.85rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.wc-ops-row { display: flex; justify-content: space-between; gap: 0.75rem; font-size: 0.9rem; }
+.wc-ops-row span { color: var(--text-light); }
+.wc-ops-row b { color: var(--text-main); text-align: right; }
 .worker-card-body { padding: 0 0.75rem; }
 #wc-period-pills { padding: 0.5rem 1rem 0.25rem; }
 .profile-week-card { margin: 0 0.75rem 0.75rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 0.85rem; }
