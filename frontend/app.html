@@ -547,6 +547,35 @@ header h1 {
 .obj-info-defect-sub { font-size: 0.78rem; color: var(--text-light); margin-top: 0.1rem; }
 .obj-info-defect-menu-btn { flex-shrink: 0; width: 32px; height: 32px; border: none; background: none; color: var(--text-light); font-size: 1.1rem; cursor: pointer; border-radius: 50%; }
 .obj-info-defect-menu-btn:active { background: var(--bg-card-raised); }
+
+/* ── 04.08 (Раунд 3, задача 5) — экран Потребности ── */
+.tasks-counters { display: flex; gap: 1rem; padding: 0.6rem 0.9rem 0.3rem; font-size: 0.85rem; color: var(--text-light); }
+.tasks-counters b { color: var(--text-main); }
+.tasks-filters { display: flex; gap: 0.4rem; padding: 0.2rem 0.75rem 0.6rem; overflow-x: auto; }
+.tasks-filter-chip { flex-shrink: 0; padding: 0.35rem 0.75rem; border-radius: 999px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-light); font-size: 0.85rem; cursor: pointer; }
+.tasks-filter-chip.active { background: var(--c-forest, var(--accent)); color: #F5F1E8; border-color: transparent; }
+.task-card { background: var(--bg-card); border-radius: var(--radius-lg); padding: 0.75rem 0.85rem; margin: 0 0.75rem 0.6rem; }
+.task-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
+.task-card-title { font-weight: 600; font-size: 1rem; color: var(--text-main); }
+.task-urgent { flex-shrink: 0; font-size: 0.72rem; font-weight: 700; color: var(--red, #c0392b); text-transform: uppercase; letter-spacing: 0.03em; }
+.task-card-meta { font-size: 0.82rem; color: var(--text-light); margin-top: 0.2rem; }
+.task-card-sub { font-size: 0.78rem; color: var(--text-light); margin-top: 0.1rem; }
+.task-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; }
+.task-status-pill { font-size: 0.72rem; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--bg-card-raised); }
+.task-pill-new { color: var(--red, #c0392b); }
+.task-pill-accepted { color: var(--accent); }
+.task-pill-done { color: var(--text-light); }
+.task-card-btns { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.task-primary-btn { padding: 0.4rem 0.8rem; font-size: 0.85rem; }
+.task-chat-btn { padding: 0.4rem 0.7rem; font-size: 0.82rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card-raised); color: var(--text-main); cursor: pointer; }
+.task-menu-btn { width: 32px; height: 32px; border: none; background: none; color: var(--text-light); font-size: 1.1rem; cursor: pointer; border-radius: 50%; }
+.task-menu-btn:active { background: var(--bg-card-raised); }
+/* Компактная карточка потребности внутри Object Info */
+.obj-info-need-row { padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); }
+.obj-info-need-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.obj-info-need-title { font-size: 0.92rem; color: var(--text-main); }
+.obj-info-need-sub { font-size: 0.78rem; color: var(--text-light); margin-top: 0.1rem; }
+.obj-info-need-actions { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
 /* 22.07: голосовая надиктовка для форм Потребности/Дефекты */
 .voice-input-row { position: relative; }
 .voice-input-row .mangel-textarea { padding-right: 3rem; }
@@ -4588,6 +4617,13 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
         <button class="submit-btn" id="tasks-cancel-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);">Отмена</button>
         <button class="submit-btn" id="tasks-submit-btn" type="button">Отправить</button>
       </div>
+    </div>
+    <div id="tasks-counters" class="tasks-counters"></div>
+    <div id="tasks-filters" class="tasks-filters">
+      <button type="button" class="tasks-filter-chip active" data-filter="active">Активные</button>
+      <button type="button" class="tasks-filter-chip" data-filter="new">Новые</button>
+      <button type="button" class="tasks-filter-chip" data-filter="accepted">Приняты</button>
+      <button type="button" class="tasks-filter-chip" data-filter="done">Выполненные</button>
     </div>
     <div id="tasks-list"></div>
   </div>

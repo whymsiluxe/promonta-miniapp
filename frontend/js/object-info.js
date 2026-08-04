@@ -813,7 +813,8 @@ async function _renderObjDefectsSummary(objectId) {
         // tap по строке (не по ⋯) — подробности; long-press и ⋯ — одно контекстное меню.
         row.addEventListener('click', e => {
           if (e.target.closest('[data-defect-menu]')) return;
-          openMangelTicketModal(tid);
+          // 'object-detail' → чат дефекта вернёт назад в Object Info, а не на экран Дефекты.
+          openMangelTicketModal(tid, 'object-detail');
         });
         _attachDefectLongPress(row, tid, objectId);
       });
@@ -821,7 +822,7 @@ async function _renderObjDefectsSummary(objectId) {
         btn.addEventListener('click', e => {
           e.stopPropagation();
           if (typeof openMangelActionMenu === 'function')
-            openMangelActionMenu(btn.dataset.defectMenu, { onChange: () => _renderObjDefectsSummary(objectId) });
+            openMangelActionMenu(btn.dataset.defectMenu, { onChange: () => _renderObjDefectsSummary(objectId), chatReturn: 'object-detail' });
         });
       });
     }
@@ -852,7 +853,7 @@ function _attachDefectLongPress(row, ticketId, objectId) {
     timer = setTimeout(() => {
       longFired = true;
       if (typeof openMangelActionMenu === 'function')
-        openMangelActionMenu(ticketId, { onChange: () => _renderObjDefectsSummary(objectId) });
+        openMangelActionMenu(ticketId, { onChange: () => _renderObjDefectsSummary(objectId), chatReturn: 'object-detail' });
     }, 500);
   };
   const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
@@ -1015,67 +1016,77 @@ function _closeObjInfoDocViewer() {
 // остаются отдельным object-scoped табом (owner передумал после первого прохода --
 // хотел сначала убрать в Инфо, затем явно попросил вернуть как полноценный
 // top-level таб наравне с Чат/Инфо, доступный и owner и worker).
+// 04.08 (Раунд 3, задача 5.3): компактная карточка потребности внутри Object Info —
+// та же модель, что общий экран (русские статусы, приоритет, автор, действие owner).
 function _renderNeedRow(n) {
-  // 28.07: owner request -- вкладка Потребности была read-only списком (текст+статус,
-  // без действий). Owner теперь может продвигать статус (тот же open->в работе->закрыто
-  // паттерн, что уже есть в tasks.js), и обе роли могут открыть чат с другой стороной
-  // заявки прямо отсюда, не переходя в общий Чат вручную.
-  const status = n.status || 'открыто';
-  const nextStatus = status === 'открыто' ? 'в работе' : status === 'в работе' ? 'закрыто' : null;
-  const advanceBtn = (currentRole === 'owner' && nextStatus)
-    ? `<button class="obj-info-empty-action" data-need-advance="${n.id}" data-next-status="${nextStatus}" type="button">${nextStatus === 'закрыто' ? 'Закрыть' : 'Взять в работу'}</button>`
+  const label = (typeof taskStatusLabel === 'function') ? taskStatusLabel(n.status) : (n.status || 'открыто');
+  const stage = (typeof taskStage === 'function') ? taskStage(n.status) : 'new';
+  const pillClass = stage === 'new' ? 'task-pill-new' : stage === 'accepted' ? 'task-pill-accepted' : 'task-pill-done';
+  const urgent = n.priority === 'срочно';
+  const primary = (currentRole === 'owner' && typeof _taskPrimaryAction === 'function') ? _taskPrimaryAction(n.status) : null;
+  const primaryBtn = primary
+    ? `<button class="obj-info-empty-action" data-need-advance="${n.id}" data-next-status="${esc(primary.status)}" type="button">${esc(primary.label)}</button>`
     : '';
-  // Owner видит кнопку "Чат" к заявителю (from_user_id), worker -- к owner (from_user_id
-  // это сам worker, ему нужен чат с to_user_id = owner).
-  const chatTargetId = currentRole === 'owner' ? n.from_user_id : n.to_user_id;
-  const chatTargetName = currentRole === 'owner' ? (n.from_name || n.from_user_id) : 'Владелец';
-  const chatBtn = chatTargetId
-    ? `<button class="obj-info-empty-action" data-need-chat="${esc(chatTargetId)}" data-chat-name="${esc(chatTargetName)}" type="button">💬 Чат</button>`
+  const menuBtn = currentRole === 'owner'
+    ? `<button class="obj-info-defect-menu-btn" data-need-menu="${n.id}" type="button" aria-label="Ещё">⋯</button>`
     : '';
   return `
-  <div class="obj-info-item-row" style="flex-direction:column;align-items:stretch;gap:0.4rem;">
-    <div style="display:flex;justify-content:space-between;align-items:center;">
-      <span class="obj-info-item-text">${esc(n.title || '')}</span>
-      <span class="obj-info-item-qty">${esc(status)}</span>
+  <div class="obj-info-need-row" data-need-id="${n.id}">
+    <div class="obj-info-need-head">
+      <span class="obj-info-need-title">${urgent ? '<span class="task-urgent">Срочно</span> ' : ''}${esc(n.title || '')}</span>
+      <span class="task-status-pill ${pillClass}">${esc(label)}</span>
     </div>
-    ${(advanceBtn || chatBtn) ? `<div class="obj-info-actions-row">${advanceBtn}${chatBtn}</div>` : ''}
+    <div class="obj-info-need-sub">${esc(n.from_name || n.from_user_id || '—')}</div>
+    ${(primaryBtn || menuBtn) ? `<div class="obj-info-need-actions">${primaryBtn}${menuBtn}</div>` : ''}
   </div>`;
 }
 
-// 29.07 v2: renderObjectNeedsTab() удалена -- Потребности больше не отдельная вкладка,
-// разметка+обработчики теперь инлайн внутри renderObjectInfoTab() выше. _loadObjNeeds()
-// остаётся отдельной функцией (переиспользуется add-handler'ом для перерисовки после add).
+// 29.07 v2: renderObjectNeedsTab() удалена -- Потребности больше не отдельная вкладка.
+// 04.08 (5.3): показываем максимум 3 активные + кнопка "Все потребности".
 async function _loadObjNeeds(objectId) {
   const list = document.getElementById('obj-needs-list');
   if (!list) return;
   try {
     const { tasks } = await api(`/api/tasks?object_id=${encodeURIComponent(objectId)}`);
+    const active = tasks.filter(t => (typeof taskStage === 'function' ? taskStage(t.status) : 'new') !== 'done');
     if (!tasks.length) {
       list.innerHTML = `<div class="obj-info-empty-row"><span>Потребностей нет</span></div>`;
       return;
     }
-    list.innerHTML = tasks.map(_renderNeedRow).join('');
+    const preview = active.slice(0, 3);
+    list.innerHTML = (preview.length ? preview.map(_renderNeedRow).join('') : '<div class="obj-info-empty-row"><span>Активных потребностей нет</span></div>')
+      + `<div class="obj-info-actions-row"><button class="obj-info-empty-action" id="obj-needs-all-btn" type="button">Все потребности</button></div>`;
     list.querySelectorAll('[data-need-advance]').forEach(btn => {
       btn.addEventListener('click', async () => {
+        if (btn.disabled) return; btn.disabled = true;
         try {
           await api(`/api/tasks/${btn.dataset.needAdvance}`, { method: 'PATCH', body: JSON.stringify({ status: btn.dataset.nextStatus }) });
           hapticImpact('light');
           await _loadObjNeeds(objectId);
         } catch (e) {
           showToast('Ошибка: ' + e.message, 'error');
+          btn.disabled = false;
         }
       });
     });
-    list.querySelectorAll('[data-need-chat]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        // switchView первым -- openChatThread сам не переключает таб, юзер остался бы
-        // на экране Объекта с чат-view открытым позади него, невидимо.
-        switchView('chat');
-        if (typeof openChatThread === 'function') openChatThread(btn.dataset.needChat, btn.dataset.chatName);
+    list.querySelectorAll('[data-need-menu]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const need = tasks.find(t => t.id === btn.dataset.needMenu);
+        if (typeof openTaskActionMenu === 'function')
+          openTaskActionMenu(btn.dataset.needMenu, { task: need, chatReturn: 'object-detail', onChange: () => _loadObjNeeds(objectId) });
       });
     });
+    document.getElementById('obj-needs-all-btn')?.addEventListener('click', () => switchView('tasks'));
   } catch (e) {
     list.innerHTML = `<div class="obj-info-empty-row"><span>Ошибка: ${esc(e.message)}</span></div>`;
+  }
+}
+
+// Хук для tasks.js (_syncTasksElsewhere) — обновить секцию Потребности, если Object Info открыт.
+function _refreshObjInfoNeeds() {
+  if (typeof _objDetailCurrentId !== 'undefined' && _objDetailCurrentId && document.getElementById('obj-needs-list')) {
+    _loadObjNeeds(_objDetailCurrentId);
   }
 }
 

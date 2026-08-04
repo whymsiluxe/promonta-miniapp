@@ -237,7 +237,16 @@ async function _setMangelStatus(ticketId, status) {
   }
 }
 
-async function openMangelTicketModal(ticketId) {
+// 04.08 (задача 6): открыть модалку тикета по id, подгрузив список если нужно
+// (напр. возврат из чата дефекта, когда экран Дефекты не был перезагружен).
+async function openMangelTicketById(ticketId, chatReturn) {
+  if (!_mangelTickets.some(t => t.id === ticketId)) await loadMangelTickets();
+  openMangelTicketModal(ticketId, chatReturn);
+}
+
+// chatReturn: контекст возврата из чата этого тикета. По умолчанию — на экран Дефекты
+// и обратно в этот тикет; из Object Info передаётся 'object-detail' (остаться на объекте).
+async function openMangelTicketModal(ticketId, chatReturn) {
   const ticket = _mangelTickets.find(t => t.id === ticketId);
   if (!ticket) return;
   document.getElementById('mangel-modal-title').textContent = ticket.object_id || 'Тикет';
@@ -287,8 +296,9 @@ async function openMangelTicketModal(ticketId) {
   document.getElementById('mangel-open-chat-btn').addEventListener('click', () => {
     if (typeof openObjectOrMangelChat === 'function') {
       document.getElementById('mangel-ticket-modal').style.display = 'none';
-      // 04.08 (задача 6): структурированный контекст возврата — назад в этот тикет.
-      openObjectOrMangelChat(`mangel:${ticketId}`, `Тикет: ${ticket.object_id || ticketId}`, { view: 'mangel', ticketId });
+      // 04.08 (задача 6): структурированный контекст возврата — назад в этот тикет
+      // (или в Object Info, если модалку открыли оттуда).
+      openObjectOrMangelChat(`mangel:${ticketId}`, `Тикет: ${ticket.object_id || ticketId}`, chatReturn || { view: 'mangel', ticketId });
     }
   });
 
@@ -340,12 +350,13 @@ function openMangelActionMenu(ticketId, opts = {}) {
   const isOwner = currentRole === 'owner';
   hapticImpact('light');
 
+  const chatReturn = opts.chatReturn || { view: 'mangel', ticketId };
   const items = [];
-  items.push({ label: 'Открыть', act: () => { closeMangelActionMenu(); openMangelTicketModal(ticketId); } });
+  items.push({ label: 'Открыть', act: () => { closeMangelActionMenu(); openMangelTicketModal(ticketId, chatReturn); } });
   items.push({ label: 'Перейти в чат', act: () => {
     closeMangelActionMenu();
     if (typeof openObjectOrMangelChat === 'function')
-      openObjectOrMangelChat(`mangel:${ticketId}`, `Тикет: ${ticket.object_id || ticketId}`, { view: 'mangel', ticketId });
+      openObjectOrMangelChat(`mangel:${ticketId}`, `Тикет: ${ticket.object_id || ticketId}`, chatReturn);
   }});
   if (isOwner) {
     // Контекстные переходы по статусу — только осмысленные для текущего статуса.

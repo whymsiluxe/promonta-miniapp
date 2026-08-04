@@ -5708,29 +5708,32 @@ def update_task_status(task_id: str, body: TaskStatusBody, user: dict = Depends(
     task = next((t for t in items if t['id'] == task_id), None)
     if not task:
         raise HTTPException(404, "Потребность не найдена")
+    prev_status = task.get('status')
     task['status'] = body.status
     if body.status == 'закрыто':
         task['closed_at'] = int(time.time())
-        # 28.07: owner request -- закрытые потребности не засорять основной список,
-        # но не терять данные -- архивируем строкой в Google Sheet ("Потребности"
-        # вкладка, тот же SHEET_ID что Объекты/Дефекты/Zeiterfassung), затем убираем
-        # из рабочего JSON. Экспорт best-effort -- сбой Sheets API не должен блокировать
-        # закрытие потребности воркеру/owner (тот же паттерн что _write_zeiterfassung_row).
-        try:
-            o = _load_repo_objekte_lib()
-            from datetime import datetime
-            created_str = datetime.fromtimestamp(task.get('created_at', 0)).strftime('%Y-%m-%d %H:%M') if task.get('created_at') else ''
-            closed_str = datetime.fromtimestamp(task['closed_at']).strftime('%Y-%m-%d %H:%M')
-            o.append_row_safe('Потребности', [
-                task.get('id', ''), task.get('object_id', ''), task.get('title', ''),
-                task.get('description', ''), task.get('category', ''), task.get('priority', ''),
-                task.get('from_name', task.get('from_user_id', '')), created_str, closed_str,
-            ])
-        except Exception as e:
-            print(f'WARNING: не удалось заархивировать потребность {task_id} в Sheets: {e}')
-        items = [t for t in items if t['id'] != task_id]
-        _save_tasks(items)
-        return task
+        # 04.08 (Раунд 3, задача 5.2): РАНЬШЕ закрытая потребность удалялась из JSON
+        # (архив только в Sheets) -- из-за этого экран Потребности не мог показать
+        # счётчик "Выполнены N" и фильтр "Выполненные". Теперь закрытые ОСТАЮТСЯ в JSON
+        # со статусом 'закрыто'+closed_at (фронт по умолчанию показывает только активные),
+        # архив в Sheets сохраняется best-effort, но только при ПЕРВОМ закрытии
+        # (prev_status != 'закрыто'), чтобы не дублировать строки при повторном PATCH.
+        if prev_status != 'закрыто':
+            try:
+                o = _load_repo_objekte_lib()
+                from datetime import datetime
+                created_str = datetime.fromtimestamp(task.get('created_at', 0)).strftime('%Y-%m-%d %H:%M') if task.get('created_at') else ''
+                closed_str = datetime.fromtimestamp(task['closed_at']).strftime('%Y-%m-%d %H:%M')
+                o.append_row_safe('Потребности', [
+                    task.get('id', ''), task.get('object_id', ''), task.get('title', ''),
+                    task.get('description', ''), task.get('category', ''), task.get('priority', ''),
+                    task.get('from_name', task.get('from_user_id', '')), created_str, closed_str,
+                ])
+            except Exception as e:
+                print(f'WARNING: не удалось заархивировать потребность {task_id} в Sheets: {e}')
+    else:
+        # переоткрытие ранее закрытой потребности — снять отметку выполнения
+        task['closed_at'] = None
     _save_tasks(items)
     return task
 

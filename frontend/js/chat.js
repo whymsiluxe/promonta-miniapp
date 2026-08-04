@@ -1258,10 +1258,39 @@ function closeChatThread() {
   if (_chatReturnToView) {
     const target = _chatReturnToView;
     _chatReturnToView = null;
-    // 24.07: object-detail не входит в switchView() (не .view-элемент, свой display-контракт) --
-    // он остаётся видимым под #view-chat всё время, скрывать/показывать заново не нужно,
-    // просто не переключаем на другой view поверх него.
-    if (target !== 'object-detail') switchView(target);
+    _applyChatReturnContext(target);
+  }
+}
+
+// 04.08 (Раунд 3, задача 6): структурированный контекст возврата из чата вместо
+// строкового returnToView. Принимает либо старую строку ('objects'/'mangel'/…, для
+// обратной совместимости), либо объект { view, objectId, objectName, tab, scrollY,
+// ticketId, taskId, userId }. Возвращает ровно на тот экран/элемент, откуда чат открыт.
+function _applyChatReturnContext(ctx) {
+  if (!ctx) return;
+  if (typeof ctx === 'string') {
+    // Легаси: object-detail остаётся видимым под #view-chat, переключать не нужно.
+    if (ctx !== 'object-detail') switchView(ctx);
+    return;
+  }
+  switch (ctx.view) {
+    case 'object-detail':
+      // Object Detail не .view (свой display-контракт), остаётся под чатом — не трогаем,
+      // при необходимости восстанавливаем scroll.
+      if (typeof ctx.scrollY === 'number') requestAnimationFrame(() => window.scrollTo(0, ctx.scrollY));
+      break;
+    case 'mangel':
+      switchView('mangel');
+      if (ctx.ticketId && typeof openMangelTicketById === 'function') openMangelTicketById(ctx.ticketId);
+      break;
+    case 'tasks':
+      switchView('tasks');
+      break;
+    case 'worker-card':
+      if (ctx.userId && typeof openWorkerCard === 'function') openWorkerCard(ctx.userId);
+      break;
+    default:
+      if (ctx.view) switchView(ctx.view);
   }
 }
 
