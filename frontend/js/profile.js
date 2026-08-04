@@ -823,7 +823,7 @@ async function _loadWorkerCard() {
 
   // Шапка: имя/роль/аватар (только этой карточки, НЕ трогаем профиль Owner).
   const nameEl = document.getElementById('wc-name');
-  if (nameEl) nameEl.textContent = stats.name || 'Сотрудник';
+  if (nameEl) nameEl.textContent = resolveDisplayName({ profileName: stats.name, userId: stats.user_id });
   const roleEl = document.getElementById('wc-role');
   if (roleEl) roleEl.textContent = stats.role === 'owner' ? 'Владелец' : 'Работник';
   const fb = document.getElementById('wc-avatar-fallback');
@@ -854,7 +854,7 @@ async function _loadWorkerCard() {
   // 04.08 (задача 7.1): действия — Написать / Календарь / Назначить.
   const actionsEl = document.getElementById('wc-actions');
   if (actionsEl) {
-    const nm = stats.name || 'Сотрудник';
+    const nm = resolveDisplayName({ profileName: stats.name, userId: stats.user_id });
     actionsEl.innerHTML = `
       <button type="button" class="wc-action-btn" id="wc-act-message">Написать</button>
       <button type="button" class="wc-action-btn" id="wc-act-calendar">Календарь</button>

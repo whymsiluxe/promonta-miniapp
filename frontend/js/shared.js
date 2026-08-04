@@ -127,6 +127,33 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 
+// Раунд 5 §3: единый резолвер отображаемого имени. Некоторые Telegram-аккаунты не
+// передают имя → раньше показывался сырой user_id (2091898960). Приоритет:
+// profile.name → имя из roles/workers → Telegram first+last → "Сотрудник".
+// Сырой user_id НИКОГДА не становится основным именем (только Owner видит его
+// мелким вторичным текстом в админ-инфо). Любое новое место, показывающее имя
+// пользователя, должно резолвить через это, а не брать поле напрямую.
+function _looksLikeRawId(s) {
+  return /^\d{3,}$/.test(String(s || '').trim());
+}
+function resolveDisplayName({ profileName, roleName, telegramFirstName, telegramLastName, userId } = {}) {
+  const pick = v => {
+    const t = (v == null ? '' : String(v)).trim();
+    return t && !_looksLikeRawId(t) ? t : '';
+  };
+  const profile = pick(profileName);
+  if (profile) return profile;
+  const role = pick(roleName);
+  if (role) return role;
+  const tg = [telegramFirstName, telegramLastName]
+    .map(x => (x == null ? '' : String(x)).trim())
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  if (tg && !_looksLikeRawId(tg)) return tg;
+  return 'Сотрудник';
+}
+
 // 01.08 (доп.раунд П5): GET /api/objects отдаёт СЫРЫЕ Google Sheets-строки с русскими
 // ключами (obj['ID объекта']/obj['Объект']/obj['Адрес']/obj['Статус']) -- не
 // id/name/address как предполагал assignment-sheet.js (реальный найденный баг:

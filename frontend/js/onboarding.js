@@ -121,11 +121,24 @@ function _obRenderStep1() {
   document.getElementById('ob-step1-next').addEventListener('click', async () => {
     const name = nameInput.value.trim();
     const errEl = document.getElementById('ob-step1-error');
-    if (!name) {
-      errEl.textContent = 'Укажи имя';
+    // Раунд 5 §3: имя обязательное (Telegram мог не передать), нельзя пропустить шаг,
+    // trim, мин 2 / макс 100 символов, нельзя только цифры (иначе снова "2091898960").
+    if (name.length < 2) {
+      errEl.textContent = 'Укажи имя (минимум 2 символа)';
       errEl.style.display = 'block';
       return;
     }
+    if (name.length > 100) {
+      errEl.textContent = 'Слишком длинное имя (максимум 100 символов)';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (/^\d+$/.test(name)) {
+      errEl.textContent = 'Имя не может состоять только из цифр';
+      errEl.style.display = 'block';
+      return;
+    }
+    errEl.style.display = 'none';
     _obName = name;
     const btn = document.getElementById('ob-step1-next');
     btn.disabled = true;

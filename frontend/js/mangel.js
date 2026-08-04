@@ -452,7 +452,7 @@ function _rebuildMangelWorkerOptions(objectId) {
   const assigned = _mangelWorkers.filter(w => assignedIds.has(String(w.user_id))).sort(byName);
   const rest = _mangelWorkers.filter(w => !assignedIds.has(String(w.user_id))).sort(byName);
 
-  const optHtml = w => `<option value="${esc(w.user_id)}">${esc(w.name || 'Сотрудник')}</option>`;
+  const optHtml = w => `<option value="${esc(w.user_id)}">${esc(resolveDisplayName({ profileName: w.name, userId: w.user_id }))}</option>`;
   let html = '<option value="">Назначить работника (необязательно)…</option>';
   if (objectId && assigned.length) {
     html += `<optgroup label="Назначены на объект">${assigned.map(optHtml).join('')}</optgroup>`;

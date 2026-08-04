@@ -80,7 +80,29 @@
      непоследовательное ощущение, owner explicitly flagged). --font-body раньше
      указывал на Montserrat, теперь на тот же Manrope, что и заголовки. */
   --font-heading: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-body: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-family-body: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* ── Раунд 5 §4: единая типографическая шкала. Раньше --font-body был именем
+     семейства шрифта — переименован в --font-family-body, чтобы освободить
+     спец-имена размеров ниже. Читаемо на 320-480px, минимумы: основной 16-17px,
+     чат 17-18px, meta 14px. Без случайных inline font-size. */
+  --font-page-title: 30px;
+  --font-card-title: 21px;
+  --font-body: 17px;
+  --font-chat: 18px;
+  --font-secondary: 15px;
+  --font-meta: 14px;
+  --font-button: 16px;
+  --font-kpi: 32px;
+
+  /* ── Раунд 5 §1: единый отступ контента под плавающим нижним меню. Меню НЕ
+     скрывается на вложенных экранах — scrollable-view держат этот отступ, чтобы
+     последний элемент не уходил под nav. Один token, не разные магические
+     padding-bottom по файлу. */
+  --bottom-nav-visible-height: 112px;
+  --bottom-nav-content-gap: 20px;
+  --bottom-nav-safe-pad: calc(var(--bottom-nav-visible-height) + var(--bottom-nav-content-gap) + env(safe-area-inset-bottom, 0px));
+
   --spacing-xs: 0.5rem;
   --spacing-sm: 1rem;
   --spacing-md: 2rem;

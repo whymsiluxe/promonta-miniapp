@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-08-04 (Раунд 5: Полный UI/UX stabilization) — IN PROGRESS
+
+Frontend-first, **без deploy** (по инструкции очереди раундов). Начальный SHA `58bda01`.
+Максимум 4 коммита.
+
+### Commit 1 — `refactor: stabilize navigation typography and app bootstrap`
+- **§1 Отступ контента под nav** (`tokens.css`, `app.html`): единый токен
+  `--bottom-nav-visible-height: 112px` / `--bottom-nav-content-gap: 20px` /
+  `--bottom-nav-safe-pad` (calc + safe-area). `body`, `#view-object-detail`, `#stages-view`
+  переведены на него (было `7.5rem` / `2rem` — последний элемент уходил под меню). Меню НЕ
+  скрывается на вложенных экранах.
+- **§4 Единая типографика** (`tokens.css`, `app.html`): шкала `--font-page-title/card-title/
+  body/chat/secondary/meta/button/kpi`. Прежний `--font-body` (имя семейства шрифта, 16
+  использований) переименован в `--font-family-body`, чтобы освободить спец-имя размера.
+  `body { font-size: var(--font-body) }` — читаемый базовый 17px (был браузерный дефолт).
+- **§3 Единый резолвер имени** (`shared.js` `resolveDisplayName()`): приоритет profile →
+  roles/workers → Telegram first+last → «Сотрудник»; сырой user_id никогда не как имя.
+  Подключён в `home.js` (Часы команды), `mangel.js` (select работника), `profile.js`
+  (Worker Card). Onboarding (`onboarding.js`): имя обязательно, trim, мин 2 / макс 100,
+  нельзя только цифры.
+- **§2 Bootstrap-координатор** (`app.html` `AppBootstrap`): splash висит до реального
+  завершения задач (не по таймеру), строка прогресса «Загрузка приложения · N из M»,
+  критический сбой (авторизация) → экран ошибки с «Повторить», медиа первой страницы фото
+  прогреваются во время splash. Data-prefetch (объекты/инструменты/погода/новости/фото/
+  алерты/чат/абсанс/этапы) зарегистрированы как некритичные задачи.
+
 ## 2026-08-04 (Раунд 4: Погода-жара, новости, этапы объекта)
 
 Frontend + минимальная backend-правка, **без deploy** (по инструкции очереди раундов).

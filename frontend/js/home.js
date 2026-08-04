@@ -799,15 +799,13 @@ function _renderTeamHoursSection(data, workersByUid) {
   const range = _fmtRangeLabel(data.date_from, data.date_to);
   const workers = data.workers;
   const maxWeek = Math.max(1, ...workers.map(w => Number(w.hours_week) || 0));
-  // имя: backend уже даёт безопасное ("Сотрудник", не ID); доп. fallback из /api/workers
-  const _isNum = s => /^\d+$/.test((s || '').trim());
-  const _name = w => {
-    const n = w.name || '';
-    if (n && !_isNum(n)) return n;
-    const alt = workersByUid[String(w.user_id)];
-    if (alt && !_isNum(alt)) return alt;
-    return 'Сотрудник';
-  };
+  // Раунд 5 §3: имя через единый resolveDisplayName (profile → roles/workers → "Сотрудник"),
+  // сырой user_id никогда не показываем как имя.
+  const _name = w => resolveDisplayName({
+    profileName: w.name,
+    roleName: workersByUid[String(w.user_id)],
+    userId: w.user_id,
+  });
   const rowHtml = w => {
     const wk = Number(w.hours_week) || 0;
     const td = Number(w.hours_today) || 0;

@@ -25,13 +25,14 @@ html {
 }
 
 body {
-  font-family: var(--font-body);
+  font-family: var(--font-family-body);
+  font-size: var(--font-body); /* Раунд 5 §4: читаемый базовый размер 17px (был браузерный дефолт) */
   background: var(--bg-light);
   color: var(--text-main);
   max-width: 480px;
   width: 100%;
   margin: 0 auto;
-  padding-bottom: 7.5rem; /* место под нижнее меню */
+  padding-bottom: var(--bottom-nav-safe-pad); /* Раунд 5 §1: единый отступ под плавающим nav (был 7.5rem) */
   overflow-x: hidden; /* страховка на уровне body (недостаточна одна, см. html выше) */
 }
 
@@ -330,6 +331,23 @@ header h1 {
   0% { left: -30%; }
   100% { left: 100%; }
 }
+/* Раунд 5 §2: строка прогресса bootstrap + экран ошибки критического запроса */
+.splash-progress {
+  position: relative; z-index: 2;
+  color: rgba(234,217,174,0.75);
+  font-size: var(--font-meta, 14px);
+  letter-spacing: 0.04em;
+  margin-top: -1.5rem; margin-bottom: 1.5rem;
+  min-height: 1.2em;
+}
+.splash-error { position: relative; z-index: 3; text-align: center; padding: 0 2rem; }
+.splash-error-text { color: #E7C98B; font-size: var(--font-secondary, 15px); margin-bottom: 1rem; line-height: 1.4; }
+.splash-retry-btn {
+  background: #D4AF5A; color: #1a1712; border: none; border-radius: 999px;
+  padding: 0.7rem 1.6rem; font-size: var(--font-button, 16px); font-weight: 700; cursor: pointer;
+  min-height: 44px;
+}
+.splash-retry-btn:active { transform: scale(0.96); }
 
 /* ── Ring-progress (SVG circular progress, референс кольца прогресса) ── */
 .ring-progress { position: relative; display: inline-flex; align-items: center; justify-content: center; }
@@ -506,7 +524,7 @@ header h1 {
 .mangel-form { padding: 0.75rem; background: var(--bg-card); margin: 0 0.75rem 0.75rem; border-radius: var(--radius-lg); }
 /* 23.07: было background var(--bg-app) — тот стал тёмным (body-фон), color var(--text-main) почти-чёрный
    поверх него был бы нечитаем. bg-card (светлая карточка) сохраняет исходный контраст. */
-.mangel-select, .mangel-textarea { width: 100%; padding: 0.6rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); margin-bottom: 0.6rem; font-family: var(--font-body); font-size: 16px; }
+.mangel-select, .mangel-textarea { width: 100%; padding: 0.6rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); margin-bottom: 0.6rem; font-family: var(--font-family-body); font-size: 16px; }
 /* 24.07: font-size < 16px на <input>/<textarea> триггерит авто-zoom при фокусе на iOS Safari — весь экран уезжал вбок при открытии клавиатуры на любой форме (сообщено на поле ввода имени, но баг общий для всех .mangel-select/.mangel-textarea). 16px — порог, ниже которого Safari зумит. */
 
 #tasks-form .mangel-select, #tasks-form .mangel-textarea { font-size: 1.2rem; }
@@ -921,7 +939,7 @@ header h1 {
   padding: 0.65rem 0.9rem;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  font-family: var(--font-body);
+  font-family: var(--font-family-body);
   font-size: 0.9rem;
   background: var(--bg-white);
   color: var(--text-main);
@@ -995,7 +1013,7 @@ header h1 {
   border: 1px solid var(--primary);
   background: var(--bg-white);
   color: var(--primary);
-  font-family: var(--font-body);
+  font-family: var(--font-family-body);
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;
@@ -1045,7 +1063,7 @@ header h1 {
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  font-family: var(--font-body);
+  font-family: var(--font-family-body);
   font-size: 0.9rem;
   background: var(--bg-white);
   color: var(--text-main);
@@ -1066,7 +1084,7 @@ header h1 {
   flex: 1;
   padding: 0.65rem;
   border-radius: var(--radius-md);
-  font-family: var(--font-body);
+  font-family: var(--font-family-body);
   font-weight: 600;
   font-size: 0.9rem;
   cursor: pointer;
@@ -1126,11 +1144,11 @@ header h1 {
    карточка, форма внутри неё должна быть просто контентом. */
 .bottom-sheet-panel .mangel-form { background: transparent; margin: 0; border-radius: 0; padding: 0 1rem; }
 
-#stages-view { display: none; padding-bottom: 2rem; }
+#stages-view { display: none; padding-bottom: var(--bottom-nav-safe-pad); }
 #stages-view.open { display: block; }
 
 /* ── Детали объекта (24.07, 6-таб экран) ── */
-#view-object-detail { padding-bottom: 2rem; min-height: 100vh; background: var(--bg-app); }
+#view-object-detail { padding-bottom: var(--bottom-nav-safe-pad); min-height: 100vh; background: var(--bg-app); }
 /* 29.07 v5: было overflow-x:auto + flex-shrink:0 фиксированной ширины -- на узких
    экранах (360px) три таба с "План работ" не помещались и вылезали за правую границу
    контейнера (owner screenshot). Табов всегда ровно 3 и они не скроллятся -- grid
@@ -1310,7 +1328,7 @@ header h1 {
 .obj-stage-description-input {
   width: 100%; box-sizing: border-box; min-height: 80px; resize: vertical;
   background: var(--bg-app); border: 1px solid var(--border-color); border-radius: var(--radius-sm);
-  color: var(--text-main); font-family: var(--font-body); font-size: 0.9rem; padding: 0.6rem; line-height: 1.5;
+  color: var(--text-main); font-family: var(--font-family-body); font-size: 0.9rem; padding: 0.6rem; line-height: 1.5;
 }
 .obj-stage-description-input:focus { outline: none; border-color: var(--c-accent, var(--green)); }
 .obj-stage-description-editor-actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
@@ -1669,7 +1687,7 @@ header h1 {
   padding: 0.65rem 0.8rem;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  font-family: var(--font-body);
+  font-family: var(--font-family-body);
   font-size: 0.9rem;
   background: var(--bg-white);
   color: var(--text-main);
@@ -1698,7 +1716,7 @@ header h1 {
   border: none;
   background: var(--primary);
   color: white;
-  font-family: var(--font-body);
+  font-family: var(--font-family-body);
   font-weight: 600;
   font-size: 0.95rem;
   cursor: pointer;
@@ -1864,7 +1882,7 @@ header h1 {
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  font-family: var(--font-body);
+  font-family: var(--font-family-body);
   font-size: 0.88rem;
   background: var(--bg-white);
   color: var(--text-main);
@@ -1908,7 +1926,7 @@ header h1 {
   border: 1px dashed var(--border-color);
   background: var(--bg-light);
   color: var(--primary);
-  font-family: var(--font-body);
+  font-family: var(--font-family-body);
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;
@@ -1940,7 +1958,7 @@ header h1 {
   border: none;
   background: var(--primary);
   color: white;
-  font-family: var(--font-body);
+  font-family: var(--font-family-body);
   font-weight: 600;
   font-size: 0.95rem;
   cursor: pointer;
@@ -2216,7 +2234,7 @@ body.view-locked {
   padding: 0.6rem 0.9rem;
   border: 1px solid var(--border-color);
   border-radius: 999px;
-  font-family: var(--font-body);
+  font-family: var(--font-family-body);
   font-size: 1rem;
   background: var(--bg-white);
   color: var(--text-main);
@@ -3157,9 +3175,9 @@ body.view-locked {
 
 /* ═══════════ Objects toolbar: search + filters + sort (23.07) ═══════════ */
 .obj-toolbar { padding: 0 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
-.obj-search-input { width: 100%; box-sizing: border-box; padding: 0.6rem 0.9rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9rem; font-family: var(--font-body); }
+.obj-search-input { width: 100%; box-sizing: border-box; padding: 0.6rem 0.9rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.9rem; font-family: var(--font-family-body); }
 .obj-filter-row { display: flex; gap: 0.4rem; }
-.obj-filter-select { flex: 1 1 0; min-width: 0; padding: 0.4rem 0.3rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.74rem; font-family: var(--font-body); }
+.obj-filter-select { flex: 1 1 0; min-width: 0; padding: 0.4rem 0.3rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.74rem; font-family: var(--font-family-body); }
 
 /* ═══════════ OBJECT CARD V3 — Referenz-Komposition (25.07 v3) ═══════════
    Композиция по референсу горнолыжного курорта: фото сверху с 3 overlay-элементами
@@ -3781,7 +3799,7 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .critical-alert-icon { font-size: 2.5rem; }
 .critical-alert-title { font-size: 1.1rem; font-weight: 700; text-align: center; color: var(--text-main); }
 .critical-alert-subtitle { font-size: 0.88rem; color: var(--text-light); text-align: center; }
-.critical-alert-comment { width: 100%; box-sizing: border-box; background: var(--bg-card-raised); border: none; border-radius: var(--radius-md); color: var(--text-main); padding: 0.6rem 0.8rem; font-size: 0.9rem; font-family: var(--font-body); resize: none; }
+.critical-alert-comment { width: 100%; box-sizing: border-box; background: var(--bg-card-raised); border: none; border-radius: var(--radius-md); color: var(--text-main); padding: 0.6rem 0.8rem; font-size: 0.9rem; font-family: var(--font-family-body); resize: none; }
 .critical-alert-btn { width: 100%; border: none; border-radius: var(--radius-md); padding: 0.75rem; font-size: 0.95rem; font-weight: 700; cursor: pointer; }
 .critical-alert-btn-primary { background: var(--red); color: #fff; }
 .critical-alert-actions-row { display: flex; gap: 0.6rem; width: 100%; }
@@ -4393,6 +4411,12 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
   </div>
   <div class="splash-brand">PROMONTA</div>
   <div class="splash-spinner"><span></span><span></span><span></span></div>
+  <!-- Раунд 5 §2: реальный прогресс bootstrap (не фиксированный таймер) -->
+  <div class="splash-progress" id="splash-progress">Загрузка приложения…</div>
+  <div class="splash-error" id="splash-error" style="display:none">
+    <div class="splash-error-text" id="splash-error-text"></div>
+    <button type="button" class="splash-retry-btn" id="splash-retry-btn">Повторить</button>
+  </div>
 </div>
 
 <!-- ═══════════ ОБЪЕКТЫ ═══════════ -->
@@ -5496,6 +5520,64 @@ document.addEventListener('focusin', (e) => {
   }
 });
 
+// Раунд 5 §2: единый координатор запуска. Splash висит до реального завершения
+// bootstrap (не по фиксированному таймеру), показывает прогресс "N из M". При сбое
+// критического запроса — не открываем сломанное приложение, а показываем экран
+// ошибки с "Повторить" (перезапускает только упавшие задачи).
+const AppBootstrap = {
+  tasks: new Map(), // name -> { promise, critical, done, failed, factory }
+  register(name, factory, { critical = true } = {}) {
+    const t = { name, factory, critical, done: false, failed: false, promise: null };
+    t.promise = Promise.resolve()
+      .then(() => factory())
+      .then(v => { t.done = true; this._render(); return v; })
+      .catch(e => { t.failed = true; this._render(); if (critical) throw e; return null; });
+    this.tasks.set(name, t);
+    this._render();
+    return t.promise;
+  },
+  progress() {
+    const all = [...this.tasks.values()];
+    return { done: all.filter(t => t.done).length, total: all.length };
+  },
+  _render() {
+    const el = document.getElementById('splash-progress');
+    if (!el) return;
+    const { done, total } = this.progress();
+    el.textContent = total ? `Загрузка приложения · ${done} из ${total}` : 'Загрузка приложения…';
+  },
+  async waitForReady() {
+    const critical = [...this.tasks.values()].filter(t => t.critical).map(t => t.promise);
+    await Promise.all(critical); // reject → caller ловит и рисует retry
+    // необязательные задачи не блокируют готовность
+  },
+  async retryFailed() {
+    const failed = [...this.tasks.values()].filter(t => t.failed);
+    failed.forEach(t => {
+      t.failed = false; t.done = false;
+      t.promise = Promise.resolve().then(() => t.factory())
+        .then(v => { t.done = true; this._render(); return v; })
+        .catch(e => { t.failed = true; this._render(); if (t.critical) throw e; return null; });
+    });
+    this._render();
+  },
+};
+
+function _showSplashError(section) {
+  const errBox = document.getElementById('splash-error');
+  const errText = document.getElementById('splash-error-text');
+  const prog = document.getElementById('splash-progress');
+  if (prog) prog.style.display = 'none';
+  if (errText) errText.textContent = `Не удалось загрузить: ${section}. Проверьте связь и повторите.`;
+  if (errBox) errBox.style.display = 'block';
+}
+function _hideSplashError() {
+  const errBox = document.getElementById('splash-error');
+  const prog = document.getElementById('splash-progress');
+  if (errBox) errBox.style.display = 'none';
+  if (prog) prog.style.display = '';
+}
+
 async function initApp() {
   initTheme();
   window.Telegram?.WebApp?.expand();
@@ -5554,21 +5636,27 @@ async function initApp() {
 
   showSplash();
 
-  try {
+  // Раунд 5 §2: авторизация — критическая bootstrap-задача. При сбое показываем
+  // экран ошибки с "Повторить" (не открываем сломанное приложение). fetchRole нужна
+  // до prefetch (endpoint абвезенхайт зависит от роли).
+  AppBootstrap.register('auth', async () => {
     // 03.08 (ТЗ Задача 1): обмениваем initData на 12-часовой session token ОДИН раз
     // при старте -- дальше api()/_authHeaders() сами используют его вместо initData
     // (который иначе протухает через 1 час и обрывает воркеру смену на полпути).
-    // Если токен уже лежит в sessionStorage (юзер переключил вкладку, не закрывал
-    // WebView) -- ensureSessionToken() вернёт его сразу без сетевого вызова.
     await ensureSessionToken();
     await fetchRole();
     applyRoleNav();
     initWorkerCheckinFab();
     initCriticalAlertsPolling();
     if (typeof NavigationManager !== 'undefined') NavigationManager.init();
+  }, { critical: true });
+
+  try {
+    await AppBootstrap.waitForReady();
   } catch (e) {
-    hideSplash();
-    document.body.innerHTML = `<div style="padding:2rem 1rem;text-align:center;color:var(--red)">Ошибка авторизации: ${esc(e.message)}</div>`;
+    _showSplashError('авторизация');
+    const retry = document.getElementById('splash-retry-btn');
+    if (retry) retry.onclick = async () => { _hideSplashError(); hideSplash(); initApp(); };
     return;
   }
 
@@ -5578,30 +5666,42 @@ async function initApp() {
   // все данные, которые показываются сразу при заходе на соответствующие вкладки
   // (объекты, инструменты, погода, лента новостей/фото, алерты, чат, календарь) —
   // чтобы после splash пользователь не видел "Загрузка..." ни на одной вкладке (10.22).
+  // Раунд 5 §2: регистрируем как bootstrap-задачи (прогресс "N из M"); данные
+  // некритичны (одна упавшая вкладка не должна блокировать вход — у неё свой
+  // empty/error-state), но media первой страницы прогреваем тут же.
   const _objectsPrefetch = prefetchTracked('/api/objects');
-  const _splashWaits = [
-    _objectsPrefetch,
-    prefetchTracked('/api/tools'),
-    prefetchTracked('/api/feed/weather'),
-    prefetchTracked('/api/feed/photos'),
-    prefetchTracked('/api/alerts'),
-    prefetchTracked('/api/chat/unread_count'),
-    prefetchTracked('/api/chat/messages'),
-    prefetchTracked(currentRole === 'owner' ? '/api/abwesenheit/all' : '/api/abwesenheit'),
-    prefetchTracked('/api/critical-alerts/pending'),
-  ];
+  AppBootstrap.register('objects', () => _objectsPrefetch, { critical: false });
+  AppBootstrap.register('tools', () => prefetchTracked('/api/tools'), { critical: false });
+  AppBootstrap.register('weather', () => prefetchTracked('/api/feed/weather'), { critical: false });
+  AppBootstrap.register('news', () => prefetchTracked('/api/feed/news'), { critical: false });
+  const _photosPrefetch = prefetchTracked('/api/feed/photos');
+  AppBootstrap.register('photos', () => _photosPrefetch, { critical: false });
+  AppBootstrap.register('alerts', () => prefetchTracked('/api/alerts'), { critical: false });
+  AppBootstrap.register('chat-unread', () => prefetchTracked('/api/chat/unread_count'), { critical: false });
+  AppBootstrap.register('chat', () => prefetchTracked('/api/chat/messages'), { critical: false });
+  AppBootstrap.register('absences', () => prefetchTracked(currentRole === 'owner' ? '/api/abwesenheit/all' : '/api/abwesenheit'), { critical: false });
+  AppBootstrap.register('critical-alerts', () => prefetchTracked('/api/critical-alerts/pending'), { critical: false });
 
   // 24.07: юзер явно потребовал "всё необходимое грузится пока идёт анимация, не по
   // кускам во время использования" — список этапов конкретного объекта (открывается
-  // через "Этапы объекта") требует object_id, известный только после /api/objects,
-  // поэтому не параллелится с остальным списком выше, а прогревается сразу как только
-  // объекты пришли (всего 3 объекта в системе на 24.07 — дёшево прогреть все, не только
-  // тот что связан с активной сменой).
-  const _stagesPrefetchWait = _objectsPrefetch.then(data => {
+  // через "Этапы объекта") требует object_id, известный только после /api/objects.
+  AppBootstrap.register('stages', () => _objectsPrefetch.then(data => {
     const objects = data?.objects || [];
     return Promise.allSettled(objects.map(o => prefetchTracked(`/api/objects/${o['ID объекта']}/stages`)));
-  }).catch(() => null);
-  _splashWaits.push(_stagesPrefetchWait);
+  }), { critical: false });
+
+  // Раунд 5 §2/§9: медиа первой страницы фото — прогреваем изображения пока идёт
+  // splash, чтобы вкладка Фото не показывала пустые карточки при входе. Ошибка
+  // отдельного файла не критична (нормальный fallback на месте рендера).
+  AppBootstrap.register('photo-media', () => _photosPrefetch.then(data => {
+    const posts = (data && data.photos) || [];
+    const urls = posts.slice(0, 8)
+      .filter(p => p && p.id && (p.files || []).length)
+      .map(p => `/api/feed/photos/${p.id}/file?index=0`);
+    return Promise.allSettled(urls.map(u => fetch(API_BASE + u, { headers: _authHeaders() }).catch(() => null)));
+  }).catch(() => null), { critical: false });
+
+  const _splashWaits = [...AppBootstrap.tasks.values()].map(t => t.promise);
 
   // Ждём реального прогрева данных (не таймер) — splash висит ровно пока все API-запросы не ответят.
   await Promise.allSettled(_splashWaits);
