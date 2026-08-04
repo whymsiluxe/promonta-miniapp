@@ -3412,9 +3412,13 @@ def get_news_feed(user: dict = Depends(get_current_user)):
     with open(NEWS_FEED_FILE, encoding='utf-8') as f:
         feed = json.load(f)
     reactions = _load_news_reactions()
+    comments = _load_news_comments()
     uid = str(user['id'])
     for post in feed:
         post['my_reaction'] = reactions.get(post['id'], {}).get(uid)
+        pc = comments.get(post['id'], [])
+        post['comment_count'] = len(pc)
+        post['last_comment_at'] = max((c.get('ts', 0) for c in pc), default=0)
 
     reads = _load_news_reads()
     user_reads = reads.setdefault(uid, {})
@@ -3464,6 +3468,126 @@ def react_news_post(post_id: str, body: NewsReactionIn, user: dict = Depends(get
     _save_news_reactions(reactions)
     _atomic_write_json(NEWS_FEED_FILE, feed)
     return {"ok": True, "likes": post['likes'], "dislikes": post['dislikes'], "my_reaction": body.reaction if body.reaction != 'none' else None}
+
+
+# ---------- News comments + per-user feed read markers (Раунд 5 §8) ----------
+# Комментарии к новостям хранятся ОТДЕЛЬНО от .news_feed.json (его перезаписывает
+# cron-пайплайн) — {post_id: [ {id,user_id,name,text,ts,reply_to} ]}. Тот же lifecycle,
+# что у фото-комментариев. Read-markers — {user_id: {last_news_read_at, last_photos_read_at,
+# last_info_read_at}} (epoch); unread = публикации/активность новее отметки.
+NEWS_COMMENTS_FILE = os.path.join(DATA_ROOT, 'news_comments.json')
+FEED_READS_FILE = os.path.join(DATA_ROOT, 'feed_reads.json')
+
+
+def _load_news_comments() -> dict:
+    return _safe_load_json(NEWS_COMMENTS_FILE, {})
+
+
+def _save_news_comments(data: dict):
+    _atomic_write_json(NEWS_COMMENTS_FILE, data)
+
+
+def _load_feed_reads() -> dict:
+    return _safe_load_json(FEED_READS_FILE, {})
+
+
+def _save_feed_reads(data: dict):
+    _atomic_write_json(FEED_READS_FILE, data)
+
+
+class NewsCommentBody(BaseModel):
+    text: str
+    reply_to: str = None
+
+
+@app.post("/api/feed/news/{post_id}/comments")
+def add_news_comment(post_id: str, body: NewsCommentBody, user: dict = Depends(get_current_user)):
+    text = (body.text or '').strip()[:500]
+    if not text:
+        raise HTTPException(400, "Комментарий не может быть пустым")
+    comments = _load_news_comments()
+    plist = comments.setdefault(post_id, [])
+    plist.append({
+        'id': uuid.uuid4().hex,
+        'user_id': str(user['id']),
+        'name': _sanitize_display_name(user.get('first_name'), str(user['id'])),
+        'text': text,
+        'reply_to': (body.reply_to or None),
+        'ts': int(time.time()),
+    })
+    _save_news_comments(comments)
+    return {"comments": plist}
+
+
+@app.get("/api/feed/news/{post_id}/comments")
+def get_news_comments(post_id: str, user: dict = Depends(get_current_user)):
+    return {"comments": _load_news_comments().get(post_id, [])}
+
+
+@app.delete("/api/feed/news/{post_id}/comments/{comment_id}")
+def delete_news_comment(post_id: str, comment_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    comments = _load_news_comments()
+    plist = comments.get(post_id, [])
+    comment = next((c for c in plist if c.get('id') == comment_id), None)
+    if not comment:
+        raise HTTPException(404, "Комментарий не найден")
+    if str(comment.get('user_id')) != str(user['id']) and role != 'owner':
+        raise HTTPException(403, "Можно удалить только свой комментарий")
+    comments[post_id] = [c for c in plist if c.get('id') != comment_id]
+    _save_news_comments(comments)
+    return {"comments": comments[post_id]}
+
+
+class FeedReadBody(BaseModel):
+    tab: str  # "news" | "photos" | "info"
+
+
+@app.post("/api/feed/read")
+def mark_feed_read(body: FeedReadBody, user: dict = Depends(get_current_user)):
+    if body.tab not in ('news', 'photos', 'info'):
+        raise HTTPException(400, "tab должен быть news/photos/info")
+    reads = _load_feed_reads()
+    urec = reads.setdefault(str(user['id']), {})
+    urec[f'last_{body.tab}_read_at'] = int(time.time())
+    _save_feed_reads(reads)
+    return {"ok": True, "tab": body.tab, "read_at": urec[f'last_{body.tab}_read_at']}
+
+
+@app.get("/api/feed/unread")
+def get_feed_unread(user: dict = Depends(get_current_user)):
+    """Счётчики НЕПРОЧИТАННОГО (не общее число). Новость непрочитана, если она
+    опубликована позже отметки ИЛИ получила новый комментарий позже отметки. Фото —
+    по ts. Инфо — по погодным/др. записям (пока по кол-ву новее отметки нет ts-поля →
+    считаем 0, если механизм появится). >99 фронт покажет как «99+»."""
+    uid = str(user['id'])
+    urec = _load_feed_reads().get(uid, {})
+    news_read = urec.get('last_news_read_at', 0)
+    photos_read = urec.get('last_photos_read_at', 0)
+
+    news_unread = 0
+    if os.path.exists(NEWS_FEED_FILE):
+        try:
+            with open(NEWS_FEED_FILE, encoding='utf-8') as f:
+                feed = json.load(f)
+        except Exception:
+            feed = []
+        comments = _load_news_comments()
+        for post in feed:
+            created = post.get('created', 0) or 0
+            pc = comments.get(post['id'], [])
+            last_c = max((c.get('ts', 0) for c in pc), default=0)
+            if created > news_read or last_c > news_read:
+                news_unread += 1
+
+    photos_unread = 0
+    try:
+        for p in _load_photo_meta():
+            if (p.get('ts', 0) or 0) > photos_read:
+                photos_unread += 1
+    except Exception:
+        pass
+
+    return {"news": news_unread, "photos": photos_unread, "info": 0}
 
 
 # ---------- Photo feed ----------

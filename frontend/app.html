@@ -1837,12 +1837,25 @@ header h1 {
 .pc-photo-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.5); }
 .pc-photo-dot.active { background: #fff; width: 8px; height: 8px; }
 .photo-comments-modal .pc-list { flex: 1; overflow-y: auto; padding: 0.75rem 1rem; }
-.photo-comments-modal .pc-comment { margin-bottom: 0.75rem; font-size: 0.85rem; }
-.photo-comments-modal .pc-comment-head { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.15rem; }
-.photo-comments-modal .pc-comment-head b { font-size: 0.78rem; color: var(--text-light); }
-.photo-comments-modal .pc-comment-time { font-size: 0.68rem; color: var(--text-light); opacity: 0.7; }
-.photo-comments-modal .pc-comment-del { margin-left: auto; background: none; border: none; color: var(--text-light); font-size: 0.75rem; cursor: pointer; padding: 0.1rem 0.3rem; }
-.photo-comments-modal .pc-comment-text { color: var(--text-main); }
+/* Раунд 5 §4/§9/§10: комментарии были 0.85rem (~13.6px) — нечитаемо. Текст 16px,
+   имя 14px, время 13px (минимумы токенов). Touch-area удаления ≥44px. */
+.photo-comments-modal .pc-comment { margin-bottom: 0.85rem; font-size: var(--font-body, 16px); }
+.photo-comments-modal .pc-comment-head { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.2rem; }
+.photo-comments-modal .pc-comment-head b { font-size: var(--font-meta, 14px); color: var(--text-light); }
+.photo-comments-modal .pc-comment-time { font-size: 13px; color: var(--text-light); opacity: 0.7; }
+.photo-comments-modal .pc-comment-del { margin-left: auto; background: none; border: none; color: var(--text-light); font-size: 0.9rem; cursor: pointer; min-width: 44px; min-height: 44px; }
+.photo-comments-modal .pc-comment-text { color: var(--text-main); font-size: 16px; line-height: 1.4; }
+.photo-comments-modal .pc-comment-reply { font-size: 13px; color: var(--text-light); border-left: 2px solid var(--border-color); padding-left: 0.5rem; margin-bottom: 0.2rem; }
+/* Раунд 5 §8: заголовок обсуждаемой новости над списком комментариев */
+.nc-title { flex-shrink: 0; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color); font-weight: 700; font-size: var(--font-card-title, 18px); color: var(--text-main); }
+/* «Сейчас обсуждают» + badge «Обсуждают» на карточке новости */
+.news-discussing { margin: 0 0.75rem 0.9rem; }
+.news-discussing-head { font-size: var(--font-secondary, 15px); font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; }
+.news-discuss-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.75rem; background: var(--bg-card); border-radius: var(--radius-md); margin-bottom: 0.4rem; cursor: pointer; }
+.news-discuss-item-title { flex: 1; min-width: 0; font-size: var(--font-body, 16px); color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.news-discuss-item-count { flex-shrink: 0; font-size: var(--font-meta, 14px); font-weight: 700; color: var(--c-brass, #B38B4D); }
+.news-comment-btn { display: inline-flex; align-items: center; gap: 0.3rem; }
+.news-discuss-badge { display: inline-block; margin-left: 0.5rem; font-size: 12px; font-weight: 700; color: var(--c-brass, #B38B4D); background: rgba(179,139,77,0.14); border-radius: 999px; padding: 0.05rem 0.5rem; }
 .photo-comments-modal .pc-input-row {
   flex-shrink: 0; display: flex; align-items: flex-end; gap: 0.5rem; padding: 0.6rem 0.75rem;
   border-top: 1px solid var(--border-color);
@@ -2429,7 +2442,7 @@ body.view-locked {
 }
 
 .chat-name {
-  font-size: 0.85rem;
+  font-size: var(--font-meta, 14px);
   font-weight: 600;
   color: var(--text-main);
   cursor: pointer;
@@ -2444,8 +2457,10 @@ body.view-locked {
 .chat-bubble-grouped { margin-top: -0.15rem; }
 .chat-bubble-grouped .chat-msg-header { display: none; }
 
-.chat-text { font-size: 0.95rem; line-height: 1.45; white-space: pre-wrap; }
-.chat-time { font-size: 0.72rem; color: var(--text-light); }
+/* Раунд 5 §10: текст сообщения был 0.95rem (~15px) — поднят до 18px (токен --font-chat),
+   имя 14px, время 13px. reactions/reply/forward не должны прилипать к тексту (см. ниже). */
+.chat-text { font-size: var(--font-chat, 18px); line-height: 1.45; white-space: pre-wrap; }
+.chat-time { font-size: 13px; color: var(--text-light); }
 /* 28.07: read receipt (DM only) -- одинарная галочка = отправлено, двойная синяя = прочитано. */
 .chat-read-receipt { display: block; text-align: right; font-size: 0.72rem; margin-top: 0.15rem; color: var(--text-light); }
 .chat-read-receipt-read { color: var(--chat-forest, #2D6A51); }
@@ -2510,9 +2525,11 @@ body.view-locked {
    позиционируется абсолютно на самом .chat-bubble (position:relative), доступна на
    каждом сообщении независимо от группировки, не ломает вёрстку header. */
 .chat-msg-menu-btn {
-  position: absolute; top: 0.2rem; right: 0.2rem;
+  /* Раунд 5 §10: touch target ⋯ доведён до 44×44px (был ~24px, тяжело попасть). */
+  position: absolute; top: 0; right: 0;
   border: none; background: none; color: var(--chat-text-tertiary, var(--text-light));
-  font-size: 1.1rem; line-height: 1; padding: 0.1rem 0.4rem; cursor: pointer; border-radius: 6px;
+  font-size: 1.1rem; line-height: 1; cursor: pointer; border-radius: 6px;
+  min-width: 44px; min-height: 44px; display: flex; align-items: flex-start; justify-content: flex-end; padding: 0.2rem 0.4rem;
 }
 .chat-msg-menu-btn:active { background: var(--chat-surface-hover); }
 
@@ -2523,9 +2540,9 @@ body.view-locked {
   padding: 0.2rem 0.5rem; margin-bottom: 0.3rem; border-radius: 4px;
   background: var(--chat-surface-hover); cursor: pointer;
 }
-.chat-reply-quote-name { font-size: 0.78rem; font-weight: 600; color: var(--chat-forest-light, var(--c-accent)); }
-.chat-reply-quote-preview { font-size: 0.82rem; color: var(--chat-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chat-forwarded-label { font-size: 0.75rem; color: var(--chat-text-tertiary, var(--text-light)); margin-bottom: 0.2rem; }
+.chat-reply-quote-name { font-size: var(--font-meta, 14px); font-weight: 600; color: var(--chat-forest-light, var(--c-accent)); }
+.chat-reply-quote-preview { font-size: var(--font-meta, 14px); color: var(--chat-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-forwarded-label { font-size: 13px; color: var(--chat-text-tertiary, var(--text-light)); margin-bottom: 0.2rem; }
 
 @keyframes chatBubbleHighlight { 0%, 100% { background: none; } 30% { background: var(--chat-surface-active); } }
 .chat-bubble-highlight { animation: chatBubbleHighlight 1.2s ease; border-radius: var(--radius-md, 10px); }
@@ -4919,6 +4936,20 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
   <div class="pc-input-row">
     <textarea id="pc-comment-input" placeholder="Комментарий…" class="mangel-select" rows="1" style="flex:1;resize:none;"></textarea>
     <button class="submit-btn" id="pc-comment-send-btn" type="button" style="padding:0.5rem 1rem;">➤</button>
+  </div>
+</div>
+
+<!-- ═══════════ Комментарии к новости (Раунд 5 §8) — тот же lifecycle/визуал, что фото ═══════════ -->
+<div id="news-comments-modal" class="photo-comments-modal" style="display:none;">
+  <div class="pc-header">
+    <button class="chat-back-btn" id="nc-back-btn" type="button" aria-label="Назад">←</button>
+    <h1 style="font-size:1rem;margin:0;">Обсуждение</h1>
+  </div>
+  <div id="nc-title" class="nc-title"></div>
+  <div id="nc-list" class="pc-list"></div>
+  <div class="pc-input-row">
+    <textarea id="nc-comment-input" placeholder="Комментарий…" class="mangel-select" rows="1" style="flex:1;resize:none;"></textarea>
+    <button class="submit-btn" id="nc-comment-send-btn" type="button" style="padding:0.5rem 1rem;">➤</button>
   </div>
 </div>
 

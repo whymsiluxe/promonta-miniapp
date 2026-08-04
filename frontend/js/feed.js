@@ -423,6 +423,7 @@ async function loadFeedPhotos() {
     grid.innerHTML = data.photos.map(renderPhotoItem).join('');
     grid.querySelectorAll('img[data-auth-src]').forEach(img => authImg(img, img.dataset.authSrc));
     _initFeedPhotoSwipeDots(grid);
+    _markFeedRead('photos');
   } catch (e) {
     grid.innerHTML = `<div class="empty-state" style="color:var(--red)">Ошибка загрузки: ${esc(e.message)}</div>`;
   }
@@ -457,6 +458,9 @@ function _selectFeedTab(which, opts = {}) {
   document.getElementById('feed-news-content').style.display = which === 'news' ? 'block' : 'none';
   if (which === 'photos') loadFeedPhotos();
   if (which === 'news') loadNewsFeed();
+  // Инфо-лента уже загружена на init (виджет погоды на Home) — отмечаем прочтение здесь,
+  // когда вкладка реально открыта пользователем (loadNewsFeed/loadFeedPhotos делают это сами).
+  if (which === 'weather') _markFeedRead('info');
   if (!silent) hapticImpact('light');
 }
 
@@ -528,18 +532,21 @@ function _newsCardHtml(n, i) {
   const catColor = NEWS_CAT_COLORS[n.category] || 'var(--accent)';
   const likeActive = n.my_reaction === 'like' ? 'active' : '';
   const dislikeActive = n.my_reaction === 'dislike' ? 'active' : '';
+  const cc = n.comment_count || 0;
+  const discussBadge = cc > 0 ? `<span class="news-discuss-badge">Обсуждают · ${cc}</span>` : '';
   return `
   <div class="news-card">
     <div onclick="openNewsLink(${i})">
       <div class="news-card-top">
         <span class="news-cat" style="color:${catColor};background:${catColor}1c">${esc(n.category) || 'Новости'}</span>
-        <span class="news-src">${esc(n.source) || ''}</span>
+        <span class="news-src">${esc(n.source) || ''}${discussBadge}</span>
       </div>
       <div class="news-title">${esc(n.title)}</div>
       ${_renderNewsSummary(n, i)}
       <div class="news-foot">${esc(n.published_at) || ''}${n.url ? ' · Читать источник\u2197' : ''}</div>
     </div>
     <div class="news-actions">
+      <button class="news-react-btn news-comment-btn" onclick="event.stopPropagation();openNewsComments('${n.id}')"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> <span>${cc}</span></button>
       <button class="news-react-btn ${likeActive}" onclick="event.stopPropagation();reactNews('${n.id}','like',this)"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg> <span>${n.likes || 0}</span></button>
       <button class="news-react-btn ${dislikeActive}" onclick="event.stopPropagation();reactNews('${n.id}','dislike',this)"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg> <span>${n.dislikes || 0}</span></button>
       ${n.url ? `<button class="news-react-btn" onclick="event.stopPropagation();shareNewsLink(${i})"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v14"/></svg></button>` : ''}
@@ -607,12 +614,136 @@ async function loadNewsFeed() {
       list.innerHTML = '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Сводка новостей появится в течение дня</div>';
       return;
     }
-    list.innerHTML = '<div class="news-load-more" id="news-load-more" style="display:none">Загрузка…</div>';
+    list.innerHTML = _renderDiscussingSection() +
+      '<div class="news-load-more" id="news-load-more" style="display:none">Загрузка…</div>';
     _renderMoreNews();
     _initNewsInfiniteScroll();
+    _markFeedRead('news');
   } catch (e) {
     list.innerHTML = '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Не удалось загрузить новости</div>';
   }
+}
+
+// Раунд 5 §8: «Сейчас обсуждают» — макс 3 новости с новыми комментариями за 24ч,
+// сортировка по last_comment_at убыв., счётчик комментариев. Основная лента остаётся
+// по времени публикации (ниже), эта секция — отдельный блок сверху.
+function _renderDiscussingSection() {
+  const now = Math.floor(Date.now() / 1000);
+  const discussing = _newsItems
+    .map((n, idx) => ({ n, idx }))
+    .filter(x => (x.n.comment_count || 0) > 0 && (x.n.last_comment_at || 0) > now - 86400)
+    .sort((a, b) => (b.n.last_comment_at || 0) - (a.n.last_comment_at || 0))
+    .slice(0, 3);
+  if (!discussing.length) return '';
+  return `<div class="news-discussing">
+    <div class="news-discussing-head">Сейчас обсуждают</div>
+    ${discussing.map(x => `<div class="news-discuss-item" onclick="openNewsComments('${x.n.id}')">
+      <span class="news-discuss-item-title">${esc(x.n.title)}</span>
+      <span class="news-discuss-item-count">${x.n.comment_count} 💬</span>
+    </div>`).join('')}
+  </div>`;
+}
+
+// ---- Комментарии к новости (Раунд 5 §8): тот же lifecycle/визуал, что фото-комментарии ----
+let _ncCurrentPostId = null;
+let _ncOverlayUnregister = null;
+
+function _renderNewsComment(c) {
+  const canDelete = String(c.user_id) === String(_feedMyId) || currentRole === 'owner';
+  const reply = c.reply_to_name ? `<div class="pc-comment-reply">↳ ${esc(c.reply_to_name)}</div>` : '';
+  return `<div class="pc-comment" data-comment-id="${c.id || ''}">
+    ${reply}
+    <div class="pc-comment-head"><b>${esc(c.name || c.user_id)}</b><span class="pc-comment-time">${_fmtPhotoCommentTime(c.ts ? c.ts * 1000 : c.at)}</span>${canDelete && c.id ? `<button class="pc-comment-del" data-del-comment="${c.id}" type="button">✕</button>` : ''}</div>
+    <div class="pc-comment-text">${esc(c.text)}</div>
+  </div>`;
+}
+
+async function _renderNewsCommentsList() {
+  const list = document.getElementById('nc-list');
+  const data = await api(`/api/feed/news/${_ncCurrentPostId}/comments`);
+  const byId = {};
+  (data.comments || []).forEach(c => { byId[c.id] = c; });
+  (data.comments || []).forEach(c => { if (c.reply_to && byId[c.reply_to]) c.reply_to_name = byId[c.reply_to].name; });
+  list.innerHTML = (data.comments || []).map(_renderNewsComment).join('') ||
+    '<div style="color:var(--text-light);font-size:0.95rem;padding:1rem 0">Пока нет комментариев. Будьте первым.</div>';
+  list.querySelectorAll('[data-del-comment]').forEach(btn => {
+    btn.addEventListener('click', () => _deleteNewsComment(btn.dataset.delComment));
+  });
+}
+
+async function _deleteNewsComment(commentId) {
+  if (!_ncCurrentPostId) return;
+  try {
+    await api(`/api/feed/news/${_ncCurrentPostId}/comments/${commentId}`, { method: 'DELETE' });
+    hapticImpact('light');
+    await _renderNewsCommentsList();
+  } catch (e) {
+    showToast('Ошибка удаления: ' + e.message, 'error');
+  }
+}
+
+async function openNewsComments(postId) {
+  _ncCurrentPostId = postId;
+  const modal = document.getElementById('news-comments-modal');
+  modal.style.display = 'flex';
+  const post = _newsItems.find(n => n.id === postId);
+  document.getElementById('nc-title').textContent = post ? post.title : 'Обсуждение';
+  if (typeof NavigationManager !== 'undefined' && !_ncOverlayUnregister) {
+    _ncOverlayUnregister = NavigationManager.registerOverlay(() => _closeNewsCommentsInternal());
+  }
+  const list = document.getElementById('nc-list');
+  list.innerHTML = '<div style="padding:1rem;color:var(--text-light);text-align:center">Загрузка...</div>';
+  try {
+    await _ensureFeedMyId();
+    await _renderNewsCommentsList();
+  } catch (e) {
+    list.innerHTML = `<div style="color:var(--red)">Ошибка: ${esc(e.message)}</div>`;
+  }
+}
+
+function _closeNewsCommentsInternal() {
+  document.getElementById('news-comments-modal').style.display = 'none';
+  _ncCurrentPostId = null;
+  _ncOverlayUnregister = null;
+}
+
+function closeNewsComments() {
+  if (_ncOverlayUnregister) { _ncOverlayUnregister(); _ncOverlayUnregister = null; }
+  document.getElementById('news-comments-modal').style.display = 'none';
+  _ncCurrentPostId = null;
+}
+
+async function _sendNewsComment() {
+  const input = document.getElementById('nc-comment-input');
+  const btn = document.getElementById('nc-comment-send-btn');
+  const text = input.value.trim();
+  if (!text || !_ncCurrentPostId || (btn && btn.disabled)) return;
+  if (btn) btn.disabled = true;
+  try {
+    await api(`/api/feed/news/${_ncCurrentPostId}/comments`, { method: 'POST', body: JSON.stringify({ text }) });
+    input.value = '';
+    hapticImpact('light');
+    await _renderNewsCommentsList();
+    // обновить счётчик на карточке + «обсуждают» без перезагрузки всей ленты
+    const post = _newsItems.find(n => n.id === _ncCurrentPostId);
+    if (post) { post.comment_count = (post.comment_count || 0) + 1; post.last_comment_at = Math.floor(Date.now() / 1000); }
+  } catch (e) {
+    showToast('Ошибка отправки: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ---- Непрочитанное: badge = кол-во непрочитанных публикаций/активностей (не общее) ----
+// tab: 'news'|'photos'|'info'; вкладка Инфо в разметке зовётся 'weather'.
+const _FEED_TAB_TO_BADGE = { news: 'news', photos: 'photos', info: 'weather' };
+
+async function _markFeedRead(tab) {
+  try {
+    await api('/api/feed/read', { method: 'POST', body: JSON.stringify({ tab }) });
+    // после прочтения — локально гасим badge этой вкладки (без ожидания следующего опроса)
+    _setFeedBadge(_FEED_TAB_TO_BADGE[tab] || tab, 0);
+  } catch (e) { /* не сбрасывать при ошибке API */ }
 }
 
 function _initFeedSwitch() {
@@ -716,20 +847,14 @@ function _setFeedBadge(tabKey, count) {
 }
 
 async function _loadFeedTabBadges() {
+  // Раунд 5 §8/§15: badge = НЕПРОЧИТАННОЕ (не общее число постов). Источник — единый
+  // per-user endpoint /api/feed/unread (публикации/активность новее отметки прочтения).
   try {
-    const news = await api('/api/feed/news');
-    _setFeedBadge('news', (news?.feed || []).length);
-  } catch (e) {}
-  try {
-    const photos = await api('/api/feed/photos');
-    _setFeedBadge('photos', (photos?.feed || []).length);
-  } catch (e) {}
-  try {
-    const weather = await api('/api/feed/weather');
-    const birthdays = await api('/api/feed/birthdays');
-    const riskCount = (weather?.feed || []).filter(f => (f.forecast?.[0]?.risks || []).length > 0).length;
-    _setFeedBadge('weather', riskCount + (birthdays?.birthdays?.length || 0));
-  } catch (e) {}
+    const u = await api('/api/feed/unread');
+    _setFeedBadge('news', u.news || 0);
+    _setFeedBadge('photos', u.photos || 0);
+    _setFeedBadge('weather', u.info || 0);
+  } catch (e) { /* не сбрасывать badge при ошибке API */ }
 }
 
 // Комментарии к фото (Instagram-style, 10.4) — модалка на всю вкладку с фото сверху,
@@ -891,6 +1016,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pc-comment-send-btn')?.addEventListener('click', _sendPhotoComment);
   document.getElementById('pc-photo-prev')?.addEventListener('click', _pcGoPrev);
   document.getElementById('pc-photo-next')?.addEventListener('click', _pcGoNext);
+
+  // Раунд 5 §8: комментарии к новости — те же обработчики (закрытие/отправка), что фото.
+  document.getElementById('nc-back-btn')?.addEventListener('click', closeNewsComments);
+  document.getElementById('nc-comment-send-btn')?.addEventListener('click', _sendNewsComment);
 
   // 25.07: карусель показывала счётчик/точки/стрелки как настоящая карусель, но пальцем
   // не свайпалась вообще -- только click по стрелкам. Threshold-свайп поверх той же
