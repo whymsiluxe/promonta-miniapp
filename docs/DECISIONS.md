@@ -43,3 +43,15 @@ Architectural decision log. New decisions get a new entry; superseded ones are m
 ---
 
 *(No earlier decisions are recorded — prior sessions did not maintain this log. Everything before 2026-07-23 is undocumented architectural history; where it matters, it's referenced inline in other docs from session memory rather than reconstructed here as a formal decision.)*
+
+---
+
+**Date**: 2026-08-04
+**Status**: Accepted
+**Decision**: Closed needs (`Потребности`, `tasks.json`) are now RETAINED in the working JSON with `status:закрыто`+`closed_at` instead of being deleted on close.
+**Context**: Раунд 3 задача 5.2 requires the Потребности screen to show a "Выполнены N" counter and a "Выполненные" filter/archive. The prior behaviour archived the closed task to a Google Sheet and then removed it from `tasks.json`, so the frontend had nothing to count or list for completed items.
+**Options considered**: (1) fetch completed items from Google Sheets on the frontend; (2) keep closed tasks in JSON, filter to "Активные" by default in the UI.
+**Chosen**: (2).
+**Why**: The frontend has no Sheets access path and Sheets is explicitly a view-only mirror, not an app data source. Keeping closed tasks in JSON is a one-line retention change; the UI already defaults to the "Активные" filter so completed items don't clutter the main view. Sheets archive still happens best-effort, but only on the first close (`prev_status != 'закрыто'`) to avoid duplicate rows on re-close.
+**Consequences**: `tasks.json` grows over time with closed items (acceptable at current scale — same flat-JSON tradeoff documented in DATABASE.md). Any consumer of `GET /api/tasks` that must exclude completed items filters `status != 'закрыто'` (Dashboard badge already does).
+**Affected files**: `backend/main.py` (`update_task_status`), `frontend/js/tasks.js`, `frontend/js/object-info.js`, `tests/test_needs_workflow.py`.

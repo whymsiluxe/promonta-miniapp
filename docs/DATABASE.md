@@ -14,8 +14,8 @@ Every JSON store is written through `_atomic_write_json(path, data)` (write to t
 | `worker_profiles.json` | skills, clothing sizes, birthday, onboarding quiz status | Yes — names/sizes/birthday |
 | `object_assignments.json` | `{object_id: [{user_id, stage_id, assigned_at}]}` | Telegram user IDs |
 | `abwesenheit.json` | absence/vacation entries: date range, status, partial-day times, approval state | Yes |
-| `tasks.json` | task list, assignment, completion state | Telegram user IDs |
-| `mangel_tickets.json` | defect tickets | Photos, descriptions |
+| `tasks.json` | task list, assignment, completion state (closed tasks are now RETAINED with `status:закрыто`+`closed_at`, not deleted — see 2026-08-04 Раунд 3) | Telegram user IDs |
+| `mangel_tickets.json` | defect tickets (soft delete via `deleted_at`/`deleted_by`; such rows stay on disk but are filtered from list/get/count) | Photos, descriptions |
 | `checkin_meta.json` | shift check-in/out sessions: GPS, photos, summaries | Yes — GPS + photos, most sensitive store |
 | `critical_alerts.json` | critical alerts with ack/resolve workflow | Photos, descriptions |
 | `chat_messages.json` | chat messages (200-message cap, 7-day retention) | Yes — message content |

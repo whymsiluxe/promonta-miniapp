@@ -1,10 +1,12 @@
 # Project state
 
-**Last updated**: 2026-08-01, worker profile v2 / onboarding v2 / unified
-work-type catalog / unified assignment feature (NOT YET DEPLOYED as of this
-writing — see `docs/CHANGELOG.md` entry "2026-08-01" for full detail; this
-file is the short summary). Previous entry: 2026-07-31 4-round
-release-hardening pass, deployed as `526922f`.
+**Last updated**: 2026-08-04, Раунд 3 (Дефекты/Потребности/контекстный чат/
+Worker Card), pushed to `main` and CI-green at `082d29d`, **NOT deployed**
+(round instruction: no deploy). See `docs/CHANGELOG.md` entry
+"2026-08-04 (Раунд 3…)" for detail. Previous: 2026-08-01, worker profile v2 /
+onboarding v2 / unified work-type catalog / unified assignment feature
+(also not deployed). Earlier: 2026-07-31 4-round release-hardening pass,
+deployed as `526922f`.
 
 **Branch**: `main` (GitHub default). Deployed SHA / production:
 `526922fb263d3296e5958b0a5857b6c4e90d3fef` — the 2026-08-01 work is pushed

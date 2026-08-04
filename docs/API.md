@@ -67,8 +67,10 @@ This is a route inventory grouped by feature area, built by grepping all `@app.g
 - `GET /api/mangel`, `GET /api/mangel/{ticket_id}`, `GET /api/mangel/counts` — list/detail/counts.
 - `POST /api/mangel` — create ticket.
 - `PATCH /api/mangel/{ticket_id}/status` — update status.
+- `DELETE /api/mangel/{ticket_id}` **[owner]** — soft delete (sets `deleted_at`/`deleted_by`, ticket stays on disk but leaves list/get/count; idempotent). Added 2026-08-04 (Раунд 3).
 - `GET /api/mangel/{ticket_id}/comments`, `POST /api/mangel/{ticket_id}/comments` — comment thread.
 - `GET /api/mangel/photos/{fname}/file` — photo retrieval.
+- Enriched responses include `created_by_name` and `assigned_worker_name` (resolved display names).
 
 ## Tools / equipment
 
