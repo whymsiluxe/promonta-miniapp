@@ -3354,15 +3354,28 @@ def _save_birthday_alerts(items: list):
 
 
 def _check_upcoming_birthdays():
-    """10.31: за 2 дня до дня рождения worker'а — критический алерт owner'у +
-    инфо-запись в ленту для всех (видно в суб-табе "Инфо"). Ленивая проверка при
-    заходе на GET /api/feed/birthdays — не отдельный systemd timer, раз в сутки
-    достаточно, а миниапп открывают каждый день."""
+    """10.31 + Раунд 5 §14: два алерта на день рождения worker'а —
+    «За 3 дня» и «В день рождения» — с idempotency ключами
+    birthday:<uid>:<year>:3days / birthday:<uid>:<year>:today (проверка по
+    Europe/Berlin), чтобы один и тот же alert не создавался повторно при каждом
+    заходе. Ленивая проверка при GET /api/feed/birthdays (миниапп открывают каждый
+    день) — не отдельный systemd timer."""
     profiles = _load_worker_profiles()
-    today = datetime.utcnow().date()
-    target_date = today + timedelta(days=2)
+    today = business_today()
+    d3 = today + timedelta(days=3)
     alerts = _load_birthday_alerts()
-    already_alerted = {(a['user_id'], a['year']) for a in alerts}
+    already = {a.get('idem') for a in alerts if a.get('idem')}
+    owner_id = next((o for o, r in _load_roles().items() if r == 'owner'), None)
+
+    def _emit(uid, name, occ_date, kind, idem, title):
+        alerts.append({
+            'user_id': uid, 'name': name, 'year': occ_date.year, 'kind': kind,
+            'idem': idem, 'date': occ_date.strftime('%Y-%m-%d'), 'created_at': int(time.time()),
+        })
+        try:
+            _create_critical_alert(target_user_id=owner_id or uid, kind='birthday', title=title, ref_id=uid)
+        except Exception:
+            pass
 
     for uid, profile in profiles.items():
         bday = profile.get('birthday')
@@ -3372,27 +3385,20 @@ def _check_upcoming_birthdays():
             bd = datetime.strptime(bday, '%Y-%m-%d').date()
         except ValueError:
             continue
-        if (bd.month, bd.day) != (target_date.month, target_date.day):
-            continue
-        if (uid, target_date.year) in already_alerted:
-            continue
-
         name = _sanitize_display_name(profile.get('name'), uid)
-        entry = {
-            'user_id': uid, 'name': name, 'year': target_date.year,
-            'date': target_date.strftime('%Y-%m-%d'), 'created_at': int(time.time()),
-        }
-        alerts.append(entry)
 
-        try:
-            _create_critical_alert(
-                target_user_id=next((o for o, r in _load_roles().items() if r == 'owner'), uid),
-                kind='birthday',
-                title=f'🎂 У {name} день рождения через 2 дня',
-                ref_id=uid,
-            )
-        except Exception:
-            pass
+        # За 3 дня
+        if (bd.month, bd.day) == (d3.month, d3.day):
+            idem = f'birthday:{uid}:{d3.year}:3days'
+            if idem not in already:
+                _emit(uid, name, d3, '3days', idem,
+                      f'🎂 Через 3 дня день рождения у {name}. Не забудьте подготовить подарок и поздравление.')
+
+        # В день рождения
+        if (bd.month, bd.day) == (today.month, today.day):
+            idem = f'birthday:{uid}:{today.year}:today'
+            if idem not in already:
+                _emit(uid, name, today, 'today', idem, f'🎂 Сегодня день рождения у {name}')
 
     _save_birthday_alerts(alerts)
 
@@ -3400,7 +3406,7 @@ def _check_upcoming_birthdays():
 @app.get("/api/feed/birthdays")
 def get_birthday_feed(user: dict = Depends(get_current_user)):
     _check_upcoming_birthdays()
-    today = datetime.utcnow().strftime('%Y-%m-%d')
+    today = business_today_str()
     upcoming = [a for a in _load_birthday_alerts() if a['date'] >= today]
     return {"birthdays": upcoming}
 
@@ -6537,8 +6543,68 @@ def get_worker_calendar(target_user_id: str, year: int, month: int,
     }
 
 
+def _worker_period_stats(target_id: str, date_from: str, date_to: str) -> dict:
+    """Раунд 5 §13: агрегаты по периоду [date_from, date_to] включительно (Europe/Berlin,
+    строковые ISO-даты сравниваются лексикографически). days_worked = уникальные дни со
+    сменами (активная смена считается один раз, не дублируется), total_hours учитывает
+    паузы через _hours_from_session, sick/vacation — одобренные отсутствия, пересекающие
+    период. Средн. за день = total_hours / days_worked."""
+    sessions = [s for s in _load_checkin_meta()
+                if str(s.get('user_id')) == str(target_id)
+                and date_from <= s.get('date', '') <= date_to]
+    worked_dates = sorted(set(s['date'] for s in sessions if s.get('date')))
+    total_hours = round(sum(_hours_from_session(s) for s in sessions), 2)
+    days_worked = len(worked_dates)
+    avg = round(total_hours / days_worked, 2) if days_worked else 0.0
+
+    d_from = datetime.strptime(date_from, '%Y-%m-%d').date()
+    d_to = datetime.strptime(date_to, '%Y-%m-%d').date()
+    sick_days = vacation_days = 0
+    for e in _load_abwesenheit():
+        if str(e.get('user_id')) != str(target_id) or e.get('status') != 'approved':
+            continue
+        e1 = datetime.strptime(e['date_from'], '%Y-%m-%d').date()
+        e2 = datetime.strptime(e.get('date_to') or e['date_from'], '%Y-%m-%d').date()
+        lo, hi = max(e1, d_from), min(e2, d_to)
+        if lo > hi:
+            continue
+        days = (hi - lo).days + 1
+        if e.get('reason') == 'Krankheit':
+            sick_days += days
+        elif e.get('reason') == 'Urlaub':
+            vacation_days += days
+
+    return {
+        'date_from': date_from, 'date_to': date_to,
+        'days_worked': days_worked, 'total_hours': total_hours,
+        'avg_per_day': avg, 'sick_days': sick_days, 'vacation_days': vacation_days,
+        'worked_dates': worked_dates,
+    }
+
+
+@app.get("/api/workers/{target_user_id}/calendar-stats")
+def get_worker_calendar_stats(target_user_id: str, date_from: str, date_to: str,
+                              user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """Раунд 5 §13: статистика работника за произвольный период (Неделя/Месяц/3 месяца/
+    свой период). Owner видит любого, Worker — только себя (проверка на backend)."""
+    if role != 'owner' and str(user['id']) != str(target_user_id):
+        raise HTTPException(403, "Можно смотреть только свою статистику")
+    for d in (date_from, date_to):
+        try:
+            datetime.strptime(d, '%Y-%m-%d')
+        except (ValueError, TypeError):
+            raise HTTPException(400, "date_from/date_to должны быть YYYY-MM-DD")
+    if date_from > date_to:
+        raise HTTPException(400, "date_from не может быть позже date_to")
+    stats = _worker_period_stats(target_user_id, date_from, date_to)
+    profile = _get_worker_profile(target_user_id)
+    stats['name'] = _sanitize_display_name(profile.get('name'), str(target_user_id))
+    return stats
+
+
 @app.get("/api/checkin/stundenzettel")
 def export_stundenzettel(user_id: str = '', year: int = 0, month: int = 0,
+                          date_from: str = '', date_to: str = '',
                           user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     """10.29 (Fable-аудит, идея): экспорт табеля рабочего времени — в Германии
     учёт рабочего времени обязателен по решению BAG (2022). CSV, открывается
@@ -6546,13 +6612,27 @@ def export_stundenzettel(user_id: str = '', year: int = 0, month: int = 0,
     target_id = user_id or str(user['id'])
     if target_id != str(user['id']) and role != 'owner':
         raise HTTPException(403, "Можно выгружать только свой табель")
-    if not year or not month:
-        now = datetime.utcnow()
-        year, month = now.year, now.month
-    month_prefix = f'{year:04d}-{month:02d}'
-
-    sessions = [s for s in _load_checkin_meta()
-                if str(s.get('user_id')) == target_id and s.get('date', '').startswith(month_prefix)]
+    # Раунд 5 §13: произвольный период date_from/date_to (Неделя/Месяц/3 месяца/свой).
+    # Обратная совместимость: без диапазона — месяц year/month (старый вызов из UI).
+    if date_from and date_to:
+        for d in (date_from, date_to):
+            try:
+                datetime.strptime(d, '%Y-%m-%d')
+            except ValueError:
+                raise HTTPException(400, "date_from/date_to должны быть YYYY-MM-DD")
+        if date_from > date_to:
+            raise HTTPException(400, "date_from не может быть позже date_to")
+        period_label = f'{date_from}_{date_to}'
+        sessions = [s for s in _load_checkin_meta()
+                    if str(s.get('user_id')) == target_id and date_from <= s.get('date', '') <= date_to]
+    else:
+        if not year or not month:
+            now = business_now()
+            year, month = now.year, now.month
+        month_prefix = f'{year:04d}-{month:02d}'
+        period_label = month_prefix
+        sessions = [s for s in _load_checkin_meta()
+                    if str(s.get('user_id')) == target_id and s.get('date', '').startswith(month_prefix)]
 
     import io
     buf = io.StringIO()
@@ -6573,7 +6653,7 @@ def export_stundenzettel(user_id: str = '', year: int = 0, month: int = 0,
     writer.writerow(['', '', '', '', '', total_hours, 'ИТОГО'])
 
     csv_content = buf.getvalue()
-    filename = f'Stundenzettel_{target_id}_{month_prefix}.csv'
+    filename = f'Stundenzettel_{target_id}_{period_label}.csv'
     from fastapi.responses import Response
     return Response(
         content='\ufeff' + csv_content,  # BOM — Excel корректно определяет UTF-8

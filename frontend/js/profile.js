@@ -726,6 +726,26 @@ async function _saveSizes() {
 let _workerCardEl = null;          // overlay элемент; null = закрыт (двойной тап -> один overlay)
 let _workerCardUserId = '';
 let _workerCardPeriod = 'week';
+
+// Раунд 5 §13: диапазон дат для выбранного периода worker card (Неделя/Месяц/3 месяца/Год).
+// Локальные компоненты даты (не UTC toISOString) — время фирмы = Europe/Berlin.
+function _wcPeriodRange(period) {
+  const pad = n => String(n).padStart(2, '0');
+  const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const today = new Date();
+  let from;
+  if (period === 'month') {
+    from = new Date(today.getFullYear(), today.getMonth(), 1);
+  } else if (period === '3months') {
+    from = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+  } else if (period === 'year') {
+    from = new Date(today.getFullYear(), 0, 1);
+  } else { // week: текущая неделя Пн-сегодня
+    const dow = (today.getDay() + 6) % 7; // Пн=0
+    from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dow);
+  }
+  return { date_from: iso(from), date_to: iso(today) };
+}
 let _workerCardUnreg = null;
 
 // Совместимость: shared.js/openUserCard раньше звал openWorkerFullProfile.
@@ -887,7 +907,9 @@ async function _loadWorkerCard() {
     const btn = ev.currentTarget;
     btn.disabled = true;
     try {
-      const res = await fetch(`${API_BASE}/api/checkin/stundenzettel?user_id=${encodeURIComponent(uid)}`, { headers: { ..._authHeaders() } });
+      // §13: CSV соответствует выбранному периоду; имя файла содержит Worker+даты (backend).
+      const { date_from, date_to } = _wcPeriodRange(_workerCardPeriod);
+      const res = await fetch(`${API_BASE}/api/checkin/stundenzettel?user_id=${encodeURIComponent(uid)}&date_from=${date_from}&date_to=${date_to}`, { headers: { ..._authHeaders() } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
