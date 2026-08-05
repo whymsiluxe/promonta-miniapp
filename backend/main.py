@@ -995,6 +995,51 @@ def _sanitize_display_name(raw: str | None, fallback: str) -> str:
     return stripped
 
 
+def _is_meaningful_name(raw: str | None, user_id: str) -> bool:
+    """Раунд 6 §4.1: строка — настоящее отображаемое имя, а не заглушка/ID.
+    Строже, чем _sanitize_display_name (тот пропускает цифры и сам user_id как
+    'валидные' \\w-строки): используется для one-time completion-gate существующих
+    пользователей без имени. Пусто/пробелы/невидимое/==user_id/только цифры/<2/>100 -> False."""
+    cleaned = _sanitize_display_name(raw, '')
+    if not cleaned:
+        return False
+    s = cleaned.strip()
+    if len(s) < 2 or len(s) > 100:
+        return False
+    if s.isdigit():
+        return False
+    if s == str(user_id):
+        return False
+    return True
+
+
+def _validate_birthday(raw: str) -> str:
+    """Раунд 6 §3.1: валидирует дату рождения. Формат YYYY-MM-DD, реальная дата,
+    не в будущем (Europe/Berlin). Возвращает нормализованную ISO-строку либо HTTP 400."""
+    if raw is None or not str(raw).strip():
+        raise HTTPException(400, "Укажите дату рождения")
+    s = str(raw).strip()
+    try:
+        d = datetime.strptime(s, '%Y-%m-%d').date()
+    except ValueError:
+        raise HTTPException(400, "Некорректная дата рождения (формат ГГГГ-ММ-ДД)")
+    if d > business_today():
+        raise HTTPException(400, "Дата рождения не может быть в будущем")
+    return d.isoformat()
+
+
+def _profile_completion_status(user: dict, profile: dict, role: str) -> dict:
+    """Раунд 6 §3.2/§4: какие обязательные поля профиля не заполнены.
+    name — для всех; birthday — только для Worker (Owner не обязан заполнять)."""
+    uid = str(user['id'])
+    name_ok = _is_meaningful_name(profile.get('name') or user.get('first_name'), uid)
+    birthday_ok = bool(profile.get('birthday'))
+    return {
+        'name_required': not name_ok,
+        'birthday_required': (role == 'worker') and not birthday_ok,
+    }
+
+
 @app.get("/api/profile/me")
 def get_my_profile(user: dict = Depends(get_current_user)):
     profile = _get_worker_profile(user['id'])
@@ -1018,14 +1063,18 @@ def get_my_profile(user: dict = Depends(get_current_user)):
     if healed_name:
         profile = {**profile, 'name': healed_name}
     skills_v2 = _get_worker_skills_v2(user['id'])
+    role = _load_roles().get(str(user['id']), 'worker')
     return {
         "user_id": user['id'],
         "skill_options": SKILL_OPTIONS,  # legacy -- старый frontend-код может ещё это читать
         **profile,
+        "role": role,
         "skills": pskills.legacy_skill_names_from_v2(skills_v2),  # legacy-совместимый список строк
         "skills_v2": skills_v2,  # новый источник истины
         "onboarding_completed": bool(profile.get('onboarding_completed') or profile.get('quiz_completed')),
         "onboarding_version": profile.get('onboarding_version', 1),
+        # Раунд 6 §3.2/§4/§6: bootstrap показывает completion-экран если что-то обязательное пусто
+        "needs_completion": _profile_completion_status(user, profile, role),
     }
 
 
@@ -1092,11 +1141,11 @@ class ProfileUpdateBody(BaseModel):
     pants_size: str | None = None
     shirt_size: str | None = None
     shoe_size: str | None = None
-    birthday: str | None = None  # YYYY-MM-DD, только месяц/день значимы (10.31)
-    # 01.08: дата рождения полностью убрана из onboarding v2 и нового UI профиля --
-    # поле в модели/JSON НЕ трогаем (спека: "существующие сохранённые значения не
-    # удалять автоматически из JSON, чтобы не делать опасную миграцию данных"),
-    # просто новый frontend-код больше никогда его не отправляет.
+    birthday: str | None = None  # YYYY-MM-DD
+    # Раунд 6 §3: владелец ОТМЕНИЛ прежнее решение (01.08), запрещавшее дату рождения в
+    # onboarding и профиле. Поле снова обязательно для Worker в onboarding и completion-
+    # экране, редактируется в профиле, используется для календаря и birthday-алертов.
+    # Валидация — _validate_birthday() ниже (формат + не в будущем, Europe/Berlin).
 
 
 @app.patch("/api/profile/me")
@@ -1104,12 +1153,16 @@ def update_my_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_
     profiles = _load_worker_profiles()
     key = str(user['id'])
     profile = profiles.get(key, {"skills": [], "quiz_completed": False})
+    role = _load_roles().get(key, 'worker')
     updates = body.dict(exclude_unset=True)
     if 'name' in updates:
         cleaned = _sanitize_display_name(updates['name'], '')
         if not cleaned:
             raise HTTPException(400, "Имя не должно быть пустым")
         updates['name'] = cleaned[:100]
+    # Раунд 6 §3.1: дата рождения — валидируем формат/не-в-будущем при любом сохранении.
+    if 'birthday' in updates and updates['birthday'] is not None:
+        updates['birthday'] = _validate_birthday(updates['birthday'])
     if 'skills_v2' in updates:
         for s in updates['skills_v2']:
             if s.get('level') not in pskills.SKILL_LEVELS:
@@ -1140,8 +1193,12 @@ def update_my_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_
     if updates.get('onboarding_completed'):
         merged_name = updates.get('name', profile.get('name'))
         merged_skills = updates.get('skills_v2', profile.get('skills_v2', []))
+        merged_birthday = updates.get('birthday', profile.get('birthday'))
         if not _sanitize_display_name(merged_name, ''):
             raise HTTPException(400, "Укажите имя, чтобы завершить регистрацию")
+        # Раунд 6 §3.1: дата рождения обязательна для Worker (Owner — нет).
+        if role == 'worker' and not merged_birthday:
+            raise HTTPException(400, "Укажите дату рождения, чтобы завершить регистрацию")
         if not merged_skills:
             raise HTTPException(400, "Выберите хотя бы один навык")
         for s in merged_skills:
@@ -1467,6 +1524,9 @@ def profile_stats(user_id: str = '', period: str = 'week', user: dict = Depends(
             'shoe': profile.get('shoe_size', ''),
         },
         'has_avatar': bool(profile.get('avatar')),
+        # Раунд 6 §3.3: полную дату рождения видит только Owner или сам работник —
+        # этот endpoint и так отдаёт чужой профиль исключительно owner'у (target-гейт выше).
+        'birthday': profile.get('birthday'),
         'urlaub': {'used': urlaub_used, 'total': URLAUB_YEARLY_DAYS, 'remaining': max(0, URLAUB_YEARLY_DAYS - urlaub_used)},
         'krankheit_days_this_year': krankheit_used,
         'week': week,

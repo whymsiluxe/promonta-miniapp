@@ -62,6 +62,7 @@ class OnboardingCompletionValidationTests(unittest.TestCase):
              patch.object(backend, '_save_worker_profiles'):
             body = backend.ProfileUpdateBody(
                 name='Ivan',
+                birthday='1990-05-15',  # Раунд 6 §3.1: обязательна для Worker-онбординга
                 skills_v2=[backend.SkillV2Body(skill_id='tile_work', level='master', verified=True)],
                 onboarding_completed=True,
             )
@@ -73,6 +74,7 @@ class OnboardingCompletionValidationTests(unittest.TestCase):
              patch.object(backend, '_save_worker_profiles'):
             body = backend.ProfileUpdateBody(
                 name='Ivan',
+                birthday='1990-05-15',  # Раунд 6 §3.1: обязательна для Worker-онбординга
                 skills_v2=[backend.SkillV2Body(skill_id='tile_work', level='independent')],
                 onboarding_completed=True,
             )
@@ -90,7 +92,9 @@ class OnboardingCompletionValidationTests(unittest.TestCase):
             result = backend.get_my_profile(user=WORKER_A)
         self.assertTrue(result['onboarding_completed'])
 
-    def test_birthday_not_required_for_onboarding_completion(self):
+    def test_birthday_required_for_worker_onboarding_completion(self):
+        # Раунд 6 §3.1: владелец ОТМЕНИЛ прежнее решение — дата рождения снова
+        # обязательна для Worker при завершении онбординга. Без неё -> 400.
         with patch.object(backend, '_load_worker_profiles', return_value={}), \
              patch.object(backend, '_save_worker_profiles'):
             body = backend.ProfileUpdateBody(
@@ -98,9 +102,9 @@ class OnboardingCompletionValidationTests(unittest.TestCase):
                 skills_v2=[backend.SkillV2Body(skill_id='tile_work', level='independent')],
                 onboarding_completed=True,
             )
-            # birthday не передан вообще -- должно пройти без ошибки
-            result = backend.update_my_profile(body, user=WORKER_A)
-        self.assertTrue(result['onboarding_completed'])
+            with self.assertRaises(HTTPException) as ctx:
+                backend.update_my_profile(body, user=WORKER_A)
+        self.assertEqual(ctx.exception.status_code, 400)
 
 
 # ---------- Owner-only skill verification ----------

@@ -4,7 +4,8 @@
 // 1) имя+аватар, 2) выбор навыков (skill-picker.js), 3) уровень для каждого навыка
 // (skill-picker.js), 4) размеры (необязательно) -> завершение.
 //
-// Дата рождения полностью убрана из onboarding v2 -- ни поля, ни отправки на backend.
+// Раунд 6 §3: владелец ОТМЕНИЛ прежний запрет — дата рождения снова в onboarding.
+// Обязательна для Worker (Owner — нет), валидная дата не в будущем, YYYY-MM-DD.
 //
 // 01.08: полностью переписан под единый каталог видов работ (backend/work_types.py) --
 // ONBOARDING_GROUPS/статичный список навыков здесь больше не хранится, всё приходит
@@ -18,6 +19,8 @@ const SIZE_OPTIONS = {
 
 let _obStep = 1; // 1..4
 let _obName = '';
+let _obBirthday = ''; // Раунд 6 §3.1: YYYY-MM-DD, обязательна для Worker
+let _obIsWorker = true; // роль из профиля (Owner не обязан указывать дату рождения)
 let _obAvatarPending = null; // File объект, если пользователь выбрал фото до PATCH
 let _obSkillPicker = null;
 let _obLevelPicker = null;
@@ -38,6 +41,8 @@ async function checkOnboardingQuiz() {
     // НЕ блокируются onboarding v2 -- проверяем ОБА флага, любой truthy пропускает.
     if (profile.onboarding_completed || profile.quiz_completed) return;
     _obName = profile.name || (window.Telegram?.WebApp?.initDataUnsafe?.user?.first_name) || '';
+    _obBirthday = profile.birthday || '';
+    _obIsWorker = (profile.role || (typeof currentRole !== 'undefined' ? currentRole : 'worker')) !== 'owner';
     _obStep = 1;
     await _showOnboardingOverlay();
   } catch (e) {
@@ -47,6 +52,16 @@ async function checkOnboardingQuiz() {
 
 function _obTelegramFirstName() {
   return window.Telegram?.WebApp?.initDataUnsafe?.user?.first_name || '';
+}
+
+// Раунд 6 §3.1: сегодняшняя дата ISO для max/валидации даты рождения. Берём
+// todayBerlin() из shared.js (Europe/Berlin), а НЕ new Date().toISOString() (UTC) и
+// не локаль устройства — граница «не в будущем» должна совпадать с backend'ом
+// (_validate_birthday → business_today, тоже Europe/Berlin).
+function _obTodayIso() {
+  return (typeof todayBerlin === 'function')
+    ? todayBerlin()
+    : new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
 }
 
 async function _showOnboardingOverlay() {
@@ -94,6 +109,10 @@ function _obRenderStep1() {
       </div>
       <label class="onboarding-name-label">Имя</label>
       <input type="text" class="onboarding-name-input" id="ob-name-input" value="${_escOb(_obName)}" maxlength="100" placeholder="Твоё имя">
+      ${_obIsWorker ? `
+      <label class="onboarding-name-label">Дата рождения</label>
+      <input type="date" class="onboarding-name-input" id="ob-birthday-input" value="${_escOb(_obBirthday)}" max="${_obTodayIso()}">
+      ` : ''}
       <div class="onboarding-error" id="ob-step1-error" style="display:none"></div>
       <div class="onboarding-nav-row">
         <button type="button" class="onboarding-submit-btn" id="ob-step1-next">Продолжить</button>
@@ -103,6 +122,8 @@ function _obRenderStep1() {
 
   const nameInput = document.getElementById('ob-name-input');
   nameInput.addEventListener('input', () => { _obName = nameInput.value; });
+  const bdayInput = document.getElementById('ob-birthday-input');
+  if (bdayInput) bdayInput.addEventListener('input', () => { _obBirthday = bdayInput.value; });
 
   const showAvatarPreview = (file) => {
     _obAvatarPending = file;
@@ -138,6 +159,21 @@ function _obRenderStep1() {
       errEl.style.display = 'block';
       return;
     }
+    // Раунд 6 §3.1: дата рождения обязательна для Worker, валидная, не в будущем.
+    const bday = bdayInput ? bdayInput.value.trim() : '';
+    if (_obIsWorker) {
+      if (!bday) {
+        errEl.textContent = 'Укажи дату рождения';
+        errEl.style.display = 'block';
+        return;
+      }
+      if (bday > _obTodayIso()) {
+        errEl.textContent = 'Дата рождения не может быть в будущем';
+        errEl.style.display = 'block';
+        return;
+      }
+      _obBirthday = bday;
+    }
     errEl.style.display = 'none';
     _obName = name;
     const btn = document.getElementById('ob-step1-next');
@@ -166,7 +202,9 @@ function _obRenderStep1() {
           errEl.style.display = 'block';
         }
       }
-      await api('/api/profile/me', { method: 'PATCH', body: JSON.stringify({ name: _obName }) });
+      const step1Payload = { name: _obName };
+      if (_obIsWorker && _obBirthday) step1Payload.birthday = _obBirthday;
+      await api('/api/profile/me', { method: 'PATCH', body: JSON.stringify(step1Payload) });
       _obStep = 2;
       await _obRenderStep();
     } catch (e) {
@@ -310,6 +348,7 @@ function _obRenderStep4() {
         method: 'PATCH',
         body: JSON.stringify({
           name: _obName,
+          ...(_obIsWorker && _obBirthday ? { birthday: _obBirthday } : {}),
           skills_v2: skillsV2,
           shirt_size: _obSizes.shirt || null,
           pants_size: _obSizes.pants || null,
@@ -348,4 +387,77 @@ function _escOb(s) {
   const div = document.createElement('div');
   div.textContent = s == null ? '' : String(s);
   return div.innerHTML;
+}
+
+// ---------- Раунд 6 §4.2/§3.2/§6: profile-completion для существующих пользователей ----------
+// One-time обязательный экран, если у уже зарегистрированного пользователя нет
+// нормального имени и/или (для Worker) даты рождения. Объединённый экран (не два
+// последовательных popup), без "Пропустить". После сохранения bootstrap продолжается
+// (без location.reload — спека §6). Backend отдаёт profile.needs_completion.
+async function checkProfileCompletion() {
+  let profile;
+  try { profile = await api('/api/profile/me'); }
+  catch (e) { return; } // профиль недоступен — не блокировать вход
+  // Пропускаем, если пользователь ещё не прошёл onboarding — им займётся onboarding-flow.
+  if (!(profile.onboarding_completed || profile.quiz_completed)) return;
+  const need = profile.needs_completion || {};
+  if (!need.name_required && !need.birthday_required) return;
+  await _showCompletionOverlay(profile, !!need.name_required, !!need.birthday_required);
+}
+
+function _showCompletionOverlay(profile, needName, needBday) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.id = 'onboarding-overlay';
+    document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+    const rawName = profile.name != null ? String(profile.name).trim() : '';
+    const curName = (rawName && !/^\d+$/.test(rawName) && rawName !== String(profile.user_id)) ? rawName : '';
+    const subtitle = (needName && needBday)
+      ? 'Введите имя, которое будет видно команде, и укажите дату рождения.'
+      : needName
+        ? 'Введите имя, которое будет видно команде.'
+        : 'Укажите дату рождения. Она используется для календаря и напоминаний владельцу.';
+    overlay.innerHTML = `
+      <div class="onboarding-card">
+        <h2 class="onboarding-title">Дополните профиль</h2>
+        <p class="onboarding-subtitle">${subtitle}</p>
+        ${needName ? `<label class="onboarding-name-label">Имя</label>
+          <input type="text" class="onboarding-name-input" id="pc-name-input" value="${_escOb(curName)}" maxlength="100" placeholder="Имя и фамилия">` : ''}
+        ${needBday ? `<label class="onboarding-name-label">Дата рождения</label>
+          <input type="date" class="onboarding-name-input" id="pc-birthday-input" value="${_escOb(profile.birthday || '')}" max="${_obTodayIso()}">` : ''}
+        <div class="onboarding-error" id="pc-error" style="display:none"></div>
+        <div class="onboarding-nav-row">
+          <button type="button" class="onboarding-submit-btn" id="pc-save">Сохранить</button>
+        </div>
+      </div>`;
+    const errEl = overlay.querySelector('#pc-error');
+    overlay.querySelector('#pc-save').addEventListener('click', async () => {
+      const payload = {};
+      if (needName) {
+        const nm = overlay.querySelector('#pc-name-input').value.trim();
+        if (nm.length < 2) { errEl.textContent = 'Укажите имя (минимум 2 символа)'; errEl.style.display = 'block'; return; }
+        if (nm.length > 100) { errEl.textContent = 'Слишком длинное имя (максимум 100 символов)'; errEl.style.display = 'block'; return; }
+        if (/^\d+$/.test(nm)) { errEl.textContent = 'Имя не может состоять только из цифр'; errEl.style.display = 'block'; return; }
+        payload.name = nm;
+      }
+      if (needBday) {
+        const bd = overlay.querySelector('#pc-birthday-input').value.trim();
+        if (!bd) { errEl.textContent = 'Укажите дату рождения'; errEl.style.display = 'block'; return; }
+        if (bd > _obTodayIso()) { errEl.textContent = 'Дата рождения не может быть в будущем'; errEl.style.display = 'block'; return; }
+        payload.birthday = bd;
+      }
+      const btn = overlay.querySelector('#pc-save');
+      btn.disabled = true; btn.textContent = 'Сохраняю...';
+      try {
+        await api('/api/profile/me', { method: 'PATCH', body: JSON.stringify(payload) });
+        document.body.style.overflow = '';
+        overlay.remove();
+        resolve();
+      } catch (e) {
+        errEl.textContent = 'Не удалось сохранить: ' + e.message; errEl.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Сохранить';
+      }
+    });
+  });
 }

@@ -5763,6 +5763,12 @@ async function initApp() {
     await checkOnboardingQuiz();
   }
 
+  // Раунд 6 §4.2/§3.2/§6: существующие пользователи без имени и/или (Worker) без даты
+  // рождения проходят обязательный one-time completion-экран перед входом в приложение.
+  if (typeof checkProfileCompletion === 'function') {
+    await checkProfileCompletion();
+  }
+
   switchView('home', { isTabSwitch: true });
 }
 

@@ -257,6 +257,16 @@ function _renderWorkerSelfProfile(slot) {
       </div>
 
       <div class="accordion-section">
+        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-3)">🎂</span><span class="accordion-title">Дата рождения</span><span class="accordion-chevron">▾</span></div>
+        <div class="accordion-body collapsed"><div class="accordion-body-inner">
+          <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.5rem">Нужна для календаря и напоминаний руководителю. Видна только тебе и руководителю.</div>
+          <input type="date" id="profile-birthday-input" class="mangel-select" max="${_profileTodayIso()}">
+          <button class="submit-btn profile-inline-btn" id="profile-birthday-save-btn" type="button" style="margin-top:0.5rem">Сохранить дату</button>
+          <div id="profile-birthday-status" style="font-size:0.8rem;color:var(--accent);margin-top:0.4rem"></div>
+        </div></div>
+      </div>
+
+      <div class="accordion-section">
         <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-1)">🛠</span><span class="accordion-title">Навыки</span><span class="accordion-chevron">▾</span></div>
         <div class="accordion-body collapsed"><div class="accordion-body-inner">
           <div id="profile-skills-chips" class="profile-skills-chips"></div>
@@ -388,6 +398,7 @@ function _bindProfileHandlers() {
   document.getElementById('profile-skills-edit-btn').addEventListener('click', _toggleSkillsEdit);
   document.getElementById('profile-sizes-save-btn').addEventListener('click', _saveSizes);
   document.getElementById('profile-name-save-btn').addEventListener('click', _saveName);
+  document.getElementById('profile-birthday-save-btn')?.addEventListener('click', _saveBirthday);
   document.getElementById('profile-export-stundenzettel-btn').addEventListener('click', _downloadStundenzettel);
 
   document.getElementById('profile-period-pills').addEventListener('click', e => {
@@ -565,6 +576,11 @@ async function _loadProfileStats() {
   const nameInput = document.getElementById('profile-name-input');
   if (nameInput) nameInput.value = (stats.name && stats.name !== String(stats.user_id)) ? stats.name : '';
 
+  // Раунд 6 §3.3: worker-self редактирует свою дату рождения (input есть только в
+  // worker-self settings; stats.birthday приходит с owner-gated endpoint для себя).
+  const bdayInput = document.getElementById('profile-birthday-input');
+  if (bdayInput) bdayInput.value = stats.birthday || '';
+
   document.getElementById('profile-size-pants').value = stats.sizes?.pants || '';
   document.getElementById('profile-size-shirt').value = stats.sizes?.shirt || '';
   document.getElementById('profile-size-shoe').value = stats.sizes?.shoe || '';
@@ -715,6 +731,37 @@ async function _saveSizes() {
     statusEl.textContent = '✓ Сохранено';
     setTimeout(() => { statusEl.textContent = ''; }, 2500);
   } catch (e) {
+    statusEl.textContent = 'Ошибка: ' + e.message;
+  }
+}
+
+// Раунд 6 §3.3: worker-self сохраняет СВОЮ дату рождения. Тот же гард (_profileStatsUserId
+// пусто = свой профиль), та же валидация «не в будущем» (Europe/Berlin), что в onboarding
+// и backend; при пустом значении не шлём PATCH (backend валидирует только непустое поле).
+async function _saveBirthday() {
+  if (_profileStatsUserId) return;
+  const input = document.getElementById('profile-birthday-input');
+  const statusEl = document.getElementById('profile-birthday-status');
+  if (!input || !statusEl) return;
+  const bday = input.value.trim();
+  if (!bday) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = 'Укажи дату рождения';
+    return;
+  }
+  if (bday > _profileTodayIso()) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = 'Дата рождения не может быть в будущем';
+    return;
+  }
+  try {
+    await api('/api/profile/me', { method: 'PATCH', body: JSON.stringify({ birthday: bday }) });
+    hapticImpact('light');
+    statusEl.style.color = 'var(--accent)';
+    statusEl.textContent = '✓ Сохранено';
+    setTimeout(() => { statusEl.textContent = ''; }, 2500);
+  } catch (e) {
+    statusEl.style.color = 'var(--red)';
     statusEl.textContent = 'Ошибка: ' + e.message;
   }
 }
@@ -943,7 +990,24 @@ function _workerCardOpsHtml(stats, card) {
   if (working && card.stage_name) rows.push(`<div class="wc-ops-row"><span>Работа</span><b>${esc(card.stage_name)}</b></div>`);
   rows.push(`<div class="wc-ops-row"><span>Сегодня</span><b>${todayHours} ч</b></div>`);
   rows.push(`<div class="wc-ops-row"><span>Неделя</span><b>${weekHours} ч</b></div>`);
+  // Раунд 6 §3.3: полную дату рождения видит только Owner/сам (stats.birthday приходит
+  // лишь на owner-gated endpoint) — показываем в Worker Card как ДД.ММ.ГГГГ.
+  if (stats.birthday) rows.push(`<div class="wc-ops-row"><span>Дата рождения</span><b>${esc(_fmtBirthday(stats.birthday))}</b></div>`);
   return `<div class="wc-ops-card">${rows.join('')}</div>`;
+}
+
+// Раунд 6 §3.3: YYYY-MM-DD -> ДД.ММ.ГГГГ (без вычисления возраста).
+function _fmtBirthday(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : String(iso || '');
+}
+
+// Раунд 6 §3.3: граница «не в будущем» для input[type=date] max — Europe/Berlin
+// (todayBerlin из shared.js), как в onboarding и backend _validate_birthday.
+function _profileTodayIso() {
+  return (typeof todayBerlin === 'function')
+    ? todayBerlin()
+    : new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
 }
 
 function _workerCardBodyHtml(stats, uid) {
