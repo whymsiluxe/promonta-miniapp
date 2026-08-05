@@ -4305,12 +4305,33 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
    на 2 строки вразнобой (жалоба из брифа). 2-колоночный grid — предсказуемая раскладка
    на любой ширине, не завязан на длину каждой подписи. */
 #abw-availability-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 0.75rem; padding: 0 0.75rem 0.6rem; }
-.abw-legend-item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; color: var(--text-light); }
+/* Раунд 6 §2.3: легенда не меньше 14px для читаемости на 320px. */
+.abw-legend-item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.875rem; color: var(--text-light); }
 .abw-legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .abw-legend-green { background: var(--accent); }
 .abw-legend-red { background: var(--red); }
 .abw-legend-worked { background: var(--text-light); }
 .abw-legend-assigned { background: var(--c-brass, var(--accent-gold)); }
+
+/* Раунд 6 §2: период-пикер + статистика за период (Old Money, без chart lib). */
+#abw-period-panel { margin: 0 0.75rem 0.75rem; }
+.abw-period-pills { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+.abw-period-pill { flex: 1 1 auto; min-width: 68px; padding: 0.45rem 0.5rem; font-size: 0.82rem; font-weight: 600;
+  border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-card);
+  color: var(--text-light); cursor: pointer; }
+.abw-period-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.abw-period-custom { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+.abw-period-custom label { font-size: 0.82rem; color: var(--text-light); }
+.abw-period-custom input[type=date] { flex: 1 1 120px; }
+.abw-period-apply-btn { flex: 0 0 auto; width: auto; padding: 0.5rem 0.9rem; }
+.abw-period-range { font-size: 0.9rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem; }
+.abw-period-grid { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.3rem 0.75rem; }
+.abw-period-row { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0; font-size: 0.9rem; color: var(--text-light); border-bottom: 1px solid var(--border-color); }
+.abw-period-row:last-child { border-bottom: none; }
+.abw-period-row b { color: var(--text-main); font-weight: 700; }
+.abw-period-csv-btn { margin-top: 0.6rem; }
+.abw-period-loading, .abw-period-error { padding: 0.75rem; font-size: 0.9rem; color: var(--text-light); text-align: center; }
+.abw-period-retry { margin-left: 0.5rem; padding: 0.3rem 0.7rem; border: 1px solid var(--accent); border-radius: var(--radius-md); background: transparent; color: var(--accent); font-weight: 600; cursor: pointer; }
 
 .abw-avail-cell { cursor: default; position: relative; }
 /* 21.07 + 22.07: единая система 4 состояний, одна заливка на состояние (не заливка+точка вперемешку) —
@@ -4986,6 +5007,21 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
       <span class="abw-legend-item"><span class="abw-legend-dot abw-legend-assigned"></span>Назначен на объект</span>
     </div>
     <div id="abw-profile-metrics" style="display:none;"></div>
+  </div>
+  <!-- Раунд 6 §2: период-пикер + статистика за период (Неделя/Месяц/3 месяца/Свой период) -->
+  <div id="abw-period-panel" style="display:none;">
+    <div id="abw-period-pills" class="abw-period-pills">
+      <button type="button" class="abw-period-pill" data-period="week">Неделя</button>
+      <button type="button" class="abw-period-pill active" data-period="month">Месяц</button>
+      <button type="button" class="abw-period-pill" data-period="3months">3 месяца</button>
+      <button type="button" class="abw-period-pill" data-period="custom">Свой период</button>
+    </div>
+    <div id="abw-period-custom" class="abw-period-custom" style="display:none;">
+      <label>С</label><input type="date" id="abw-period-from" class="mangel-select">
+      <label>По</label><input type="date" id="abw-period-to" class="mangel-select">
+      <button type="button" id="abw-period-apply" class="submit-btn abw-period-apply-btn">Применить</button>
+    </div>
+    <div id="abw-period-stats"></div>
   </div>
   <div class="abwesenheit-month-nav">
     <button id="abw-prev-month" type="button">←</button>

@@ -9,6 +9,13 @@ let _abwFocusHighlightId = null; // держится дольше — подсв
 let _abwSelectedProfileId = ''; // 10.30: owner выбрал профиль worker'а — availability-режим
 let _abwAvailability = { unavailable_dates: [], worked_dates: [] };
 
+// Раунд 6 §2: период-пикер + статистика за период.
+let _abwPeriod = 'month';   // week | month | 3months | custom (default Месяц)
+let _abwPeriodFrom = '';    // YYYY-MM-DD, свой период
+let _abwPeriodTo = '';
+let _abwPeriodStats = null; // последние успешно загруженные — не теряем при ошибке
+let _abwPeriodBusy = false; // двойной tap не дублирует запрос
+
 const ABW_MONTH_NAMES = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 
 function _abwFormatDate(y, m, d) {
@@ -301,6 +308,9 @@ async function _initAbwProfileSelector() {
       document.getElementById('abw-profile-metrics').style.display = 'none';
     }
     renderAbwesenheitMonth();
+    // Раунд 6 §2: при смене выбранного работника сбрасываем кэш периода и перезагружаем.
+    _abwPeriodStats = null;
+    _loadAbwPeriodStats();
   });
 }
 
@@ -339,10 +349,159 @@ async function _loadAbwAvailability() {
   }
 }
 
+// ---------- Раунд 6 §2: период-пикер + статистика за период ----------
+// Статистику показываем только когда цель однозначна и разрешена backend'ом:
+// Owner — выбранный worker; Worker — только СВОЙ календарь (calendar-stats self-only,
+// иначе 403). Пустая строка => панель скрыта.
+function _abwStatsTarget() {
+  if (currentRole === 'owner') return _abwSelectedProfileId || '';
+  return _abwSelectedProfileId ? '' : String(currentUserId);
+}
+
+// Сдвиг ISO-даты на N дней через UTC-полдень-якорь (без DST-скачков; чистая календарная арифметика).
+function _abwShiftIso(iso, days) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d, 12));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getUTCDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+// Диапазон включительно, Europe/Berlin (todayBerlin из shared.js — НЕ UTC toISOString).
+// Правая граница пресетов не позже сегодня.
+function _abwPeriodRange() {
+  const today = todayBerlin();
+  const [y, m, d] = today.split('-').map(Number);
+  if (_abwPeriod === 'custom') {
+    return { date_from: _abwPeriodFrom || today, date_to: _abwPeriodTo || today };
+  }
+  if (_abwPeriod === 'week') {
+    const dow = (new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay() + 6) % 7; // Пн=0
+    return { date_from: _abwShiftIso(today, -dow), date_to: today };
+  }
+  if (_abwPeriod === '3months') {
+    const dt = new Date(Date.UTC(y, m - 1 - 2, 1, 12));
+    const iso = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-01`;
+    return { date_from: iso, date_to: today };
+  }
+  return { date_from: `${y}-${String(m).padStart(2, '0')}-01`, date_to: today }; // month
+}
+
+function _abwFmtDmy(iso) {
+  const mm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  return mm ? `${mm[3]}.${mm[2]}.${mm[1]}` : (iso || '');
+}
+
+async function _loadAbwPeriodStats() {
+  const panel = document.getElementById('abw-period-panel');
+  const box = document.getElementById('abw-period-stats');
+  const target = _abwStatsTarget();
+  if (!panel || !box) return;
+  if (!target) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  const { date_from, date_to } = _abwPeriodRange();
+  if (date_from > date_to) {
+    box.innerHTML = '<div class="abw-period-error">Дата «С» не может быть позже «По»</div>';
+    return;
+  }
+  if (_abwPeriodBusy) return;
+  _abwPeriodBusy = true;
+  if (!_abwPeriodStats) box.innerHTML = '<div class="abw-period-loading">Загрузка…</div>';
+  try {
+    const stats = await api(`/api/workers/${encodeURIComponent(target)}/calendar-stats?date_from=${date_from}&date_to=${date_to}`);
+    _abwPeriodStats = stats;
+    _renderAbwPeriodStats(stats);
+  } catch (e) {
+    if (_abwPeriodStats) {
+      _renderAbwPeriodStats(_abwPeriodStats); // старые данные не исчезают при кратком error
+    } else {
+      box.innerHTML = '<div class="abw-period-error">Не удалось загрузить статистику <button type="button" id="abw-period-retry" class="abw-period-retry">Повторить</button></div>';
+      document.getElementById('abw-period-retry')?.addEventListener('click', _loadAbwPeriodStats);
+    }
+  } finally {
+    _abwPeriodBusy = false;
+  }
+}
+
+function _renderAbwPeriodStats(s) {
+  const box = document.getElementById('abw-period-stats');
+  if (!box) return;
+  const hrs = (v) => (Number(v) || 0).toFixed(1).replace('.', ',');
+  const range = `${_abwFmtDmy(s.date_from)} — ${_abwFmtDmy(s.date_to)}`;
+  box.innerHTML = `
+    <div class="abw-period-range">${esc(range)}</div>
+    <div class="abw-period-grid">
+      <div class="abw-period-row"><span>Отработано дней</span><b>${s.days_worked ?? 0}</b></div>
+      <div class="abw-period-row"><span>Всего часов</span><b>${hrs(s.total_hours)} ч</b></div>
+      <div class="abw-period-row"><span>Среднее за рабочий день</span><b>${hrs(s.avg_per_day)} ч</b></div>
+      <div class="abw-period-row"><span>Больничных</span><b>${s.sick_days ?? 0} дн.</b></div>
+      <div class="abw-period-row"><span>Отпуск</span><b>${s.vacation_days ?? 0} дн.</b></div>
+    </div>
+    <button type="button" id="abw-period-csv" class="submit-btn abw-period-csv-btn">Скачать табель CSV</button>`;
+  document.getElementById('abw-period-csv')?.addEventListener('click', _downloadAbwPeriodCsv);
+}
+
+async function _downloadAbwPeriodCsv() {
+  const target = _abwStatsTarget();
+  if (!target) return;
+  const btn = document.getElementById('abw-period-csv');
+  const { date_from, date_to } = _abwPeriodRange();
+  if (date_from > date_to) return;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/checkin/stundenzettel?user_id=${encodeURIComponent(target)}&date_from=${date_from}&date_to=${date_to}`, { headers: { ..._authHeaders() } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const cd = res.headers.get('Content-Disposition') || '';
+    const utf8 = cd.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    a.download = (utf8 ? decodeURIComponent(utf8) : null) || cd.match(/filename="([^"]+)"/)?.[1] || 'Stundenzettel.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    hapticImpact('light');
+  } catch (e) {
+    showToast('Ошибка экспорта: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function _initAbwPeriodPicker() {
+  const pills = document.getElementById('abw-period-pills');
+  if (!pills || pills.dataset.wired) return;
+  pills.dataset.wired = '1';
+  const today = todayBerlin();
+  const fromEl = document.getElementById('abw-period-from');
+  const toEl = document.getElementById('abw-period-to');
+  if (fromEl) fromEl.max = today;
+  if (toEl) { toEl.max = today; toEl.value = today; }
+  pills.addEventListener('click', (e) => {
+    const b = e.target.closest('.abw-period-pill');
+    if (!b) return;
+    _abwPeriod = b.dataset.period;
+    pills.querySelectorAll('.abw-period-pill').forEach(p => p.classList.toggle('active', p === b));
+    document.getElementById('abw-period-custom').style.display = (_abwPeriod === 'custom') ? 'flex' : 'none';
+    if (_abwPeriod !== 'custom') _loadAbwPeriodStats();
+  });
+  document.getElementById('abw-period-apply')?.addEventListener('click', () => {
+    _abwPeriodFrom = (fromEl?.value || '').trim();
+    _abwPeriodTo = (toEl?.value || '').trim();
+    _loadAbwPeriodStats();
+  });
+}
+
 async function initAbwesenheitView() {
   await _loadAbwAvailability();
   loadAbwesenheit();
   _initAbwProfileSelector();
+  _initAbwPeriodPicker();
+  _loadAbwPeriodStats(); // worker сразу видит свою статистику; owner — после выбора
   document.getElementById('abw-prev-month').addEventListener('click', async () => {
     _abwCurrentMonth = new Date(_abwCurrentMonth.getFullYear(), _abwCurrentMonth.getMonth() - 1, 1);
     await _loadAbwAvailability();

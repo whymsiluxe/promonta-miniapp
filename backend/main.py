@@ -13,7 +13,7 @@ import re
 import sys
 import time
 from datetime import datetime, timedelta
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 
 from fastapi import FastAPI, Header, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -6713,12 +6713,26 @@ def export_stundenzettel(user_id: str = '', year: int = 0, month: int = 0,
     writer.writerow(['', '', '', '', '', total_hours, 'ИТОГО'])
 
     csv_content = buf.getvalue()
-    filename = f'Stundenzettel_{target_id}_{period_label}.csv'
+    # Раунд 6 §2.4: имя файла с реальным именем работника (если заполнено), не Telegram ID.
+    _prof = _get_worker_profile(target_id)
+    _disp = _sanitize_display_name(_prof.get('name'), '')
+    if _disp and _disp != str(target_id):
+        _safe_name = re.sub(r'[^0-9A-Za-zА-Яа-яЁё]+', '_', _disp).strip('_') or str(target_id)
+    else:
+        _safe_name = str(target_id)
+    filename = f'Stundenzettel_{_safe_name}_{period_label}.csv'
+    # Content-Disposition должен быть latin-1-safe (Starlette кодирует заголовки в latin-1),
+    # поэтому кириллическое имя отдаём через RFC 5987 filename* (UTF-8, percent-encoded), а в
+    # ASCII-fallback filename — только латиница/цифры (кириллица → '_').
+    ascii_name = re.sub(r'[^0-9A-Za-z._-]+', '_', filename).strip('_') or 'Stundenzettel.csv'
+    if not ascii_name.endswith('.csv'):
+        ascii_name += '.csv'
+    encoded_name = quote(filename)
     from fastapi.responses import Response
     return Response(
         content='\ufeff' + csv_content,  # BOM — Excel корректно определяет UTF-8
         media_type='text/csv; charset=utf-8',
-        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        headers={'Content-Disposition': f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded_name}"}
     )
 
 
