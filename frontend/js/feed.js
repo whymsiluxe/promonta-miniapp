@@ -647,13 +647,14 @@ function _renderDiscussingSection() {
 // ---- Комментарии к новости (Раунд 5 §8): тот же lifecycle/визуал, что фото-комментарии ----
 let _ncCurrentPostId = null;
 let _ncOverlayUnregister = null;
+let _ncReplyTo = null; // Раунд 6 §5.1: "Ответить" в меню комментария (news поддерживает reply_to)
 
 function _renderNewsComment(c) {
   const canDelete = String(c.user_id) === String(_feedMyId) || currentRole === 'owner';
   const reply = c.reply_to_name ? `<div class="pc-comment-reply">↳ ${esc(c.reply_to_name)}</div>` : '';
   return `<div class="pc-comment" data-comment-id="${c.id || ''}">
     ${reply}
-    <div class="pc-comment-head"><b>${esc(c.name || c.user_id)}</b><span class="pc-comment-time">${_fmtPhotoCommentTime(c.ts ? c.ts * 1000 : c.at)}</span>${canDelete && c.id ? `<button class="pc-comment-del" data-del-comment="${c.id}" type="button">✕</button>` : ''}</div>
+    <div class="pc-comment-head"><b>${esc(c.name || c.user_id)}</b><span class="pc-comment-time">${_fmtPhotoCommentTime(c.ts ? c.ts * 1000 : c.at)}</span>${c.id ? `<button class="pc-comment-menu" data-menu-comment="${c.id}" type="button" aria-label="Действия">⋯</button>` : ''}</div>
     <div class="pc-comment-text">${esc(c.text)}</div>
   </div>`;
 }
@@ -666,8 +667,18 @@ async function _renderNewsCommentsList() {
   (data.comments || []).forEach(c => { if (c.reply_to && byId[c.reply_to]) c.reply_to_name = byId[c.reply_to].name; });
   list.innerHTML = (data.comments || []).map(_renderNewsComment).join('') ||
     '<div style="color:var(--text-light);font-size:0.95rem;padding:1rem 0">Пока нет комментариев. Будьте первым.</div>';
-  list.querySelectorAll('[data-del-comment]').forEach(btn => {
-    btn.addEventListener('click', () => _deleteNewsComment(btn.dataset.delComment));
+  list.querySelectorAll('[data-menu-comment]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = byId[btn.dataset.menuComment];
+      if (!c) return;
+      _openCommentActions({
+        sourceType: 'news', sourceId: _ncCurrentPostId, comment: c,
+        canDelete: String(c.user_id) === String(_feedMyId) || currentRole === 'owner',
+        onDelete: () => _deleteNewsComment(c.id),
+        onReply: () => { _ncReplyTo = c.id; document.getElementById('nc-comment-input')?.focus(); },
+        inputId: 'nc-comment-input',
+      });
+    });
   });
 }
 
@@ -684,6 +695,8 @@ async function _deleteNewsComment(commentId) {
 
 async function openNewsComments(postId) {
   _ncCurrentPostId = postId;
+  _ncReplyTo = null;
+  _markCommentActivityRead('news_comment', postId); // §5.2/§5.3: открытие обсуждения = прочитано
   const modal = document.getElementById('news-comments-modal');
   modal.style.display = 'flex';
   const post = _newsItems.find(n => n.id === postId);
@@ -720,8 +733,9 @@ async function _sendNewsComment() {
   if (!text || !_ncCurrentPostId || (btn && btn.disabled)) return;
   if (btn) btn.disabled = true;
   try {
-    await api(`/api/feed/news/${_ncCurrentPostId}/comments`, { method: 'POST', body: JSON.stringify({ text }) });
+    await api(`/api/feed/news/${_ncCurrentPostId}/comments`, { method: 'POST', body: JSON.stringify({ text, reply_to: _ncReplyTo || undefined }) });
     input.value = '';
+    _ncReplyTo = null;
     hapticImpact('light');
     await _renderNewsCommentsList();
     // обновить счётчик на карточке + «обсуждают» без перезагрузки всей ленты
@@ -881,9 +895,8 @@ async function _ensureFeedMyId() {
 }
 
 function renderPhotoComment(c) {
-  const canDelete = String(c.user_id) === String(_feedMyId) || currentRole === 'owner';
   return `<div class="pc-comment" data-comment-id="${c.id || ''}">
-    <div class="pc-comment-head"><b>${esc(c.name || c.user_id)}</b><span class="pc-comment-time">${_fmtPhotoCommentTime(c.at)}</span>${canDelete && c.id ? `<button class="pc-comment-del" data-del-comment="${c.id}" type="button">✕</button>` : ''}</div>
+    <div class="pc-comment-head"><b>${esc(c.name || c.user_id)}</b><span class="pc-comment-time">${_fmtPhotoCommentTime(c.at)}</span>${c.id ? `<button class="pc-comment-menu" data-menu-comment="${c.id}" type="button" aria-label="Действия">⋯</button>` : ''}</div>
     <div class="pc-comment-text">${esc(c.text)}</div>
   </div>`;
 }
@@ -903,10 +916,22 @@ async function _deletePhotoComment(commentId) {
 async function _renderPhotoCommentsList() {
   const list = document.getElementById('pc-list');
   const data = await api(`/api/feed/photos/${_pcCurrentPhotoId}/comments`);
+  const byId = {};
+  (data.comments || []).forEach(c => { byId[c.id] = c; });
   list.innerHTML = (data.comments || []).map(renderPhotoComment).join('') ||
     '<div style="color:var(--text-light);font-size:0.85rem">Комментариев нет</div>';
-  list.querySelectorAll('[data-del-comment]').forEach(btn => {
-    btn.addEventListener('click', () => _deletePhotoComment(btn.dataset.delComment));
+  list.querySelectorAll('[data-menu-comment]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = byId[btn.dataset.menuComment];
+      if (!c) return;
+      _openCommentActions({
+        sourceType: 'photo', sourceId: _pcCurrentPhotoId, comment: c,
+        canDelete: String(c.user_id) === String(_feedMyId) || currentRole === 'owner',
+        onDelete: () => _deletePhotoComment(c.id),
+        onReply: () => { document.getElementById('pc-comment-input')?.focus(); },
+        inputId: 'pc-comment-input',
+      });
+    });
   });
 }
 
@@ -947,6 +972,7 @@ async function openPhotoComments(photoId, fileCount) {
   // знает p.files.length); если вызвано без него (старый путь), считаем 1 фото.
   _pcCurrentPhotoId = photoId;
   _pcFileCount = fileCount || 1;
+  _markCommentActivityRead('photo_comment', photoId); // §5.2/§5.3
   const modal = document.getElementById('photo-comments-modal');
   modal.style.display = 'flex';
   // 25.07: модалка теперь зарегистрирована в NavigationManager.overlayStack -- раньше
@@ -1044,3 +1070,112 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { passive: true });
   }
 });
+
+// ─────────────────── Раунд 6 §5.1: меню действий комментария + пересылка ───────────────────
+// Меню: Ответить / Копировать / Переслать / Удалить (Удалить — только автор/Owner).
+// Переслать открывает существующий список чатов (общий/личный/объект/дефект/потребность)
+// и шлёт серверную карточку через /api/comments/forward (текст строится на backend).
+let _commentActionOverlayUnregister = null;
+
+function _closeCommentActionOverlay() {
+  document.querySelectorAll('.comment-action-sheet, .comment-action-backdrop').forEach(el => el.remove());
+  if (_commentActionOverlayUnregister) { const u = _commentActionOverlayUnregister; _commentActionOverlayUnregister = null; u(); }
+}
+
+function _openCommentActions({ sourceType, sourceId, comment, canDelete, onDelete, onReply, inputId }) {
+  _closeCommentActionOverlay();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'comment-action-backdrop';
+  const sheet = document.createElement('div');
+  sheet.className = 'comment-action-sheet';
+  sheet.innerHTML = `
+    <button type="button" class="comment-action-item" data-act="reply">Ответить</button>
+    <button type="button" class="comment-action-item" data-act="copy">Копировать</button>
+    <button type="button" class="comment-action-item" data-act="forward">Переслать</button>
+    ${canDelete ? '<button type="button" class="comment-action-item comment-action-danger" data-act="delete">Удалить</button>' : ''}
+    <button type="button" class="comment-action-item comment-action-cancel" data-act="cancel">Отмена</button>`;
+  document.body.appendChild(backdrop);
+  document.body.appendChild(sheet);
+
+  const close = () => _closeCommentActionOverlay();
+  if (typeof NavigationManager !== 'undefined') {
+    _commentActionOverlayUnregister = NavigationManager.registerOverlay(() => {
+      document.querySelectorAll('.comment-action-sheet, .comment-action-backdrop').forEach(el => el.remove());
+    });
+  }
+  backdrop.addEventListener('click', close);
+  sheet.querySelectorAll('.comment-action-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const act = btn.dataset.act;
+      close();
+      if (act === 'reply') { if (onReply) onReply(); }
+      else if (act === 'copy') {
+        try { navigator.clipboard.writeText(comment.text || ''); showToast('Скопировано в буфер', 'success'); } catch (e) {}
+      } else if (act === 'forward') {
+        _openCommentForwardPicker(sourceType, sourceId, comment.id);
+      } else if (act === 'delete') { if (onDelete) onDelete(); }
+    });
+  });
+}
+
+async function _openCommentForwardPicker(sourceType, sourceId, commentId) {
+  _closeCommentActionOverlay();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'comment-action-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'comment-action-sheet comment-forward-picker';
+  modal.innerHTML = '<div class="comment-forward-title">Переслать в…</div><div class="comment-forward-list">Загрузка…</div>';
+  document.body.appendChild(backdrop);
+  document.body.appendChild(modal);
+
+  let unregister = null;
+  const close = () => {
+    backdrop.remove(); modal.remove();
+    if (unregister) { unregister(); unregister = null; }
+  };
+  if (typeof NavigationManager !== 'undefined') unregister = NavigationManager.registerOverlay(close);
+  backdrop.addEventListener('click', close);
+
+  const destinations = [{ id: null, thread_key: null, title: 'Общий чат' }];
+  try {
+    const threads = await api('/api/chat/threads');
+    (threads.threads || []).forEach(t => {
+      if (t.type === 'GENERAL') return;
+      if (t.type === 'DIRECT') destinations.push({ id: t.id, thread_key: null, title: t.title });
+      else destinations.push({ id: null, thread_key: t.id, title: t.title });
+    });
+  } catch (e) {
+    showToast('Не удалось загрузить список чатов: ' + e.message, 'error');
+  }
+
+  const listEl = modal.querySelector('.comment-forward-list');
+  listEl.innerHTML = destinations.map((d, i) => `<button type="button" class="comment-forward-dest" data-idx="${i}">${esc(d.title)}</button>`).join('');
+  listEl.querySelectorAll('.comment-forward-dest').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const dest = destinations[Number(btn.dataset.idx)];
+      close();
+      try {
+        await api('/api/comments/forward', {
+          method: 'POST',
+          body: JSON.stringify({
+            source_type: sourceType, source_id: sourceId, comment_id: commentId,
+            to_user_id: dest.id, thread_key: dest.thread_key,
+          }),
+        });
+        showToast('Комментарий переслан', 'success');
+        hapticImpact('light');
+      } catch (e) {
+        showToast('Ошибка пересылки: ' + e.message, 'error');
+      }
+    });
+  });
+}
+
+// §5.2/§5.3: после реального открытия обсуждения помечаем activity-алерты прочитанными.
+async function _markCommentActivityRead(kind, refId) {
+  if (!refId) return;
+  try {
+    await api('/api/activity-alerts/read', { method: 'POST', body: JSON.stringify({ kind, ref_id: String(refId) }) });
+    if (typeof _loadHomeAlerts === 'function') _loadHomeAlerts();
+  } catch (e) { /* не критично */ }
+}

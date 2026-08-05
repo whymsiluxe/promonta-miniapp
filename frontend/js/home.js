@@ -577,12 +577,16 @@ function _renderAlerts(alerts) {
   list.innerHTML = alerts.map(a => {
     const color = a.type === 'red' ? 'var(--red)' : a.type === 'yellow' ? 'var(--warning)' : 'var(--accent)';
     const timeStr = a.at ? new Date(a.at).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
-    const clickable = a.id && a.id.startsWith('abw-pending-');
+    const isActivity = !!a.activity_kind;
+    const clickable = (a.id && a.id.startsWith('abw-pending-')) || isActivity;
+    const dataAttrs = isActivity
+      ? `data-activity-kind="${esc(a.activity_kind)}" data-activity-ref="${esc(a.activity_ref_id)}"`
+      : (a.id && a.id.startsWith('abw-pending-') ? `data-abw-id="${esc(a.id.replace('abw-pending-', ''))}"` : '');
     return `
-      <div class="alert-item${clickable ? ' alert-item-clickable' : ''}" ${clickable ? `data-abw-id="${esc(a.id.replace('abw-pending-', ''))}"` : ''}>
+      <div class="alert-item${clickable ? ' alert-item-clickable' : ''}" ${dataAttrs}>
         <div class="alert-item-border" style="background:${color}"></div>
         <div class="alert-item-icon" style="background:${color}22;color:${color}">
-          ${a.type === 'red' ? '🔴' : a.type === 'yellow' ? '🟡' : '🟢'}
+          ${a.type === 'red' ? '🔴' : a.type === 'yellow' ? '🟡' : isActivity ? '💬' : '🟢'}
         </div>
         <div class="alert-item-body">
           <div class="alert-item-title">${esc(a.title)}</div>
@@ -593,7 +597,24 @@ function _renderAlerts(alerts) {
       </div>`;
   }).join('');
 
-  list.querySelectorAll('.alert-item-clickable').forEach(el => {
+  // Раунд 6 §5.2: клик по activity-алерту ведёт в конкретное обсуждение (не просто вкладку).
+  list.querySelectorAll('.alert-item[data-activity-kind]').forEach(el => {
+    el.addEventListener('click', () => {
+      const kind = el.dataset.activityKind;
+      const ref = el.dataset.activityRef;
+      _closeAlertsView();
+      switchView('home', { isTabSwitch: true });
+      if (kind === 'news_comment') {
+        if (typeof _selectFeedTab === 'function') _selectFeedTab('news');
+        if (typeof openNewsComments === 'function') openNewsComments(ref);
+      } else if (kind === 'photo_comment') {
+        if (typeof _selectFeedTab === 'function') _selectFeedTab('photos');
+        if (typeof openPhotoComments === 'function') openPhotoComments(ref);
+      }
+    });
+  });
+
+  list.querySelectorAll('.alert-item-clickable[data-abw-id]').forEach(el => {
     el.addEventListener('click', () => {
       const abwId = el.dataset.abwId;
       _closeAlertsView();

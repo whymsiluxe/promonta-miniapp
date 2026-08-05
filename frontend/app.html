@@ -1846,6 +1846,18 @@ header h1 {
 .photo-comments-modal .pc-comment-del { margin-left: auto; background: none; border: none; color: var(--text-light); font-size: 0.9rem; cursor: pointer; min-width: 44px; min-height: 44px; }
 .photo-comments-modal .pc-comment-text { color: var(--text-main); font-size: 16px; line-height: 1.4; }
 .photo-comments-modal .pc-comment-reply { font-size: 13px; color: var(--text-light); border-left: 2px solid var(--border-color); padding-left: 0.5rem; margin-bottom: 0.2rem; }
+/* Раунд 6 §5.1: кнопка меню действий комментария (Ответить/Копировать/Переслать/Удалить) */
+.pc-comment-menu { margin-left: auto; background: none; border: none; color: var(--text-light); font-size: 1.1rem; line-height: 1; cursor: pointer; min-width: 44px; min-height: 44px; }
+.comment-action-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 4000; }
+.comment-action-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 4001; background: var(--bg-card); border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -4px 24px rgba(0,0,0,0.18); max-width: 640px; margin: 0 auto; }
+.comment-action-item { display: block; width: 100%; text-align: center; padding: 0.9rem; font-size: 1rem; background: none; border: none; border-bottom: 1px solid var(--border-color); color: var(--text-main); cursor: pointer; }
+.comment-action-item:last-child { border-bottom: none; }
+.comment-action-danger { color: var(--red); }
+.comment-action-cancel { color: var(--text-light); font-weight: 600; }
+.comment-forward-picker { max-height: 70vh; overflow-y: auto; }
+.comment-forward-title { font-size: 1rem; font-weight: 700; text-align: center; padding: 0.9rem 0 0.5rem; color: var(--text-main); }
+.comment-forward-list { display: flex; flex-direction: column; }
+.comment-forward-dest { text-align: left; padding: 0.85rem 0.5rem; font-size: 0.95rem; background: none; border: none; border-bottom: 1px solid var(--border-color); color: var(--text-main); cursor: pointer; }
 /* Раунд 5 §8: заголовок обсуждаемой новости над списком комментариев */
 .nc-title { flex-shrink: 0; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color); font-weight: 700; font-size: var(--font-card-title, 18px); color: var(--text-main); }
 /* «Сейчас обсуждают» + badge «Обсуждают» на карточке новости */

@@ -2738,6 +2738,28 @@ def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_r
             'critical_alert_id': ca['id'],
         })
 
+    # Раунд 6 §5.2: in-app activity alerts о новых комментариях (агрегируем по публикации).
+    try:
+        acts = [a for a in _load_activity_alerts()
+                if a.get('target_user_id') == str(user['id']) and not a.get('read_at')]
+        agg = {}
+        for a in acts:
+            agg.setdefault((a['kind'], a['ref_id']), []).append(a)
+        for (kind, ref_id), group in agg.items():
+            n = len(group)
+            latest = max(group, key=lambda x: x.get('created_at', 0))
+            noun = 'новости' if kind == 'news_comment' else 'фото'
+            title = (f"{n} новых комментария к {noun}" if n > 1 else latest.get('title', ''))
+            alerts.append({
+                'id': f'activity-{kind}-{ref_id}', 'type': 'info', 'role_filter': role,
+                'title': title, 'subtitle': latest.get('subtitle', ''),
+                'at': latest.get('created_at'),
+                'activity_kind': kind, 'activity_ref_id': ref_id,
+                'activity_deep_link': ('news' if kind == 'news_comment' else 'photos'),
+            })
+    except Exception:
+        pass
+
     filtered = [a for a in alerts if a['role_filter'] == role]
 
     # 25.07: "прочитано" для derived-алертов (бюджет/инструмент/назначение) -- раньше
@@ -3573,15 +3595,27 @@ def add_news_comment(post_id: str, body: NewsCommentBody, user: dict = Depends(g
         raise HTTPException(400, "Комментарий не может быть пустым")
     comments = _load_news_comments()
     plist = comments.setdefault(post_id, [])
+    prior_ids = {c.get('user_id') for c in plist}  # комментаторы ДО нового — до append
+    actor_name = _sanitize_display_name(user.get('first_name'), str(user['id']))
+    new_id = uuid.uuid4().hex
     plist.append({
-        'id': uuid.uuid4().hex,
+        'id': new_id,
         'user_id': str(user['id']),
-        'name': _sanitize_display_name(user.get('first_name'), str(user['id'])),
+        'name': actor_name,
         'text': text,
         'reply_to': (body.reply_to or None),
         'ts': int(time.time()),
     })
     _save_news_comments(comments)
+    # Раунд 6 §5.2: activity alerts релевантным (owner + прежние комментаторы); новости из
+    # пайплайна не имеют user_id-автора → author_id=None.
+    try:
+        _emit_comment_activity_alerts(
+            'news_comment', post_id, new_id, str(user['id']), actor_name,
+            f"{actor_name} прокомментировал новость", _news_post_title(post_id),
+            _comment_alert_recipients(user['id'], prior_ids))
+    except Exception:
+        pass
     return {"comments": plist}
 
 
@@ -3824,14 +3858,29 @@ def add_feed_photo_comment(photo_id: str, body: PhotoCommentBody, user: dict = D
         entry = next((p for p in items if p['id'] == photo_id), None)
         if not entry:
             raise HTTPException(404, "Фото не найдено")
+        prior_ids = {c.get('user_id') for c in entry.get('comments', [])}
+        photo_author = entry.get('user_id')
+        photo_object_id = entry.get('object_id', '')
+        actor_name = _sanitize_display_name(user.get('first_name'), str(user['id']))
+        new_id = uuid.uuid4().hex
         entry.setdefault('comments', []).append({
-            'id': uuid.uuid4().hex,
+            'id': new_id,
             'user_id': str(user['id']),
-            'name': user.get('first_name', str(user['id'])),
+            'name': actor_name,
             'text': text,
             'at': datetime.utcnow().isoformat(),
         })
         _save_photo_meta(items)
+    # Раунд 6 §5.2: activity alerts (owner + прежние комментаторы + автор фото).
+    try:
+        obj_name = _resolve_object_name(photo_object_id)
+        subtitle = f"Объект: {obj_name}" if obj_name else ''
+        _emit_comment_activity_alerts(
+            'photo_comment', photo_id, new_id, str(user['id']), actor_name,
+            f"{actor_name} прокомментировал фото", subtitle,
+            _comment_alert_recipients(user['id'], prior_ids, author_id=photo_author))
+    except Exception:
+        pass
     return {"comments": entry['comments']}
 
 
@@ -3861,6 +3910,163 @@ def delete_feed_photo_comment(photo_id: str, comment_id: str, user: dict = Depen
         entry['comments'] = [c for c in comments if c.get('id') != comment_id]
         _save_photo_meta(items)
     return {"comments": entry['comments']}
+
+
+# ---------- Раунд 6 §5: пересылка комментариев + in-app activity alerts ----------
+# Base comment lifecycle (add/get/delete news+photo) уже есть из Раунда 5 — здесь только
+# недостающее: серверная карточка-пересылка в чат и лёгкие in-app алерты о новых
+# комментариях (НЕ critical_alerts — без telegram-пуша/ack, отдельный activity_alerts.json).
+ACTIVITY_ALERTS_FILE = os.path.join(DATA_ROOT, 'activity_alerts.json')
+
+
+def _load_activity_alerts() -> list:
+    return _safe_load_json(ACTIVITY_ALERTS_FILE, [])
+
+
+def _save_activity_alerts(items: list):
+    _atomic_write_json(ACTIVITY_ALERTS_FILE, items)
+
+
+def _news_post_title(post_id: str) -> str:
+    try:
+        if os.path.exists(NEWS_FEED_FILE):
+            with open(NEWS_FEED_FILE, encoding='utf-8') as f:
+                for p in json.load(f):
+                    if p.get('id') == post_id:
+                        return p.get('title', '') or ''
+    except Exception:
+        pass
+    return ''
+
+
+def _resolve_object_name(object_id: str) -> str:
+    if not object_id:
+        return ''
+    try:
+        rows = _cached_get_used_range('Объекты')
+        if rows:
+            hdr = rows[0]
+            for r in rows[1:]:
+                row = dict(zip(hdr, r))
+                if str(row.get('ID объекта', '')) == str(object_id):
+                    return row.get('Объект', '') or str(object_id)
+    except Exception:
+        pass
+    return str(object_id)
+
+
+def _comment_alert_recipients(actor_id, prior_user_ids, author_id=None) -> set:
+    """§5.2: релевантные получатели — Owner('ы) + кто уже комментировал + автор публикации
+    (если есть user_id). НЕ все Worker. Автор нового комментария исключён."""
+    recips = {str(uid) for uid, r in _load_roles().items() if r == 'owner'}
+    recips |= {str(u) for u in prior_user_ids if u}
+    if author_id:
+        recips.add(str(author_id))
+    recips.discard(str(actor_id))
+    return recips
+
+
+def _emit_comment_activity_alerts(kind, ref_id, comment_id, actor_id, actor_name,
+                                   title, subtitle, recipients):
+    """§5.2 идемпотентность: один comment_id не создаёт повторный alert одному получателю
+    (повторный GET/добавление не плодит алерты)."""
+    if not recipients:
+        return
+    items = _load_activity_alerts()
+    existing = {(a.get('target_user_id'), a.get('comment_id')) for a in items}
+    now = int(time.time())
+    changed = False
+    for uid in recipients:
+        if (str(uid), comment_id) in existing:
+            continue
+        items.append({
+            'id': uuid.uuid4().hex, 'target_user_id': str(uid), 'kind': kind,
+            'ref_id': str(ref_id), 'comment_id': comment_id, 'actor_id': str(actor_id),
+            'actor_name': actor_name, 'title': title, 'subtitle': subtitle,
+            'created_at': now, 'read_at': None,
+        })
+        changed = True
+    if changed:
+        _save_activity_alerts(items)
+
+
+class ActivityReadBody(BaseModel):
+    kind: str
+    ref_id: str
+
+
+@app.post("/api/activity-alerts/read")
+def mark_activity_alerts_read(body: ActivityReadBody, user: dict = Depends(get_current_user)):
+    """§5.2/§5.3: после реального открытия конкретного обсуждения — пометить прочитанным."""
+    items = _load_activity_alerts()
+    now = int(time.time())
+    changed = False
+    for a in items:
+        if (a.get('target_user_id') == str(user['id']) and a.get('kind') == body.kind
+                and a.get('ref_id') == str(body.ref_id) and not a.get('read_at')):
+            a['read_at'] = now
+            changed = True
+    if changed:
+        _save_activity_alerts(items)
+    return {"status": "ok"}
+
+
+class CommentForwardBody(BaseModel):
+    source_type: str  # 'news' | 'photo'
+    source_id: str
+    comment_id: str
+    to_user_id: str | None = None
+    thread_key: str | None = None
+
+
+@app.post("/api/comments/forward")
+def forward_comment(body: CommentForwardBody, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """§5.1: пересылка комментария в существующий чат (общий/личный/объект/дефект/потребность).
+    Карточка строится СЕРВЕРНО из сохранённого комментария и заголовка новости/фото —
+    тексту карточки от frontend не доверяем; существование источника валидируется."""
+    if body.source_type == 'news':
+        plist = _load_news_comments().get(body.source_id, [])
+        comment = next((c for c in plist if c.get('id') == body.comment_id), None)
+        if not comment:
+            raise HTTPException(404, "Комментарий не найден")
+        title = _news_post_title(body.source_id) or 'Новость'
+        card = f"💬 Комментарий к новости\n«{title}»\n{comment.get('name', '')}:\n{comment.get('text', '')}"
+    elif body.source_type == 'photo':
+        with _photo_lock:
+            items = _load_photo_meta()
+        entry = next((p for p in items if p['id'] == body.source_id), None)
+        if not entry:
+            raise HTTPException(404, "Фото не найдено")
+        comment = next((c for c in entry.get('comments', []) if c.get('id') == body.comment_id), None)
+        if not comment:
+            raise HTTPException(404, "Комментарий не найден")
+        obj_name = _resolve_object_name(entry.get('object_id', '')) or 'без объекта'
+        card = f"💬 Комментарий к фотографии\nОбъект: {obj_name}\n{comment.get('name', '')}:\n{comment.get('text', '')}"
+    else:
+        raise HTTPException(400, "Неизвестный тип источника")
+
+    # Проверка доступа к цели — тот же гейт, что и обычная отправка сообщения.
+    if body.thread_key:
+        _check_thread_access(body.thread_key, str(user['id']), role)
+    else:
+        _reject_self_chat(user['id'], body.to_user_id)
+        thread_id = _chat_thread_id(user['id'], body.to_user_id)
+        thread_meta = _load_chat_thread_meta()
+        if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
+            raise HTTPException(403, "Чат закрыт руководством")
+
+    msg = {
+        "id": uuid.uuid4().hex, "ts": int(time.time()), "user_id": user['id'],
+        "name": user.get('first_name', str(user['id'])), "text": card,
+        "to_user_id": body.to_user_id, "thread_key": body.thread_key,
+        "forwarded_comment": {"source_type": body.source_type, "source_id": body.source_id,
+                              "comment_id": body.comment_id},
+    }
+    with _chat_lock:
+        messages = _load_chat()
+        messages.append(msg)
+        _save_chat(messages)
+    return {"message": msg, "status": "ok"}
 
 
 @app.get("/api/feed/photos/{photo_id}/file")
