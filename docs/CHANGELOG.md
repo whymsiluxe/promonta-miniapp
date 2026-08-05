@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-08-05 (Раунд 6: Финальный completion-раунд) — DONE
+
+Frontend/backend, **без deploy** (по инструкции очереди раундов). Начальный SHA `5ed2856`,
+итоговый `84996f6`. 4 коммита в miniapp + правка `news_pipeline.py` (вне git). Тесты: 434 passed, 1 skipped, CI green.
+
+### §1 Новости — расширение генерации (news_pipeline.py, вне репозитория)
+- Prompt summary заменён на «2–4 абзаца, 4–8 предложений, 500–900 символов, разделять пустой
+  строкой, не выдумывать, сохранять числа/имена/даты». Backup `news_pipeline.py.bak-round6-20260805-022025`.
+  sha256 до `b41d3c7c…`, после `e44c0340…`. Dry-run OK (frontend-отображение абзацев из Раунда 4/5).
+
+### Commit A — `feat: require worker profile completion` (`156460b`) [§3/§4/§6]
+- backend: `_validate_birthday` (YYYY-MM-DD, не в будущем, Europe/Berlin), `_is_meaningful_name`
+  (строже — отсекает ID/цифры/заглушки), `_profile_completion_status`; `/api/profile/me` отдаёт
+  `role` + `needs_completion`; birthday обязательна для Worker при `onboarding_completed`;
+  birthday отдаётся owner-gated в profile stats. Убран старый запрет-комментарий birthday.
+- frontend: поле даты рождения в onboarding (Worker обязательно, Owner нет); `checkProfileCompletion`
+  + объединённый completion-overlay (имя+дата, без «Пропустить») в `app.html` bootstrap;
+  worker-self редактирует свою дату в профиле; Worker Card показывает дату (owner-gated).
+  display-name resolver из Раунда 5 (`resolveDisplayName`) переиспользован.
+
+### Commit B — `feat: finish worker calendar period reports` (`389ea7e`) [§2]
+- frontend (`abwesenheit.js`, `app.html`): период-пиллы Неделя|Месяц|3 месяца|Свой период
+  (default Месяц, Europe/Berlin через `todayBerlin`, без UTC), custom range с валидацией
+  `date_from<=date_to`/`max=сегодня`; блок статистики (дней/часов/среднее/больничных/отпуск)
+  над календарём через `/api/workers/{id}/calendar-stats`; loading/error+«Повторить», старые
+  данные не исчезают при ошибке, двойной tap не дублирует; Owner видит выбранного, Worker — себя.
+  CSV за период; легенда календаря увеличена до ≥14px.
+- backend: имя CSV-файла с реальным именем работника (RFC 5987 `filename*` для кириллицы +
+  ASCII fallback), не Telegram ID.
+- NOTE §2.3: посуточный split больничный/отпуск и часы-в-ячейке отложены (требуют расширения
+  `/api/workers/{id}/calendar`, вне цели «доделать period-picker»).
+
+### Commit C — `feat: add comment forwarding and activity alerts` (`112cecd`) [§5]
+- backend: `POST /api/comments/forward` — серверная карточка (новость/фото) в существующий чат,
+  текст строится на backend, валидируется существование комментария, тот же access-гейт;
+  `activity_alerts.json` + `POST /api/activity-alerts/read`; хуки в `add_news_comment`/
+  `add_feed_photo_comment` создают алерты (owner + прежние комментаторы + автор фото),
+  автор своего коммента исключён, идемпотентность по `comment_id`; `get_alerts` агрегирует
+  непрочитанные с deep-link полями.
+- frontend: меню действий комментария (Ответить/Копировать/Переслать/Удалить), forward
+  recipient picker (`/api/chat/threads`), reply_to для новостей, mark-read при открытии;
+  клик по activity-алерту → Главная → вкладка Новости/Фото → конкретное обсуждение.
+
+### Commit D — `test: cover final completion workflows` (`84996f6`) [§8]
+- `tests/test_round6_completion.py` (28 тестов): profile-completion helpers, приватность
+  birthday, CSV filename*, forward + activity alerts (релевантность/self-alert/идемпотентность/
+  deep-link/read/права удаления). Обновлены 2 регресс-теста в `test_assignment_lifecycle.py`
+  (birthday теперь обязательна для Worker-онбординга).
+
 ## 2026-08-04 (Раунд 5: Полный UI/UX stabilization) — DONE
 
 Frontend-first, **без deploy** (по инструкции очереди раундов). Начальный SHA `58bda01`,
