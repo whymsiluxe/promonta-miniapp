@@ -127,6 +127,11 @@ DAILY_PLAN_STORE_FILE = os.path.join(DATA_ROOT, 'daily_plan_store.json')
 PLAN_SYNC_STATE_FILE = os.path.join(DATA_ROOT, 'plan_sync_state.json')
 WORK_CALENDAR_FILE = os.path.join(DATA_ROOT, 'work_calendar.json')
 dpl.configure(DAILY_PLAN_STORE_FILE, PLAN_SYNC_STATE_FILE, WORK_CALENDAR_FILE)
+
+# Contract ingestion state (Round 5 — Drive scope gated)
+CONTRACT_INGEST_STATE_FILE = os.path.join(DATA_ROOT, 'contract_ingest_state.json')
+_CONTRACT_INGEST_LOCK = __import__('threading').Lock()
+CONTRACTS_DRIVE_FOLDER_ID = os.environ.get('CONTRACTS_DRIVE_FOLDER_ID', '')
 INIT_DATA_MAX_AGE = 3600  # секунд — Telegram initData считается протухшим через час
 
 # 31.07 (Release-аудит П4): для этих сторов corrupt JSON НЕ должен молча деградировать
@@ -8217,6 +8222,136 @@ def daily_plan_replan(
     }
 
 
+# ── Contract ingestion routes (Round 5 — Drive scope gated) ─────────────────
+
+_EMPTY_CONTRACT_STORE = {"contracts": {}}
+
+
+def _load_contract_store() -> dict:
+    if not os.path.exists(CONTRACT_INGEST_STATE_FILE):
+        return {"contracts": {}}
+    try:
+        with open(CONTRACT_INGEST_STATE_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return {"contracts": {}}
+
+
+def _save_contract_store(data: dict) -> None:
+    tmp = CONTRACT_INGEST_STATE_FILE + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, CONTRACT_INGEST_STATE_FILE)
+
+
+@app.get("/api/contracts")
+def list_contracts(_: None = Depends(require_owner)):
+    """Список договоров и их статус обработки.
+    DRIVE_SCOPE_REQUIRED: без CONTRACTS_DRIVE_FOLDER_ID ingestion не запускается."""
+    store = _load_contract_store()
+    contracts = list(store["contracts"].values())
+    contracts.sort(key=lambda c: c.get("ingested_at", 0), reverse=True)
+    return {
+        "drive_configured": bool(CONTRACTS_DRIVE_FOLDER_ID),
+        "drive_scope_status": "DRIVE_SCOPE_REQUIRED" if not CONTRACTS_DRIVE_FOLDER_ID else "configured",
+        "total": len(contracts),
+        "contracts": [
+            {
+                "id": c["id"],
+                "file_name": c.get("file_name", ""),
+                "status": c.get("status", "unknown"),
+                "ingested_at": c.get("ingested_at"),
+                "approved_at": c.get("approved_at"),
+                "rejected_at": c.get("rejected_at"),
+                "error": c.get("error"),
+                "has_draft_plan": bool(c.get("project_plan_draft")),
+            }
+            for c in contracts
+        ],
+    }
+
+
+@app.get("/api/contracts/{contract_id}")
+def get_contract(
+    contract_id: str,
+    _: None = Depends(require_owner),
+):
+    """Полный договор с извлечёнными фактами и черновиком плана."""
+    store = _load_contract_store()
+    contract = store["contracts"].get(contract_id)
+    if not contract:
+        raise HTTPException(404, "Договор не найден")
+    return contract
+
+
+class ContractReviewBody(BaseModel):
+    notes: str = ''
+
+
+@app.post("/api/contracts/{contract_id}/approve")
+def approve_contract(
+    contract_id: str,
+    body: ContractReviewBody = ContractReviewBody(),
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_owner),
+):
+    """Owner утверждает черновик плана из договора (УТВЕРДИТЬ).
+    После утверждения project_plan_draft становится publishable для работников."""
+    with _CONTRACT_INGEST_LOCK:
+        store = _load_contract_store()
+        contract = store["contracts"].get(contract_id)
+        if not contract:
+            raise HTTPException(404, "Договор не найден")
+        if contract.get("status") not in ("ingested", "needs_manual_review"):
+            raise HTTPException(400, f"Договор в статусе '{contract['status']}' не может быть утверждён")
+        if not contract.get("project_plan_draft"):
+            raise HTTPException(400, "Нет черновика плана для утверждения")
+        contract["status"] = "approved"
+        contract["approved_at"] = time.time()
+        contract["approved_by"] = str(user['id'])
+        contract["review_notes"] = body.notes.strip()[:1000]
+        _save_contract_store(store)
+    return {"status": "approved", "contract_id": contract_id}
+
+
+@app.post("/api/contracts/{contract_id}/reject")
+def reject_contract(
+    contract_id: str,
+    body: ContractReviewBody = ContractReviewBody(),
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_owner),
+):
+    """Owner отклоняет черновик плана (ОТКЛОНИТЬ)."""
+    with _CONTRACT_INGEST_LOCK:
+        store = _load_contract_store()
+        contract = store["contracts"].get(contract_id)
+        if not contract:
+            raise HTTPException(404, "Договор не найден")
+        if contract.get("status") == "approved":
+            raise HTTPException(400, "Утверждённый договор нельзя отклонить без отмены")
+        contract["status"] = "rejected"
+        contract["rejected_at"] = time.time()
+        contract["rejected_by"] = str(user['id'])
+        contract["review_notes"] = body.notes.strip()[:1000]
+        _save_contract_store(store)
+    return {"status": "rejected", "contract_id": contract_id}
+
+
+@app.post("/api/contracts/ingest")
+def trigger_contract_ingest(
+    _: None = Depends(require_owner),
+):
+    """Ручной триггер перепроверки Drive-папки.
+    DRIVE_SCOPE_REQUIRED: если CONTRACTS_DRIVE_FOLDER_ID не задан — 503."""
+    if not CONTRACTS_DRIVE_FOLDER_ID:
+        raise HTTPException(503, "DRIVE_SCOPE_REQUIRED: задайте CONTRACTS_DRIVE_FOLDER_ID в env")
+    return {
+        "status": "trigger_sent",
+        "message": "Синхронизация с Drive будет выполнена при следующем запуске plan_sync / contract_ingest.py",
+        "folder_id": CONTRACTS_DRIVE_FOLDER_ID,
+    }
+
+
 # 31.07 (Release-аудит П4): регистрация критичных сторов -- в самом конце модуля,
 # после того как все _FILE-константы (включая rl.ROADMAP_FILE/rl.STAGE_REQUESTS_FILE,
 # доступные только после _load_repo_roadmap_lib() выше) уже определены. Порча этих
@@ -8234,4 +8369,5 @@ CRITICAL_JSON_PATHS.update({
     rl.ROADMAP_FILE,
     rl.STAGE_REQUESTS_FILE,
     DAILY_PLAN_STORE_FILE,
+    CONTRACT_INGEST_STATE_FILE,
 })
