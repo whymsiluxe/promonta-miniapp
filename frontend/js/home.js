@@ -72,6 +72,10 @@ async function initHomeView() {
         <div class="quick-primary-icon-wrap qp-icon qp-icon-ai-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-spark-wide"></div></div>
         <div class="quick-primary-text"><div class="quick-primary-title">ИИ-ассистент</div></div>
       </div>
+      <div class="quick-primary-item" onclick="switchView('contracts')">
+        <div class="quick-primary-icon-wrap qp-icon qp-icon-docs-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-lines-wide"><span></span><span></span><span></span></div></div>
+        <div class="quick-primary-text"><div class="quick-primary-title">Договоры</div></div>
+      </div>
     </div>
 
     <div id="home-rings-section" class="home-rings-section">
