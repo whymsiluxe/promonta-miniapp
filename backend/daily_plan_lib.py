@@ -551,6 +551,72 @@ def record_productivity_observation(
     return obs
 
 
+def auto_record_execution_productivity(
+    session_id: str,
+    worker_id: str,
+    plan: dict,
+    item_results: list,
+    shift_hours: float,
+) -> list:
+    """Auto-creates productivity observations from execution results.
+
+    Called after apply_daily_execution when shift_hours > 0.
+    Only processes 'done' items with actual_quantity > 0 and work_type_id.
+    Hours distributed proportionally by time_estimate_hours (equal split if none).
+    """
+    if shift_hours <= 0:
+        return []
+
+    plan_items_by_id = {i["id"]: i for i in (plan.get("items") or [])}
+
+    eligible = []
+    for result in item_results:
+        if result.get("status") != "done":
+            continue
+        qty = result.get("actual_quantity")
+        if not qty or float(qty) <= 0:
+            continue
+        item = plan_items_by_id.get(result.get("item_id", ""), {})
+        work_type_id = item.get("work_type_id") or ""
+        if not work_type_id:
+            continue
+        eligible.append({
+            "item_id": result["item_id"],
+            "work_type_id": work_type_id,
+            "actual_quantity": float(qty),
+            "unit": item.get("unit", ""),
+            "time_estimate_hours": float(item.get("time_estimate_hours") or 0.0),
+        })
+
+    if not eligible:
+        return []
+
+    total_est = sum(e["time_estimate_hours"] for e in eligible)
+    recorded = []
+    for e in eligible:
+        if total_est > 0 and e["time_estimate_hours"] > 0:
+            person_hours = shift_hours * (e["time_estimate_hours"] / total_est)
+        else:
+            person_hours = shift_hours / len(eligible)
+        person_hours = round(person_hours, 4)
+        if person_hours <= 0:
+            continue
+        try:
+            obs = record_productivity_observation(
+                session_id=f"{session_id}:{e['item_id']}",
+                worker_id=worker_id,
+                work_type_id=e["work_type_id"],
+                date_str=plan.get("date", ""),
+                actual_quantity=e["actual_quantity"],
+                unit=e["unit"],
+                person_hours=person_hours,
+            )
+            recorded.append(obs)
+        except Exception:
+            pass
+    return recorded
+
+
 # ── Read helpers ─────────────────────────────────────────────────────────────
 
 def get_plan(plan_id: str) -> dict | None:

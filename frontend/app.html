@@ -3523,6 +3523,12 @@ body.view-locked {
 .wc-today-item-title { font-size: 0.88rem; font-weight: 600; color: var(--text-main); }
 .wc-today-item-meta { font-size: 0.75rem; color: var(--text-light); margin-top: 0.1rem; }
 .wc-today-carryover { background: rgba(255,180,0,0.08); border-radius: var(--radius-md); padding: 0.5rem 0.65rem; margin-bottom: 0.6rem; border-left: 3px solid var(--warning-text, orange); }
+/* Round 6: Productivity rates in Worker Card */
+.wc-prod-rate-row { display: flex; align-items: baseline; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border-color); }
+.wc-prod-rate-row:last-child { border-bottom: none; }
+.wc-prod-rate-type { flex: 1; font-size: 0.85rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wc-prod-rate-val { font-size: 0.95rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.wc-prod-rate-meta { font-size: 0.72rem; color: var(--text-light); white-space: nowrap; }
 /* Round 4: Контроль дня view */
 .kd-kpi-strip { display: flex; gap: 0.4rem; padding: 0 0.75rem 0.75rem; overflow-x: auto; }
 .kd-kpi-chip { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.5rem 0.7rem; min-width: 64px; cursor: pointer; }

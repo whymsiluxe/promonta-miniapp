@@ -6747,6 +6747,20 @@ async def checkin_finish(
                     object_id=object_id,
                     item_results=item_results,
                 )
+                # Auto-record productivity observations from execution
+                try:
+                    plan_obj = dpl.get_plan(plan_id)
+                    shift_hours = max(0.0, (session['finish_at'] - session.get('start_at', session['finish_at'])) / 3600.0)
+                    if plan_obj and shift_hours > 0:
+                        dpl.auto_record_execution_productivity(
+                            session_id=session_id,
+                            worker_id=str(session['user_id']),
+                            plan=plan_obj,
+                            item_results=item_results,
+                            shift_hours=shift_hours,
+                        )
+                except Exception as _pe:
+                    print(f'WARNING: auto_record_execution_productivity failed: {_pe}')
         except Exception as e:
             print(f'WARNING: apply_daily_execution failed: {e}')
 

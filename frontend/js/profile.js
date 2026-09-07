@@ -989,7 +989,7 @@ async function _loadWorkerCardIdentity() {
   }
 
   // If productivity tab already visible, fill ops immediately
-  if (_wcActiveTab === 'productivity') _fillProductivityTab(stats, card);
+  if (_wcActiveTab === 'productivity') _fillProductivityTab(stats, card); // async, fire-and-forget
 }
 
 async function _loadWorkerCardTab(tab) {
@@ -1002,13 +1002,13 @@ async function _loadWorkerCardTab(tab) {
     const stats = _workerCardEl._wcStats;
     const card = _workerCardEl._wcCard;
     if (stats) {
-      _fillProductivityTab(stats, card);
+      await _fillProductivityTab(stats, card);
     } else {
       // identity not yet loaded — wait for it then fill
-      const wait = setInterval(() => {
+      const wait = setInterval(async () => {
         if (_workerCardEl?._wcStats) {
           clearInterval(wait);
-          _fillProductivityTab(_workerCardEl._wcStats, _workerCardEl._wcCard);
+          await _fillProductivityTab(_workerCardEl._wcStats, _workerCardEl._wcCard);
         }
       }, 200);
     }
@@ -1088,34 +1088,73 @@ function _wcTodayTabHtml(data) {
     </div>`;
 }
 
-function _fillProductivityTab(stats, card) {
+async function _fillProductivityTab(stats, card) {
   const opsEl = document.getElementById('wc-ops');
   if (opsEl) opsEl.innerHTML = _workerCardOpsHtml(stats, card);
   const body = document.getElementById('wc-body');
-  if (body) {
-    body.innerHTML = _workerCardBodyHtml(stats, _workerCardUserId);
-    document.getElementById('wc-export-csv')?.addEventListener('click', async (ev) => {
-      const btn = ev.currentTarget;
-      btn.disabled = true;
-      try {
-        const { date_from, date_to } = _wcPeriodRange(_workerCardPeriod);
-        const res = await fetch(`${API_BASE}/api/checkin/stundenzettel?user_id=${encodeURIComponent(_workerCardUserId)}&date_from=${date_from}&date_to=${date_to}`, { headers: { ..._authHeaders() } });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'Stundenzettel.csv';
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-        hapticImpact('light');
-      } catch (e) {
-        showToast('Ошибка экспорта: ' + e.message, 'error');
-      } finally {
-        btn.disabled = false;
-      }
-    });
+  if (!body) return;
+
+  body.innerHTML = _workerCardBodyHtml(stats, _workerCardUserId);
+  document.getElementById('wc-export-csv')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    try {
+      const { date_from, date_to } = _wcPeriodRange(_workerCardPeriod);
+      const res = await fetch(`${API_BASE}/api/checkin/stundenzettel?user_id=${encodeURIComponent(_workerCardUserId)}&date_from=${date_from}&date_to=${date_to}`, { headers: { ..._authHeaders() } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'Stundenzettel.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      hapticImpact('light');
+    } catch (e) {
+      showToast('Ошибка экспорта: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Async: append effective rate card
+  const prodSlot = document.createElement('div');
+  prodSlot.id = 'wc-productivity-rates';
+  prodSlot.innerHTML = '<div class="card" style="margin-top:0.75rem"><div style="color:var(--text-light);font-size:0.85rem">Загрузка производительности…</div></div>';
+  body.appendChild(prodSlot);
+  try {
+    const data = await api(`/api/productivity/workers/${encodeURIComponent(_workerCardUserId)}`);
+    if (!document.getElementById('wc-productivity-rates')) return;
+    prodSlot.innerHTML = _wcProductivityRatesHtml(data);
+  } catch (e) {
+    if (document.getElementById('wc-productivity-rates'))
+      prodSlot.innerHTML = '';
   }
+}
+
+function _wcProductivityRatesHtml(data) {
+  const aggs = Object.values(data.aggregates || {});
+  if (!aggs.length) {
+    return `<div class="card" style="margin-top:0.75rem">
+      <div class="home-section-header" style="padding:0 0 0.5rem"><span class="home-section-title">Производительность</span></div>
+      <div style="font-size:0.85rem;color:var(--text-light)">Нет данных о производительности. Появятся после завершения смен с планом.</div>
+    </div>`;
+  }
+  const rows = aggs.map(a => {
+    const rate = a.effective_rate != null ? a.effective_rate.toFixed(2) : '—';
+    const unit = (data.observations || []).find(o => o.work_type_id === a.work_type_id)?.unit || '';
+    const samples = a.observation_count || 0;
+    const hours = a.total_person_hours != null ? a.total_person_hours.toFixed(1) : '—';
+    return `<div class="wc-prod-rate-row">
+      <div class="wc-prod-rate-type">${esc(a.work_type_id)}</div>
+      <div class="wc-prod-rate-val">${rate}${unit ? ' ' + esc(unit) : ''}/ч</div>
+      <div class="wc-prod-rate-meta">${samples} замер.&thinsp;·&thinsp;${hours} ч</div>
+    </div>`;
+  }).join('');
+  return `<div class="card" style="margin-top:0.75rem">
+    <div class="home-section-header" style="padding:0 0 0.5rem"><span class="home-section-title">Производительность</span></div>
+    ${rows}
+  </div>`;
 }
 
 async function _loadWcCalendarTab() {
