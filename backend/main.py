@@ -6621,6 +6621,7 @@ async def checkin_finish(
     next_day_needs: str = Form(''),
     pause_minutes: int = Form(0),
     voice_note_file_id: str = Form(''),
+    daily_plan_report: str = Form(''),
     files: list[UploadFile] = File(default=[]),
     user: dict = Depends(get_current_user),
     role: str = Depends(get_role),
@@ -6723,6 +6724,26 @@ async def checkin_finish(
             session['pause_started_at'] = None
         session['pause_minutes'] = max(0, int(pause_minutes or 0))
         _save_checkin_meta(items)
+
+    # Apply daily plan execution report (idempotent — safe to call even if repeated)
+    if daily_plan_report.strip():
+        try:
+            rpt = json.loads(daily_plan_report)
+            plan_id = rpt.get('plan_id', '') or session.get('daily_plan_id', '')
+            plan_ver = int(rpt.get('plan_version', 0) or session.get('daily_plan_version', 0) or 0)
+            item_results = rpt.get('item_results') or []
+            if plan_id and isinstance(item_results, list) and item_results:
+                dpl.apply_daily_execution(
+                    session_id=session_id,
+                    daily_plan_id=plan_id,
+                    plan_version=plan_ver,
+                    worker_id=str(session['user_id']),
+                    date_str=date_str,
+                    object_id=object_id,
+                    item_results=item_results,
+                )
+        except Exception as e:
+            print(f'WARNING: apply_daily_execution failed: {e}')
 
     _write_zeiterfassung_row(session, object_id, session['user_id'])
 

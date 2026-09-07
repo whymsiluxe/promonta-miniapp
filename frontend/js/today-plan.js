@@ -13,6 +13,8 @@ let _planScreenOpen = false;
 
 // Plan fields passed to checkin_start after acceptance (consumed once, then cleared)
 window._dailyPlanCheckinFields = null;
+// Exposed for finish-wizard.js to read plan items
+window._todayPlanState = null;
 
 const _TP_BLOCKER_REASONS = [
   { code: 'material_missing',    label: 'Нет материалов' },
@@ -30,7 +32,7 @@ async function checkAndShowTodayPlan() {
   if (currentRole !== 'worker') return;
   try {
     const data = await api('/api/daily-plan/today');
-    _todayPlanState = data;
+    _todayPlanState = data; window._todayPlanState = data;
     _updateTodayPlanBar(data);
     if (_shouldShowPlanScreen(data)) {
       await _openTodayPlanScreen(data, { mandatory: true });
@@ -112,7 +114,7 @@ function _startTodayPlanPolling() {
     try {
       const data = await api('/api/daily-plan/today');
       const prev = _todayPlanState;
-      _todayPlanState = data;
+      _todayPlanState = data; window._todayPlanState = data;
       _updateTodayPlanBar(data);
       // Show screen if a new plan just appeared or version bumped (and screen is not open)
       if (!_planScreenOpen && _shouldShowPlanScreen(data)) {
@@ -157,6 +159,7 @@ function _openTodayPlanScreen(data, { mandatory = true } = {}) {
           const result = await api(`/api/daily-plan/${plan.id}/accept`, { method: 'POST' });
           const newAcceptance = result.acceptance;
           _todayPlanState = { ..._todayPlanState, acceptance: newAcceptance };
+          window._todayPlanState = _todayPlanState;
           window._dailyPlanCheckinFields = {
             daily_plan_id: plan.id,
             daily_plan_version: String(plan.version),

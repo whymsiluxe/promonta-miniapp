@@ -81,7 +81,7 @@ class CheckinFinishRequirementsTests(unittest.TestCase):
             run(backend.checkin_finish(
                 session_id='nonexistent-session-id', lat='', lon='', done_summary='',
                 extra_work='', extra_works='', needs='', defects='', next_day_needs='',
-                pause_minutes=0, voice_note_file_id='', files=[],
+                pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[],
                 user={'id': 999999}, role='worker', idempotency_key='',
             ))
         self.assertEqual(ctx.exception.status_code, 400)
@@ -94,7 +94,7 @@ class CheckinFinishRequirementsTests(unittest.TestCase):
             run(backend.checkin_finish(
                 session_id='definitely-does-not-exist', lat='1.0', lon='1.0', done_summary='',
                 extra_work='', extra_works='', needs='', defects='', next_day_needs='',
-                pause_minutes=0, voice_note_file_id='', files=[],
+                pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[],
                 user={'id': 999999}, role='worker', idempotency_key='',
             ))
         self.assertEqual(ctx.exception.status_code, 404)

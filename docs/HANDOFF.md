@@ -7,10 +7,10 @@
 
 ## Status snapshot
 
-**Updated**: 2026-09-07, beginning of autonomous run
+**Updated**: 2026-09-07, mid-run (Rounds 2+3 complete, Round 4 next)
 **Start SHA**: `90fd59b8f62a28edb0124c6bb546ea566cadbc74`
-**Branch**: `main` (clean, 2 untracked docs files added at start)
-**Baseline tests**: 432 passed, 3 pre-existing failures (see below), 43 warnings
+**Branch**: `main`
+**Current tests**: 471 passed, 3 pre-existing failures (see below), 44 warnings
 
 ### 3 pre-existing test failures (do NOT fix in this run — unrelated)
 
@@ -113,10 +113,47 @@ plan_sync worker skeleton.
 
 ---
 
-## Rounds 2-7 — NOT STARTED
+## Round 2 — COMPLETE
 
-- **Round 2**: Worker "Сегодня" UX + acceptance screen + persistent bar + checkin link
-- **Round 3**: Finish wizard integration + fact-report + carryover + tomorrow-prep + Needs
+**Goal**: Worker "Сегодня" UX — acceptance screen, persistent bar, checkin link.
+
+**Tests**: 466 passed (was 461), same 3 pre-existing failures.
+**Commit**: `67e76df`
+
+### Steps completed
+- [x] `frontend/js/today-plan.js` — NEW (461 lines): `checkAndShowTodayPlan()`, blocker form, polling, bar, acceptance → sets `window._dailyPlanCheckinFields`
+- [x] `frontend/js/checkin.js` — reads `window._dailyPlanCheckinFields` on `start` action
+- [x] `frontend/app.html` — CSS for `.tp-*`, `#today-plan-screen`, `#today-plan-bar`; DOM elements; `<script>` tag; `initApp()` hook
+- [x] `backend/daily_plan_lib.py` — `record_blocker()`; `blockers` key in `_EMPTY_STORE`
+- [x] `backend/main.py` — `checkin_start` gets `daily_plan_id/version/acceptance_id` Form fields; `PlanBlockerBody` + `POST /api/daily-plan/{id}/blocker` route
+- [x] 5 new tests in `test_daily_plan.py` (blocker endpoint + lib)
+
+---
+
+## Round 3 — COMPLETE
+
+**Goal**: Finish wizard integration — plan-fact step, tomorrow-prep step, carryover, `daily_plan_report` backend field.
+
+**Tests**: 471 passed (was 466), same 3 pre-existing failures.
+
+### Steps completed
+- [x] `backend/main.py` — `checkin_finish` gets optional `daily_plan_report: str = Form('')`; calls `dpl.apply_daily_execution()` after session save (idempotent, best-effort)
+- [x] `frontend/js/today-plan.js` — exports `window._todayPlanState` (synced at all 3 assignment points)
+- [x] `frontend/js/finish-wizard.js` — REWRITTEN:
+  - Dynamic step sequence via `_fwStepSequence()`: 6 steps without plan, 8 steps with accepted plan
+  - New `plan-fact` step: numbered plan items, 4 status buttons (done/partial/not_done/blocked), qty + comment for non-done items
+  - New `tomorrow-prep` step: issue toggle buttons, comment, auto-creates Need entries from selected issues
+  - All navigation uses `_fwNavNext()` / `_fwNavBack()` (no hardcoded step numbers)
+  - `openFinishShiftWizard()` loads plan from `window._todayPlanState`
+  - `_fwSubmitFinish()` appends `daily_plan_report` JSON if item results exist; clears bar after finish
+- [x] `frontend/app.html` — CSS for `.fw-plan-item`, `.fw-status-btn`, `.fw-issue-btn`
+- [x] `tests/test_daily_plan.py` — 5 new `ApplyDailyExecutionTests`: execution record, plan marked completed, carryover for partial/not_done, idempotency
+- [x] `tests/test_object_access_and_checkin_photos.py` + `test_owner_kt_requirements.py` — updated direct calls to pass `daily_plan_report=''`
+
+---
+
+## Rounds 4-7 — NOT STARTED
+
 - **Round 4**: Owner matrix + Контроль дня + Worker Card 4-tab extension + risk/replan
 - **Round 5**: Google Drive contract ingestion + extraction + draft Project Plan
 - **Round 6**: Productivity observations + effective rates + Worker Card analytics

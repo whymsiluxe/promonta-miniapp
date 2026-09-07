@@ -485,5 +485,111 @@ class DailyPlanRouteTests(unittest.TestCase):
         self.assertIn(blocker['id'], store['blockers'])
 
 
+# ── Round 3: apply_daily_execution lib tests ─────────────────────────────────
+
+class ApplyDailyExecutionTests(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        import daily_plan_lib as dpl
+        self.dpl = dpl
+        store = os.path.join(self.tmp, 'daily_plan_store.json')
+        sync = os.path.join(self.tmp, 'plan_sync_state.json')
+        cal = os.path.join(self.tmp, 'work_calendar.json')
+        dpl.configure(store, sync, cal)
+
+    def _make_item(self, idx=1) -> dict:
+        return {
+            "id": f"item-{idx}", "sequence": idx, "title": f"Задача {idx}",
+            "objective": "", "planned_quantity": 20.0, "unit": "м²",
+            "time_estimate_hours": 2.0, "work_type_id": "filling_q1_q4",
+            "required_tools": [], "required_materials": [],
+        }
+
+    def _make_published_plan(self, date_str='2026-09-10', items=None):
+        items = items or [self._make_item(1), self._make_item(2)]
+        plan = self.dpl.create_plan(
+            object_id='OBJ-R3', stage_key='OBJ-R3-S1', date_str=date_str,
+            assigned_worker_ids=['42'], items=items, created_by='owner',
+        )
+        self.dpl.publish_plan(plan['id'], 'owner')
+        return plan
+
+    def test_apply_execution_creates_execution_record(self):
+        plan = self._make_published_plan()
+        item_results = [{'item_id': 'item-1', 'status': 'done', 'actual_quantity': 20.0, 'unit': 'м²', 'reason_code': '', 'comment': ''}]
+        execution = self.dpl.apply_daily_execution(
+            session_id='sess-r3-1', daily_plan_id=plan['id'],
+            plan_version=1, worker_id='42', date_str='2026-09-10',
+            object_id='OBJ-R3', item_results=item_results,
+        )
+        self.assertEqual(execution['session_id'], 'sess-r3-1')
+        self.assertEqual(execution['daily_plan_id'], plan['id'])
+        store = self.dpl._load_store()
+        self.assertIn('sess-r3-1', store['executions'])
+
+    def test_apply_execution_marks_plan_completed(self):
+        plan = self._make_published_plan()
+        item_results = [{'item_id': 'item-1', 'status': 'done', 'actual_quantity': 20.0, 'unit': 'м²', 'reason_code': '', 'comment': ''}]
+        self.dpl.apply_daily_execution(
+            session_id='sess-r3-2', daily_plan_id=plan['id'],
+            plan_version=1, worker_id='42', date_str='2026-09-10',
+            object_id='OBJ-R3', item_results=item_results,
+        )
+        store = self.dpl._load_store()
+        self.assertEqual(store['daily_plans'][plan['id']]['status'], 'completed')
+
+    def test_apply_execution_creates_carryover_for_partial(self):
+        plan = self._make_published_plan()
+        item_results = [
+            {'item_id': 'item-1', 'status': 'partial', 'actual_quantity': 8.0, 'unit': 'м²', 'reason_code': '', 'comment': 'Не успели'},
+            {'item_id': 'item-2', 'status': 'done', 'actual_quantity': 20.0, 'unit': 'м²', 'reason_code': '', 'comment': ''},
+        ]
+        self.dpl.apply_daily_execution(
+            session_id='sess-r3-3', daily_plan_id=plan['id'],
+            plan_version=1, worker_id='42', date_str='2026-09-10',
+            object_id='OBJ-R3', item_results=item_results,
+        )
+        store = self.dpl._load_store()
+        carryovers = list(store['carryovers'].values())
+        self.assertEqual(len(carryovers), 1)
+        co = carryovers[0]
+        self.assertEqual(co['item_id'], 'item-1')
+        self.assertAlmostEqual(co['remaining_quantity'], 12.0, places=3)
+        self.assertEqual(co['source_plan_id'], plan['id'])
+
+    def test_apply_execution_creates_carryover_for_not_done(self):
+        plan = self._make_published_plan(items=[self._make_item(1)])
+        item_results = [{'item_id': 'item-1', 'status': 'not_done', 'actual_quantity': None, 'unit': 'м²', 'reason_code': '', 'comment': ''}]
+        self.dpl.apply_daily_execution(
+            session_id='sess-r3-4', daily_plan_id=plan['id'],
+            plan_version=1, worker_id='42', date_str='2026-09-10',
+            object_id='OBJ-R3', item_results=item_results,
+        )
+        store = self.dpl._load_store()
+        carryovers = list(store['carryovers'].values())
+        self.assertEqual(len(carryovers), 1)
+        self.assertEqual(carryovers[0]['item_id'], 'item-1')
+        # when actual_quantity is None, remaining_quantity copies planned_quantity
+        self.assertAlmostEqual(carryovers[0]['remaining_quantity'], 20.0, places=3)
+
+    def test_apply_execution_idempotent(self):
+        plan = self._make_published_plan(items=[self._make_item(1)])
+        item_results = [{'item_id': 'item-1', 'status': 'done', 'actual_quantity': 20.0, 'unit': 'м²', 'reason_code': '', 'comment': ''}]
+        ex1 = self.dpl.apply_daily_execution(
+            session_id='sess-r3-idem', daily_plan_id=plan['id'],
+            plan_version=1, worker_id='42', date_str='2026-09-10',
+            object_id='OBJ-R3', item_results=item_results,
+        )
+        ex2 = self.dpl.apply_daily_execution(
+            session_id='sess-r3-idem', daily_plan_id=plan['id'],
+            plan_version=1, worker_id='42', date_str='2026-09-10',
+            object_id='OBJ-R3', item_results=item_results,
+        )
+        self.assertEqual(ex1['session_id'], ex2['session_id'])
+        store = self.dpl._load_store()
+        self.assertEqual(len(store['executions']), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

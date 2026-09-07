@@ -107,7 +107,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
             result = await backend.checkin_finish(
                 session_id='s1', lat='52.5', lon='13.4', done_summary='',
                 extra_work='', extra_works='', needs='', defects='', next_day_needs='',
-                pause_minutes=0, voice_note_file_id='', files=[fake_file, fake_file],
+                pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                 user=WORKER_A, role='worker', idempotency_key='',
             )
         self.assertEqual(session['finish_at'], None if not mock_save.called else session['finish_at'])
@@ -125,7 +125,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
                 await backend.checkin_finish(
                     session_id='s1', lat='52.5', lon='13.4', done_summary='',
                     extra_work='', extra_works='', needs='', defects='', next_day_needs='',
-                    pause_minutes=0, voice_note_file_id='', files=[fake_file, fake_file],
+                    pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                     user=WORKER_A, role='worker', idempotency_key='',
                 )
         self.assertEqual(ctx.exception.status_code, 400)
@@ -145,7 +145,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
                 await backend.checkin_finish(
                     session_id='s1', lat='52.5', lon='13.4', done_summary='',
                     extra_work='', extra_works='', needs='', defects='', next_day_needs='',
-                    pause_minutes=0, voice_note_file_id='', files=[fake_file, fake_file],
+                    pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                     user=WORKER_A, role='worker', idempotency_key='',
                 )
         self.assertEqual(ctx.exception.status_code, 400)
@@ -166,7 +166,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
                 await backend.checkin_finish(
                     session_id='s1', lat='52.5', lon='13.4', done_summary='',
                     extra_work='', extra_works='', needs='', defects='', next_day_needs='',
-                    pause_minutes=0, voice_note_file_id='', files=[fake_file, fake_file],
+                    pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                     user=WORKER_A, role='worker', idempotency_key='',
                 )
         mock_save.assert_not_called()
@@ -183,7 +183,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
                 await backend.checkin_finish(
                     session_id='s1', lat='52.5', lon='13.4', done_summary='',
                     extra_work='', extra_works='', needs='', defects='', next_day_needs='',
-                    pause_minutes=0, voice_note_file_id='', files=[fake_file, fake_file],
+                    pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                     user=WORKER_A, role='worker', idempotency_key='',
                 )
         # cleanup вызван ровно с путями ЭТОГО запроса, не с чем-то ещё
@@ -202,7 +202,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
                 await backend.checkin_finish(
                     session_id='s1', lat='52.5', lon='13.4', done_summary='',
                     extra_work='', extra_works='', needs='', defects='', next_day_needs='',
-                    pause_minutes=0, voice_note_file_id='', files=[fake_file, fake_file],
+                    pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                     user=WORKER_A, role='worker', idempotency_key='',
                 )
         mock_save.assert_not_called()

@@ -4409,6 +4409,17 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .fw-summary-section ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
 .fw-submit-status { text-align: center; margin-top: 0.85rem; font-size: 1rem; }
 .fw-submit-status.fw-submit-error { color: var(--red); }
+/* Round 3: plan-fact + tomorrow-prep step styles */
+.fw-plan-items { display: flex; flex-direction: column; gap: 0.75rem; }
+.fw-plan-item { background: var(--bg-card); border-radius: 10px; padding: 0.75rem 0.85rem; }
+.fw-plan-item-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.3rem; }
+.fw-plan-item-meta { font-size: 0.8rem; color: var(--text-light); margin-bottom: 0.4rem; }
+.fw-status-btns { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.fw-status-btn { border: 1.5px solid var(--border-color); background: var(--bg-card-raised); border-radius: 999px; padding: 0.3rem 0.7rem; font-size: 0.8rem; color: var(--text-main); min-height: 36px; cursor: pointer; }
+.fw-status-btn--active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.fw-issue-btns { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+.fw-issue-btn { border: 1.5px solid var(--border-color); background: var(--bg-card-raised); border-radius: 999px; padding: 0.4rem 0.9rem; font-size: 0.85rem; color: var(--text-main); min-height: 40px; cursor: pointer; }
+.fw-issue-btn--active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
 .checkin-sync-status { display: none; font-size: 0.95rem; color: var(--text-light); text-align: center; padding: 0.6rem; margin-top: 0.5rem; border-radius: var(--radius-md); background: var(--bg-card-raised); }
 .checkin-sync-status.checkin-sync-error { color: var(--warning); }
 .checkin-preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }

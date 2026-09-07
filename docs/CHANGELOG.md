@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-09-07 (Production Control — Round 3: Finish wizard plan integration)
+
+Tests: 471 passed, 3 pre-existing failures.
+
+### Backend
+- `checkin_finish`: new optional `daily_plan_report: str = Form('')` field; calls `dpl.apply_daily_execution()` after session save (idempotent, errors logged but don't fail the shift)
+
+### Frontend
+- `today-plan.js`: exports `window._todayPlanState` (synced at all assignment points); consumed by finish-wizard.js
+- `finish-wizard.js`: rewritten with dynamic step sequence (`_fwStepSequence()`):
+  - Without accepted plan: 6 steps unchanged
+  - With accepted plan: 8 steps — adds `plan-fact` (item result marking) and `tomorrow-prep` (readiness issues → auto-Need)
+  - All navigation uses relative helpers (`_fwNavNext`, `_fwNavBack`)
+  - `_fwSubmitFinish` sends `daily_plan_report` JSON; clears plan bar after success
+- `app.html`: CSS for `.fw-plan-item`, `.fw-status-btn`, `.fw-issue-btn`
+
+### Tests
+- 5 new `ApplyDailyExecutionTests` in `test_daily_plan.py`: execution record, plan marked completed, carryover for partial/not_done items, idempotency
+- Updated `test_object_access_and_checkin_photos.py` + `test_owner_kt_requirements.py` direct calls to pass `daily_plan_report=''`
+
+## 2026-09-07 (Production Control — Round 2: Worker Сегодня UX)
+
+Tests: 466 passed, 3 pre-existing failures.
+
+### Backend
+- `daily_plan_lib.py`: `record_blocker()` function; `blockers` key in store schema
+- `main.py`: `checkin_start` accepts `daily_plan_id/version/acceptance_id`; `POST /api/daily-plan/{id}/blocker` route
+
+### Frontend
+- `today-plan.js`: NEW — acceptance screen, persistent bar, blocker form, 60s polling, `window._dailyPlanCheckinFields`
+- `checkin.js`: reads `window._dailyPlanCheckinFields` on shift start
+- `app.html`: CSS + DOM for `#today-plan-screen`, `#today-plan-bar`; initApp() hook
+
+### Tests
+- 5 new blocker tests in `test_daily_plan.py`
+
 ## 2026-08-05 (Раунд 6: Финальный completion-раунд) — DONE
 
 Frontend/backend, **без deploy** (по инструкции очереди раундов). Начальный SHA `5ed2856`,
