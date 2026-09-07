@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timedelta
 from urllib.parse import parse_qsl, quote
 
-from fastapi import FastAPI, Header, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form
+from fastapi import FastAPI, Header, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 import base64
 import magic
@@ -7621,13 +7621,17 @@ def delete_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), ro
 
 @app.get("/api/daily-plan/today")
 def daily_plan_today(
+    worker_id_param: str = Query('', alias='worker_id'),
     user: dict = Depends(get_current_user),
     role: str = Depends(get_role),
 ):
     """Работник видит свой план на сегодня (или сообщение «нет плана»).
     Owner может смотреть план за любого worker: ?worker_id=<id>."""
     today = business_today_str()
-    worker_id = str(user['id'])
+    if role == 'owner' and worker_id_param:
+        worker_id = worker_id_param
+    else:
+        worker_id = str(user['id'])
 
     plan = dpl.get_today_plan_for_worker(worker_id, today)
     if not plan:
@@ -7799,6 +7803,8 @@ def daily_plan_owner_today(
             plan_status_label = _daily_plan_status_label(plan, acceptance, amendments)
             shift_status = _checkin_shift_status(wid, active_sessions, finished_sessions)
 
+            plan_blockers = dpl.get_blockers_for_plan(plan["id"])
+            risk_level = _compute_risk_level(carryovers, amendments, plan_blockers, execution)
             row = {
                 "plan_id": plan["id"],
                 "worker_id": wid,
@@ -7819,7 +7825,7 @@ def daily_plan_owner_today(
                 "pending_amendments_count": len(amendments),
                 "carryover_count": len(carryovers),
                 "execution_summary": _execution_summary(execution) if execution else None,
-                "risk_level": "green",  # Round 4 will compute real risk
+                "risk_level": risk_level,
             }
             rows.append(row)
 
@@ -8033,6 +8039,181 @@ def _execution_summary(execution: dict | None) -> dict | None:
         "not_done": not_done,
         "blocked": blocked,
         "total": len(results),
+    }
+
+
+def _compute_risk_level(
+    carryovers: list,
+    amendments: list,
+    blockers_for_plan: list,
+    execution: dict | None,
+) -> str:
+    """GREEN / YELLOW / ORANGE / RED per spec risk model.
+
+    RED is reserved for genuine contract-date risk (not implemented yet without
+    contract_finish_date in the store — returns ORANGE at most in Round 4).
+    """
+    has_blocker = bool(blockers_for_plan)
+    blocked_in_exec = execution and any(
+        r.get("status") == "blocked"
+        for r in execution.get("item_results", [])
+    )
+    if has_blocker or blocked_in_exec:
+        return "orange"
+    if amendments:
+        return "yellow"
+    if carryovers:
+        return "yellow"
+    return "green"
+
+
+# ── Owner matrix + replan routes (Round 4) ──────────────────────────────────
+
+@app.get("/api/daily-plan/owner/matrix")
+def daily_plan_owner_matrix(
+    date_from: str = '',
+    date_to: str = '',
+    object_id: str = '',
+    _: None = Depends(require_owner),
+):
+    """Мульти-объектная матрица плана/факта за диапазон дат.
+    date_from/date_to: YYYY-MM-DD. object_id: фильтр по объекту (необязательно)."""
+    today = business_today_str()
+    df = date_from or today
+    dt = date_to or today
+
+    store = dpl._load_store()
+    plans = list(store["daily_plans"].values())
+    if object_id:
+        plans = [p for p in plans if p["object_id"] == object_id]
+    plans = [p for p in plans if df <= p["date"] <= dt]
+    plans.sort(key=lambda p: (p["date"], p["object_id"]))
+
+    rows = []
+    for plan in plans:
+        plan_id = plan["id"]
+        acceptance_list = [
+            a for a in store["acceptances"].values()
+            if a["plan_id"] == plan_id
+        ]
+        executions = [
+            e for e in store["executions"].values()
+            if e.get("plan_id") == plan_id
+        ]
+        carryovers = [
+            c for c in store["carryovers"].values()
+            if c.get("source_plan_id") == plan_id
+        ]
+        amendments = [
+            a for a in store["amendments"].values()
+            if a["plan_id"] == plan_id and a.get("status") == "pending"
+        ]
+        rows.append({
+            "plan_id": plan_id,
+            "date": plan["date"],
+            "object_id": plan["object_id"],
+            "stage_key": plan["stage_key"],
+            "status": plan["status"],
+            "version": plan["version"],
+            "assigned_worker_count": len(plan.get("assigned_worker_ids", [])),
+            "accepted_count": len(acceptance_list),
+            "item_count": len(plan["items"]),
+            "execution_count": len(executions),
+            "carryover_count": len(carryovers),
+            "pending_amendment_count": len(amendments),
+        })
+
+    return {
+        "date_from": df,
+        "date_to": dt,
+        "object_id": object_id or None,
+        "rows": rows,
+        "total": len(rows),
+    }
+
+
+class ReplanRequestBody(BaseModel):
+    notes: str = ''
+
+
+@app.post("/api/daily-plan/replan/{object_id}")
+def daily_plan_replan(
+    object_id: str,
+    body: ReplanRequestBody = ReplanRequestBody(),
+    _: None = Depends(require_owner),
+):
+    """Лёгкая оценка рисков объекта + рекомендации по перепланированию.
+    Не изменяет данные — только читает и возвращает risk-summary."""
+    today = business_today_str()
+    store = dpl._load_store()
+
+    plans = [p for p in store["daily_plans"].values() if p["object_id"] == object_id]
+    plans.sort(key=lambda p: p["date"])
+
+    if not plans:
+        return {"object_id": object_id, "risk_level": "green", "issues": [], "recommendations": []}
+
+    issues = []
+    open_carryovers = [
+        c for c in store["carryovers"].values()
+        if c.get("object_id") == object_id and c.get("status") != "applied"
+    ]
+    if open_carryovers:
+        issues.append({
+            "type": "open_carryovers",
+            "count": len(open_carryovers),
+            "description": f"Есть незакрытые переносы ({len(open_carryovers)} ед.)",
+        })
+
+    plans_with_blockers = []
+    for plan in plans:
+        plan_blockers = [
+            b for b in store.get("blockers", {}).values()
+            if b.get("plan_id") == plan["id"]
+        ]
+        if plan_blockers:
+            plans_with_blockers.append({"plan_id": plan["id"], "date": plan["date"],
+                                         "blocker_count": len(plan_blockers)})
+    if plans_with_blockers:
+        issues.append({
+            "type": "blockers",
+            "count": len(plans_with_blockers),
+            "description": f"Зафиксированы препятствия на {len(plans_with_blockers)} дн.",
+            "detail": plans_with_blockers,
+        })
+
+    pending_amendments = [
+        a for a in store["amendments"].values()
+        if a.get("object_id") == object_id and a.get("status") == "pending"
+    ]
+    if pending_amendments:
+        issues.append({
+            "type": "pending_amendments",
+            "count": len(pending_amendments),
+            "description": f"Неподтверждённые изменения плана ({len(pending_amendments)})",
+        })
+
+    risk_level = "green"
+    if plans_with_blockers:
+        risk_level = "orange"
+    elif open_carryovers or pending_amendments:
+        risk_level = "yellow"
+
+    recommendations = []
+    if open_carryovers:
+        recommendations.append("Пересмотрите план на следующие рабочие дни с учётом открытых переносов.")
+    if plans_with_blockers:
+        recommendations.append("Устраните препятствия (материалы/доступ) до следующей смены.")
+    if pending_amendments:
+        recommendations.append("Убедитесь, что работники подтвердили внесённые изменения.")
+
+    return {
+        "object_id": object_id,
+        "risk_level": risk_level,
+        "issues": issues,
+        "recommendations": recommendations,
+        "plan_count": len(plans),
+        "open_carryover_count": len(open_carryovers),
     }
 
 

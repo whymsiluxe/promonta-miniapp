@@ -591,5 +591,158 @@ class ApplyDailyExecutionTests(unittest.TestCase):
         self.assertEqual(len(store['executions']), 1)
 
 
+# ── Round 4: matrix + replan + risk + worker_id param ──────────────────────
+
+class Round4RouteTests(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp()
+        os.environ['MINIAPP_DATA_ROOT'] = cls.tmp
+        os.environ.setdefault('BOT_TOKEN', 'test')
+        import main as backend
+        cls.backend = backend
+        import daily_plan_lib as dpl
+        cls.dpl = dpl
+        dpl.configure(
+            os.path.join(cls.tmp, 'daily_plan_store.json'),
+            os.path.join(cls.tmp, 'plan_sync_state.json'),
+            os.path.join(cls.tmp, 'work_calendar.json'),
+        )
+
+    def _make_item(self, idx=1):
+        return {
+            "id": f"item-{idx}", "sequence": idx,
+            "title": f"R4 Action {idx}", "objective": "",
+            "planned_quantity": 5.0, "unit": "м²",
+            "time_estimate_hours": 1.0, "work_type_id": "painting",
+            "required_tools": [], "required_materials": [],
+        }
+
+    def _create_published_plan(self, object_id, date='2026-09-10', workers=None):
+        body = self.backend.DailyPlanIn(
+            object_id=object_id, stage_key=f'{object_id}-S1',
+            date=date, assigned_worker_ids=workers or ['900'],
+            items=[self.backend.DailyPlanItemIn(
+                id='ri1', sequence=1, title='R4 test action',
+                planned_quantity=5.0, unit='м²',
+            )],
+            publish=True,
+        )
+        return self.backend.daily_plan_create(body=body, user={'id': 1})
+
+    def test_owner_today_with_worker_id_param(self):
+        """Owner can see a specific worker's today plan via ?worker_id=."""
+        # No plan for worker 999 → has_plan=False
+        result = self.backend.daily_plan_today(
+            worker_id_param='999', user={'id': 1}, role='owner')
+        self.assertFalse(result['has_plan'])
+
+    def test_worker_cannot_use_worker_id_param(self):
+        """Worker always sees their own plan (worker_id_param is ignored)."""
+        result = self.backend.daily_plan_today(
+            worker_id_param='1', user={'id': 888}, role='worker')
+        self.assertFalse(result['has_plan'])
+
+    def test_owner_matrix_empty(self):
+        """Owner matrix returns empty rows for date with no plans."""
+        result = self.backend.daily_plan_owner_matrix(
+            date_from='2025-01-01', date_to='2025-01-31',
+            object_id='', _=None,
+        )
+        self.assertEqual(result['rows'], [])
+        self.assertEqual(result['total'], 0)
+
+    def test_owner_matrix_returns_plans(self):
+        """Owner matrix returns plans for the given date range."""
+        self._create_published_plan('OBJ-M1', '2026-09-10')
+        self._create_published_plan('OBJ-M2', '2026-09-11')
+        result = self.backend.daily_plan_owner_matrix(
+            date_from='2026-09-10', date_to='2026-09-11',
+            object_id='', _=None,
+        )
+        self.assertGreaterEqual(result['total'], 2)
+        dates = [r['date'] for r in result['rows']]
+        self.assertIn('2026-09-10', dates)
+        self.assertIn('2026-09-11', dates)
+
+    def test_owner_matrix_filter_by_object(self):
+        """Owner matrix filters by object_id."""
+        self._create_published_plan('OBJ-MFILT', '2026-09-15')
+        result = self.backend.daily_plan_owner_matrix(
+            date_from='2026-09-01', date_to='2026-09-30',
+            object_id='OBJ-MFILT', _=None,
+        )
+        for row in result['rows']:
+            self.assertEqual(row['object_id'], 'OBJ-MFILT')
+        self.assertGreaterEqual(result['total'], 1)
+
+    def test_replan_no_plans_returns_green(self):
+        """Replan on object with no plans returns green risk."""
+        result = self.backend.daily_plan_replan(
+            object_id='OBJ-NOPLAN', body=self.backend.ReplanRequestBody(), _=None,
+        )
+        self.assertEqual(result['risk_level'], 'green')
+        self.assertEqual(result['issues'], [])
+
+    def test_replan_with_plans_returns_summary(self):
+        """Replan summarises plans and returns a risk assessment."""
+        self._create_published_plan('OBJ-REPLAN', '2026-09-20')
+        result = self.backend.daily_plan_replan(
+            object_id='OBJ-REPLAN', body=self.backend.ReplanRequestBody(), _=None,
+        )
+        self.assertIn('risk_level', result)
+        self.assertIn('issues', result)
+        self.assertIn('recommendations', result)
+        self.assertGreaterEqual(result['plan_count'], 1)
+
+    def test_compute_risk_level_green(self):
+        """No carryovers, no amendments, no blockers → green."""
+        risk = self.backend._compute_risk_level([], [], [], None)
+        self.assertEqual(risk, 'green')
+
+    def test_compute_risk_level_yellow_carryover(self):
+        """Carryovers present → yellow."""
+        risk = self.backend._compute_risk_level([{'id': 'c1'}], [], [], None)
+        self.assertEqual(risk, 'yellow')
+
+    def test_compute_risk_level_yellow_amendments(self):
+        """Pending amendments → yellow."""
+        risk = self.backend._compute_risk_level([], [{'id': 'a1'}], [], None)
+        self.assertEqual(risk, 'yellow')
+
+    def test_compute_risk_level_orange_blocker(self):
+        """Blocker reported → orange."""
+        risk = self.backend._compute_risk_level([], [], [{'id': 'b1'}], None)
+        self.assertEqual(risk, 'orange')
+
+    def test_get_blockers_for_plan_lib(self):
+        """get_blockers_for_plan returns only unresolved blockers for the given plan."""
+        plan = self.dpl.create_plan(
+            object_id='OBJ-BFP', stage_key='OBJ-BFP-S1', date_str='2026-09-10',
+            assigned_worker_ids=['42'], items=[{
+                "id": "i1", "sequence": 1, "title": "t", "objective": "",
+                "planned_quantity": 5.0, "unit": "м²", "time_estimate_hours": 1.0,
+                "work_type_id": "painting", "required_tools": [], "required_materials": [],
+            }], created_by='owner',
+        )
+        self.dpl.record_blocker(plan['id'], '42', 'weather', 'Rain')
+        blockers = self.dpl.get_blockers_for_plan(plan['id'])
+        self.assertEqual(len(blockers), 1)
+        self.assertEqual(blockers[0]['reason_code'], 'weather')
+        # Another plan's blockers must not appear
+        other_plan = self.dpl.create_plan(
+            object_id='OBJ-BFP2', stage_key='OBJ-BFP2-S1', date_str='2026-09-10',
+            assigned_worker_ids=['42'], items=[{
+                "id": "i1", "sequence": 1, "title": "t", "objective": "",
+                "planned_quantity": 5.0, "unit": "м²", "time_estimate_hours": 1.0,
+                "work_type_id": "painting", "required_tools": [], "required_materials": [],
+            }], created_by='owner',
+        )
+        self.dpl.record_blocker(other_plan['id'], '42', 'tool_missing', 'No drill')
+        blockers_filtered = self.dpl.get_blockers_for_plan(plan['id'])
+        self.assertEqual(len(blockers_filtered), 1)  # still just the first plan's blocker
+
+
 if __name__ == '__main__':
     unittest.main()

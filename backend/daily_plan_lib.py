@@ -650,6 +650,15 @@ def mark_carryover_applied(carryover_id: str) -> None:
             _save_store(store)
 
 
+def get_blockers_for_plan(plan_id: str) -> list:
+    """Возвращает все blockers для данного плана (нерешённые)."""
+    store = _load_store()
+    return [
+        b for b in store.get("blockers", {}).values()
+        if b.get("daily_plan_id") == plan_id and b.get("resolved_at") is None
+    ]
+
+
 def record_blocker(plan_id: str, worker_id: str, reason_code: str, comment: str) -> dict:
     """Записывает препятствие от работника при утреннем принятии плана."""
     with _store_lock:
