@@ -111,14 +111,22 @@ try:
     from . import work_types as wt
     from . import profile_skills as pskills
     from . import assignment_matching as amatch
+    from . import daily_plan_lib as dpl
 except ImportError:
     import work_types as wt  # noqa: E402
     import profile_skills as pskills  # noqa: E402
     import assignment_matching as amatch  # noqa: E402
+    import daily_plan_lib as dpl  # noqa: E402
 
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
 ROLES_FILE = os.path.join(DATA_ROOT, 'roles.json')
+
+# DailyPlan store — производственный контроль (Round 1)
+DAILY_PLAN_STORE_FILE = os.path.join(DATA_ROOT, 'daily_plan_store.json')
+PLAN_SYNC_STATE_FILE = os.path.join(DATA_ROOT, 'plan_sync_state.json')
+WORK_CALENDAR_FILE = os.path.join(DATA_ROOT, 'work_calendar.json')
+dpl.configure(DAILY_PLAN_STORE_FILE, PLAN_SYNC_STATE_FILE, WORK_CALENDAR_FILE)
 INIT_DATA_MAX_AGE = 3600  # секунд — Telegram initData считается протухшим через час
 
 # 31.07 (Release-аудит П4): для этих сторов corrupt JSON НЕ должен молча деградировать
@@ -6566,7 +6574,7 @@ def checkin_pause(session_id: str, user: dict = Depends(get_current_user), role:
     доправить вручную если нужно."""
     with _checkin_lock:
         items = _load_checkin_meta()
-        session = next((i for i in items if i['id'] == session_id), None)
+        session = next((i for i in items if i.get('id') == session_id), None)
         if not session:
             raise HTTPException(404, "Сессия check-in не найдена")
         if role != 'owner' and str(session.get('user_id')) != str(user['id']):
@@ -6645,7 +6653,7 @@ async def checkin_finish(
 
     with _checkin_lock:
         items = _load_checkin_meta()
-        session = next((i for i in items if i['id'] == session_id), None)
+        session = next((i for i in items if i.get('id') == session_id), None)
         if not session:
             raise HTTPException(404, "Сессия check-in не найдена")
         if role != 'owner' and str(session.get('user_id')) != str(user['id']):
@@ -6675,7 +6683,7 @@ async def checkin_finish(
 
     with _checkin_lock:
         items = _load_checkin_meta()
-        session = next((i for i in items if i['id'] == session_id), None)
+        session = next((i for i in items if i.get('id') == session_id), None)
         if not session:
             raise HTTPException(404, "Сессия check-in не найдена")
         if session['finish_at'] is not None:
@@ -6964,7 +6972,7 @@ def list_checkins(object_id: str = '', date: str = '', user: dict = Depends(get_
 @app.get("/api/checkin/{session_id}/photo/{which}/{index}")
 def get_checkin_photo(session_id: str, which: str, index: int, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     items = _load_checkin_meta()
-    session = next((i for i in items if i['id'] == session_id), None)
+    session = next((i for i in items if i.get('id') == session_id), None)
     if not session:
         raise HTTPException(404, "Сессия не найдена")
     if role != 'owner' and str(session.get('user_id')) != str(user['id']):
@@ -7071,7 +7079,7 @@ def _call_glm_vision(system_prompt: str, image_paths: list, text_prompt: str) ->
 
 def _get_checkin_session(session_id: str, user_id=None, role=None) -> dict:
     items = _load_checkin_meta()
-    session = next((i for i in items if i['id'] == session_id), None)
+    session = next((i for i in items if i.get('id') == session_id), None)
     if not session:
         raise HTTPException(404, "Сессия не найдена")
     if role is not None and role != 'owner' and str(session.get('user_id')) != str(user_id):
@@ -7084,7 +7092,7 @@ def _get_checkin_session(session_id: str, user_id=None, role=None) -> dict:
 def _save_checkin_analysis(session_id: str, key: str, value):
     items = _load_checkin_meta()
     for i in items:
-        if i['id'] == session_id:
+        if i.get('id') == session_id:
             i.setdefault('analysis', {})[key] = value
             _save_checkin_meta(items)
             return
@@ -7582,6 +7590,369 @@ def delete_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), ro
     return {"status": "ok"}
 
 
+# ── DailyPlan routes (Round 1 — Production Control) ────────────────────────
+
+@app.get("/api/daily-plan/today")
+def daily_plan_today(
+    user: dict = Depends(get_current_user),
+    role: str = Depends(get_role),
+):
+    """Работник видит свой план на сегодня (или сообщение «нет плана»).
+    Owner может смотреть план за любого worker: ?worker_id=<id>."""
+    today = business_today_str()
+    worker_id = str(user['id'])
+
+    plan = dpl.get_today_plan_for_worker(worker_id, today)
+    if not plan:
+        return {"has_plan": False, "date": today}
+
+    carryovers = dpl.get_carryovers_for_worker(worker_id, today)
+    acceptance = dpl.get_acceptance(plan["id"], worker_id)
+    amendments = dpl.get_pending_amendments(plan["id"])
+
+    # Если план принят — отдаём snapshot принятой версии, не текущий Sheet
+    if acceptance:
+        accepted_items = dpl.get_accepted_snapshot(plan["id"], worker_id)
+    else:
+        accepted_items = plan["items"]
+
+    return {
+        "has_plan": True,
+        "plan": {
+            "id": plan["id"],
+            "object_id": plan["object_id"],
+            "stage_key": plan["stage_key"],
+            "date": plan["date"],
+            "status": plan["status"],
+            "version": plan["version"],
+            "items": accepted_items,
+            "published_at": plan.get("published_at"),
+        },
+        "acceptance": acceptance,
+        "pending_amendments": amendments,
+        "carryovers": carryovers,
+        "date": today,
+    }
+
+
+@app.post("/api/daily-plan/{plan_id}/accept")
+def daily_plan_accept(
+    plan_id: str,
+    user: dict = Depends(get_current_user),
+    role: str = Depends(get_role),
+):
+    """Работник принимает план: «ПЛАН ПОНЯТЕН — БЕРУ В РАБОТУ»."""
+    if role == 'owner':
+        raise HTTPException(403, "Owner не принимает план как работник")
+    plan = dpl.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "План не найден")
+    if plan["status"] not in ("published", "amendment_pending"):
+        raise HTTPException(400, f"План в статусе {plan['status']!r} нельзя принять")
+
+    try:
+        acceptance = dpl.accept_plan(plan_id, plan["version"], str(user['id']))
+    except PermissionError:
+        raise HTTPException(403, "Вы не назначены на этот план")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return {"status": "accepted", "acceptance": acceptance}
+
+
+@app.post("/api/daily-plan/{plan_id}/amendments/{amendment_id}/accept")
+def daily_plan_accept_amendment(
+    plan_id: str,
+    amendment_id: str,
+    user: dict = Depends(get_current_user),
+    role: str = Depends(get_role),
+):
+    """Работник подтверждает Amendment после Start."""
+    if role == 'owner':
+        raise HTTPException(403, "Owner не подтверждает Amendment как работник")
+    try:
+        amendment = dpl.acknowledge_amendment(plan_id, amendment_id, str(user['id']))
+    except KeyError:
+        raise HTTPException(404, "Amendment не найден")
+    except PermissionError:
+        raise HTTPException(403, "Вы не назначены на этот план")
+
+    return {"status": "acknowledged", "amendment": amendment}
+
+
+@app.get("/api/daily-plan/owner/today")
+def daily_plan_owner_today(
+    _: None = Depends(require_owner),
+    user: dict = Depends(get_current_user),
+):
+    """Owner Контроль дня — unified DTO. Собирается из local DailyPlan store + checkin_meta.
+    Без N+1 Sheets-вызовов: все Sheets-данные приходят через plan_sync_state.json (кэш).
+    """
+    today = business_today_str()
+    plans = dpl.get_pending_plans_for_owner_today(today)
+
+    checkin_items = _load_checkin_meta()
+    active_sessions = {
+        str(s["user_id"]): s for s in checkin_items
+        if s.get("date") == today and s.get("finish_at") is None
+    }
+    finished_sessions = {
+        str(s["user_id"]): s for s in checkin_items
+        if s.get("date") == today and s.get("finish_at") is not None
+    }
+
+    rows = []
+    for plan in plans:
+        for worker_id in plan.get("assigned_worker_ids", []):
+            wid = str(worker_id)
+            acceptance = dpl.get_acceptance(plan["id"], wid)
+            amendments = dpl.get_pending_amendments(plan["id"])
+            execution = None
+            session = finished_sessions.get(wid) or active_sessions.get(wid)
+            if session and session.get("finish_at"):
+                execution = dpl.get_execution(session["id"])
+            carryovers = dpl.get_carryovers_for_worker(wid, today)
+
+            plan_status_label = _daily_plan_status_label(plan, acceptance, amendments)
+            shift_status = _checkin_shift_status(wid, active_sessions, finished_sessions)
+
+            row = {
+                "plan_id": plan["id"],
+                "worker_id": wid,
+                "object_id": plan["object_id"],
+                "date": today,
+                "plan_summary": {
+                    "stage_key": plan["stage_key"],
+                    "item_count": len(plan["items"]),
+                    "version": plan["version"],
+                },
+                "plan_status": plan["status"],
+                "plan_status_label": plan_status_label,
+                "acceptance": {
+                    "accepted_at": acceptance["accepted_at"] if acceptance else None,
+                    "plan_version": acceptance["plan_version"] if acceptance else None,
+                } if acceptance else None,
+                "shift_status": shift_status,
+                "pending_amendments_count": len(amendments),
+                "carryover_count": len(carryovers),
+                "execution_summary": _execution_summary(execution) if execution else None,
+                "risk_level": "green",  # Round 4 will compute real risk
+            }
+            rows.append(row)
+
+    total = len(rows)
+    accepted = sum(1 for r in rows if r["acceptance"] is not None)
+    working = sum(1 for r in rows if r["shift_status"] == "working")
+    finished = sum(1 for r in rows if r["shift_status"] == "finished")
+    carryover_count = sum(1 for r in rows if r["carryover_count"] > 0)
+
+    return {
+        "date": today,
+        "summary": {
+            "total_plans": total,
+            "accepted": accepted,
+            "working": working,
+            "finished": finished,
+            "has_carryovers": carryover_count,
+        },
+        "rows": rows,
+    }
+
+
+@app.get("/api/daily-plan/object/{object_id}")
+def daily_plan_object(
+    object_id: str,
+    date_from: str = '',
+    date_to: str = '',
+    _: None = Depends(require_owner),
+):
+    """Планы объекта за диапазон дат (для матрицы объекта)."""
+    today = business_today_str()
+    df = date_from or today
+    dt = date_to or today
+
+    store = dpl._load_store()
+    plans = [
+        p for p in store["daily_plans"].values()
+        if p["object_id"] == object_id and df <= p["date"] <= dt
+    ]
+    plans.sort(key=lambda p: p["date"])
+
+    result = []
+    for plan in plans:
+        result.append({
+            "id": plan["id"],
+            "date": plan["date"],
+            "stage_key": plan["stage_key"],
+            "status": plan["status"],
+            "version": plan["version"],
+            "item_count": len(plan["items"]),
+            "assigned_worker_ids": plan["assigned_worker_ids"],
+        })
+    return {"object_id": object_id, "date_from": df, "date_to": dt, "plans": result}
+
+
+class DailyPlanItemIn(BaseModel):
+    id: str = ''
+    sequence: int = 0
+    title: str
+    objective: str = ''
+    planned_quantity: float | None = None
+    unit: str = ''
+    time_estimate_hours: float | None = None
+    work_type_id: str | None = None
+    required_tools: list = []
+    required_materials: list = []
+
+
+class DailyPlanIn(BaseModel):
+    object_id: str
+    stage_key: str
+    date: str
+    assigned_worker_ids: list
+    items: list[DailyPlanItemIn]
+    publish: bool = False
+
+
+@app.post("/api/daily-plan")
+def daily_plan_create(
+    body: DailyPlanIn,
+    user: dict = Depends(get_current_user),
+    _: None = Depends(require_owner),
+):
+    """Owner создаёт/публикует DailyPlan (вручную, без Sheets-синка)."""
+    items = []
+    for i, item in enumerate(body.items):
+        item_id = item.id or uuid.uuid4().hex
+        items.append({
+            "id": item_id,
+            "sequence": item.sequence or i + 1,
+            "title": item.title,
+            "objective": item.objective,
+            "planned_quantity": item.planned_quantity,
+            "unit": item.unit,
+            "time_estimate_hours": item.time_estimate_hours,
+            "work_type_id": item.work_type_id,
+            "required_tools": item.required_tools,
+            "required_materials": item.required_materials,
+        })
+
+    plan = dpl.create_plan(
+        object_id=body.object_id,
+        stage_key=body.stage_key,
+        date_str=body.date,
+        assigned_worker_ids=body.assigned_worker_ids,
+        items=items,
+        created_by=str(user['id']),
+    )
+
+    if body.publish:
+        plan = dpl.publish_plan(plan["id"], str(user['id']))
+
+    return plan
+
+
+@app.get("/api/daily-plan/{plan_id}")
+def daily_plan_get(
+    plan_id: str,
+    user: dict = Depends(get_current_user),
+    role: str = Depends(get_role),
+):
+    """Полный план с версиями, принятием, amendments."""
+    plan = dpl.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "План не найден")
+
+    worker_id = str(user['id'])
+    if role != 'owner' and worker_id not in [str(w) for w in plan["assigned_worker_ids"]]:
+        raise HTTPException(403, "Нет доступа к этому плану")
+
+    acceptance = dpl.get_acceptance(plan_id, worker_id) if role != 'owner' else None
+    amendments = dpl.get_pending_amendments(plan_id)
+    versions = dpl.get_plan_versions(plan_id)
+
+    return {
+        "plan": plan,
+        "versions": versions,
+        "acceptance": acceptance,
+        "pending_amendments": amendments,
+    }
+
+
+@app.get("/api/productivity/workers/{target_user_id}")
+def get_worker_productivity_api(
+    target_user_id: str,
+    user: dict = Depends(get_current_user),
+    role: str = Depends(get_role),
+):
+    """Производительность работника. Работник видит только свою, owner — любого."""
+    if role != 'owner' and str(user['id']) != target_user_id:
+        raise HTTPException(403, "Можно смотреть только свою производительность")
+    data = dpl.get_worker_productivity(target_user_id)
+    return data or {"aggregates": {}, "observations": []}
+
+
+@app.post("/api/productivity/workers/{target_user_id}/baseline")
+def set_worker_baseline(
+    target_user_id: str,
+    work_type_id: str,
+    baseline: float,
+    _: None = Depends(require_owner),
+):
+    """Owner устанавливает manual_baseline_factor (prior) для работника × вид работ."""
+    if baseline <= 0:
+        raise HTTPException(400, "baseline должен быть > 0")
+    agg = dpl.set_manual_baseline(target_user_id, work_type_id, baseline)
+    return agg
+
+
+# ── DailyPlan helpers (private) ──────────────────────────────────────────────
+
+def _daily_plan_status_label(plan: dict, acceptance: dict | None, amendments: list) -> str:
+    if not plan:
+        return "NO_PLAN"
+    s = plan["status"]
+    if s == "draft":
+        return "DRAFT"
+    if s == "published" and not acceptance:
+        return "NOT_ACCEPTED"
+    if s == "amendment_pending":
+        return "AMENDMENT_PENDING"
+    if s == "accepted":
+        return "ACCEPTED"
+    if s == "completed":
+        return "COMPLETED"
+    return s.upper()
+
+
+def _checkin_shift_status(worker_id: str, active: dict, finished: dict) -> str:
+    if worker_id in active:
+        s = active[worker_id]
+        if s.get("pause_started_at"):
+            return "paused"
+        return "working"
+    if worker_id in finished:
+        return "finished"
+    return "not_started"
+
+
+def _execution_summary(execution: dict | None) -> dict | None:
+    if not execution:
+        return None
+    results = execution.get("item_results", [])
+    done = sum(1 for r in results if r.get("status") == "done")
+    partial = sum(1 for r in results if r.get("status") == "partial")
+    not_done = sum(1 for r in results if r.get("status") == "not_done")
+    blocked = sum(1 for r in results if r.get("status") == "blocked")
+    return {
+        "done": done,
+        "partial": partial,
+        "not_done": not_done,
+        "blocked": blocked,
+        "total": len(results),
+    }
+
+
 # 31.07 (Release-аудит П4): регистрация критичных сторов -- в самом конце модуля,
 # после того как все _FILE-константы (включая rl.ROADMAP_FILE/rl.STAGE_REQUESTS_FILE,
 # доступные только после _load_repo_roadmap_lib() выше) уже определены. Порча этих
@@ -7598,4 +7969,5 @@ CRITICAL_JSON_PATHS.update({
     CRITICAL_ALERTS_FILE,
     rl.ROADMAP_FILE,
     rl.STAGE_REQUESTS_FILE,
+    DAILY_PLAN_STORE_FILE,
 })

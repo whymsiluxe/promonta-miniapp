@@ -79,19 +79,37 @@ do NOT yet exist — must add to the catalog or to a separate norms store.
 
 ---
 
-## Round 1 — IN PROGRESS
+## Round 1 — COMPLETE
 
 **Goal**: DailyPlan backend core: data store, versioning, acceptance, basic CRUD routes,
-Sheets schema (5 new tabs), plan_sync worker skeleton.
+plan_sync worker skeleton.
+
+**Tests**: 461 passed (was 432), same 3 pre-existing failures.
 
 ### Steps completed
-- [ ] Data model: `daily_plan_store.json` schema defined
-- [ ] `backend/daily_plan_lib.py` created
-- [ ] New routes in `main.py`: GET /api/daily-plan/today, POST accept, GET owner/matrix
-- [ ] CRITICAL_JSON_PATHS update
-- [ ] `scripts/plan_sync.py` skeleton
-- [ ] Sheets tab proposal (read-only analysis, no writes yet)
-- [ ] Tests written for Round 1 routes
+- [x] Data model: `daily_plan_store.json` schema defined (all 9 entity types)
+- [x] `backend/daily_plan_lib.py` created (store ops, versioning, acceptance, carryover, productivity)
+- [x] New routes in `main.py`:
+  - GET /api/daily-plan/today (worker's plan for today)
+  - POST /api/daily-plan/{id}/accept (worker acceptance)
+  - POST /api/daily-plan/{id}/amendments/{id}/accept (amendment acknowledgment)
+  - GET /api/daily-plan/owner/today (Контроль дня unified DTO)
+  - GET /api/daily-plan/object/{id} (object day-by-day)
+  - POST /api/daily-plan (owner creates plan)
+  - GET /api/daily-plan/{id} (full plan detail)
+  - GET /api/productivity/workers/{id} (worker productivity)
+  - POST /api/productivity/workers/{id}/baseline (owner sets prior)
+- [x] CRITICAL_JSON_PATHS updated with DAILY_PLAN_STORE_FILE
+- [x] `scripts/plan_sync.py` skeleton (reads Plan_этапов/Plan_дня/Нормы_работ, 60s interval, backoff)
+- [x] Defensive fix: `checkin_meta` lookups use `.get('id')` not `['id']` for manual entries
+- [x] 29 new tests in `tests/test_daily_plan.py` (all passing)
+
+### Files changed in Round 1
+- `backend/daily_plan_lib.py` — NEW
+- `backend/main.py` — import, file constants, 9 routes, CRITICAL_JSON_PATHS, defensive fix
+- `scripts/plan_sync.py` — NEW
+- `tests/test_daily_plan.py` — NEW
+- `docs/HANDOFF.md` — this file
 
 ---
 
