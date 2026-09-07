@@ -6475,6 +6475,9 @@ async def checkin_start(
     lon: str = Form(''),
     stage_name: str = Form(''),
     files: list[UploadFile] = File(default=[]),
+    daily_plan_id: str = Form(''),
+    daily_plan_version: str = Form(''),
+    daily_plan_acceptance_id: str = Form(''),
     user: dict = Depends(get_current_user),
     role: str = Depends(get_role),
     idempotency_key: str = Header(default='', alias='Idempotency-Key'),
@@ -6526,6 +6529,9 @@ async def checkin_start(
         "start_lon": lon,
         "start_gps_suspect": _gps_suspect(lat, lon),
         "stage_name": stage_name.strip()[:200] or None,
+        "daily_plan_id": daily_plan_id.strip() or None,
+        "daily_plan_version": daily_plan_version.strip() or None,
+        "daily_plan_acceptance_id": daily_plan_acceptance_id.strip() or None,
         "finish_at": None,
         "finish_photos": [],
         "finish_lat": None,
@@ -7678,6 +7684,62 @@ def daily_plan_accept_amendment(
         raise HTTPException(403, "Вы не назначены на этот план")
 
     return {"status": "acknowledged", "amendment": amendment}
+
+
+_PLAN_BLOCKER_REASON_LABELS = {
+    'material_missing': 'нет материалов',
+    'tool_missing': 'нет инструмента',
+    'access_denied': 'нет доступа на объект',
+    'safety_concern': 'проблема безопасности',
+    'weather': 'погодные условия',
+    'coordinator_missing': 'нет ответственного лица',
+    'other': 'другое',
+}
+
+
+class PlanBlockerBody(BaseModel):
+    reason_code: str
+    comment: str = ''
+
+
+@app.post("/api/daily-plan/{plan_id}/blocker")
+def daily_plan_report_blocker(
+    plan_id: str,
+    body: PlanBlockerBody,
+    user: dict = Depends(get_current_user),
+    role: str = Depends(get_role),
+):
+    """Работник сообщает о препятствии при утреннем принятии — «ЕСТЬ ПРЕПЯТСТВИЕ».
+    Сохраняет причину + отправляет critical alert владельцу."""
+    if role == 'owner':
+        raise HTTPException(403, "Owner не сообщает о препятствии как работник")
+    plan = dpl.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "План не найден")
+    if str(user['id']) not in [str(w) for w in plan.get('assigned_worker_ids', [])]:
+        raise HTTPException(403, "Вы не назначены на этот план")
+    if body.reason_code not in _PLAN_BLOCKER_REASON_LABELS:
+        raise HTTPException(400, f"Недопустимый reason_code. Допустимые: {list(_PLAN_BLOCKER_REASON_LABELS)}")
+
+    blocker = dpl.record_blocker(plan_id, str(user['id']), body.reason_code, body.comment.strip()[:500])
+
+    roles = _load_roles()
+    owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
+    if owner_id:
+        profiles = _load_worker_profiles()
+        worker_name = _sanitize_display_name(
+            profiles.get(str(user['id']), {}).get('name'), str(user['id'])
+        )
+        reason_label = _PLAN_BLOCKER_REASON_LABELS.get(body.reason_code, body.reason_code)
+        _create_critical_alert(
+            target_user_id=owner_id,
+            kind='plan_blocker',
+            title=f"{worker_name} не может начать — {reason_label}",
+            subtitle=body.comment[:100] if body.comment else '',
+            ref_id=plan_id,
+        )
+
+    return {"status": "recorded", "blocker": blocker}
 
 
 @app.get("/api/daily-plan/owner/today")

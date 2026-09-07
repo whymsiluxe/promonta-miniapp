@@ -42,6 +42,7 @@ _EMPTY_STORE = {
     "carryovers": {},
     "productivity_observations": {},
     "productivity_aggregates": {},
+    "blockers": {},
 }
 
 _EMPTY_WORK_CALENDAR = {
@@ -647,6 +648,26 @@ def mark_carryover_applied(carryover_id: str) -> None:
         if co:
             co["status"] = "applied"
             _save_store(store)
+
+
+def record_blocker(plan_id: str, worker_id: str, reason_code: str, comment: str) -> dict:
+    """Записывает препятствие от работника при утреннем принятии плана."""
+    with _store_lock:
+        store = _load_store()
+        if "blockers" not in store:
+            store["blockers"] = {}
+        blocker = {
+            "id": uuid.uuid4().hex,
+            "daily_plan_id": plan_id,
+            "worker_id": str(worker_id),
+            "reason_code": reason_code,
+            "comment": comment,
+            "reported_at": time.time(),
+            "resolved_at": None,
+        }
+        store["blockers"][blocker["id"]] = blocker
+        _save_store(store)
+    return blocker
 
 
 def set_manual_baseline(worker_id: str, work_type_id: str, baseline: float) -> dict:

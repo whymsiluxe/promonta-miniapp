@@ -416,8 +416,15 @@ async function _confirmCheckinPreview() {
   if (!_checkinIdempotencyKey) _checkinIdempotencyKey = crypto.randomUUID();
   try {
     if (_checkinPendingAction === 'start') {
-      const startFields = _checkinSelectedStageName ? { stage_name: _checkinSelectedStageName } : null;
-      const session = await _uploadCheckinPhotos('/api/checkin/start', _checkinPreviewFiles, startFields, _checkinIdempotencyKey);
+      const startFields = {};
+      if (_checkinSelectedStageName) startFields.stage_name = _checkinSelectedStageName;
+      // DailyPlan link — set by today-plan.js after acceptance, consumed once
+      if (window._dailyPlanCheckinFields) {
+        Object.assign(startFields, window._dailyPlanCheckinFields);
+        window._dailyPlanCheckinFields = null;
+      }
+      const session = await _uploadCheckinPhotos('/api/checkin/start', _checkinPreviewFiles,
+        Object.keys(startFields).length ? startFields : null, _checkinIdempotencyKey);
       _setActiveCheckinSession(_stagesCurrentObjectId, { id: session.id, finished: false });
       _checkinSelectedStageName = null;
       hapticImpact('light');

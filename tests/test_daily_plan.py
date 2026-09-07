@@ -423,6 +423,67 @@ class DailyPlanRouteTests(unittest.TestCase):
                 plan_id='nonexistent-id', user={'id': 888}, role='worker')
         self.assertEqual(ctx.exception.status_code, 404)
 
+    def test_report_blocker_worker(self):
+        plan = self.dpl.create_plan(
+            object_id='OBJ-B-1', stage_key='OBJ-B-1-S1', date_str='2026-09-10',
+            assigned_worker_ids=['42'], items=[self._make_item()], created_by='owner',
+        )
+        self.dpl.publish_plan(plan['id'], 'owner')
+        body = self.backend.PlanBlockerBody(reason_code='material_missing', comment='Нет краски')
+        result = self.backend.daily_plan_report_blocker(
+            plan_id=plan['id'], body=body, user={'id': 42}, role='worker')
+        self.assertEqual(result['status'], 'recorded')
+        self.assertEqual(result['blocker']['reason_code'], 'material_missing')
+        self.assertEqual(result['blocker']['comment'], 'Нет краски')
+
+    def test_report_blocker_owner_forbidden(self):
+        plan = self.dpl.create_plan(
+            object_id='OBJ-B-2', stage_key='OBJ-B-2-S1', date_str='2026-09-10',
+            assigned_worker_ids=['42'], items=[self._make_item()], created_by='owner',
+        )
+        body = self.backend.PlanBlockerBody(reason_code='other', comment='')
+        with self.assertRaises(HTTPException) as ctx:
+            self.backend.daily_plan_report_blocker(
+                plan_id=plan['id'], body=body, user={'id': 1}, role='owner')
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_report_blocker_not_assigned(self):
+        plan = self.dpl.create_plan(
+            object_id='OBJ-B-3', stage_key='OBJ-B-3-S1', date_str='2026-09-10',
+            assigned_worker_ids=['99'], items=[self._make_item()], created_by='owner',
+        )
+        self.dpl.publish_plan(plan['id'], 'owner')
+        body = self.backend.PlanBlockerBody(reason_code='tool_missing', comment='')
+        with self.assertRaises(HTTPException) as ctx:
+            self.backend.daily_plan_report_blocker(
+                plan_id=plan['id'], body=body, user={'id': 42}, role='worker')
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_report_blocker_invalid_reason(self):
+        plan = self.dpl.create_plan(
+            object_id='OBJ-B-4', stage_key='OBJ-B-4-S1', date_str='2026-09-10',
+            assigned_worker_ids=['42'], items=[self._make_item()], created_by='owner',
+        )
+        body = self.backend.PlanBlockerBody(reason_code='unknown_reason', comment='')
+        with self.assertRaises(HTTPException) as ctx:
+            self.backend.daily_plan_report_blocker(
+                plan_id=plan['id'], body=body, user={'id': 42}, role='worker')
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_record_blocker_lib(self):
+        plan = self.dpl.create_plan(
+            object_id='OBJ-B-5', stage_key='OBJ-B-5-S1', date_str='2026-09-10',
+            assigned_worker_ids=['42'], items=[self._make_item()], created_by='owner',
+        )
+        blocker = self.dpl.record_blocker(plan['id'], '42', 'weather', 'Rain')
+        self.assertEqual(blocker['reason_code'], 'weather')
+        self.assertEqual(blocker['comment'], 'Rain')
+        self.assertIsNotNone(blocker['reported_at'])
+        self.assertIsNone(blocker['resolved_at'])
+        # Verify persisted
+        store = self.dpl._load_store()
+        self.assertIn(blocker['id'], store['blockers'])
+
 
 if __name__ == '__main__':
     unittest.main()
