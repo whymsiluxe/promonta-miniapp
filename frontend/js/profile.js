@@ -773,6 +773,8 @@ async function _saveBirthday() {
 let _workerCardEl = null;          // overlay элемент; null = закрыт (двойной тап -> один overlay)
 let _workerCardUserId = '';
 let _workerCardPeriod = 'week';
+let _wcActiveTab = 'today';        // Round 4: активная вкладка Worker Card
+let _wcLoadedTabs = new Set();     // Round 4: уже загруженные вкладки (lazy load)
 
 // Раунд 5 §13: диапазон дат для выбранного периода worker card (Неделя/Месяц/3 месяца/Год).
 // Локальные компоненты даты (не UTC toISOString) — время фирмы = Europe/Berlin.
@@ -806,6 +808,8 @@ function openWorkerCard(uid, returnCtx) {
   if (_workerCardEl) return; // guard: двойной тап не открывает два overlay
   _workerCardUserId = String(uid);
   _workerCardPeriod = 'week';
+  _wcActiveTab = (returnCtx && returnCtx.initialTab) || 'today';
+  _wcLoadedTabs = new Set();
   _profileMode = 'worker-card';
   _profileReturnView = returnCtx || null;
 
@@ -830,14 +834,36 @@ function openWorkerCard(uid, returnCtx) {
         <div class="worker-card-shift" id="wc-shift"></div>
         <div class="worker-card-actions" id="wc-actions"></div>
       </div>
-      <div class="worker-card-ops" id="wc-ops"></div>
-      <div class="profile-period-pills" id="wc-period-pills">
-        ${Object.keys(PROFILE_PERIOD_LABEL).map(p =>
-          `<div class="profile-period-pill${p === _workerCardPeriod ? ' active' : ''}" data-period="${p}">${PROFILE_PERIOD_LABEL[p]}</div>`
-        ).join('')}
+      <!-- Round 4: 4-tab system -->
+      <div class="wc-tabs" id="wc-tabs">
+        <button class="wc-tab${_wcActiveTab === 'today' ? ' active' : ''}" data-wc-tab="today">Сегодня</button>
+        <button class="wc-tab${_wcActiveTab === 'productivity' ? ' active' : ''}" data-wc-tab="productivity">Производит.</button>
+        <button class="wc-tab${_wcActiveTab === 'calendar' ? ' active' : ''}" data-wc-tab="calendar">Календарь</button>
+        <button class="wc-tab${_wcActiveTab === 'profile' ? ' active' : ''}" data-wc-tab="profile">Профиль</button>
       </div>
-      <div class="worker-card-body" id="wc-body">
-        <div style="color:var(--text-light);font-size:0.85rem;padding:1rem 0">Загрузка…</div>
+      <div id="wc-panel-today" class="wc-tab-panel${_wcActiveTab !== 'today' ? ' wc-tab-panel-hidden' : ''}">
+        <div style="color:var(--text-light);font-size:0.85rem;padding:1rem 0.75rem">Загрузка…</div>
+      </div>
+      <div id="wc-panel-productivity" class="wc-tab-panel${_wcActiveTab !== 'productivity' ? ' wc-tab-panel-hidden' : ''}">
+        <div class="worker-card-ops" id="wc-ops"></div>
+        <div class="profile-period-pills" id="wc-period-pills">
+          ${Object.keys(PROFILE_PERIOD_LABEL).map(p =>
+            `<div class="profile-period-pill${p === _workerCardPeriod ? ' active' : ''}" data-period="${p}">${PROFILE_PERIOD_LABEL[p]}</div>`
+          ).join('')}
+        </div>
+        <div class="worker-card-body" id="wc-body">
+          <div style="color:var(--text-light);font-size:0.85rem;padding:1rem 0">Загрузка…</div>
+        </div>
+      </div>
+      <div id="wc-panel-calendar" class="wc-tab-panel${_wcActiveTab !== 'calendar' ? ' wc-tab-panel-hidden' : ''}">
+        <div id="wc-calendar-content" style="padding:0.75rem">
+          <div style="color:var(--text-light);font-size:0.85rem">Загрузка…</div>
+        </div>
+      </div>
+      <div id="wc-panel-profile" class="wc-tab-panel${_wcActiveTab !== 'profile' ? ' wc-tab-panel-hidden' : ''}">
+        <div id="wc-profile-content" style="padding:0.75rem">
+          <div style="color:var(--text-light);font-size:0.85rem">Загрузка…</div>
+        </div>
       </div>
     </div>
   `;
@@ -847,17 +873,37 @@ function openWorkerCard(uid, returnCtx) {
 
   _workerCardUnreg = (typeof NavigationManager !== 'undefined') ? NavigationManager.registerOverlay(closeWorkerCard) : null;
   overlay.querySelector('#wc-back').addEventListener('click', closeWorkerCard);
+
+  // Tab switching
+  overlay.querySelector('#wc-tabs').addEventListener('click', e => {
+    const tab = e.target.closest('.wc-tab');
+    if (!tab || tab.dataset.wcTab === _wcActiveTab) return;
+    _wcSwitchTab(tab.dataset.wcTab);
+    hapticImpact('light');
+  });
+
+  // Period pills (inside Производительность tab)
   overlay.querySelector('#wc-period-pills').addEventListener('click', e => {
     const pill = e.target.closest('.profile-period-pill');
     if (!pill || pill.dataset.period === _workerCardPeriod) return;
     _workerCardPeriod = pill.dataset.period;
     overlay.querySelectorAll('#wc-period-pills .profile-period-pill').forEach(p => p.classList.toggle('active', p.dataset.period === _workerCardPeriod));
+    _wcLoadedTabs.delete('productivity'); // force reload for new period
     hapticImpact('light');
-    _loadWorkerCard();
+    _loadWorkerCardTab('productivity');
   });
 
   hapticImpact('light');
-  _loadWorkerCard();
+  _loadWorkerCardIdentity();
+  _loadWorkerCardTab(_wcActiveTab);
+}
+
+function _wcSwitchTab(tab) {
+  if (!_workerCardEl) return;
+  _workerCardEl.querySelectorAll('.wc-tab').forEach(b => b.classList.toggle('active', b.dataset.wcTab === tab));
+  _workerCardEl.querySelectorAll('.wc-tab-panel').forEach(p => p.classList.toggle('wc-tab-panel-hidden', p.id !== `wc-panel-${tab}`));
+  _wcActiveTab = tab;
+  if (!_wcLoadedTabs.has(tab)) _loadWorkerCardTab(tab);
 }
 
 function closeWorkerCard() {
@@ -865,30 +911,28 @@ function closeWorkerCard() {
   document.body.style.overflow = '';
   _workerCardUserId = '';
   _profileMode = 'owner-self';
+  _wcActiveTab = 'today';
+  _wcLoadedTabs = new Set();
   if (_workerCardUnreg) { _workerCardUnreg(); _workerCardUnreg = null; }
 }
 
-async function _loadWorkerCard() {
+// Round 4: split into identity loader (always) + per-tab loaders (lazy)
+async function _loadWorkerCardIdentity() {
   const uid = _workerCardUserId;
-  const body = document.getElementById('wc-body');
-  if (!body) return;
-  const params = new URLSearchParams();
-  params.set('user_id', uid);
-  params.set('period', _workerCardPeriod);
   let stats, card;
   try {
+    const params = new URLSearchParams({ user_id: uid, period: _workerCardPeriod });
     [stats, card] = await Promise.all([
       api('/api/profile/stats?' + params.toString()),
       api(`/api/users/${encodeURIComponent(uid)}/card`).catch(() => null),
     ]);
   } catch (e) {
-    body.innerHTML = `<div style="color:var(--red);padding:1rem 0">Ошибка загрузки: ${esc(e.message)}
-      <button type="button" class="wo-retry-btn" onclick="_loadWorkerCard()">Повторить</button></div>`;
+    const nameEl = document.getElementById('wc-name');
+    if (nameEl) nameEl.textContent = 'Ошибка загрузки';
     return;
   }
-  if (!document.getElementById('wc-body')) return; // закрыли пока грузилось
+  if (!document.getElementById('wc-name')) return; // закрыли пока грузилось
 
-  // Шапка: имя/роль/аватар (только этой карточки, НЕ трогаем профиль Owner).
   const nameEl = document.getElementById('wc-name');
   if (nameEl) nameEl.textContent = resolveDisplayName({ profileName: stats.name, userId: stats.user_id });
   const roleEl = document.getElementById('wc-role');
@@ -902,7 +946,6 @@ async function _loadWorkerCard() {
     if (typeof authImg === 'function') authImg(img, `/api/profile/${uid}/avatar`);
   }
 
-  // Текущая смена (owner видит shift_status в user-card).
   const shiftEl = document.getElementById('wc-shift');
   if (shiftEl) {
     if (card && card.shift_status === 'working') {
@@ -918,7 +961,6 @@ async function _loadWorkerCard() {
     }
   }
 
-  // 04.08 (задача 7.1): действия — Написать / Календарь / Назначить.
   const actionsEl = document.getElementById('wc-actions');
   if (actionsEl) {
     const nm = resolveDisplayName({ profileName: stats.name, userId: stats.user_id });
@@ -926,52 +968,229 @@ async function _loadWorkerCard() {
       <button type="button" class="wc-action-btn" id="wc-act-message">Написать</button>
       <button type="button" class="wc-action-btn" id="wc-act-calendar">Календарь</button>
       <button type="button" class="wc-action-btn" id="wc-act-assign">Назначить</button>`;
-    document.getElementById('wc-act-message').addEventListener('click', () => {
-      // Написать → DM; Back из диалога вернёт на Worker Card (returnContext).
+    document.getElementById('wc-act-message')?.addEventListener('click', () => {
       closeWorkerCard();
       if (typeof openDirectChatWithReturn === 'function') openDirectChatWithReturn(uid, nm, { view: 'worker-card', userId: uid });
     });
-    document.getElementById('wc-act-calendar').addEventListener('click', () => {
-      // Календарь недоступностей — существующий экран (фильтр по работнику — Раунд 5).
+    document.getElementById('wc-act-calendar')?.addEventListener('click', () => {
       closeWorkerCard();
       if (typeof switchView === 'function') switchView('abwesenheit');
     });
-    document.getElementById('wc-act-assign').addEventListener('click', () => {
-      // Assignment Sheet с предвыбранным работником (overlay поверх карточки).
+    document.getElementById('wc-act-assign')?.addEventListener('click', () => {
       if (typeof openAssignmentSheet === 'function') openAssignmentSheet({ userId: uid, userName: nm });
       else showToast('Форма назначения недоступна', 'error');
     });
   }
 
-  // 04.08 (задача 7.2): оперативная информация сразу под шапкой.
+  // stash card/stats for tab loaders (avoid re-fetching)
+  if (_workerCardEl) {
+    _workerCardEl._wcStats = stats;
+    _workerCardEl._wcCard = card;
+  }
+
+  // If productivity tab already visible, fill ops immediately
+  if (_wcActiveTab === 'productivity') _fillProductivityTab(stats, card);
+}
+
+async function _loadWorkerCardTab(tab) {
+  if (!_workerCardEl) return;
+  _wcLoadedTabs.add(tab);
+
+  if (tab === 'today') {
+    await _loadWcTodayTab();
+  } else if (tab === 'productivity') {
+    const stats = _workerCardEl._wcStats;
+    const card = _workerCardEl._wcCard;
+    if (stats) {
+      _fillProductivityTab(stats, card);
+    } else {
+      // identity not yet loaded — wait for it then fill
+      const wait = setInterval(() => {
+        if (_workerCardEl?._wcStats) {
+          clearInterval(wait);
+          _fillProductivityTab(_workerCardEl._wcStats, _workerCardEl._wcCard);
+        }
+      }, 200);
+    }
+  } else if (tab === 'calendar') {
+    _loadWcCalendarTab();
+  } else if (tab === 'profile') {
+    _loadWcProfileTab();
+  }
+}
+
+async function _loadWcTodayTab() {
+  const uid = _workerCardUserId;
+  const panel = document.getElementById('wc-panel-today');
+  if (!panel) return;
+  try {
+    const data = await api(`/api/daily-plan/today?worker_id=${encodeURIComponent(uid)}`);
+    if (!document.getElementById('wc-panel-today')) return;
+    panel.innerHTML = _wcTodayTabHtml(data);
+  } catch (e) {
+    if (panel) panel.innerHTML = `<div style="color:var(--red);padding:1rem 0.75rem">Ошибка: ${esc(e.message)}
+      <button type="button" class="wo-retry-btn" onclick="_loadWcTodayTab()">Повторить</button></div>`;
+  }
+}
+
+function _wcTodayTabHtml(data) {
+  if (!data.has_plan) {
+    return `<div class="wc-today-empty">
+      <div style="font-size:1.5rem;margin-bottom:0.5rem">📋</div>
+      <div style="font-weight:600;margin-bottom:0.25rem">План на сегодня не опубликован</div>
+      <div style="font-size:0.82rem;color:var(--text-light)">${esc(data.date || '')}</div>
+    </div>`;
+  }
+  const plan = data.plan;
+  const acc = data.acceptance;
+  const carryovers = data.carryovers || [];
+  const statusLabel = {
+    draft: 'Черновик',
+    published: acc ? 'Принят' : 'Ожидает принятия',
+    amendment_pending: 'Изменения не подтверждены',
+    accepted: 'Принят',
+    completed: 'Завершён',
+  }[plan.status] || plan.status;
+
+  const statusColor = {
+    draft: 'var(--text-light)',
+    published: acc ? 'var(--accent)' : 'var(--warning-text)',
+    amendment_pending: 'var(--warning-text)',
+    accepted: 'var(--accent)',
+    completed: 'var(--text-light)',
+  }[plan.status] || 'var(--text-main)';
+
+  const itemsHtml = (plan.items || []).map((item, i) => `
+    <div class="wc-today-item">
+      <span class="wc-today-item-num">${i + 1}</span>
+      <div class="wc-today-item-body">
+        <div class="wc-today-item-title">${esc(item.title)}</div>
+        ${item.planned_quantity != null ? `<div class="wc-today-item-meta">${item.planned_quantity} ${esc(item.unit || '')}${item.time_estimate_hours ? ' · ~' + item.time_estimate_hours + ' ч' : ''}</div>` : ''}
+      </div>
+    </div>`).join('');
+
+  const carryoverHtml = carryovers.length ? `
+    <div class="wc-today-carryover">
+      <div style="font-weight:600;font-size:0.85rem;color:var(--warning-text);margin-bottom:0.4rem">⚠ Переносы с предыдущих дней (${carryovers.length})</div>
+      ${carryovers.map(c => `<div class="wc-today-item-meta">↩ ${esc(c.item_title || c.item_id)} — ${c.remaining_quantity != null ? c.remaining_quantity + ' ' + esc(c.unit || '') : ''}</div>`).join('')}
+    </div>` : '';
+
+  return `
+    <div style="padding:0.75rem">
+      <div class="wc-today-status-row">
+        <span class="wc-today-status-badge" style="color:${statusColor}">${esc(statusLabel)}</span>
+        <span style="font-size:0.75rem;color:var(--text-light)">v${plan.version} · ${esc(plan.date)}</span>
+      </div>
+      <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.75rem">${esc(plan.stage_key || '')}</div>
+      ${carryoverHtml}
+      <div class="wc-today-items">${itemsHtml}</div>
+      ${acc ? `<div style="font-size:0.75rem;color:var(--text-light);margin-top:0.5rem">Принят в ${new Date(acc.accepted_at * 1000).toLocaleTimeString('ru', {hour:'2-digit', minute:'2-digit'})}</div>` : ''}
+    </div>`;
+}
+
+function _fillProductivityTab(stats, card) {
   const opsEl = document.getElementById('wc-ops');
   if (opsEl) opsEl.innerHTML = _workerCardOpsHtml(stats, card);
+  const body = document.getElementById('wc-body');
+  if (body) {
+    body.innerHTML = _workerCardBodyHtml(stats, _workerCardUserId);
+    document.getElementById('wc-export-csv')?.addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      try {
+        const { date_from, date_to } = _wcPeriodRange(_workerCardPeriod);
+        const res = await fetch(`${API_BASE}/api/checkin/stundenzettel?user_id=${encodeURIComponent(_workerCardUserId)}&date_from=${date_from}&date_to=${date_to}`, { headers: { ..._authHeaders() } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'Stundenzettel.csv';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+        hapticImpact('light');
+      } catch (e) {
+        showToast('Ошибка экспорта: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+}
 
-  body.innerHTML = _workerCardBodyHtml(stats, uid);
-
-  // CSV табель (Owner-only).
-  document.getElementById('wc-export-csv')?.addEventListener('click', async (ev) => {
-    const btn = ev.currentTarget;
-    btn.disabled = true;
-    try {
-      // §13: CSV соответствует выбранному периоду; имя файла содержит Worker+даты (backend).
-      const { date_from, date_to } = _wcPeriodRange(_workerCardPeriod);
-      const res = await fetch(`${API_BASE}/api/checkin/stundenzettel?user_id=${encodeURIComponent(uid)}&date_from=${date_from}&date_to=${date_to}`, { headers: { ..._authHeaders() } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'Stundenzettel.csv';
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-      hapticImpact('light');
-    } catch (e) {
-      showToast('Ошибка экспорта: ' + e.message, 'error');
-    } finally {
-      btn.disabled = false;
+async function _loadWcCalendarTab() {
+  const uid = _workerCardUserId;
+  const panel = document.getElementById('wc-calendar-content');
+  if (!panel) return;
+  try {
+    const today = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const from = iso(new Date(today.getFullYear(), today.getMonth(), 1));
+    const to = iso(new Date(today.getFullYear(), today.getMonth() + 2, 0));
+    const data = await api(`/api/abwesenheit?user_id=${encodeURIComponent(uid)}&date_from=${from}&date_to=${to}`).catch(() => ({ entries: [] }));
+    if (!document.getElementById('wc-calendar-content')) return;
+    const entries = data.entries || [];
+    if (!entries.length) {
+      panel.innerHTML = `<div style="color:var(--text-light);font-size:0.85rem">Нет запланированных недоступностей</div>
+        <button type="button" class="submit-btn" style="margin-top:0.75rem;width:100%" onclick="closeWorkerCard();switchView('abwesenheit')">Открыть полный календарь</button>`;
+    } else {
+      const typeLabel = { urlaub: 'Отпуск', krankheit: 'Больничный', sonstiges: 'Другое' };
+      panel.innerHTML = entries.slice(0, 5).map(e =>
+        `<div class="wc-today-item" style="margin-bottom:0.4rem">
+          <span class="wc-today-item-num" style="background:var(--warning-bg,rgba(255,180,0,0.15));color:var(--warning-text)">!</span>
+          <div class="wc-today-item-body">
+            <div class="wc-today-item-title">${esc(typeLabel[e.type] || e.type)}</div>
+            <div class="wc-today-item-meta">${esc(e.date_from)} – ${esc(e.date_to)}</div>
+          </div>
+        </div>`
+      ).join('') + `<button type="button" class="submit-btn" style="margin-top:0.75rem;width:100%" onclick="closeWorkerCard();switchView('abwesenheit')">Открыть полный календарь</button>`;
     }
+  } catch (e) {
+    if (document.getElementById('wc-calendar-content'))
+      document.getElementById('wc-calendar-content').innerHTML = `<div style="color:var(--red);font-size:0.85rem">Ошибка загрузки</div>`;
+  }
+}
+
+async function _loadWcProfileTab() {
+  const panel = document.getElementById('wc-profile-content');
+  if (!panel) return;
+  // Reuse stats already loaded by identity
+  const wait = () => new Promise(r => {
+    const id = setInterval(() => {
+      if (_workerCardEl?._wcStats) { clearInterval(id); r(_workerCardEl._wcStats); }
+    }, 100);
+    setTimeout(() => { clearInterval(id); r(null); }, 3000);
   });
+  const stats = _workerCardEl?._wcStats || await wait();
+  if (!document.getElementById('wc-profile-content')) return;
+  if (!stats) {
+    panel.innerHTML = `<div style="color:var(--text-light)">Нет данных</div>`;
+    return;
+  }
+  const skillsV2 = stats.skills_v2 || [];
+  const sizes = stats.sizes || {};
+  const hasSizes = sizes.pants || sizes.shirt || sizes.shoe;
+  panel.innerHTML = `
+    <div class="card" style="margin-bottom:0.75rem">
+      <div class="home-section-header" style="padding:0 0 0.5rem"><span class="home-section-title">Навыки</span></div>
+      <div class="profile-skills-chips">${skillsV2.length ? skillsV2.map(s => {
+        const name = _skillLevelDisplayName(s.skill_id);
+        const lvl = { helper: 'Помощник', independent: 'Самостоятельно', master: 'Мастер' }[s.level] || s.level;
+        return `<div class="profile-skill-chip-v2"><div class="profile-skill-chip-name">${esc(name)}</div><div class="profile-skill-chip-level">${esc(lvl)}</div>${s.verified ? '<div class="profile-skill-verified">✓ Подтверждено</div>' : ''}</div>`;
+      }).join('') : '<div style="font-size:0.85rem;color:var(--text-light)">Навыки не указаны.</div>'}</div>
+    </div>
+    ${hasSizes ? `<div class="card">
+      <div class="home-section-header" style="padding:0 0 0.5rem"><span class="home-section-title">Размеры одежды</span></div>
+      <div class="profile-object-meta" style="font-size:0.85rem">
+        ${sizes.pants ? 'Штаны: ' + esc(sizes.pants) : ''}${sizes.shirt ? ' · Футболка: ' + esc(sizes.shirt) : ''}${sizes.shoe ? ' · Обувь: ' + esc(sizes.shoe) : ''}
+      </div>
+    </div>` : ''}
+    ${stats.birthday ? `<div class="card" style="margin-top:0.75rem">
+      <div class="home-section-header" style="padding:0 0 0.5rem"><span class="home-section-title">Дата рождения</span></div>
+      <div style="font-size:0.9rem">${esc(_fmtBirthday(stats.birthday))}</div>
+    </div>` : ''}
+  `;
 }
 
 // 04.08 (задача 7.2): блок оперативной информации — на смене/объект/работа/сегодня/неделя.

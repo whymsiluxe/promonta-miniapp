@@ -3506,6 +3506,50 @@ body.view-locked {
 .wc-ops-row b { color: var(--text-main); text-align: right; }
 .worker-card-body { padding: 0 0.75rem; }
 #wc-period-pills { padding: 0.5rem 1rem 0.25rem; }
+/* Round 4: Worker Card 4-tab system */
+.wc-tabs { display: flex; border-bottom: 1px solid var(--border-color); background: var(--bg-app); position: sticky; top: 48px; z-index: 1; }
+.wc-tab { flex: 1; padding: 0.6rem 0.2rem; font-size: 0.75rem; font-weight: 600; border: none; background: none; color: var(--text-light); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+.wc-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.wc-tab-panel { min-height: 200px; }
+.wc-tab-panel-hidden { display: none; }
+/* Today tab content */
+.wc-today-empty { padding: 2rem 1rem; text-align: center; color: var(--text-light); }
+.wc-today-status-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem; }
+.wc-today-status-badge { font-size: 0.82rem; font-weight: 600; }
+.wc-today-items { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
+.wc-today-item { display: flex; align-items: flex-start; gap: 0.6rem; }
+.wc-today-item-num { min-width: 22px; height: 22px; border-radius: 50%; background: var(--bg-card-raised); display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; color: var(--text-light); flex-shrink: 0; margin-top: 1px; }
+.wc-today-item-body { flex: 1; }
+.wc-today-item-title { font-size: 0.88rem; font-weight: 600; color: var(--text-main); }
+.wc-today-item-meta { font-size: 0.75rem; color: var(--text-light); margin-top: 0.1rem; }
+.wc-today-carryover { background: rgba(255,180,0,0.08); border-radius: var(--radius-md); padding: 0.5rem 0.65rem; margin-bottom: 0.6rem; border-left: 3px solid var(--warning-text, orange); }
+/* Round 4: Контроль дня view */
+.kd-kpi-strip { display: flex; gap: 0.4rem; padding: 0 0.75rem 0.75rem; overflow-x: auto; }
+.kd-kpi-chip { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.5rem 0.7rem; min-width: 64px; cursor: pointer; }
+.kd-kpi-chip.active { background: color-mix(in srgb, var(--accent) 15%, var(--bg-card)); border: 1px solid var(--accent); }
+.kd-kpi-num { font-family: var(--font-heading); font-size: 1.25rem; font-weight: 700; color: var(--accent); }
+.kd-kpi-label { font-size: 0.65rem; color: var(--text-light); text-align: center; white-space: nowrap; margin-top: 0.1rem; }
+.kd-filters { display: flex; gap: 0.4rem; padding: 0 0.75rem 0.6rem; overflow-x: auto; }
+.kd-filter-chip { flex-shrink: 0; padding: 0.3rem 0.7rem; border-radius: 999px; background: var(--bg-card); font-size: 0.78rem; font-weight: 600; color: var(--text-light); cursor: pointer; white-space: nowrap; border: 1px solid transparent; }
+.kd-filter-chip.active { background: var(--accent); color: #fff; }
+.kd-row { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.65rem 0.75rem; margin: 0 0.75rem 0.5rem; cursor: pointer; }
+.kd-row:active { transform: scale(0.985); }
+.kd-row-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
+.kd-row-worker { font-weight: 700; font-size: 0.9rem; color: var(--text-main); }
+.kd-row-object { font-size: 0.78rem; color: var(--text-light); }
+.kd-row-meta { display: flex; gap: 0.4rem; margin-top: 0.35rem; flex-wrap: wrap; align-items: center; }
+.kd-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+.kd-badge-green { background: rgba(90,160,90,0.15); color: var(--accent); }
+.kd-badge-yellow { background: rgba(200,160,50,0.15); color: var(--warning-text, #b07f00); }
+.kd-badge-orange { background: rgba(220,120,50,0.15); color: var(--c-red-text, #c05020); }
+.kd-badge-red { background: rgba(200,60,60,0.15); color: var(--red); }
+.kd-badge-neutral { background: var(--bg-card-raised); color: var(--text-light); }
+/* Контроль дня detail modal */
+.kd-detail-overlay { position: fixed; inset: 0; z-index: 5300; background: rgba(0,0,0,0.55); display: flex; align-items: flex-end; }
+.kd-detail-sheet { background: var(--bg-app); border-radius: var(--radius-lg) var(--radius-lg) 0 0; width: 100%; max-height: 85vh; overflow-y: auto; padding: 1rem 0.75rem 2rem; }
+.kd-detail-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+.kd-detail-title { font-family: var(--font-heading); font-weight: 700; font-size: 1.05rem; }
+.kd-detail-close { background: none; border: none; font-size: 1.2rem; color: var(--text-light); cursor: pointer; padding: 0.2rem; }
 .profile-week-card { margin: 0 0.75rem 0.75rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 0.85rem; }
 /* 25.07: не задавал свой font-size вообще -- наследовал browser default (~16px) рядом
    с .kpi-num на Home (1.8rem/~29px), тот самый "разный размер шрифта" разрыв, на который
@@ -4896,6 +4940,35 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
   </div>
 </div>
 
+<!-- ═══════════ КОНТРОЛЬ ДНЯ (Round 4 — Production Control) — owner-only ═══════════ -->
+<div class="view" id="view-kontrol-day">
+  <header>
+    <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
+    <h1 id="kd-header-title">Контроль дня</h1>
+  </header>
+  <div id="kd-kpi-strip" class="kd-kpi-strip"></div>
+  <div id="kd-filters" class="kd-filters">
+    <div class="kd-filter-chip active" data-kd-filter="all">Все</div>
+    <div class="kd-filter-chip" data-kd-filter="not_accepted">Не приняли</div>
+    <div class="kd-filter-chip" data-kd-filter="working">Работают</div>
+    <div class="kd-filter-chip" data-kd-filter="finished">Завершили</div>
+    <div class="kd-filter-chip" data-kd-filter="carryover">С переносом</div>
+    <div class="kd-filter-chip" data-kd-filter="risk">Проблемы</div>
+  </div>
+  <div id="kd-rows-list">
+    <div style="padding:2rem;text-align:center;color:var(--text-light)">Загрузка…</div>
+  </div>
+  <div id="kd-detail-overlay" class="kd-detail-overlay" style="display:none">
+    <div class="kd-detail-sheet" id="kd-detail-sheet">
+      <div class="kd-detail-header">
+        <span class="kd-detail-title" id="kd-detail-title">Детали</span>
+        <button type="button" class="kd-detail-close" id="kd-detail-close">✕</button>
+      </div>
+      <div id="kd-detail-body"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════ МОИ ЗАДАЧИ (24.07) — назначения воркера, отдельно от общего списка Объекты ═══════════ -->
 <div class="view" id="view-my-tasks">
   <header>
@@ -5582,6 +5655,7 @@ function switchView(viewName, opts = {}) {
     if (viewName === 'profile') initProfileView();
     if (viewName === 'abwesenheit') initAbwesenheitView();
     if (viewName === 'working-objects') initWorkingObjectsView();
+    if (viewName === 'kontrol-day') initKontrolDayView();
   } else if (viewName === 'chat') {
     _loadChatMessages(true);
   }
@@ -6000,6 +6074,170 @@ async function initApp() {
   }
 
   switchView('home', { isTabSwitch: true });
+}
+
+// ── Round 4: Контроль дня view ─────────────────────────────────────────────
+
+let _kdFilter = 'all';
+let _kdRows = [];
+let _kdLoaded = false;
+
+async function initKontrolDayView() {
+  _kdLoaded = false;
+  _kdFilter = 'all';
+  document.querySelectorAll('.kd-filter-chip').forEach(c => c.classList.toggle('active', c.dataset.kdFilter === 'all'));
+  document.getElementById('kd-rows-list').innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-light)">Загрузка…</div>';
+
+  // Filter chips
+  document.getElementById('kd-filters').addEventListener('click', e => {
+    const chip = e.target.closest('.kd-filter-chip');
+    if (!chip) return;
+    _kdFilter = chip.dataset.kdFilter;
+    document.querySelectorAll('.kd-filter-chip').forEach(c => c.classList.toggle('active', c === chip));
+    _renderKdRows();
+  }, { once: true });
+
+  // Detail close
+  document.getElementById('kd-detail-close').onclick = () => {
+    document.getElementById('kd-detail-overlay').style.display = 'none';
+  };
+  document.getElementById('kd-detail-overlay').onclick = e => {
+    if (e.target === document.getElementById('kd-detail-overlay'))
+      document.getElementById('kd-detail-overlay').style.display = 'none';
+  };
+
+  try {
+    const data = await api('/api/daily-plan/owner/today');
+    _kdRows = data.rows || [];
+    const s = data.summary || {};
+    _renderKdKpi(s, data.date);
+    _renderKdRows();
+    _kdLoaded = true;
+  } catch (e) {
+    document.getElementById('kd-rows-list').innerHTML = `<div style="padding:2rem;text-align:center;color:var(--red)">Ошибка загрузки: ${esc(e.message)}<br><button class="submit-btn" style="margin-top:1rem" onclick="initKontrolDayView()">Повторить</button></div>`;
+  }
+}
+
+function _renderKdKpi(summary, date) {
+  const strip = document.getElementById('kd-kpi-strip');
+  if (!strip) return;
+  const d = date ? new Date(date).toLocaleDateString('ru', { day: 'numeric', month: 'long' }) : '';
+  document.getElementById('kd-header-title').textContent = `Контроль дня · ${d}`;
+  const chips = [
+    { key: 'all', num: summary.total_plans || 0, label: 'Планы' },
+    { key: 'not_accepted', num: (summary.total_plans || 0) - (summary.accepted || 0), label: 'Не приняли' },
+    { key: 'working', num: summary.working || 0, label: 'Работают' },
+    { key: 'finished', num: summary.finished || 0, label: 'Завершили' },
+    { key: 'carryover', num: summary.has_carryovers || 0, label: 'Переносы' },
+  ];
+  strip.innerHTML = chips.map(c =>
+    `<div class="kd-kpi-chip" data-kd-kpi="${esc(c.key)}"><span class="kd-kpi-num">${c.num}</span><span class="kd-kpi-label">${esc(c.label)}</span></div>`
+  ).join('');
+  strip.querySelectorAll('.kd-kpi-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      _kdFilter = chip.dataset.kdKpi;
+      document.querySelectorAll('.kd-filter-chip').forEach(c => c.classList.toggle('active', c.dataset.kdFilter === _kdFilter));
+      _renderKdRows();
+    });
+  });
+}
+
+function _renderKdRows() {
+  const list = document.getElementById('kd-rows-list');
+  if (!list) return;
+  const filtered = _kdRows.filter(row => {
+    if (_kdFilter === 'all') return true;
+    if (_kdFilter === 'not_accepted') return !row.acceptance;
+    if (_kdFilter === 'working') return row.shift_status === 'working';
+    if (_kdFilter === 'finished') return row.shift_status === 'finished';
+    if (_kdFilter === 'carryover') return row.carryover_count > 0;
+    if (_kdFilter === 'risk') return row.risk_level === 'orange' || row.risk_level === 'red';
+    return true;
+  });
+
+  if (!filtered.length) {
+    list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-light)">Нет записей для выбранного фильтра</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(row => {
+    const riskBadge = { green: 'kd-badge-green', yellow: 'kd-badge-yellow', orange: 'kd-badge-orange', red: 'kd-badge-red' }[row.risk_level] || 'kd-badge-neutral';
+    const shiftLabels = { not_started: 'Не начата', working: 'Работает', paused: 'Пауза', finished: 'Завершена' };
+    const planLabels = { NOT_ACCEPTED: 'Ожидает принятия', ACCEPTED: 'Принят', DRAFT: 'Черновик', AMENDMENT_PENDING: 'Изм. не подтверждены', COMPLETED: 'Завершён' };
+
+    return `<div class="kd-row" data-kd-plan-id="${esc(row.plan_id)}" data-kd-worker-id="${esc(row.worker_id)}">
+      <div class="kd-row-top">
+        <div>
+          <div class="kd-row-worker">${esc(row.worker_id)}</div>
+          <div class="kd-row-object">${esc(row.object_id)} · ${esc(row.plan_summary?.stage_key || '')}</div>
+        </div>
+        <span class="kd-badge ${riskBadge}">${row.risk_level === 'orange' ? '⚠' : row.risk_level === 'red' ? '🔴' : row.risk_level === 'yellow' ? '!' : '✓'}</span>
+      </div>
+      <div class="kd-row-meta">
+        <span class="kd-badge ${row.acceptance ? 'kd-badge-green' : 'kd-badge-yellow'}">${esc(planLabels[row.plan_status_label] || row.plan_status_label)}</span>
+        <span class="kd-badge kd-badge-neutral">${esc(shiftLabels[row.shift_status] || row.shift_status)}</span>
+        ${row.carryover_count ? `<span class="kd-badge kd-badge-yellow">↩ ${row.carryover_count} переноса</span>` : ''}
+        ${row.execution_summary ? `<span class="kd-badge kd-badge-green">✓ ${row.execution_summary.done}/${row.execution_summary.total}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.kd-row').forEach(el => {
+    el.addEventListener('click', () => _showKdDetail(el.dataset.kdPlanId, el.dataset.kdWorkerId));
+  });
+}
+
+async function _showKdDetail(planId, workerId) {
+  const overlay = document.getElementById('kd-detail-overlay');
+  const body = document.getElementById('kd-detail-body');
+  const title = document.getElementById('kd-detail-title');
+  if (!overlay || !body) return;
+
+  overlay.style.display = 'flex';
+  body.innerHTML = '<div style="text-align:center;color:var(--text-light);padding:1rem">Загрузка…</div>';
+  title.textContent = 'Детали';
+
+  const row = _kdRows.find(r => r.plan_id === planId && r.worker_id === workerId);
+  if (!row) { body.innerHTML = '<div style="color:var(--red)">Не найдено</div>'; return; }
+
+  title.textContent = `${row.worker_id} · ${row.date}`;
+
+  let planDetail = null;
+  try {
+    planDetail = await api(`/api/daily-plan/${encodeURIComponent(planId)}`);
+  } catch (_) {}
+
+  const plan = planDetail?.plan || {};
+  const items = plan.items || [];
+  const acc = planDetail?.acceptance;
+  const exec = row.execution_summary;
+
+  const itemsHtml = items.map((item, i) => {
+    const res = planDetail?.execution?.item_results?.find?.(r => r.item_id === item.id);
+    return `<div class="wc-today-item" style="margin-bottom:0.4rem">
+      <span class="wc-today-item-num">${i + 1}</span>
+      <div class="wc-today-item-body">
+        <div class="wc-today-item-title">${esc(item.title)}</div>
+        ${item.planned_quantity != null ? `<div class="wc-today-item-meta">${item.planned_quantity} ${esc(item.unit || '')}</div>` : ''}
+        ${res ? `<div class="kd-badge ${res.status === 'done' ? 'kd-badge-green' : res.status === 'blocked' ? 'kd-badge-orange' : 'kd-badge-yellow'}" style="display:inline-block;margin-top:0.2rem">${{ done: 'Выполнено', partial: 'Частично', not_done: 'Не выполнено', blocked: 'Заблокировано' }[res.status] || res.status}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('') || '<div style="color:var(--text-light);font-size:0.85rem">Нет позиций плана</div>';
+
+  body.innerHTML = `
+    <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.75rem">${esc(row.object_id)} · ${esc(row.plan_summary?.stage_key || '')} · v${row.plan_summary?.version || 1}</div>
+    ${acc ? `<div style="font-size:0.8rem;margin-bottom:0.75rem">Принят в ${new Date(acc.accepted_at * 1000).toLocaleTimeString('ru', {hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+    ${exec ? `<div class="kd-badge kd-badge-green" style="display:inline-block;margin-bottom:0.75rem">✓ ${exec.done} из ${exec.total} выполнено</div>` : ''}
+    ${row.carryover_count ? `<div class="kd-badge kd-badge-yellow" style="display:inline-block;margin-bottom:0.75rem">↩ ${row.carryover_count} перенос(а)</div>` : ''}
+    <div style="font-weight:600;margin-bottom:0.4rem">Позиции плана</div>
+    ${itemsHtml}
+    <button type="button" class="submit-btn" style="width:100%;margin-top:1rem" onclick="closeKdDetail();openWorkerCard('${workerId}',{initialTab:'today'})">Открыть карточку сотрудника</button>
+  `;
+}
+
+function closeKdDetail() {
+  const overlay = document.getElementById('kd-detail-overlay');
+  if (overlay) overlay.style.display = 'none';
 }
 
 initApp();

@@ -36,6 +36,9 @@ async function initHomeView() {
         <span class="kpi-num" id="kpi-alerts-count">—</span><span class="kpi-label">Алерты</span>
         <span class="quick-primary-badge" id="alerts-badge" style="display:none">0</span>
       </div>
+      <div class="kpi-tile" id="kpi-kontrol" onclick="switchView('kontrol-day')" style="background:color-mix(in srgb,var(--accent) 8%,var(--bg-card))">
+        <span class="kpi-num" id="kpi-kontrol-count">—</span><span class="kpi-label">Контроль дня</span>
+      </div>
     </div>
 
     <div id="home-radio-player-mount"></div>
@@ -97,6 +100,21 @@ async function _loadHomeData() {
   _loadHomeAlerts();
   _loadHomeAbwesenheitSummary();
   _loadHomeChatSummary();
+  _loadHomeKontrolDaySummary();
+}
+
+async function _loadHomeKontrolDaySummary() {
+  const tile = document.getElementById('kpi-kontrol');
+  if (!tile) return;
+  try {
+    const data = await api('/api/daily-plan/owner/today');
+    const s = data.summary || {};
+    const countEl = document.getElementById('kpi-kontrol-count');
+    if (countEl) countEl.textContent = s.total_plans || 0;
+    // highlight tile if there are orange/red risk rows
+    const hasRisk = (data.rows || []).some(r => r.risk_level === 'orange' || r.risk_level === 'red');
+    if (hasRisk) tile.classList.add('kpi-alert');
+  } catch (_) {}
 }
 
 // 10.11: Abwesenheit-плашка на Home — сводка вместо мелкой строки в Profile→Ещё.
@@ -1226,6 +1244,7 @@ async function _initWorkingObjectsPlanTab() {
     </div>
     <input type="date" id="wo-plan-date-input" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;">
     <button class="submit-btn wo-plan-add-btn" id="wo-plan-add-btn" type="button">Добавить назначение</button>
+    <button class="submit-btn" style="margin:0 0.75rem 0.75rem;width:calc(100% - 1.5rem);background:color-mix(in srgb,var(--accent) 12%,var(--bg-card));color:var(--accent)" type="button" onclick="switchView('kontrol-day')">📊 Контроль дня (сводка)</button>
     <div id="wo-plan-content"></div>
   `;
 
