@@ -207,3 +207,14 @@ active checkin today, else fall back to the existing period-stats view (now rena
 These are pre-existing access-control gaps, unrelated to the production-control program.
 They should not be introduced as regressions by Round 1-7 code, but fixing them is
 explicitly out of scope for this run.
+
+---
+
+## Owner answers (2026-09-07, 19:20 CEST)
+
+- **Q1 (Drive scope)**: Deferred. Continue all rounds without Drive; Round 5 stays stubbed/blocked as planned.
+- **Q2 (Нормы работ real rates)**: Deferred. Continue with norm_verified=false rows as planned.
+- **Q3 (weekend work)**: Confirmed — Mon-Fri default is correct, no Saturday work. No change needed.
+- **Q4 (Sheets tabs location)**: Confirmed — same spreadsheet as Объекты/Этапы (SHEET_ID 14CXpSaW9ErmViK09zAh09X52EUmEJjnkxGUSmW3Z9sA). Proceed with tab creation there.
+
+All provisional decisions in Q1-Q9 above are CONFIRMED. Continue Round 2 onward with no further blocking on these.

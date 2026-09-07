@@ -43,3 +43,36 @@ Do not just stop silently. Update HANDOFF.md with exact state, then self-resched
 ## When genuinely done
 
 If all 7 rounds are complete, tests pass, and the app is deployed and verified working end-to-end: write a final summary to HANDOFF.md, stop cleanly (no more scheduled resumes), and leave OPEN_QUESTIONS.md as the definitive list of anything still needing a human decision.
+
+
+## CRITICAL — self-reschedule on usage limit is MANDATORY, not optional
+
+The previous run (2026-09-07 14:52-15:16) hit the account usage limit and DIED without
+scheduling a resume. This must not happen again. The moment you see any output resembling
+"You've hit your session limit" or similar rate-limit message:
+
+1. IMMEDIATELY update docs/HANDOFF.md with exact current state (this is your last chance
+   before the process dies).
+2. Schedule a resume via `at` RIGHT THEN, before doing anything else. Write the resume
+   command to a shell script file first (e.g. /home/promonta/agent/miniapp-repo/docs/resume_cmd.sh),
+   then pipe that script's path into `at` — avoids shell-quoting problems with nested
+   quotes in a one-liner. The resume command should re-launch via systemd-run with
+   EnvironmentFile=/etc/claude-agent.env, WorkingDirectory=the repo, logging to
+   docs/autonomous_run.log, prompting claude to read docs/HANDOFF.md fully and continue
+   the Production Control Program from exactly where it left off per
+   docs/AUTONOMOUS_EXECUTION_RULES.md.
+   Schedule for the stated reset time + 5 min buffer if a specific time is given in the
+   limit message, otherwise 2 hours out as a safe default.
+3. Check `atq` before scheduling to avoid stacking duplicate resume jobs (as both root
+   and promonta users).
+4. This is not a suggestion — a died process with no scheduled resume is a failure of
+   this run's own rules, not an acceptable stopping point short of full plan completion.
+
+## Token efficiency (added 2026-09-07, mid-run)
+
+The owner asked to conserve tokens/usage. Concretely:
+- Do not re-read files you already read this run unless they changed — trust your own HANDOFF.md notes on file contents/line numbers instead of re-opening files to double-check.
+- Do not re-explain the plan to yourself at the start of every round — you already have HANDOFF.md, PRODUCTION_CONTROL_PLAN.md, and AUTONOMOUS_EXECUTION_RULES.md; skim only the sections relevant to the current round, not the whole plan again.
+- Prefer targeted greps/reads over dumping whole large files (main.py is 7600+ lines — read only the relevant function ranges, not the full file).
+- Keep commits and test runs meaningful-sized — don't run the full pytest suite after every single small edit; batch related changes, then test.
+- Keep OPEN_QUESTIONS.md / HANDOFF.md updates concise — enough for a fresh session to resume, not verbose restating of context already in PRODUCTION_CONTROL_PLAN.md.
