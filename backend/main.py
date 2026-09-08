@@ -32,6 +32,18 @@ sys.path.insert(0, '/home/promonta/agent')
 # пути к файлу через importlib.util, без малейшего влияния на глобальный sys.path.
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
+
+_PROD_DATA_ROOT = '/home/promonta/agent/miniapp'
+_is_test_context = (
+    os.environ.get('PROMONTA_ENV') == 'test'
+    or 'pytest' in sys.modules
+)
+if _is_test_context and DATA_ROOT == _PROD_DATA_ROOT:
+    raise RuntimeError(
+        f"REFUSING TO RUN TESTS AGAINST PRODUCTION DATA ROOT ({_PROD_DATA_ROOT}). "
+        "Set MINIAPP_DATA_ROOT to a temp directory before importing this module "
+        "in test context. conftest.py should have handled this automatically."
+    )
 TOOLS_LIB_PATH = os.path.join(BACKEND_DIR, 'tools_lib.py')
 MANGEL_LIB_PATH = os.path.join(BACKEND_DIR, 'mangel_lib.py')
 OBJEKTE_LIB_PATH = os.path.join(BACKEND_DIR, 'objekte_lib.py')

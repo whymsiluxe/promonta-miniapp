@@ -1,78 +1,106 @@
-# Autonomous Execution Rules — Production Control Program
+# Autonomous Execution Rules — Recovery + Architecture + UX Round
 
-You are executing `docs/PRODUCTION_CONTROL_PLAN.md` (read it fully first — it is the complete architecture spec, Round 0-7 scope, data models, Sheets schemas, all the "do not build" constraints). This file adds the operating rules for running unattended.
+You are executing the plan at `~/.claude/plans/fancy-booping-hammock.md` on the owner's Mac
+(NOT in this repo — read it via the plan's full content, which has been copied into this
+repo as `docs/EXECUTION_PLAN.md` for on-VPS reference). Read `docs/EXECUTION_PLAN.md` fully
+first — it is the complete spec: Phase 0 through Phase 7, every finding, every owner
+correction. This file adds only the operating rules for running unattended.
 
 ## Core mandate
 
-Execute Round 0 (discovery) then continue **directly into Round 1 through Round 7** — real implementation: DailyPlan backend, Sheets schema/sync worker, worker "Сегодня" UX, Finish wizard integration, carryover, owner Контроль дня + matrix + Worker Card extensions, Google Drive contract ingestion, productivity system, hardening/tests. **No stopping between rounds. No waiting for a "GO" message.** The plan file's own "STOP after each round" language is superseded — the user explicitly overrode it (07.09.2026): run start to finish autonomously, however many hours/sessions it takes.
+Execute Phase 0 (incident root-cause fix + firewall) through Phase 7 (performance/observability),
+in order, without stopping for a "GO" message between phases — EXCEPT the final deploy, which
+is explicitly forbidden from this autonomous session (see "No production deployment" below).
+
+## MANDATORY FIRST ACTIONS — before touching anything else
+
+1. Read `docs/EXECUTION_PLAN.md` in full.
+2. Read `docs/HANDOFF.md` for current status (if this is a resumed session, not a fresh start).
+3. Check `docs/EXECUTION_STATE.txt`. If it is not `RUNNING`, STOP immediately — do not proceed,
+   do not "fix" the state file, do not resume. A non-RUNNING state means either the work is
+   done, deliberately stopped for review, or has permanently failed — in every case, the correct
+   action is to do nothing and exit.
+4. Check `docs/EXECUTION_RESTART_COUNT.txt`. If it is already `3` or higher, set
+   `docs/EXECUTION_STATE.txt` to `FAILED`, write the reason to `docs/HANDOFF.md`, and STOP.
+5. `git log --oneline -20` and `git status` — determine exactly which phases are already
+   committed. **Never re-run a phase whose commit already exists** unless `docs/HANDOFF.md`
+   explicitly says that phase's verification failed and needs redoing.
+6. Before ANY pytest invocation, in this exact order:
+   ```
+   export PROMONTA_ENV=test
+   export MINIAPP_DATA_ROOT=$(mktemp -d)
+   test "$MINIAPP_DATA_ROOT" != "/home/promonta/agent/miniapp" || { echo "REFUSING: DATA_ROOT resolved to production"; exit 1; }
+   ```
+   This is required on every single pytest invocation, no exceptions, even after Phase 0's
+   in-code firewall (0.10) is built — this is belt-and-suspenders, not a replacement for it.
 
 ## The one exception — real decision points, handled WITHOUT halting everything
 
-If a genuine fork-in-the-road comes up — an architectural choice with several reasonable options, something irreversible/risky to production, a real conflict between two parts of the spec, a discovery that meaningfully changes scope — do this:
+If a genuine fork-in-the-road comes up — an architectural choice with several reasonable
+options, something irreversible/risky to production, a real conflict between two parts of
+the plan, a discovery that meaningfully changes scope (e.g. Phase 1's live Sheet header
+check reveals something unexpected) — do this:
 
-1. Write it into a running `docs/OPEN_QUESTIONS.md` with full context: what the question is, why it matters, what you're leaning toward and why, what's blocked by it.
-2. **Do NOT stop the rest of the work.** Keep executing every other part of the plan that doesn't depend on that specific answer.
-3. If you must make a call to keep moving, make the more conservative/reversible choice, note it clearly as a provisional decision in OPEN_QUESTIONS.md, and keep going — don't let one uncertainty freeze the whole pipeline.
-
-This is a hard rule from the user: questions come back to them, the pipeline does not stop and wait.
-
-## Non-negotiable architecture constraints (from the plan, Section II)
-
-No second stage system, no second check-in, no second assignment system, no second work-type catalog, no second notification system, no duplicate Roadmap, no second Worker Card, no second calendar inside Worker Card, no bottom-nav changes, no second parallel DailyPlan representation for the owner. Worker and Owner always view different *presentations* of the same underlying DailyPlan data.
+1. Write it into a running `docs/OPEN_QUESTIONS.md` with full context: what the question is,
+   why it matters, what you're leaning toward and why, what's blocked by it.
+2. Do NOT stop the rest of the work. Keep executing every other part of the plan that
+   doesn't depend on that specific answer.
+3. If you must make a call to keep moving, make the more conservative/reversible choice,
+   note it clearly as a provisional decision in OPEN_QUESTIONS.md, and keep going.
 
 ## Quality bar
 
-- Run the existing pytest suite (~355+ tests) before and after each meaningful change. Never leave the repo in a broken state between work chunks — if you stop for any reason (usage limit, crash), the repo at that moment must be in a working, tested state, or clearly marked WIP in HANDOFF.md with exactly what's incomplete.
-- Before creating Google Sheets tabs or touching Drive: do the safety checks the plan specifies. Check Drive OAuth scope before any Drive work — do not silently reauthorize or overwrite tokens. If Drive scope is missing, mark that sub-feature `DRIVE_SCOPE_REQUIRED` / BLOCKED in OPEN_QUESTIONS.md and continue with everything else that doesn't need Drive.
-- Commits should be real, working, incremental — not one giant end-of-run commit. Use normal git hygiene (the plan/user's own conventions: no `--no-verify`, no force-push, create new commits rather than amending).
+- Run the pytest suite before and after each meaningful change — **always** with the
+  MANDATORY FIRST ACTIONS' env setup, never bare `pytest tests/`.
+- Never leave the repo in a broken state between work chunks. If you stop for any reason
+  (usage limit, crash), the repo at that moment must be in a working, tested state, or
+  clearly marked WIP in HANDOFF.md with exactly what's incomplete.
+- Commits should be real, working, incremental — matching the plan's suggested commit
+  boundaries per phase, not one giant end-of-run commit. Normal git hygiene: no `--no-verify`,
+  no force-push, create new commits rather than amending.
+- Before creating Google Sheets tabs or touching Drive/Sheets in any write capacity: the
+  plan's Phase 1 correction requires reading the live "Объекты" header FIRST, read-only.
+  Do not write to any existing Sheets tab or column.
 
 ## Continuity — HANDOFF.md
 
-Maintain `docs/HANDOFF.md` **continuously**, not just at the end: what's done, what's in progress, what's left (by round/step), all non-trivial decisions made and why, technical risks found, exact files touched. A fresh process invocation (after a crash, VPS reboot, or usage-limit reset) must be able to read HANDOFF.md alone and resume with zero reliance on any conversation memory.
+Update `docs/HANDOFF.md` continuously as you go, not just at the end — what's done, what's
+in progress, what's left, and any non-trivial decisions made and why. This is what a resumed
+session (yours or a human's) reads to know where things stand.
 
-## If you hit a usage/rate limit mid-work
+## EXECUTION STATE MACHINE — read this before doing anything else
 
-Do not just stop silently. Update HANDOFF.md with exact state, then self-reschedule via `at` or `cron` for a reasonable retry window (e.g. a few hours out, or when a known reset window applies), so the work chain continues automatically rather than waiting for a human to notice and manually restart it. Check both `root` and `promonta` user's `at`/`cron` queues before adding a new one, to avoid duplicate scheduled resumes.
+`docs/EXECUTION_STATE.txt` holds exactly one of: `RUNNING`, `COMPLETE`, `FAILED`, `STOPPED_FOR_REVIEW`.
 
-## Environment notes
+- While you are actively working: state stays `RUNNING`.
+- When all 7 phases are done, verified, and the final report is written per the plan's
+  "Deploy" section: set state to `STOPPED_FOR_REVIEW` (this is the normal successful end —
+  "complete AND awaiting the owner's deploy decision", not a bug).
+- If you hit an unrecoverable error (not a usage limit, an actual logical dead end you
+  cannot resolve even conservatively): write the full context to `docs/HANDOFF.md` and
+  `docs/OPEN_QUESTIONS.md`, then set state to `FAILED`.
+- **Never set state to `COMPLETE`** — that value is reserved for a future round after the
+  owner has reviewed and the deploy has actually happened; this round's successful terminal
+  state is `STOPPED_FOR_REVIEW`.
+- If you are stopped by a usage limit (not by your own choice): leave state as `RUNNING`
+  (the watchdog, described below, will restart you) but make sure `docs/HANDOFF.md` is
+  current at that exact moment so the resumed session can pick up cleanly.
 
-- Repo: `/home/promonta/agent/miniapp-repo/` on this VPS. Deployed frontend: `/var/www/miniapp/`. Deployed backend service: `promonta-miniapp` (systemd).
-- `claude` CLI should be available and authorized via `/etc/claude-agent.env` — verify and source explicitly if needed under whichever user you're running as.
-- This VPS also runs other production services (Telegram bot, etc.) — do not restart/touch unrelated services.
+## Watchdog behavior (informational — you don't control this, but must cooperate with it)
 
-## When genuinely done
+A bounded watchdog (NOT the previous infinite 5-minute-interval one, which is what caused
+yesterday's incident) checks `docs/EXECUTION_STATE.txt` periodically. It restarts you ONLY
+if the state is `RUNNING`. It increments `docs/EXECUTION_RESTART_COUNT.txt` on each restart
+and refuses to restart a 4th time (see MANDATORY FIRST ACTIONS step 4). It permanently
+disables itself the moment state becomes anything other than `RUNNING`. Your job: keep
+HANDOFF.md accurate so each restart is a clean resume, not a redo.
 
-If all 7 rounds are complete, tests pass, and the app is deployed and verified working end-to-end: write a final summary to HANDOFF.md, stop cleanly (no more scheduled resumes), and leave OPEN_QUESTIONS.md as the definitive list of anything still needing a human decision.
+## No production deployment from this autonomous session
 
-
-## CRITICAL — self-reschedule on usage limit is MANDATORY, not optional
-
-The previous run (2026-09-07 14:52-15:16) hit the account usage limit and DIED without
-scheduling a resume. This must not happen again. The moment you see any output resembling
-"You've hit your session limit" or similar rate-limit message:
-
-1. IMMEDIATELY update docs/HANDOFF.md with exact current state (this is your last chance
-   before the process dies).
-2. Schedule a resume via `at` RIGHT THEN, before doing anything else. Write the resume
-   command to a shell script file first (e.g. /home/promonta/agent/miniapp-repo/docs/resume_cmd.sh),
-   then pipe that script's path into `at` — avoids shell-quoting problems with nested
-   quotes in a one-liner. The resume command should re-launch via systemd-run with
-   EnvironmentFile=/etc/claude-agent.env, WorkingDirectory=the repo, logging to
-   docs/autonomous_run.log, prompting claude to read docs/HANDOFF.md fully and continue
-   the Production Control Program from exactly where it left off per
-   docs/AUTONOMOUS_EXECUTION_RULES.md.
-   Schedule for the stated reset time + 5 min buffer if a specific time is given in the
-   limit message, otherwise 2 hours out as a safe default.
-3. Check `atq` before scheduling to avoid stacking duplicate resume jobs (as both root
-   and promonta users).
-4. This is not a suggestion — a died process with no scheduled resume is a failure of
-   this run's own rules, not an acceptable stopping point short of full plan completion.
-
-## Token efficiency (added 2026-09-07, mid-run)
-
-The owner asked to conserve tokens/usage. Concretely:
-- Do not re-read files you already read this run unless they changed — trust your own HANDOFF.md notes on file contents/line numbers instead of re-opening files to double-check.
-- Do not re-explain the plan to yourself at the start of every round — you already have HANDOFF.md, PRODUCTION_CONTROL_PLAN.md, and AUTONOMOUS_EXECUTION_RULES.md; skim only the sections relevant to the current round, not the whole plan again.
-- Prefer targeted greps/reads over dumping whole large files (main.py is 7600+ lines — read only the relevant function ranges, not the full file).
-- Keep commits and test runs meaningful-sized — don't run the full pytest suite after every single small edit; batch related changes, then test.
-- Keep OPEN_QUESTIONS.md / HANDOFF.md updates concise — enough for a fresh session to resume, not verbose restating of context already in PRODUCTION_CONTROL_PLAN.md.
+Per the plan's "Deploy" section: do NOT run `deploy_frontend.py` against the live
+`/var/www/miniapp`, do NOT restart `promonta-miniapp.service`, do NOT modify
+`/etc/systemd/system/promonta-miniapp.service`. All of Phase 0-7's work happens in
+`/home/promonta/agent/miniapp-repo` (the git repo) — the live production directories
+(`/home/promonta/agent/miniapp`, `/var/www/miniapp`) are read-only reference points for
+verification (e.g. comparing deployed vs. repo state) but are never written to by this
+session. The final report documents the deploy plan; a human executes it later.

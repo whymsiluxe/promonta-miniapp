@@ -12,10 +12,18 @@ Run:
 """
 import os
 import sys
+import tempfile
 import unittest
 from datetime import timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+
+# Belt-and-suspenders: set isolation env before importing main so DATA_ROOT never
+# resolves to the production path when this file is run standalone (conftest.py
+# provides the primary guard when running the full suite via pytest).
+os.environ.setdefault('MINIAPP_DATA_ROOT', tempfile.mkdtemp(prefix='promonta-test-'))
+os.environ.setdefault('BOT_TOKEN', 'ci-dummy-token-not-a-real-secret')
+os.environ.setdefault('PROMONTA_ENV', 'test')
 
 import main as backend  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
