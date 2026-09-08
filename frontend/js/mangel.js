@@ -32,6 +32,7 @@ function _mangelColumnFor(status) {
 }
 
 let _mangelPhotoFile = null;
+let _mangelIdempotencyKey = null;
 let _mangelTickets = [];
 let _mangelWorkers = [];        // 04.08 (1.1): кэш /api/workers, чтобы перестраивать optgroup без повторного GET
 let _mangelObjectsCache = [];   // 04.08 (1.1): кэш /api/objects (owner видит assigned_users)
@@ -474,6 +475,12 @@ async function submitMangelTicket() {
   if (!objectId) { showToast('Выберите объект'); return; }
   if (!description) { showToast('Опишите дефект'); return; }
 
+  // Phase 4: onLine pre-check (mirrors checkin.js/finish-wizard.js pattern)
+  if (!navigator.onLine) {
+    showToast('Нет сети — создание тикета недоступно офлайн', 'error');
+    return;
+  }
+
   const workerSelect = document.getElementById('mangel-worker-select');
   const assignedWorkerId = (currentRole === 'owner' && workerSelect) ? workerSelect.value : '';
 
@@ -483,13 +490,16 @@ async function submitMangelTicket() {
   if (assignedWorkerId) formData.append('assigned_worker_id', assignedWorkerId);
   if (_mangelPhotoFile) formData.append('file', _mangelPhotoFile);
 
+  // Phase 4: idempotency key prevents duplicate tickets on retry after ambiguous network failure
+  if (!_mangelIdempotencyKey) _mangelIdempotencyKey = crypto.randomUUID();
+
   const origLabel = submitBtn.textContent;
   submitBtn.disabled = true;
   submitBtn.textContent = 'Создание…';
   try {
     await fetch(`${API_BASE}/api/mangel`, {
       method: 'POST',
-      headers: { ..._authHeaders() },
+      headers: { ..._authHeaders(), 'Idempotency-Key': _mangelIdempotencyKey },
       body: formData,
     }).then(async res => {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
@@ -523,6 +533,7 @@ function _openMangelForm() {
 function _closeMangelForm() {
   document.getElementById('mangel-form').style.display = 'none';
   document.getElementById('mangel-description').value = '';
+  _mangelIdempotencyKey = null;
   _clearMangelPhoto();
   _updateMangelFab();
 }

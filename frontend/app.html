@@ -499,7 +499,7 @@ header h1 {
 .my-task-card-body { flex: 1; min-width: 0; }
 .my-task-card-title { font-family: var(--font-heading); font-weight: 700; font-size: 0.95rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .my-task-card-stage { margin-top: 0.2rem; font-size: 0.8rem; color: var(--text-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.my-task-card-dates { margin-top: 0.35rem; font-size: 0.75rem; color: var(--accent-gold); }
+.my-task-card-dates { margin-top: 0.35rem; font-size: 0.82rem; font-weight: 600; color: var(--accent-gold); }
 .my-task-card-note { margin-top: 0.35rem; font-size: 0.8rem; color: var(--text-main); background: var(--bg-body); border-radius: var(--radius-sm); padding: 0.4rem 0.55rem; }
 .my-task-decline-summary { margin-bottom: 0.9rem; padding: 0.6rem 0.7rem; border-radius: var(--radius-sm); background: var(--bg-body); color: var(--text-light); font-size: 0.82rem; line-height: 1.5; }
 .my-task-chat-btn { flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%; border: none; background: linear-gradient(155deg, var(--bg-card) 0%, var(--bg-card-raised) 100%); box-shadow: var(--c-shadow-control, var(--shadow-sm)), inset 0 1px 0 rgba(255,255,255,0.06); color: var(--accent); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease; position: relative; }
@@ -610,7 +610,7 @@ header h1 {
 .mangel-modal { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; }
 .mangel-modal-content { background: var(--bg-card); border-radius: var(--radius-lg) var(--radius-lg) 0 0; width: 100%; max-height: 80vh; overflow-y: auto; padding: 1rem; }
 .mangel-modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; font-weight: 700; }
-.mangel-modal-close { background: none; border: none; color: var(--text-light); font-size: 1.1rem; cursor: pointer; }
+.mangel-modal-close { background: none; border: none; color: var(--text-light); font-size: 1.1rem; cursor: pointer; min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
 .mangel-modal-photo { width: 100%; height: 160px; border-radius: var(--radius-md); background-size: cover; background-position: center; margin-bottom: 0.75rem; }
 .mangel-modal-desc { margin-bottom: 0.75rem; }
 .user-card-avatar { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; margin: 0 auto 0.6rem; display: block; background: var(--bg-light); }
@@ -647,7 +647,7 @@ header h1 {
 .checkin-manual-link { background: none; border: none; color: var(--accent); text-align: center; padding: 0.4rem; cursor: pointer; font-size: 0.85rem; }
 .checkin-pause-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; margin-bottom: 0.6rem; }
 .checkin-pause-row span:first-child { flex: 1; }
-.checkin-pause-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border-color); background: var(--bg-card-raised); color: var(--text-main); font-size: 1.1rem; cursor: pointer; }
+.checkin-pause-btn { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--border-color); background: var(--bg-card-raised); color: var(--text-main); font-size: 1.3rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .checkin-analysis { margin: 0 0.75rem 0.75rem; padding: 0.75rem; background: var(--bg-card); border-radius: var(--radius-md); font-size: 0.85rem; }
 .checkin-analysis-block { margin-bottom: 0.6rem; }
 .checkin-analysis-block:last-child { margin-bottom: 0; }
@@ -3125,7 +3125,7 @@ body.view-locked {
 .wo-worker-row { display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.65rem 0.85rem; margin-bottom: 0.5rem; }
 .wo-worker-row-nested { margin-left: 0.5rem; background: var(--bg-card-raised); }
 .wo-worker-name { font-weight: 600; font-size: 0.95rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.wo-absence-reason { font-size: 0.82rem; color: var(--warning-text); }
+.wo-absence-reason { font-size: 0.82rem; font-weight: 600; color: var(--warning-text); }
 .wo-assign-btn { width: auto; padding: 0.4rem 0.9rem; font-size: 0.85rem; }
 .wo-empty { color: var(--text-light); font-size: 0.85rem; padding: 0.5rem 0; }
 /* 30.07 v4/v5: экран "Команда" -- сводка / карточки сотрудников / часы команды */
@@ -3166,7 +3166,7 @@ body.view-locked {
 .wo-th-avatar-active { box-shadow: 0 0 0 2px var(--c-brass, var(--accent-gold, var(--accent))); }
 .wo-th-row-main { flex: 1; min-width: 0; }
 .wo-th-row-name { font-size: 0.92rem; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 0.4rem; }
-.wo-th-badge { font-size: 0.68rem; font-weight: 600; color: var(--c-brass, var(--accent-gold, var(--accent))); white-space: nowrap; }
+.wo-th-badge { font-size: 0.75rem; font-weight: 600; color: var(--c-brass, var(--accent-gold, var(--accent))); white-space: nowrap; }
 .wo-th-row-object { font-size: 0.78rem; color: var(--text-light); margin-top: 0.1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wo-th-row-meta { font-size: 0.8rem; color: var(--text-main); margin-top: 0.1rem; }
 .wo-th-row-meta-muted { color: var(--text-light); }
@@ -3202,7 +3202,7 @@ body.view-locked {
 /* 23.07: единый error-state — было 8+ разных стилей одного смысла (text-light/red/без стиля
    в home.js/objects.js/tools.js/profile.js). Новый класс, старые места не трогаем (риск
    визуальной регрессии без live-проверки), новые ошибки используют этот. */
-.js-error-state { padding: 1rem; color: var(--warning-text); text-align: center; font-size: 0.85rem; }
+.js-error-state { padding: 1rem; color: var(--warning-text); text-align: center; font-size: 0.85rem; font-weight: 600; }
 
 /* 23.07: skeleton-заготовка (отчёт: 11 мест голого текста "Загрузка..." вместо skeleton).
    Компонент готов, но НЕ применён везде разом — 11 разных по форме мест, замена без
@@ -4450,7 +4450,7 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 }
 .fw-progress { grid-column: 1; font-size: 0.75rem; color: var(--text-light); }
 .fw-title { grid-column: 2; text-align: center; font-size: 1.05rem; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fw-close-btn { grid-column: 3; justify-self: end; background: none; border: none; font-size: 1.1rem; color: var(--text-light); padding: 0.3rem; }
+.fw-close-btn { grid-column: 3; justify-self: end; background: none; border: none; font-size: 1.1rem; color: var(--text-light); padding: 0.3rem; min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
 .fw-body { flex: 1; overflow-y: auto; padding: 0.5rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); }
 .fw-hint { font-size: 0.9rem; color: var(--text-light); margin-bottom: 0.75rem; }
 .fw-photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 0.75rem; }
@@ -5035,10 +5035,8 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 
   <div id="tasks-tab-content">
     <div id="tasks-form" class="mangel-form" style="display:none;">
-      <div class="voice-input-row">
-        <textarea id="tasks-title-input" class="mangel-textarea" placeholder="Что нужно? (например: перфоратор, 2 мешка цемента, каска)" rows="4"></textarea>
-        <button type="button" id="tasks-voice-btn" class="voice-input-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 11a7 7 0 0014 0M12 18v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
-      </div>
+      <textarea id="tasks-title-input" class="mangel-textarea" placeholder="Что нужно? (например: перфоратор, 2 мешка цемента, каска)" rows="4"></textarea>
+      <button type="button" id="tasks-voice-btn" class="fw-voice-btn">🎤 Голосом</button>
       <select id="tasks-object-select" class="mangel-select"><option value="">Выбери объект…</option></select>
       <div class="fw-cat-row" id="tasks-category-row" style="margin:0.5rem 0;">
         <button type="button" class="fw-cat-btn active" data-category="materials">Материалы</button>
@@ -5077,10 +5075,8 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     <div id="mangel-form" class="mangel-form" style="display:none;">
       <select id="mangel-object-select" class="mangel-select"><option value="">Выбрать объект…</option></select>
       <select id="mangel-worker-select" class="mangel-select" style="display:none;"><option value="">Назначить работника (необязательно)…</option></select>
-      <div class="voice-input-row">
-        <textarea id="mangel-description" class="mangel-textarea" placeholder="Описание дефекта…" rows="3"></textarea>
-        <button type="button" id="mangel-voice-btn" class="voice-input-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="9" y="2" width="6" height="12" rx="3" stroke="currentColor" stroke-width="2"/><path d="M5 11a7 7 0 0014 0M12 18v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
-      </div>
+      <textarea id="mangel-description" class="mangel-textarea" placeholder="Описание дефекта…" rows="3"></textarea>
+      <button type="button" id="mangel-voice-btn" class="fw-voice-btn">🎤 Голосом</button>
       <!-- 04.08 (Раунд 3, задача 1.3): два явных input -- камера (capture) и галерея (без capture).
            Один input с capture="environment" не давал открыть галерею на части устройств. -->
       <div class="mangel-photo-actions">
