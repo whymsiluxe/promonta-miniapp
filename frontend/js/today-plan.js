@@ -6,10 +6,58 @@
 //
 // Integration hook:
 //   window._dailyPlanCheckinFields — set after acceptance, consumed by checkin.js on start
+//
+// Offline: when fetch fails and navigator.onLine === false, loads last accepted plan from
+// IndexedDB and shows it with an offline banner. Plan is read-only offline.
 
 let _todayPlanState = null;   // last GET /api/daily-plan/today result
 let _planPollInterval = null;
 let _planScreenOpen = false;
+
+// ── IndexedDB cache (offline fallback) ───────────────────────────────────────
+
+const _TP_DB_NAME = 'promonta-today-plan';
+const _TP_DB_VER  = 1;
+const _TP_STORE   = 'cache';
+const _TP_KEY     = 'lastAcceptedPlan';
+
+function _tpDbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(_TP_DB_NAME, _TP_DB_VER);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(_TP_STORE);
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function _tpDbSave(data) {
+  try {
+    const db = await _tpDbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(_TP_STORE, 'readwrite');
+      tx.objectStore(_TP_STORE).put(data, _TP_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror    = e => reject(e.target.error);
+    });
+    db.close();
+  } catch (_) { /* non-fatal — cache write failure does not affect live flow */ }
+}
+
+async function _tpDbLoad() {
+  try {
+    const db = await _tpDbOpen();
+    const result = await new Promise((resolve, reject) => {
+      const tx  = db.transaction(_TP_STORE, 'readonly');
+      const req = tx.objectStore(_TP_STORE).get(_TP_KEY);
+      req.onsuccess = e => resolve(e.target.result ?? null);
+      req.onerror   = e => reject(e.target.error);
+    });
+    db.close();
+    return result;
+  } catch (_) {
+    return null;
+  }
+}
 
 // Plan fields passed to checkin_start after acceptance (consumed once, then cleared)
 window._dailyPlanCheckinFields = null;
@@ -33,12 +81,22 @@ async function checkAndShowTodayPlan() {
   try {
     const data = await api('/api/daily-plan/today');
     _todayPlanState = data; window._todayPlanState = data;
+    if (data.acceptance) _tpDbSave(data); // persist for offline fallback
     _updateTodayPlanBar(data);
     if (_shouldShowPlanScreen(data)) {
       await _openTodayPlanScreen(data, { mandatory: true });
     }
   } catch (e) {
-    // Network error — skip silently, don't block app launch
+    // Network error — try offline fallback if no connectivity
+    if (!navigator.onLine) {
+      const cached = await _tpDbLoad();
+      if (cached && cached.acceptance) {
+        _todayPlanState = { ...cached, _offline: true };
+        window._todayPlanState = _todayPlanState;
+        _updateTodayPlanBar(_todayPlanState);
+      }
+    }
+    // else: server error while online — skip silently, don't block app launch
   }
   _startTodayPlanPolling();
 }
@@ -115,6 +173,8 @@ function _startTodayPlanPolling() {
       const data = await api('/api/daily-plan/today');
       const prev = _todayPlanState;
       _todayPlanState = data; window._todayPlanState = data;
+      if (data.acceptance) _tpDbSave(data);
+      // Clear offline flag if we just came back online
       _updateTodayPlanBar(data);
       // Show screen if a new plan just appeared or version bumped (and screen is not open)
       if (!_planScreenOpen && _shouldShowPlanScreen(data)) {
@@ -124,7 +184,7 @@ function _startTodayPlanPolling() {
           _openTodayPlanScreen(data, { mandatory: false });
         }
       }
-    } catch (e) { /* ignore poll errors */ }
+    } catch (e) { /* ignore poll errors — offline state persists until next success */ }
   }, 60000);
 }
 
@@ -221,7 +281,11 @@ function _renderScreenHTML(data, mandatory) {
   const plan = data?.plan;
   const accepted = !!(data?.acceptance);
   const hasPlan = !!(data?.has_plan && plan);
+  const isOffline = !!(data?._offline);
   const closeBtn = mandatory ? '' : '<button class="tp-close-btn" id="tp-close-btn" type="button" aria-label="Закрыть">✕</button>';
+  const offlineBanner = isOffline
+    ? '<div class="tp-offline-banner">Офлайн · показан последний принятый план</div>'
+    : '';
 
   if (!hasPlan) {
     // No plan published — worker assigned but no plan yet
@@ -229,6 +293,7 @@ function _renderScreenHTML(data, mandatory) {
       <div class="tp-inner">
         <div class="tp-header">
           ${closeBtn}
+          ${offlineBanner}
           <div class="tp-date">${esc(data?.date || '')}</div>
           <div class="tp-object-name">—</div>
         </div>
@@ -239,7 +304,7 @@ function _renderScreenHTML(data, mandatory) {
           </div>
         </div>
         <div class="tp-footer">
-          <button class="tp-noplan-btn" id="tp-noplan-start-btn" type="button">Начать смену без плана</button>
+          <button class="tp-noplan-btn" id="tp-noplan-start-btn" type="button"${isOffline ? ' disabled' : ''}>Начать смену без плана</button>
         </div>
       </div>`;
   }
@@ -262,9 +327,11 @@ function _renderScreenHTML(data, mandatory) {
 
   const planBody = renderDailyPlan(data, 'worker');
 
-  // Footer CTAs
+  // Footer CTAs — all interactive actions disabled when offline (read-only fallback)
   let footerHtml = '';
-  if (!accepted) {
+  if (isOffline) {
+    footerHtml = '<div class="tp-offline-footer">Действия недоступны офлайн</div>';
+  } else if (!accepted) {
     footerHtml = `
       <button class="tp-cta-btn tp-accept-btn" id="tp-accept-btn" type="button">
         ПЛАН ПОНЯТЕН — БЕРУ В РАБОТУ
@@ -283,6 +350,7 @@ function _renderScreenHTML(data, mandatory) {
     <div class="tp-inner">
       <div class="tp-header">
         ${closeBtn}
+        ${offlineBanner}
         <div class="tp-date">${esc(plan.date || data?.date || '')}</div>
         <div class="tp-object-name" id="tp-object-name-el">${esc(plan.object_id || '')}</div>
         ${statusBadge}
@@ -407,6 +475,7 @@ function _updateTodayPlanBar(data) {
   }
 
   const plan = data.plan;
+  const isOffline = !!(data._offline);
   // Only show bar for published/accepted plans (not drafts)
   if (plan.status === 'draft') {
     bar.style.display = 'none';
@@ -420,7 +489,9 @@ function _updateTodayPlanBar(data) {
   const total = items.length;
 
   let statusChip = '';
-  if (!accepted) {
+  if (isOffline) {
+    statusChip = '<span class="tp-bar-chip tp-bar-chip-offline">Офлайн</span>';
+  } else if (!accepted) {
     statusChip = '<span class="tp-bar-chip tp-bar-chip-warn">Принять план</span>';
   } else if (done > 0) {
     statusChip = `<span class="tp-bar-chip">${done} из ${total}</span>`;

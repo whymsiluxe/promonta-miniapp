@@ -99,14 +99,21 @@ All items done:
 
 ---
 
-## Phase 6 — Network resilience: NEXT
+## Phase 6 — Network resilience: COMPLETE (in next commit)
 
-- IndexedDB cache for accepted DailyPlan (read-only offline fallback)
-- "Офлайн · показан последний принятый план" banner
+- ✅ IndexedDB cache (_tpDbSave/_tpDbLoad) in today-plan.js
+- ✅ Save to cache whenever plan with acceptance is fetched successfully
+- ✅ On offline fetch failure, load cached plan with _offline=true flag
+- ✅ "Офлайн · показан последний принятый план" banner in screen header
+- ✅ "Офлайн" chip in persistent bar
+- ✅ All CTA buttons disabled/hidden when offline (read-only fallback)
+- ✅ Poll recovery: next successful poll clears offline state
+- ✅ Finish-flow offline queueing explicitly OOS (not implemented)
+- ✅ 563 tests pass
 
 ---
 
-## Phase 7 — Performance + observability: NOT STARTED
+## Phase 7 — Performance + observability: NEXT
 
 - Dashboard startup request audit (N+1)
 - Feed photos thumbnail-first loading
