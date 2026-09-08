@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-09-08 (Phase 2 — Production Control re-verification: multi-worker completion, blocker idempotency)
+
+Tests: 563 passed, 1 skipped.
+
+Verified all 16 Production Control items against actual code. 7 confirmed working,
+2 real bugs fixed, 7 documented as known gaps/deliberate design in ARCHITECTURE_REFACTOR_BACKLOG.md.
+
+### Backend — backend/daily_plan_lib.py
+- `apply_daily_execution()`: plan status now set to `"completed"` only when ALL
+  `assigned_worker_ids` have submitted executions; intermediate state is `"in_progress"`.
+  Previously any single worker's finish marked the plan globally completed (bug for
+  multi-worker plans). Legacy plans without `assigned_worker_ids` still complete on
+  first finish for backward compat.
+- `record_blocker()`: idempotent on `(plan_id, worker_id, reason_code)` — same unresolved
+  blocker returns existing record instead of creating a duplicate. Different `reason_code`
+  or resolved state still creates a new blocker.
+
+### Tests
+- `tests/test_daily_plan.py`: 6 new `Phase2VerificationTests` — solo/partial/full
+  multi-worker completion, blocker idempotency (same key, different key, resolved-then-retry).
+
+### Docs
+- `docs/ARCHITECTURE_REFACTOR_BACKLOG.md` (NEW): recommended future extraction slices
+  (backend routers by domain, frontend CSS/JS splits), plus documented known gaps
+  (Sheets Plan_дня sync, outbox, contract RED, crew_size attribution, per-worker ack).
+
 ## 2026-09-08 (Phase 1 — security/correctness: budget aliases, attachment crash, task locking, Angebot ACL)
 
 Tests: 557 passed, 1 skipped.

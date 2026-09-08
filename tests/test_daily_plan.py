@@ -744,5 +744,94 @@ class Round4RouteTests(unittest.TestCase):
         self.assertEqual(len(blockers_filtered), 1)  # still just the first plan's blocker
 
 
+class Phase2VerificationTests(unittest.TestCase):
+    """Phase 2 fixes: multi-worker plan completion logic and blocker idempotency."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        import daily_plan_lib as dpl
+        self.dpl = dpl
+        store = os.path.join(self.tmp, 'daily_plan_store.json')
+        sync = os.path.join(self.tmp, 'plan_sync_state.json')
+        cal = os.path.join(self.tmp, 'work_calendar.json')
+        dpl.configure(store, sync, cal)
+
+    def _make_plan(self, workers):
+        plan = self.dpl.create_plan(
+            object_id='OBJ-P2', stage_key='OBJ-P2-S1', date_str='2026-09-10',
+            assigned_worker_ids=workers,
+            items=[{"id": "i1", "sequence": 1, "title": "Шпаклевание", "objective": "",
+                    "planned_quantity": 10.0, "unit": "м²", "time_estimate_hours": 2.0,
+                    "work_type_id": "filling_q1_q4", "required_tools": [], "required_materials": []}],
+            created_by='owner',
+        )
+        self.dpl.publish_plan(plan['id'], 'owner')
+        return plan
+
+    def test_solo_worker_finish_marks_plan_completed(self):
+        """When only one worker is assigned and they finish, plan → completed."""
+        plan = self._make_plan(['42'])
+        self.dpl.apply_daily_execution(
+            session_id='sess-42', daily_plan_id=plan['id'], plan_version=1,
+            worker_id='42', date_str='2026-09-10', object_id='OBJ-P2', item_results=[],
+        )
+        store = self.dpl._load_store()
+        self.assertEqual(store['daily_plans'][plan['id']]['status'], 'completed')
+
+    def test_first_of_two_workers_finish_sets_in_progress_not_completed(self):
+        """When worker A of [A, B] finishes, plan must NOT be marked completed."""
+        plan = self._make_plan(['42', '99'])
+        self.dpl.apply_daily_execution(
+            session_id='sess-42', daily_plan_id=plan['id'], plan_version=1,
+            worker_id='42', date_str='2026-09-10', object_id='OBJ-P2', item_results=[],
+        )
+        store = self.dpl._load_store()
+        self.assertEqual(store['daily_plans'][plan['id']]['status'], 'in_progress')
+
+    def test_both_workers_finish_marks_plan_completed(self):
+        """When ALL assigned workers finish, plan → completed."""
+        plan = self._make_plan(['42', '99'])
+        self.dpl.apply_daily_execution(
+            session_id='sess-42', daily_plan_id=plan['id'], plan_version=1,
+            worker_id='42', date_str='2026-09-10', object_id='OBJ-P2', item_results=[],
+        )
+        self.dpl.apply_daily_execution(
+            session_id='sess-99', daily_plan_id=plan['id'], plan_version=1,
+            worker_id='99', date_str='2026-09-10', object_id='OBJ-P2', item_results=[],
+        )
+        store = self.dpl._load_store()
+        self.assertEqual(store['daily_plans'][plan['id']]['status'], 'completed')
+
+    def test_blocker_idempotent_same_key_returns_existing(self):
+        """record_blocker with same (plan_id, worker_id, reason_code) returns existing record."""
+        plan = self._make_plan(['42'])
+        b1 = self.dpl.record_blocker(plan['id'], '42', 'weather', 'Rain')
+        b2 = self.dpl.record_blocker(plan['id'], '42', 'weather', 'Still raining')
+        self.assertEqual(b1['id'], b2['id'])  # same blocker returned, not a new one
+        store = self.dpl._load_store()
+        self.assertEqual(len(store['blockers']), 1)
+
+    def test_blocker_different_reason_code_creates_new(self):
+        """Different reason_code creates a distinct blocker."""
+        plan = self._make_plan(['42'])
+        b1 = self.dpl.record_blocker(plan['id'], '42', 'weather', 'Rain')
+        b2 = self.dpl.record_blocker(plan['id'], '42', 'tool_missing', 'No drill')
+        self.assertNotEqual(b1['id'], b2['id'])
+        store = self.dpl._load_store()
+        self.assertEqual(len(store['blockers']), 2)
+
+    def test_blocker_resolved_then_same_reason_creates_new(self):
+        """After a blocker is resolved, the same reason_code creates a fresh blocker."""
+        plan = self._make_plan(['42'])
+        b1 = self.dpl.record_blocker(plan['id'], '42', 'weather', 'Rain')
+        # Manually resolve it
+        store = self.dpl._load_store()
+        store['blockers'][b1['id']]['resolved_at'] = time.time()
+        self.dpl._atomic_write(self.dpl._STORE_FILE, store)
+        # Now same reason should create a new blocker
+        b2 = self.dpl.record_blocker(plan['id'], '42', 'weather', 'Rain again')
+        self.assertNotEqual(b1['id'], b2['id'])
+
+
 if __name__ == '__main__':
     unittest.main()

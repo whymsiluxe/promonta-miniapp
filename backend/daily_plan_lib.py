@@ -407,7 +407,22 @@ def apply_daily_execution(
 
         plan = store["daily_plans"].get(daily_plan_id)
         if plan:
-            plan["status"] = "completed"
+            assigned = [str(w) for w in plan.get("assigned_worker_ids", [])]
+            if assigned:
+                # Count workers who have already submitted executions + current worker
+                executed_workers = {
+                    e["worker_id"]
+                    for e in store["executions"].values()
+                    if e.get("daily_plan_id") == daily_plan_id
+                }
+                executed_workers.add(str(worker_id))
+                if set(assigned) <= executed_workers:
+                    plan["status"] = "completed"
+                else:
+                    plan["status"] = "in_progress"
+            else:
+                # No assigned_worker_ids (legacy plan) — mark complete on first finish
+                plan["status"] = "completed"
 
         store["executions"][session_id] = execution
 
@@ -726,11 +741,19 @@ def get_blockers_for_plan(plan_id: str) -> list:
 
 
 def record_blocker(plan_id: str, worker_id: str, reason_code: str, comment: str) -> dict:
-    """Записывает препятствие от работника при утреннем принятии плана."""
+    """Записывает препятствие от работника при утреннем принятии плана.
+    Идемпотентно: одинаковый (plan_id, worker_id, reason_code) без resolved_at → возвращает существующий."""
     with _store_lock:
         store = _load_store()
         if "blockers" not in store:
             store["blockers"] = {}
+        # Idempotency: return existing unresolved blocker with same composite key
+        for existing in store["blockers"].values():
+            if (existing["daily_plan_id"] == plan_id
+                    and existing["worker_id"] == str(worker_id)
+                    and existing["reason_code"] == reason_code
+                    and existing["resolved_at"] is None):
+                return existing
         blocker = {
             "id": uuid.uuid4().hex,
             "daily_plan_id": plan_id,
