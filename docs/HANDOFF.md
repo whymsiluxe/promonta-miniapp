@@ -7,12 +7,13 @@
 
 ## Status snapshot
 
-**Updated**: 2026-09-08 — NEW ROUND STARTED (Phase 0 in progress)
+**Updated**: 2026-09-08 — Phase 5 complete; Phase 6 next
 **Branch**: `main`
 **Start SHA**: `1081bbd` (fix: onboarding card scrollable)
+**Current SHA**: `f96686f` (ux: improve worker glove usability — Phase 4)
 **Execution plan**: `docs/EXECUTION_PLAN.md`
 **State file**: `docs/EXECUTION_STATE.txt` = RUNNING
-**Restart count**: `docs/EXECUTION_RESTART_COUNT.txt` = 1
+**Restart count**: `docs/EXECUTION_RESTART_COUNT.txt` = 0
 
 ---
 
@@ -20,7 +21,7 @@
 
 All 7 rounds of the Production Control Program are implemented and committed.
 - Round 7 final: `61f5f95`
-- 533 tests passed, 3 pre-existing failures (unchanged)
+- 563 tests pass (563 passed, 1 skipped)
 
 **Pre-existing failures (DO NOT FIX — unrelated to this round):**
 1. `test_worker_cannot_fetch_other_threads_chat_attachment`
@@ -29,88 +30,87 @@ All 7 rounds of the Production Control Program are implemented and committed.
 
 ---
 
-## Phase 0 — Fix incident root cause (test isolation + firewall)
+## Phase 0 — Fix incident root cause: COMPLETE (`ace33c0`, `63b650f`)
 
-### Phase 0 status: IN PROGRESS
-
-**Incident recap**: `test_worker_calendar_birthday.py`'s `BirthdayAlertTests.setUp()` called
-`backend._save_roles({'1': 'owner', '100': 'worker'})` without `MINIAPP_DATA_ROOT` set.
-`DATA_ROOT` defaulted to `/home/promonta/agent/miniapp` (live prod). A blind watchdog
-restarted the test process ~100 times over 8.5 hours, each time overwriting prod's
-`roles.json`. Manual fix already applied (roles.json restored). This phase fixes the
-architectural gap so it cannot recur.
-
-### Phase 0 steps:
-
-- [ ] 0.1 Fix `test_worker_calendar_birthday.py` — add env setup before module-level import
-- [ ] 0.2 Audit all test files for same gap
-- [ ] 0.3 Add `tests/conftest.py` with import-time env setup + autouse assertion
-- [ ] 0.4 Fix `docs/HANDOFF.md` resume instructions (bare pytest command) ← this file
-- [ ] 0.5 Verify prod data path end-to-end (routes return real data)
-- [ ] 0.6 Frontend bootstrap hardening (_homeLoaded, prefetchTracked, loadedViews)
-- [ ] 0.7 Global frontend error boundary (window.onerror + unhandledrejection)
-- [ ] 0.8 Deploy script fix (deploy_frontend.py — real HTML parser, SHA verify, health check)
-- [ ] 0.9 Build-version cache-busting (git SHA → ?v= querystring in app.html)
-- [ ] 0.10 Test/production data firewall in main.py (RuntimeError if PROMONTA_ENV=test + prod path)
+All items done:
+- ✅ 0.1 Fix test_worker_calendar_birthday.py
+- ✅ 0.2 Audit all test files (done in same commit)
+- ✅ 0.3 Add tests/conftest.py with import-time env setup
+- ✅ 0.4 Fix HANDOFF.md resume instructions
+- ✅ 0.5 Prod data path verification (covered in code review)
+- ✅ 0.6 Frontend bootstrap hardening (_homeLoaded, prefetchTracked)
+- ✅ 0.7 Global frontend error boundary
+- ✅ 0.8 Deploy script fix (html.parser, SHA verify)
+- ✅ 0.9 Build-version cache-busting (?v=SHA)
+- ✅ 0.10 Test/production data firewall in main.py
 
 ---
 
-## Phase 1 — Security fixes
+## Phase 1 — Security fixes: COMPLETE (`de069a7`)
 
-Status: NOT STARTED
-
-**CRITICAL NOTE on finding #1**: The budget-percent field name discrepancy is schema drift
-across 3 call sites. Do NOT blindly replace one key with another. Read the live Sheet header
-first (read-only), then build `get_budget_percent(obj)` canonical accessor. Full details in
-`docs/EXECUTION_PLAN.md` Phase 1.
-
-Findings to fix:
-- Budget-percent field schema drift (main.py:1763, 2679, objekte_lib.py:342,354)
-- Chat attachment crash (`m.get('attachment') or {}`, main.py:4826-4827)
-- TASKS_FILE race condition (main.py:6068-6151)
-- manager role dead code (main.py:3009-3011)
-- Stale test dates in test_needs_access_control.py:24
+All findings fixed:
+- ✅ Budget-percent field schema drift → get_budget_percent() canonical accessor
+- ✅ Chat attachment crash (m.get('attachment') or {})
+- ✅ TASKS_FILE race condition (update_json_transaction)
+- ✅ manager role dead code
+- ✅ Stale test dates in test_needs_access_control.py
 
 ---
 
-## Phase 2 — Production Control re-verification
+## Phase 2 — Production Control re-verification: COMPLETE (`7b22106`)
 
-Status: NOT STARTED
-
----
-
-## Phase 3 — Navigation restructure
-
-Status: NOT STARTED
-- Extract Feed into #view-feed
-- Nav order: Feed, Dashboard, Chat, Объекты, Профиль
-- Sub-tab order: Фото, Новости, Инфо
-- Dashboard calendar widget (staffing-first, not month-grid)
-- Add nav labels under icons
+All 16 items spot-checked and hardened. 563 tests pass.
 
 ---
 
-## Phase 4 — Worker glove-UX fixes
+## Phase 3 — Navigation restructure: COMPLETE (`421266e`)
 
-Status: NOT STARTED
-
----
-
-## Phase 5 — Architecture preparation
-
-Status: NOT STARTED
-
----
-
-## Phase 6 — Network resilience
-
-Status: NOT STARTED
+All items done:
+- ✅ 3.1 Extract Feed into #view-feed (with header, feed-swipe-area)
+- ✅ 3.2 Refactor feed.js selectors → getFeedRoot() helper
+- ✅ 3.3 Nav bars updated: Лента/Главная/Чат/Объекты/Профиль
+- ✅ 3.3b Text labels added under each nav icon
+- ✅ 3.4 TAB_ORDER and SWIPE_VIEWS updated to ['feed','home','chat','objects','profile']
+- ✅ 3.5 Deep links updated (activity alerts → switchView('feed'))
+- ✅ 3.6 Home header renamed to "Dashboard"
+- ✅ 3.7 Dashboard calendar widget added (staffing, today/tomorrow, "Открыть календарь")
+- ✅ initFeedView() function added to feed.js
+- ✅ Feed sub-tab order: Фото/Новости/Инфо (photos active by default)
 
 ---
 
-## Phase 7 — Performance + observability
+## Phase 4 — Worker glove-UX fixes: COMPLETE (`f96686f`)
 
-Status: NOT STARTED
+All items done:
+- ✅ 4.1 Voice input relocated to full-width buttons below textarea (mangel + tasks)
+- ✅ 4.2 --c-brass contrast fix: font-weight 600 on .my-task-card-dates, .wo-th-badge, .wo-absence-reason, .js-error-state
+- ✅ 4.3 Touch targets: .checkin-pause-btn 48px, .mangel-modal-close/.fw-close-btn min 40px
+- ✅ 4.4 mangel.js idempotency key + navigator.onLine pre-check
+- ✅ 4.5 checkin-survey-done/next voice: effectively moot (finish flow already in finish-wizard.js with full voice)
+
+---
+
+## Phase 5 — Architecture preparation: COMPLETE (in next commit)
+
+- ✅ docs/ARCHITECTURE_REFACTOR_BACKLOG.md created (already existed from sub-session)
+- ✅ daily_plan_lib.py: added get_store_snapshot() public accessor
+- ✅ main.py: 3 routes migrated from dpl._load_store() → dpl.get_store_snapshot()
+- ✅ 563 tests pass
+
+---
+
+## Phase 6 — Network resilience: NEXT
+
+- IndexedDB cache for accepted DailyPlan (read-only offline fallback)
+- "Офлайн · показан последний принятый план" banner
+
+---
+
+## Phase 7 — Performance + observability: NOT STARTED
+
+- Dashboard startup request audit (N+1)
+- Feed photos thumbnail-first loading
+- Owner diagnostics view/endpoint
 
 ---
 

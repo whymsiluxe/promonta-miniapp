@@ -7902,7 +7902,7 @@ def daily_plan_object(
     df = date_from or today
     dt = date_to or today
 
-    store = dpl._load_store()
+    store = dpl.get_store_snapshot()
     plans = [
         p for p in store["daily_plans"].values()
         if p["object_id"] == object_id and df <= p["date"] <= dt
@@ -8124,7 +8124,7 @@ def daily_plan_owner_matrix(
     df = date_from or today
     dt = date_to or today
 
-    store = dpl._load_store()
+    store = dpl.get_store_snapshot()
     plans = list(store["daily_plans"].values())
     if object_id:
         plans = [p for p in plans if p["object_id"] == object_id]
@@ -8187,7 +8187,7 @@ def daily_plan_replan(
     """Лёгкая оценка рисков объекта + рекомендации по перепланированию.
     Не изменяет данные — только читает и возвращает risk-summary."""
     today = business_today_str()
-    store = dpl._load_store()
+    store = dpl.get_store_snapshot()
 
     plans = [p for p in store["daily_plans"].values() if p["object_id"] == object_id]
     plans.sort(key=lambda p: p["date"])

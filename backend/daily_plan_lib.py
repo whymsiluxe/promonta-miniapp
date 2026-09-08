@@ -91,6 +91,12 @@ def _save_store(data: dict) -> None:
     _atomic_write(_STORE_FILE, data)
 
 
+def get_store_snapshot() -> dict:
+    """Public read-only accessor for owner-side read-heavy routes.
+    Returns the full store dict — callers must not mutate it."""
+    return _load_store()
+
+
 def _load_work_calendar() -> dict:
     if not _WORK_CALENDAR_FILE or not os.path.exists(_WORK_CALENDAR_FILE):
         return _EMPTY_WORK_CALENDAR.copy()
