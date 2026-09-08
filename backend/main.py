@@ -1772,7 +1772,10 @@ def _cached_get_used_range(tab_name: str):
     return rows
 
 
-BUDGET_FIELDS = ['Бюджет (EUR)', 'Потрачено (EUR)', 'потрачено в % от бюджета']
+# All known column names for the budget-percent field (live Sheet uses 'потрачено в % от бюджета';
+# objekte_lib historically wrote '% бюджета'; alerts route also fell back to 'Потрачено %').
+# Strip ALL aliases from worker DTOs so a column rename cannot accidentally re-expose the field.
+BUDGET_FIELDS = ['Бюджет (EUR)', 'Потрачено (EUR)', 'потрачено в % от бюджета', '% бюджета', 'Потрачено %']
 
 
 @app.get("/api/objects")
@@ -2688,10 +2691,9 @@ def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_r
             header, data_rows = rows[0], rows[1:]
             for row in data_rows:
                 obj = dict(zip(header, row))
-                pct_raw = obj.get('потрачено в % от бюджета') or obj.get('Потрачено %') or '0'
                 try:
-                    pct = float(pct_raw)
-                except ValueError:
+                    pct = float(_load_repo_objekte_lib().get_budget_percent(obj) or 0)
+                except (ValueError, TypeError):
                     pct = 0
                 oid = obj.get('ID объекта', '')
                 name = obj.get('Объект', oid)
@@ -3019,8 +3021,11 @@ os.makedirs(ANGEBOT_OUT_DIR, exist_ok=True)
 
 
 def require_angebot_access(role: str = Depends(get_role)):
-    if role not in ('owner', 'manager'):
-        raise HTTPException(403, "только owner/manager могут создавать Angebot")
+    # 'manager' role is intentionally excluded: set_role() hard-rejects any role
+    # other than 'owner'/'worker', so 'manager' can never be assigned in practice.
+    # Keeping it here would be a latent escalation path if that validation is ever relaxed.
+    if role != 'owner':
+        raise HTTPException(403, "только owner может создавать Angebot")
 
 
 class AngebotKunde(BaseModel):
@@ -4836,7 +4841,10 @@ def get_chat_attachment(fname: str, user: dict = Depends(get_current_user), role
         # (_archive_chat_messages) -- вложение из архивного сообщения раньше не находилось
         # тут вообще (искали только активный _load_chat()), 404 даже для законного участника.
         messages = _load_chat() + _safe_load_json(CHAT_ARCHIVE_FILE, [])
-        candidates = [m for m in messages if m.get('attachment', {}).get('file') == safe_fname]
+        # attachment key is explicitly None for plain-text messages; `or {}` avoids
+        # AttributeError from calling .get() on None (`.get('attachment', {})` only
+        # uses the default when the key is ABSENT — not when it's present as None).
+        candidates = [m for m in messages if (m.get('attachment') or {}).get('file') == safe_fname]
         if not candidates:
             raise HTTPException(404, "Файл не найден")
         uid = str(user['id'])
@@ -6099,7 +6107,6 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
     roles = _load_roles()
     owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
     profile = _get_worker_profile(user['id'])
-    items = _load_tasks()
     task = {
         'id': uuid.uuid4().hex,
         'type': 'request',
@@ -6115,8 +6122,10 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
         'created_at': int(time.time()),
         'closed_at': None,
     }
-    items.append(task)
-    _save_tasks(items)
+    with _lock_for(TASKS_FILE):
+        items = _load_tasks()
+        items.append(task)
+        _save_tasks(items)
     if owner_id:
         try:
             urgent_prefix = "🔴 СРОЧНО! " if priority == 'срочно' else "📋 "
@@ -6130,37 +6139,39 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
 def update_task_status(task_id: str, body: TaskStatusBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     if body.status not in TASK_STATUSES:
         raise HTTPException(400, "Недопустимый статус")
-    items = _load_tasks()
-    task = next((t for t in items if t['id'] == task_id), None)
-    if not task:
-        raise HTTPException(404, "Потребность не найдена")
-    prev_status = task.get('status')
-    task['status'] = body.status
-    if body.status == 'закрыто':
-        task['closed_at'] = int(time.time())
-        # 04.08 (Раунд 3, задача 5.2): РАНЬШЕ закрытая потребность удалялась из JSON
-        # (архив только в Sheets) -- из-за этого экран Потребности не мог показать
-        # счётчик "Выполнены N" и фильтр "Выполненные". Теперь закрытые ОСТАЮТСЯ в JSON
-        # со статусом 'закрыто'+closed_at (фронт по умолчанию показывает только активные),
-        # архив в Sheets сохраняется best-effort, но только при ПЕРВОМ закрытии
-        # (prev_status != 'закрыто'), чтобы не дублировать строки при повторном PATCH.
-        if prev_status != 'закрыто':
-            try:
-                o = _load_repo_objekte_lib()
-                from datetime import datetime
-                created_str = datetime.fromtimestamp(task.get('created_at', 0)).strftime('%Y-%m-%d %H:%M') if task.get('created_at') else ''
-                closed_str = datetime.fromtimestamp(task['closed_at']).strftime('%Y-%m-%d %H:%M')
-                o.append_row_safe('Потребности', [
-                    task.get('id', ''), task.get('object_id', ''), task.get('title', ''),
-                    task.get('description', ''), task.get('category', ''), task.get('priority', ''),
-                    task.get('from_name', task.get('from_user_id', '')), created_str, closed_str,
-                ])
-            except Exception as e:
-                print(f'WARNING: не удалось заархивировать потребность {task_id} в Sheets: {e}')
-    else:
-        # переоткрытие ранее закрытой потребности — снять отметку выполнения
-        task['closed_at'] = None
-    _save_tasks(items)
+
+    with _lock_for(TASKS_FILE):
+        items = _load_tasks()
+        task = next((t for t in items if t['id'] == task_id), None)
+        if not task:
+            raise HTTPException(404, "Потребность не найдена")
+        prev_status = task.get('status')
+        task['status'] = body.status
+        if body.status == 'закрыто':
+            task['closed_at'] = int(time.time())
+        else:
+            task['closed_at'] = None
+        _save_tasks(items)
+
+    # 04.08 (Раунд 3, задача 5.2): РАНЬШЕ закрытая потребность удалялась из JSON
+    # (архив только в Sheets) -- из-за этого экран Потребности не мог показать
+    # счётчик "Выполнены N" и фильтр "Выполненные". Теперь закрытые ОСТАЮТСЯ в JSON
+    # со статусом 'закрыто'+closed_at (фронт по умолчанию показывает только активные),
+    # архив в Sheets сохраняется best-effort, но только при ПЕРВОМ закрытии
+    # (prev_status != 'закрыто'), чтобы не дублировать строки при повторном PATCH.
+    if body.status == 'закрыто' and prev_status != 'закрыто':
+        try:
+            o = _load_repo_objekte_lib()
+            from datetime import datetime
+            created_str = datetime.fromtimestamp(task.get('created_at', 0)).strftime('%Y-%m-%d %H:%M') if task.get('created_at') else ''
+            closed_str = datetime.fromtimestamp(task['closed_at']).strftime('%Y-%m-%d %H:%M')
+            o.append_row_safe('Потребности', [
+                task.get('id', ''), task.get('object_id', ''), task.get('title', ''),
+                task.get('description', ''), task.get('category', ''), task.get('priority', ''),
+                task.get('from_name', task.get('from_user_id', '')), created_str, closed_str,
+            ])
+        except Exception as e:
+            print(f'WARNING: не удалось заархивировать потребность {task_id} в Sheets: {e}')
     return task
 
 

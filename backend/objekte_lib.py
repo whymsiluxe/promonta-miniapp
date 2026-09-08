@@ -38,6 +38,23 @@ def normalize_stage_status(raw: str) -> str:
         return raw
     return _STAGE_STATUS_COMPAT.get(raw, 'предстоит')
 
+
+# Known historical aliases for the budget-percent column.
+# Live Sheet header (verified 2026-09-08): 'потрачено в % от бюджета'.
+# objekte_lib once used '% бюджета'; main.py alerts route also tried 'Потрачено %'.
+# This canonical list covers all three so readers are alias-agnostic.
+_BUDGET_PCT_ALIASES = ('потрачено в % от бюджета', '% бюджета', 'Потрачено %')
+
+
+def get_budget_percent(obj: dict):
+    """Return budget-percent value from an object dict, checking all known alias keys.
+    Returns 0 if none of the aliases is present or the value is not numeric."""
+    for key in _BUDGET_PCT_ALIASES:
+        val = obj.get(key)
+        if val not in (None, ''):
+            return val
+    return 0
+
 _token_cache = {'token': None, 'expires_at': 0}
 
 
@@ -339,7 +356,11 @@ def recompute_objekt(object_id):
     pct = float(total / budget * 100) if budget else None
 
     f_col = chr(ord('A') + headers.index('Потрачено (EUR)'))
-    g_col = chr(ord('A') + headers.index('% бюджета'))
+    # Live Sheet column is 'потрачено в % от бюджета' (verified 2026-09-08).
+    # objekte_lib historically used '% бюджета' — that key does not exist in the
+    # live Sheet and caused a ValueError crash here. Canonical name fixed.
+    pct_col_name = 'потрачено в % от бюджета'
+    g_col = chr(ord('A') + headers.index(pct_col_name))
     update_range(f'Объекты!{f_col}{row_num}:{g_col}{row_num}',
                  [[float(total), round(pct, 1) if pct is not None else '']])
 
@@ -351,8 +372,8 @@ def check_budget_threshold(object_id, thresholds=(90, 60)):
     if not obj:
         return
     try:
-        pct = float(obj.get('% бюджета') or 0)
-    except ValueError:
+        pct = float(get_budget_percent(obj))
+    except (ValueError, TypeError):
         pct = 0
 
     state = load_alert_state()

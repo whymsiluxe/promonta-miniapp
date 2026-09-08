@@ -11,6 +11,7 @@ Run:
 import os
 import sys
 import unittest
+from datetime import date, timedelta
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
@@ -22,7 +23,12 @@ OWNER = {'id': 1, 'first_name': 'Boss'}
 WORKER_A = {'id': 10, 'first_name': 'Ivan'}
 
 
-def _assignment(uid, status='accepted', date_from='2026-08-01', date_to='2026-08-31'):
+def _assignment(uid, status='accepted', date_from=None, date_to=None):
+    # Use relative dates so the "active" assignment is never stale regardless of run date.
+    if date_from is None:
+        date_from = (date.today() - timedelta(days=5)).isoformat()
+    if date_to is None:
+        date_to = (date.today() + timedelta(days=25)).isoformat()
     return {'user_id': str(uid), 'status': status, 'date_from': date_from, 'date_to': date_to}
 
 

@@ -1,5 +1,63 @@
 # Changelog
 
+## 2026-09-08 (Phase 1 — security/correctness: budget aliases, attachment crash, task locking, Angebot ACL)
+
+Tests: 557 passed, 1 skipped.
+
+### Backend — backend/main.py
+- `BUDGET_FIELDS`: expanded to include all three historical column-name aliases
+  (`'потрачено в % от бюджета'`, `'% бюджета'`, `'Потрачено %'`) so all are
+  stripped from worker-facing object DTOs.
+- Alerts route: reads budget percent via `_load_repo_objekte_lib().get_budget_percent(obj)`
+  instead of the dead alias `'% бюджета'`.
+- Chat attachment endpoint: `m.get('attachment', {})` → `(m.get('attachment') or {})` to
+  prevent `AttributeError` on plain-text messages where `attachment` key is explicitly `None`.
+- `create_task` / `update_task_status`: wrapped with `_lock_for(TASKS_FILE)` context
+  manager + explicit `_load_tasks()`/`_save_tasks()` calls (no longer uses
+  `update_json_transaction` which bypassed test mocks and lost locking).
+- `require_angebot_access`: new dependency function; only `owner` role passes, all others get
+  403. Dead `manager` path removed (set_role already hard-rejects `manager` assignment).
+
+### Backend — backend/objekte_lib.py
+- `get_budget_percent(obj)`: new canonical accessor iterating `_BUDGET_PCT_ALIASES` tuple;
+  returns first non-empty value or `0`.
+- `recompute_objekt()`: fixed header lookup from `'% бюджета'` → `'потрачено в % от бюджета'`
+  (the actual live Sheets column name).
+- `check_budget_threshold()`: switched to `get_budget_percent(obj)` instead of
+  `obj.get('% бюджета')`.
+
+### Tests
+- `tests/test_phase1_security.py` (NEW): 17 tests covering all Phase 1 fixes — budget aliases,
+  field stripping, chat attachment crash, require_angebot_access (owner/worker/manager).
+- `tests/test_needs_access_control.py`: stale hard-coded dates replaced with relative
+  `date.today() ± timedelta(days=N)` so tests stay green past their original expiry.
+
+## 2026-09-08 (Phase 0 — test isolation: incident root cause fix, error boundary, deploy script)
+
+Tests: 540 passed, 1 skipped (before Phase 1 additions).
+
+### Test isolation (incident 2026-09-08: watchdog ran tests against prod DATA_ROOT)
+- `tests/conftest.py` (NEW): module-level `os.environ["MINIAPP_DATA_ROOT"]` set before any
+  test import of `main`; session-scoped fixture asserts `DATA_ROOT ≠ prod path`.
+- `tests/test_data_root_isolation.py` (NEW): 5 tests — current session not prod, path has
+  prefix, subprocess test with PROMONTA_ENV=test+prod path raises RuntimeError, temp path ok.
+- `backend/main.py`: RuntimeError raised at import time if `PROMONTA_ENV=test` and
+  `DATA_ROOT == '/home/promonta/agent/miniapp'` — production data firewall.
+- `tests/test_worker_calendar_birthday.py`: env vars set before `import main` at top.
+
+### Frontend hardening
+- `frontend/js/shared.js`: `prefetchTracked()` evicts cached promise on failure (prevents
+  poisoned-promise retry loop).
+- `frontend/js/home.js`: `_homeLoaded` flag moved to after slot.innerHTML succeeds; weather
+  and objects errors now show user-visible retry buttons.
+- `frontend/app.html`: `.card-error-state`/`.card-retry-btn` CSS; global error boundary
+  (`window.onerror` + `unhandledrejection`) with non-disruptive 8-second auto-dismiss banner.
+
+### Deploy script
+- `scripts/deploy_frontend.py` (NEW): `_HTMLBalanceChecker(HTMLParser)` via Python's real
+  HTML parser (replaces false-positive regex), SHA-256 copy verification, health smoke test,
+  `inject_build_sha()`, `bump_version_marker()`, backup rotation (keep 3).
+
 ## 2026-09-07 (Production Control — Round 3: Finish wizard plan integration)
 
 Tests: 471 passed, 3 pre-existing failures.
