@@ -77,6 +77,22 @@ async function initHomeView() {
       </div>
     </div>
 
+    <div class="home-calendar-widget" id="home-calendar-widget">
+      <div class="home-section-header">
+        <span class="home-section-title">Расписание команды</span>
+      </div>
+      <div class="hcw-day-section">
+        <div class="hcw-day-label">Сегодня · <span id="hcw-today-date"></span></div>
+        <div id="hcw-today-list" class="hcw-list"><span class="hcw-loading">Загрузка...</span></div>
+      </div>
+      <div class="hcw-day-section">
+        <div class="hcw-day-label">Завтра · <span id="hcw-tomorrow-date"></span></div>
+        <div id="hcw-tomorrow-list" class="hcw-list"><span class="hcw-loading">Загрузка...</span></div>
+        <div id="hcw-summary" class="hcw-summary"></div>
+      </div>
+      <button class="hcw-open-btn" onclick="switchView('abwesenheit')" type="button">Открыть календарь →</button>
+    </div>
+
     <div id="home-rings-section" class="home-rings-section">
       <div class="home-section-header">
         <span class="home-section-title">Объекты</span>
@@ -96,7 +112,6 @@ async function initHomeView() {
   // the skeleton rendered successfully — individual card errors are handled per-card.
   _homeLoaded = true;
   _loadHomeData();
-  initFeedTabs(); // суб-табы Инфо/Фото/Новости под dashboard (feed.js)
   if (typeof renderHomeRadioPlayer === 'function') renderHomeRadioPlayer();
 }
 
@@ -107,6 +122,7 @@ async function _loadHomeData() {
   _loadHomeAbwesenheitSummary();
   _loadHomeChatSummary();
   _loadHomeKontrolDaySummary();
+  _loadHomeCalendarWidget();
 }
 
 async function _loadHomeKontrolDaySummary() {
@@ -123,6 +139,59 @@ async function _loadHomeKontrolDaySummary() {
   } catch (_) {
     const countEl = document.getElementById('kpi-kontrol-count');
     if (countEl) countEl.textContent = '!';
+  }
+}
+
+// Phase 3.7 — compact staffing widget: today/tomorrow absences per worker, "Открыть календарь".
+async function _loadHomeCalendarWidget() {
+  const todayList = document.getElementById('hcw-today-list');
+  const tomorrowList = document.getElementById('hcw-tomorrow-list');
+  if (!todayList) return;
+
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+  const todayDateEl = document.getElementById('hcw-today-date');
+  const tomorrowDateEl = document.getElementById('hcw-tomorrow-date');
+  if (todayDateEl) todayDateEl.textContent = now.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  if (tomorrowDateEl) tomorrowDateEl.textContent = tomorrow.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+
+  try {
+    const [absData, wrkData] = await Promise.all([
+      api('/api/abwesenheit/all'),
+      api('/api/workers'),
+    ]);
+    const entries = absData.entries || [];
+    const workers = (wrkData.workers || []).filter(w => w.role !== 'owner');
+
+    function absenceFor(workerName, dateStr) {
+      return entries.find(e => e.name === workerName && e.date_from <= dateStr && (!e.date_to || e.date_to >= dateStr));
+    }
+
+    function renderList(dateStr) {
+      if (workers.length === 0) return '<div class="hcw-row">Нет работников</div>';
+      return workers.map(w => {
+        const entry = absenceFor(w.name, dateStr);
+        const statusText = entry ? `Отсутствует${entry.reason ? ' · ' + entry.reason : ''}` : 'Свободен';
+        const cls = entry ? 'hcw-absent' : 'hcw-free';
+        return `<div class="hcw-row"><span class="hcw-worker-name">${esc(w.name)}</span><span class="hcw-status ${cls}">${esc(statusText)}</span></div>`;
+      }).join('');
+    }
+
+    todayList.innerHTML = renderList(todayStr);
+    tomorrowList.innerHTML = renderList(tomorrowStr);
+
+    const summaryEl = document.getElementById('hcw-summary');
+    if (summaryEl && workers.length > 0) {
+      const absentCount = workers.filter(w => absenceFor(w.name, tomorrowStr)).length;
+      const freeCount = workers.length - absentCount;
+      summaryEl.textContent = `${freeCount} свободно · ${absentCount} отсутствует`;
+    }
+  } catch (e) {
+    todayList.innerHTML = '<div class="hcw-error">Не удалось загрузить</div>';
   }
 }
 
@@ -636,7 +705,7 @@ function _renderAlerts(alerts) {
       const kind = el.dataset.activityKind;
       const ref = el.dataset.activityRef;
       _closeAlertsView();
-      switchView('home', { isTabSwitch: true });
+      switchView('feed', { isTabSwitch: true });
       if (kind === 'news_comment') {
         if (typeof _selectFeedTab === 'function') _selectFeedTab('news');
         if (typeof openNewsComments === 'function') openNewsComments(ref);

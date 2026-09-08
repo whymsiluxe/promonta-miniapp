@@ -448,11 +448,18 @@ async function _uploadFeedPhoto(files) {
   }
 }
 
-const FEED_TABS = ['news', 'photos', 'weather'];
+const FEED_TABS = ['photos', 'news', 'weather'];
+
+// Returns the feed view root element. After Phase 3, the feed lives in #view-feed;
+// #view-home fallback keeps this safe if DOM is partially loaded.
+function getFeedRoot() {
+  return document.getElementById('view-feed') || document.getElementById('view-home');
+}
 
 function _selectFeedTab(which, opts = {}) {
   const { silent } = opts;
-  document.querySelectorAll('#view-home .doc-type-opt[data-feed]').forEach(o => o.classList.toggle('active', o.dataset.feed === which));
+  const root = getFeedRoot();
+  root.querySelectorAll('.doc-type-opt[data-feed]').forEach(o => o.classList.toggle('active', o.dataset.feed === which));
   document.getElementById('feed-weather-content').style.display = which === 'weather' ? 'block' : 'none';
   document.getElementById('feed-photos-content').style.display = which === 'photos' ? 'block' : 'none';
   document.getElementById('feed-news-content').style.display = which === 'news' ? 'block' : 'none';
@@ -761,9 +768,10 @@ async function _markFeedRead(tab) {
 }
 
 function _initFeedSwitch() {
-  const switcher = document.querySelector('#view-home .doc-type-opt[data-feed]');
+  const root = getFeedRoot();
+  const switcher = root.querySelector('.doc-type-opt[data-feed]');
   if (!switcher) return;
-  document.querySelectorAll('#view-home .doc-type-opt[data-feed]').forEach(opt => {
+  root.querySelectorAll('.doc-type-opt[data-feed]').forEach(opt => {
     opt.addEventListener('click', () => _selectFeedTab(opt.dataset.feed));
   });
 
@@ -824,7 +832,7 @@ function _initFeedSwipe() {
     // Игнорируем вертикальные/диагональные свайпы (скролл ленты/фото-сетки).
     if (Math.abs(diffX) < FEED_SWIPE_THRESHOLD || Math.abs(diffX) < Math.abs(diffY)) return;
 
-    const current = document.querySelector('#view-home .doc-type-opt[data-feed].active')?.dataset.feed || 'news';
+    const current = getFeedRoot().querySelector('.doc-type-opt[data-feed].active')?.dataset.feed || 'photos';
     const idx = FEED_TABS.indexOf(current);
     const direction = diffX > 0 ? 'right' : 'left'; // свайп вправо = назад, влево = вперёд по FEED_TABS
     const nextIdx = direction === 'left' ? idx + 1 : idx - 1;
@@ -841,16 +849,20 @@ function _initFeedSwipe() {
 // (раньше эта функция сама называлась initHomeView и молча перекрывалась home.js —
 // суб-табы и погодная лента не работали вовсе).
 function initFeedTabs() {
-  // 10.3: дефолтный активный суб-таб — Новости (первый в FEED_TABS), не Инфо.
-  // loadWeatherFeed() всё равно нужен сразу — от него зависит виджет погоды на Home,
-  // но контент активного суб-таба грузим по фактическому data-feed из разметки.
+  // Phase 3: default active sub-tab is Фото (first in FEED_TABS), sub-tabs live in #view-feed.
+  // loadWeatherFeed() always runs for the weather widget; active content loads on demand.
   loadWeatherFeed();
-  const active = document.querySelector('#view-home .doc-type-opt[data-feed].active')?.dataset.feed || 'news';
+  const active = getFeedRoot().querySelector('.doc-type-opt[data-feed].active')?.dataset.feed || 'photos';
   if (active === 'news') loadNewsFeed();
   if (active === 'photos') loadFeedPhotos();
   _initFeedSwitch();
   _initFeedSwipe();
   _loadFeedTabBadges();
+}
+
+// Public API: called by switchView('feed') in app.html.
+function initFeedView() {
+  initFeedTabs();
 }
 
 function _setFeedBadge(tabKey, count) {

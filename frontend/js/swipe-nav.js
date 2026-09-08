@@ -1,7 +1,7 @@
 // Свайп-навигация между вкладками: звук + вибрация + slide-анимация (Фаза 1, must-have).
 // Экран "выезжает" в направлении жеста и новый "въезжает" с противоположной стороны.
 
-const SWIPE_VIEWS = ['home', 'chat', 'objects', 'abwesenheit', 'profile'];
+const SWIPE_VIEWS = ['feed', 'home', 'chat', 'objects', 'profile'];
 const SWIPE_THRESHOLD = 50;
 const SWIPE_ANIM_MS = 220;
 

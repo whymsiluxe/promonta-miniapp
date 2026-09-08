@@ -86,6 +86,10 @@ body.keyboard-open .bottom-nav { opacity: 0; transform: translateX(-50%) transla
    активного состояния. */
 .nav-item.active .nav-icon-svg { stroke-width: 2.3; background: var(--accent); color: var(--primary-dark); box-shadow: 0 3px 10px -3px color-mix(in srgb, var(--accent) 70%, transparent); }
 
+/* Phase 3.3b — nav labels under icons (glove-friendly) */
+.nav-item { flex-direction: column; gap: 1px; }
+.nav-label { font-size: 11px; line-height: 1.1; letter-spacing: 0.01em; display: block; text-align: center; white-space: nowrap; }
+
 .nav-item { position: relative; }
 /* 25.07: план явно требовал убрать crown-emoji (👑) -- заменён на маленькую
    forest-цветную точку-индикатор в углу иконки, тот же смысл (owner отличим от worker
@@ -4108,6 +4112,21 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 }
 .home-rings-section { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); margin: 0 0.75rem 0.75rem; padding: 0.75rem; }
 
+/* ── Phase 3.7 — Dashboard calendar widget ── */
+.home-calendar-widget { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); margin: 0 0.75rem 0.75rem; padding: 0.75rem; }
+.hcw-day-section { margin-bottom: 0.6rem; }
+.hcw-day-label { font-size: 0.78rem; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.35rem; }
+.hcw-list { display: flex; flex-direction: column; gap: 0.3rem; }
+.hcw-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.2rem 0; }
+.hcw-worker-name { font-size: 0.9rem; color: var(--text-main); font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hcw-status { font-size: 0.82rem; white-space: nowrap; }
+.hcw-free { color: var(--accent); }
+.hcw-absent { color: var(--text-light); }
+.hcw-loading, .hcw-error { font-size: 0.85rem; color: var(--text-light); }
+.hcw-summary { font-size: 0.78rem; color: var(--text-light); margin-top: 0.25rem; }
+.hcw-open-btn { display: block; width: 100%; margin-top: 0.75rem; padding: 0.6rem; background: none; border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--accent); font-size: 0.9rem; cursor: pointer; text-align: center; }
+.hcw-open-btn:active { background: var(--bg-card-raised); }
+
 /* ── quick-primary icon — квадратные цветные плашки (референс: чёрный/красный/оранжевый/фиолетовый) ── */
 .qp-icon { position: relative; width: 26px; height: 26px; }
 .quick-primary-icon-wrap { border-radius: 10px !important; }
@@ -4916,38 +4935,45 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
   <div id="working-objects-plan-slot" style="display:none"><!-- План: даты + назначения по объектам на дату --></div>
 </div>
 
+<!-- ═══════════ ЛЕНТА (Phase 3 — extracted from Home, top-level nav tab) ═══════════ -->
+<div class="view" id="view-feed">
+  <header><h1>Лента</h1></header>
+  <div id="feed-swipe-area">
+    <div class="doc-type-switch" style="margin:0 0.75rem 0.75rem;">
+      <div class="doc-type-opt active" data-feed="photos">Фото<span class="feed-tab-badge" id="feed-badge-photos" style="display:none">0</span></div>
+      <div class="doc-type-opt" data-feed="news">Новости<span class="feed-tab-badge" id="feed-badge-news" style="display:none">0</span></div>
+      <div class="doc-type-opt" data-feed="weather">Инфо<span class="feed-tab-badge" id="feed-badge-weather" style="display:none">0</span></div>
+    </div>
+
+    <div id="feed-photos-content">
+      <div style="padding:0 0.75rem 0.75rem;">
+        <button class="submit-btn" id="feed-add-photo-btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="2"/></svg> Добавить фото</button>
+        <input type="file" id="feed-photo-input-camera" accept="image/*" capture="environment" style="display:none;">
+        <input type="file" id="feed-photo-input-gallery" accept="image/*" multiple style="display:none;">
+      </div>
+      <div id="feed-photo-grid" class="feed-photo-grid">
+        <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка...</div>
+      </div>
+    </div>
+
+    <div id="feed-news-content" style="display:none;">
+      <div id="feed-news-list">
+        <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Скоро: утренняя сводка новостей</div>
+      </div>
+    </div>
+
+    <div id="feed-weather-content" style="display:none;">
+      <div id="feed-birthdays"></div>
+      <div id="feed-list">
+        <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="view active" id="view-home">
-  <header><h1>Home</h1></header>
-  <div id="home-dashboard-slot"><!-- KPI-бар, quick-actions, alerts, кольца объектов, погода — Фаза 2 --></div>
-  <div class="doc-type-switch" style="margin:0 0.75rem 0.75rem;">
-    <div class="doc-type-opt active" data-feed="news">Новости<span class="feed-tab-badge" id="feed-badge-news" style="display:none">0</span></div>
-    <div class="doc-type-opt" data-feed="photos">Фото<span class="feed-tab-badge" id="feed-badge-photos" style="display:none">0</span></div>
-    <div class="doc-type-opt" data-feed="weather">Инфо<span class="feed-tab-badge" id="feed-badge-weather" style="display:none">0</span></div>
-  </div>
-
-  <div id="feed-weather-content" style="display:none;">
-    <div id="feed-birthdays"></div>
-    <div id="feed-list">
-      <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка...</div>
-    </div>
-  </div>
-
-  <div id="feed-photos-content" style="display:none;">
-    <div style="padding:0 0.75rem 0.75rem;">
-      <button class="submit-btn" id="feed-add-photo-btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="2"/></svg> Добавить фото</button>
-      <input type="file" id="feed-photo-input-camera" accept="image/*" capture="environment" style="display:none;">
-      <input type="file" id="feed-photo-input-gallery" accept="image/*" multiple style="display:none;">
-    </div>
-    <div id="feed-photo-grid" class="feed-photo-grid">
-      <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка...</div>
-    </div>
-  </div>
-
-  <div id="feed-news-content">
-    <div id="feed-news-list">
-      <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Скоро: утренняя сводка новостей</div>
-    </div>
-  </div>
+  <header><h1>Dashboard</h1></header>
+  <div id="home-dashboard-slot"><!-- KPI-бар, quick-actions, calendar widget, rings, погода — Phase 3 --></div>
 </div>
 
 <!-- ═══════════ КОНТРОЛЬ ДНЯ (Round 4 — Production Control) — owner-only ═══════════ -->
@@ -5444,45 +5470,53 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
   </div>
 </div>
 
-<!-- ═══════════ НИЖНЕЕ МЕНЮ — единая структура 5 табов (21.07 IA финал): Home/Чат/Объекты/Календарь/Профиль. Дефекты/Потребности — только через Home-widget, не таб. ═══════════ -->
+<!-- ═══════════ НИЖНЕЕ МЕНЮ — Phase 3: Лента/Главная/Чат/Объекты/Профиль, с текстовыми метками (glove-friendly). Дефекты/Потребности — через Home-widget. ═══════════ -->
 <div class="bottom-nav" id="bottom-nav-owner">
+  <div class="nav-item" data-view="feed">
+    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 10h10M4 14h12M4 18h8" stroke-linecap="round"/></svg>
+    <span class="nav-label">Лента</span>
+  </div>
   <div class="nav-item active" data-view="home">
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 10v10h14V10" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 20v-6h6v6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="nav-label">Главная</span>
   </div>
   <div class="nav-item" data-view="chat">
     <span class="nav-badge" id="chat-nav-badge"></span>
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="nav-label">Чат</span>
   </div>
   <div class="nav-item" data-view="objects">
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16" stroke-linecap="round"/></svg>
-  </div>
-  <div class="nav-item" data-view="abwesenheit">
-    <span class="nav-badge" id="abw-nav-badge"></span>
-    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 9h18M8 2v4M16 2v4" stroke-linecap="round"/></svg>
+    <span class="nav-label">Объекты</span>
   </div>
   <div class="nav-item" data-view="profile">
     <span class="nav-owner-badge" title="Владелец"></span>
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c1.5-4 5-6 7.5-6s6 2 7.5 6" stroke-linecap="round"/></svg>
+    <span class="nav-label">Профиль</span>
   </div>
 </div>
 
 <div class="bottom-nav" id="bottom-nav-worker" style="display:none;">
+  <div class="nav-item" data-view="feed">
+    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 10h10M4 14h12M4 18h8" stroke-linecap="round"/></svg>
+    <span class="nav-label">Лента</span>
+  </div>
   <div class="nav-item active" data-view="home">
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 10v10h14V10" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 20v-6h6v6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="nav-label">Главная</span>
   </div>
   <div class="nav-item" data-view="chat">
     <span class="nav-badge" id="chat-nav-badge-worker"></span>
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="nav-label">Чат</span>
   </div>
   <div class="nav-item" data-view="objects">
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16" stroke-linecap="round"/></svg>
-  </div>
-  <div class="nav-item" data-view="abwesenheit">
-    <span class="nav-badge" id="abw-nav-badge"></span>
-    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 9h18M8 2v4M16 2v4" stroke-linecap="round"/></svg>
+    <span class="nav-label">Объекты</span>
   </div>
   <div class="nav-item" data-view="profile">
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c1.5-4 5-6 7.5-6s6 2 7.5 6" stroke-linecap="round"/></svg>
+    <span class="nav-label">Профиль</span>
   </div>
 </div>
 
@@ -5586,7 +5620,7 @@ const loadedViews = new Set();
 // 24.07 (Phase 0.5): NavigationManager стек — push для программных переходов вглубь
 // (открытие детейла из списка), replaceRoot для клика по nav-таб (не растим стек бесконечно
 // при простой смене вкладки), ничего не трогаем при возврате через .back() (fromBack).
-const TAB_ORDER = ['home', 'chat', 'objects', 'abwesenheit', 'profile'];
+const TAB_ORDER = ['feed', 'home', 'chat', 'objects', 'profile'];
 let _lastActiveTabView = null;
 
 function switchView(viewName, opts = {}) {
