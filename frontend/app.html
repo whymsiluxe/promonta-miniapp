@@ -3059,6 +3059,8 @@ body.view-locked {
 .home-kpi-bar { display: flex; gap: 0.6rem; padding: 0.75rem 0.75rem 0.35rem; }
 .kpi-tile { flex: 1; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.1rem; }
 .kpi-tile.kpi-alert { border: 1px solid var(--warning); cursor: pointer; }
+.card-error-state { color: var(--text-light); font-size: 0.85rem; padding: 0.5rem 0; }
+.card-retry-btn { margin-left: 0.5rem; background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.8rem; cursor: pointer; }
 .kpi-num { font-family: var(--font-heading); font-weight: 700; font-size: 1.8rem; color: var(--text-main); }
 .kpi-label { font-size: 0.86rem; color: var(--text-light-oncard); text-transform: uppercase; letter-spacing: 0.05em; }
 .home-quick-primary { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.6rem; }
@@ -6363,6 +6365,63 @@ function closeKdDetail() {
   const overlay = document.getElementById('kd-detail-overlay');
   if (overlay) overlay.style.display = 'none';
 }
+
+// ── Global error boundary (Phase 0.7) ─────────────────────────────────────────
+// Captures unhandled JS errors and promise rejections, records them for diagnostics,
+// and shows a non-disruptive banner (not a full-page takeover) so the user can retry
+// without losing their current view. Never logs tokens, initData, or any PII.
+(function () {
+  const _BUILD_SHA = window.__APP_BUILD_SHA__ || 'unknown';
+  let _lastView = 'unknown';
+  // track current view for context in error reports
+  const _origSwitch = window.switchView;
+  if (typeof _origSwitch === 'function') {
+    window.switchView = function (v, o) { _lastView = v; return _origSwitch(v, o); };
+  }
+
+  function _safeStack(err) {
+    try {
+      return (err && err.stack ? err.stack : String(err)).slice(0, 300);
+    } catch (_) { return 'stack-unavailable'; }
+  }
+
+  function _showErrorBanner(msg) {
+    // Never show a banner for known non-critical fetch failures (e.g. prefetch 401/403)
+    if (msg && (msg.includes('401') || msg.includes('403') || msg.includes('AbortError'))) return;
+    let banner = document.getElementById('_global-error-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = '_global-error-banner';
+      banner.style.cssText = 'position:fixed;bottom:calc(var(--app-bottom-nav-height,56px) + 8px);left:1rem;right:1rem;' +
+        'background:var(--bg-card,#1c1c1e);border:1px solid var(--warning,#f59e0b);border-radius:10px;' +
+        'padding:0.7rem 1rem;font-size:0.82rem;color:var(--text-main,#fff);z-index:9999;display:flex;' +
+        'align-items:center;gap:0.75rem;box-shadow:0 4px 16px rgba(0,0,0,0.4)';
+      document.body.appendChild(banner);
+    }
+    banner.innerHTML = '<span style="flex:1">Не удалось загрузить данные</span>' +
+      '<button onclick="location.reload()" style="background:var(--accent,#3b82f6);color:#fff;border:none;' +
+      'border-radius:6px;padding:0.3rem 0.8rem;font-size:0.8rem;cursor:pointer;min-height:32px">Повторить</button>' +
+      '<button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--text-light,#888);' +
+      'font-size:1rem;cursor:pointer;padding:0 0.25rem;min-height:32px">✕</button>';
+    // Auto-dismiss after 8 seconds if user hasn't interacted
+    setTimeout(() => { if (banner.parentElement) banner.remove(); }, 8000);
+  }
+
+  window.onerror = function (msg, src, line, col, err) {
+    const safeMsg = String(msg).slice(0, 200);
+    const safeSrc = String(src || '').replace(/[?#].*/, '').split('/').slice(-2).join('/');
+    console.error('[app-error]', { build: _BUILD_SHA, view: _lastView, msg: safeMsg, src: safeSrc, line, col, stack: _safeStack(err) });
+    _showErrorBanner(safeMsg);
+    return false; // allow browser default handling
+  };
+
+  window.addEventListener('unhandledrejection', function (e) {
+    const reason = e.reason;
+    const safeMsg = reason instanceof Error ? String(reason.message).slice(0, 200) : String(reason).slice(0, 200);
+    console.error('[app-unhandled-rejection]', { build: _BUILD_SHA, view: _lastView, reason: safeMsg, stack: _safeStack(reason) });
+    _showErrorBanner(safeMsg);
+  });
+})();
 
 initApp();
 </script>

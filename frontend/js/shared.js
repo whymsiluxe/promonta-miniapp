@@ -262,9 +262,11 @@ function prefetch(path) {
 
 function prefetchTracked(path) {
   // Как prefetch(), но splash-экран может дождаться того же промиса, что позже
-  // заберёт настоящий код таба — сам промис в кэше не подменяется/не глотается,
-  // ошибка (если будет) всё равно дойдёт до реального потребителя как обычно.
+  // заберёт настоящий код таба. Если промис отклоняется — СРАЗУ эвиктируем из кэша,
+  // чтобы следующий реальный вызов api() сделал свежий fetch, а не получил
+  // закешированное отклонение («отравленный кэш»). Splash-caller получает null (не ошибку).
   const p = api(path);
+  p.catch(() => { delete _prefetchCache[path]; }); // evict on failure: prevents poisoned retry
   _prefetchCache[path] = p;
   return p.catch(() => null); // splash ждёт через Promise.allSettled — сетевой сбой не должен его подвесить
 }

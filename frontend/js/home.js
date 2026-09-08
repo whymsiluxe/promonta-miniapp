@@ -15,7 +15,6 @@ async function initHomeView() {
   }
 
   if (_homeLoaded) return;
-  _homeLoaded = true;
 
   // 30.07 v2 (откат вкладок): Dashboard снова одна цельная лента, не 3 таба.
   // Главный оперативный блок "Команда" объединяет: Требует внимания / Смены и
@@ -93,6 +92,9 @@ async function initHomeView() {
     </div>
   `;
 
+  // Mark loaded only after DOM structure is in place; if this line is reached,
+  // the skeleton rendered successfully — individual card errors are handled per-card.
+  _homeLoaded = true;
   _loadHomeData();
   initFeedTabs(); // суб-табы Инфо/Фото/Новости под dashboard (feed.js)
   if (typeof renderHomeRadioPlayer === 'function') renderHomeRadioPlayer();
@@ -118,7 +120,10 @@ async function _loadHomeKontrolDaySummary() {
     // highlight tile if there are orange/red risk rows
     const hasRisk = (data.rows || []).some(r => r.risk_level === 'orange' || r.risk_level === 'red');
     if (hasRisk) tile.classList.add('kpi-alert');
-  } catch (_) {}
+  } catch (_) {
+    const countEl = document.getElementById('kpi-kontrol-count');
+    if (countEl) countEl.textContent = '!';
+  }
 }
 
 // 10.11: Abwesenheit-плашка на Home — сводка вместо мелкой строки в Profile→Ещё.
@@ -297,7 +302,8 @@ async function _loadHomeWeather() {
     if (_weatherActiveIdx >= _weatherFeed.length) _weatherActiveIdx = 0;
     _renderWeatherCard();
   } catch (e) {
-    card.innerHTML = '<div class="weather-card-loading">Ошибка загрузки погоды</div>';
+    card.innerHTML = '<div class="weather-card-loading">Не удалось загрузить погоду ' +
+      '<button class="card-retry-btn" onclick="_loadHomeWeather()">Повторить</button></div>';
   }
 }
 
@@ -501,7 +507,8 @@ async function _loadHomeObjectsRings() {
 
     _attachHomeRingHandlers(grid);
   } catch (e) {
-    grid.innerHTML = '<div style="color:var(--text-light);font-size:0.85rem">Ошибка загрузки объектов</div>';
+    if (grid) grid.innerHTML = '<div class="card-error-state">Не удалось загрузить объекты ' +
+      '<button class="card-retry-btn" onclick="_loadHomeObjectsRings()">Повторить</button></div>';
   }
 }
 
@@ -516,7 +523,9 @@ async function _loadHomeAlerts() {
       badge.textContent = count;
       badge.style.display = count > 0 ? 'flex' : 'none';
     }
-  } catch (e) {}
+  } catch (e) {
+    if (kpiAlerts) kpiAlerts.textContent = '!';
+  }
 
   const kpiTasks = document.getElementById('kpi-tasks-count');
   if (kpiTasks) {
@@ -524,7 +533,9 @@ async function _loadHomeAlerts() {
       const data = await api('/api/tasks');
       const open = (data.tasks || []).filter(t => t.status !== 'закрыто').length;
       kpiTasks.textContent = open;
-    } catch (e) {}
+    } catch (e) {
+      kpiTasks.textContent = '!';
+    }
   }
 }
 
