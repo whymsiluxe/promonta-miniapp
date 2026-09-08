@@ -2850,6 +2850,8 @@ body.view-locked {
   width: 100%; max-width: 480px;
   padding: calc(1.5rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) 1.5rem 1.5rem;
   box-sizing: border-box;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  max-height: 100%;
 }
 .onboarding-dots { display: flex; justify-content: center; gap: 0.4rem; margin-bottom: 2rem; flex-shrink: 0; }
 .onboarding-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bg-card-raised); transition: background 0.2s, transform 0.2s; }

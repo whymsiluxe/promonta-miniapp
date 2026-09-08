@@ -122,8 +122,12 @@ function _obRenderStep1() {
 
   const nameInput = document.getElementById('ob-name-input');
   nameInput.addEventListener('input', () => { _obName = nameInput.value; });
+  nameInput.addEventListener('focus', () => { setTimeout(() => nameInput.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300); });
   const bdayInput = document.getElementById('ob-birthday-input');
-  if (bdayInput) bdayInput.addEventListener('input', () => { _obBirthday = bdayInput.value; });
+  if (bdayInput) {
+    bdayInput.addEventListener('input', () => { _obBirthday = bdayInput.value; });
+    bdayInput.addEventListener('focus', () => { setTimeout(() => bdayInput.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300); });
+  }
 
   const showAvatarPreview = (file) => {
     _obAvatarPending = file;
