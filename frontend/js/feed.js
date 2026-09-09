@@ -260,6 +260,7 @@ function _renderCompactWeatherRow(entry, idx) {
   const tempNow = today ? Math.round(today.tmax) : null;
   const topRisk = _wxPrimaryLabel(entry);
   const expanded = _wxExpandedIdx === idx;
+  const dateLabel = entry.created ? fmtFeedDate(entry.created) : '';
   return `
   <div class="wx-compact-row ${expanded ? 'expanded' : ''}" data-wx-idx="${idx}">
     <div class="wx-compact-head">
@@ -268,6 +269,7 @@ function _renderCompactWeatherRow(entry, idx) {
         <span class="wx-compact-object">${esc(entry.object)}</span>
         <span class="wx-compact-risk">${esc(topRisk)}</span>
       </div>
+      ${dateLabel ? `<span class="wx-compact-date">${dateLabel}</span>` : ''}
       ${tempNow !== null ? `<span class="wx-compact-temp">${tempNow}°</span>` : ''}
     </div>
     ${expanded ? `<div class="wx-compact-detail">${renderFeedCard(entry, idx)}</div>` : ''}
