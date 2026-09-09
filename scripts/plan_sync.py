@@ -44,6 +44,22 @@ SHEETS_CRED = '/home/promonta/agent/.sheets.json'
 SYNC_STATE_FILE = os.path.join(DATA_ROOT, 'plan_sync_state.json')
 DAILY_PLAN_STORE_FILE = os.path.join(DATA_ROOT, 'daily_plan_store.json')
 
+# ── Import daily_plan_lib for shared store access (cross-process safe) ────────
+# Avoids duplicating read-modify-write logic — both FastAPI and plan_sync use the
+# same lock-protected primitives. daily_plan_lib does NOT import main.py.
+_BACKEND_DIR = os.path.join(os.path.dirname(__file__), '..', 'backend')
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+try:
+    import daily_plan_lib as dpl
+    _WORK_CALENDAR_FILE = os.path.join(DATA_ROOT, 'work_calendar.json')
+    dpl.configure(DAILY_PLAN_STORE_FILE, SYNC_STATE_FILE, _WORK_CALENDAR_FILE)
+    _PLAN_LIB_AVAILABLE = True
+except ImportError as e:
+    log.warning("daily_plan_lib not available — plan_sync will only cache row hashes: %s", e)
+    _PLAN_LIB_AVAILABLE = False
+
 # Google Sheet ID (same spreadsheet as objekte_lib)
 SHEET_ID = os.environ.get(
     'OBJEKTE_SHEET_ID',
@@ -146,28 +162,6 @@ def _save_state(state: dict) -> None:
     os.replace(tmp, SYNC_STATE_FILE)
 
 
-# ── DailyPlan store helpers (minimal — don't import full main.py) ─────────────
-
-def _load_plan_store() -> dict:
-    if not os.path.exists(DAILY_PLAN_STORE_FILE):
-        return {"daily_plans": {}, "versions": {}, "acceptances": {},
-                "amendments": {}, "executions": {}, "carryovers": {},
-                "productivity_observations": {}, "productivity_aggregates": {}}
-    try:
-        with open(DAILY_PLAN_STORE_FILE) as f:
-            return json.load(f)
-    except Exception:
-        log.error("daily_plan_store.json is corrupt — skipping store write this cycle")
-        return None  # type: ignore
-
-
-def _save_plan_store(store: dict) -> None:
-    tmp = DAILY_PLAN_STORE_FILE + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(store, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, DAILY_PLAN_STORE_FILE)
-
-
 # ── Plan_этапов processing ────────────────────────────────────────────────────
 
 def _process_stage_rows(rows: list[dict], state: dict) -> int:
@@ -184,8 +178,69 @@ def _process_stage_rows(rows: list[dict], state: dict) -> int:
     return len(rows)
 
 
+def _row_to_plan_fields(row: dict) -> dict | None:
+    """Parse a Plan_дня Sheet row into DailyPlan fields.
+
+    Expected Plan_дня columns (case-insensitive, missing = graceful skip):
+      plan_id   — stable UUID; if missing, synthesized from object_id+date+stage_key
+      date      — YYYY-MM-DD
+      object_id — ID объекта
+      stage_key — stage identifier
+      worker_ids — comma-separated Telegram user IDs (optional, defaults to [])
+      status    — 'draft' or 'published' (default: 'draft')
+      items_json — JSON-encoded list of plan items
+    """
+    def _get(*keys):
+        for k in keys:
+            v = row.get(k) or row.get(k.lower()) or row.get(k.upper()) or ''
+            if v:
+                return str(v).strip()
+        return ''
+
+    date_str = _get('date', 'Дата', 'DATE')
+    object_id = _get('object_id', 'Объект', 'ID объекта', 'OBJECT_ID')
+    stage_key = _get('stage_key', 'stage', 'Этап', 'STAGE_KEY') or 'default'
+    if not date_str or not object_id:
+        return None  # required fields missing
+
+    plan_id = _get('plan_id', 'PLAN_ID', 'id') or f"{object_id}:{date_str}:{stage_key}"
+
+    worker_ids_raw = _get('worker_ids', 'workers', 'Работники', 'WORKER_IDS')
+    worker_ids = [w.strip() for w in worker_ids_raw.split(',') if w.strip()] if worker_ids_raw else []
+
+    status_raw = _get('status', 'Status', 'Статус').lower()
+    status = 'published' if status_raw in ('published', 'опубликован', '1', 'yes', 'true') else 'draft'
+
+    items_raw = _get('items_json', 'items', 'Пункты', 'ITEMS_JSON')
+    try:
+        items = json.loads(items_raw) if items_raw else []
+        if not isinstance(items, list):
+            items = []
+    except Exception:
+        items = []
+
+    return {
+        "plan_id": plan_id,
+        "date": date_str,
+        "object_id": object_id,
+        "stage_key": stage_key,
+        "worker_ids": worker_ids,
+        "status": status,
+        "items": items,
+    }
+
+
 def _process_daily_plan_rows(rows: list[dict], state: dict) -> int:
-    """Syncs Plan_дня rows, creates/updates DailyPlan records in the local store."""
+    """Syncs Plan_дня rows — creates/updates/publishes DailyPlan records in the local store.
+
+    Uses daily_plan_lib.create_plan / update_plan_items / publish_plan so that:
+    - Cross-process locking (fcntl) is handled by daily_plan_lib
+    - Sheet row → DailyPlan creation is idempotent (keyed on plan_id)
+    - Pre-acceptance edits bump the version; post-acceptance edits create an Amendment
+    - Sheet row deletion after acceptance: accepted snapshot survives unchanged
+
+    Plan_дня schema: see _row_to_plan_fields() above.
+    """
     new_hash = _hash_rows(rows)
     old_hash = state.get('plan_dnya_hash')
     if new_hash == old_hash:
@@ -196,11 +251,67 @@ def _process_daily_plan_rows(rows: list[dict], state: dict) -> int:
     state['plan_dnya_synced_at'] = time.time()
     log.info("Plan_дня updated: %d rows", len(rows))
 
-    # Phase 2 of sync: update local DailyPlan records from changed rows
-    # (stub — Phase 2 implementation deferred to after Plan_дня schema is confirmed)
-    # This prevents creating plans from Sheets rows with unverified column names.
-    # TODO Round 1 final: implement once Plan_дня tab schema is confirmed with owner.
-    return len(rows)
+    if not _PLAN_LIB_AVAILABLE:
+        log.warning("daily_plan_lib unavailable — row hashes cached but plans not created")
+        return len(rows)
+
+    changed = 0
+    seen_plan_ids = set()
+
+    for row in rows:
+        fields = _row_to_plan_fields(row)
+        if not fields:
+            continue
+
+        pid = fields["plan_id"]
+        seen_plan_ids.add(pid)
+
+        existing = dpl.get_plan_by_sheets_source_row(pid)
+        if existing is None:
+            # New plan: create from Sheet row, then publish if status=published
+            try:
+                plan = dpl.create_plan(
+                    object_id=fields["object_id"],
+                    stage_key=fields["stage_key"],
+                    date_str=fields["date"],
+                    assigned_worker_ids=fields["worker_ids"],
+                    items=fields["items"],
+                    created_by="plan_sync",
+                    sheets_source_row=pid,
+                )
+                if fields["status"] == "published":
+                    dpl.publish_plan(plan["id"], "plan_sync")
+                log.info("Created DailyPlan %s for %s on %s", plan["id"], fields["object_id"], fields["date"])
+                changed += 1
+            except Exception as e:
+                log.error("Failed to create DailyPlan for row %s: %s", pid, e)
+        else:
+            # Existing plan: update items if content changed; publish if newly marked published
+            new_items_hash = dpl._items_hash(fields["items"])
+            if new_items_hash != existing.get("content_hash"):
+                try:
+                    dpl.update_plan_items(
+                        plan_id=existing["id"],
+                        new_items=fields["items"],
+                        change_type="sheets_edit",
+                        change_summary="Обновлено из Plan_дня (план_синк)",
+                        updated_by="plan_sync",
+                    )
+                    log.info("Updated DailyPlan %s (items changed)", existing["id"])
+                    changed += 1
+                except Exception as e:
+                    log.error("Failed to update DailyPlan %s: %s", existing["id"], e)
+
+            if fields["status"] == "published" and existing.get("status") == "draft":
+                try:
+                    dpl.publish_plan(existing["id"], "plan_sync")
+                    log.info("Published DailyPlan %s", existing["id"])
+                    changed += 1
+                except Exception as e:
+                    log.warning("Could not publish DailyPlan %s (status=%s): %s",
+                                existing["id"], existing.get("status"), e)
+
+    return changed
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────

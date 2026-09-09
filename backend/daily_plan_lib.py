@@ -18,6 +18,8 @@
          Sheets-редактирование после принятия → Amendment. Нельзя переписать принятое.
 """
 
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -62,10 +64,28 @@ def configure(store_file: str, sync_state_file: str, work_calendar_file: str) ->
     _WORK_CALENDAR_FILE = work_calendar_file
 
 
+@contextlib.contextmanager
+def _store_flock():
+    """Cross-process exclusive lock alongside the in-process thread lock.
+    Uses a .lock sidecar file so both FastAPI and plan_sync.py serialize writes."""
+    if not _STORE_FILE:
+        yield
+        return
+    lock_path = _STORE_FILE + '.lock'
+    with open(lock_path, 'a') as lf:
+        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+
+
 def _atomic_write(path: str, data: dict) -> None:
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, path)
 
 
@@ -180,7 +200,7 @@ def create_plan(
         "change_summary": "Первая версия плана",
     }
 
-    with _store_lock:
+    with _store_lock, _store_flock():
         store = _load_store()
         store["daily_plans"][plan_id] = plan
         store["versions"].setdefault(plan_id, []).append(version)
@@ -191,7 +211,7 @@ def create_plan(
 
 def publish_plan(plan_id: str, published_by: str) -> dict:
     """Переводит план в статус published — доступен работникам."""
-    with _store_lock:
+    with _store_lock, _store_flock():
         store = _load_store()
         plan = store["daily_plans"].get(plan_id)
         if not plan:
@@ -214,7 +234,7 @@ def update_plan_items(
     """Обновляет содержимое плана (из Sheets-синка или ручного редактирования).
     Если план уже принят (accepted) — создаёт Amendment вместо прямого изменения.
     Если принят и смена началась — также создаёт Amendment."""
-    with _store_lock:
+    with _store_lock, _store_flock():
         store = _load_store()
         plan = store["daily_plans"].get(plan_id)
         if not plan:
@@ -260,7 +280,7 @@ def update_plan_items(
                 ),
                 "created_at": now,
                 "created_by": updated_by,
-                "worker_acknowledged_at": None,
+                "acknowledged_by": {},  # {worker_id: timestamp} — per-worker acks
             }
             store["amendments"][amendment["id"]] = amendment
         else:
@@ -294,7 +314,7 @@ def accept_plan(plan_id: str, plan_version: int, worker_id: str) -> dict:
     """Работник нажал «ПЛАН ПОНЯТЕН — БЕРУ В РАБОТУ». Идемпотент по (plan_id, worker_id)."""
     idempotency_key = f"{ACCEPT_IDEMPOTENCY_PREFIX}:{plan_id}:{worker_id}"
 
-    with _store_lock:
+    with _store_lock, _store_flock():
         store = _load_store()
         plan = store["daily_plans"].get(plan_id)
         if not plan:
@@ -312,7 +332,8 @@ def accept_plan(plan_id: str, plan_version: int, worker_id: str) -> dict:
         if existing:
             return existing
 
-        if plan["status"] not in ("published", "amendment_pending"):
+        # "accepted" is allowed: another worker may have already accepted a multi-worker plan.
+        if plan["status"] not in ("published", "amendment_pending", "accepted"):
             raise ValueError(f"Plan status {plan['status']!r} cannot be accepted")
 
         # Snapshot hash на момент принятия — фиксируем что именно принял работник
@@ -330,13 +351,19 @@ def accept_plan(plan_id: str, plan_version: int, worker_id: str) -> dict:
             "accepted_snapshot_hash": accepted_snapshot_hash,
         }
 
-        # Если было amendment_pending и это повторное принятие → сбрасываем amendment_pending
+        # Если было amendment_pending — ack этим работником. Только когда ВСЕ ackнули → accepted.
         if plan["status"] == "amendment_pending":
-            # Помечаем все неподтверждённые amendments как acknowledged
             for a in store["amendments"].values():
-                if a["daily_plan_id"] == plan_id and a["worker_acknowledged_at"] is None:
-                    a["worker_acknowledged_at"] = acceptance["accepted_at"]
-            plan["status"] = "accepted"
+                if a["daily_plan_id"] == plan_id and not _amendment_acked_by(a, str(worker_id)):
+                    a.setdefault("acknowledged_by", {})[str(worker_id)] = acceptance["accepted_at"]
+            # Check if all assigned workers have now acked all pending amendments
+            all_acked = all(
+                _amendment_acked_by_all(a, plan["assigned_worker_ids"])
+                for a in store["amendments"].values()
+                if a["daily_plan_id"] == plan_id
+            )
+            if all_acked:
+                plan["status"] = "accepted"
 
         elif plan["status"] == "published":
             plan["status"] = "accepted"
@@ -349,7 +376,7 @@ def accept_plan(plan_id: str, plan_version: int, worker_id: str) -> dict:
 
 def acknowledge_amendment(plan_id: str, amendment_id: str, worker_id: str) -> dict:
     """Работник подтверждает Amendment (уже принятый план, изменённый после старта)."""
-    with _store_lock:
+    with _store_lock, _store_flock():
         store = _load_store()
         amendment = store["amendments"].get(amendment_id)
         if not amendment:
@@ -359,14 +386,15 @@ def acknowledge_amendment(plan_id: str, amendment_id: str, worker_id: str) -> di
         plan = store["daily_plans"].get(plan_id)
         if plan and str(worker_id) not in [str(w) for w in plan["assigned_worker_ids"]]:
             raise PermissionError("Worker not assigned to this plan")
-        amendment["worker_acknowledged_at"] = time.time()
+        amendment.setdefault("acknowledged_by", {})[str(worker_id)] = time.time()
         if plan and plan["status"] == "amendment_pending":
-            # Все ли amendments подтверждены?
-            pending = [
-                a for a in store["amendments"].values()
-                if a["daily_plan_id"] == plan_id and a["worker_acknowledged_at"] is None
-            ]
-            if not pending:
+            # Переходим в accepted только когда ВСЕ assigned workers ackнули ВСЕ amendments
+            all_acked = all(
+                _amendment_acked_by_all(a, plan.get("assigned_worker_ids", []))
+                for a in store["amendments"].values()
+                if a["daily_plan_id"] == plan_id
+            )
+            if all_acked:
                 plan["status"] = "accepted"
         _save_store(store)
     return amendment
@@ -392,7 +420,7 @@ def apply_daily_execution(
     """
     idempotency_key = f"{EXECUTION_IDEMPOTENCY_PREFIX}:{session_id}"
 
-    with _store_lock:
+    with _store_lock, _store_flock():
         store = _load_store()
 
         existing = store["executions"].get(session_id)
@@ -504,7 +532,7 @@ def record_productivity_observation(
     obs_id = f"{session_id}:{work_type_id}"
     observed_rate = round(actual_quantity / person_hours, 4)
 
-    with _store_lock:
+    with _store_lock, _store_flock():
         store = _load_store()
         if obs_id in store["productivity_observations"]:
             return store["productivity_observations"][obs_id]
@@ -584,11 +612,21 @@ def auto_record_execution_productivity(
     Called after apply_daily_execution when shift_hours > 0.
     Only processes 'done' items with actual_quantity > 0 and work_type_id.
     Hours distributed proportionally by time_estimate_hours (equal split if none).
+
+    For multi-worker plans: records a crew observation (confidence='crew',
+    contribution_weight=1/crew_size) so individual effective rates are not
+    inflated by shared team output.
     """
     if shift_hours <= 0:
         return []
 
     plan_items_by_id = {i["id"]: i for i in (plan.get("items") or [])}
+    assigned_workers = plan.get("assigned_worker_ids", [])
+    crew_size = max(1, len(assigned_workers))
+    confidence = "crew" if crew_size > 1 else "solo"
+    # For crew work, each worker gets proportional credit — prevents inflating
+    # individual rates when total output is a joint product.
+    contribution_weight = round(1.0 / crew_size, 4)
 
     eligible = []
     for result in item_results:
@@ -631,6 +669,9 @@ def auto_record_execution_productivity(
                 actual_quantity=e["actual_quantity"],
                 unit=e["unit"],
                 person_hours=person_hours,
+                crew_size=crew_size,
+                confidence=confidence,
+                contribution_weight=contribution_weight,
             )
             recorded.append(obs)
         except Exception:
@@ -643,6 +684,16 @@ def auto_record_execution_productivity(
 def get_plan(plan_id: str) -> dict | None:
     store = _load_store()
     return store["daily_plans"].get(plan_id)
+
+
+def get_plan_by_sheets_source_row(sheets_source_row: str) -> dict | None:
+    """Find a plan by its sheets_source_row identifier (Plan_дня plan_id column)."""
+    store = _load_store()
+    return next(
+        (p for p in store["daily_plans"].values()
+         if str(p.get("sheets_source_row", "")) == str(sheets_source_row)),
+        None,
+    )
 
 
 def get_today_plan_for_worker(worker_id: str, date_str: str) -> dict | None:
@@ -717,10 +768,40 @@ def get_acceptance(plan_id: str, worker_id: str) -> dict | None:
     )
 
 
-def get_pending_amendments(plan_id: str) -> list:
+def _amendment_acked_by(amendment: dict, worker_id: str) -> bool:
+    """Returns True if this specific worker has acked the amendment."""
+    acked_by = amendment.get("acknowledged_by")
+    if isinstance(acked_by, dict):
+        return str(worker_id) in acked_by
+    # Backward compat: old schema had a single worker_acknowledged_at timestamp
+    return amendment.get("worker_acknowledged_at") is not None
+
+
+def _amendment_acked_by_all(amendment: dict, worker_ids: list) -> bool:
+    """Returns True if every assigned worker has acked the amendment."""
+    if not worker_ids:
+        return True
+    return all(_amendment_acked_by(amendment, str(w)) for w in worker_ids)
+
+
+def get_pending_amendments(plan_id: str, worker_id: str | None = None) -> list:
+    """Returns amendments pending acknowledgement.
+    If worker_id given: amendments this specific worker hasn't acked yet.
+    If worker_id is None: amendments not acked by all assigned workers."""
     store = _load_store()
-    return [a for a in store["amendments"].values()
-            if a["daily_plan_id"] == plan_id and a["worker_acknowledged_at"] is None]
+    plan = store["daily_plans"].get(plan_id)
+    assigned = plan.get("assigned_worker_ids", []) if plan else []
+    result = []
+    for a in store["amendments"].values():
+        if a["daily_plan_id"] != plan_id:
+            continue
+        if worker_id is not None:
+            if not _amendment_acked_by(a, str(worker_id)):
+                result.append(a)
+        else:
+            if not _amendment_acked_by_all(a, assigned):
+                result.append(a)
+    return result
 
 
 def get_execution(session_id: str) -> dict | None:
@@ -729,7 +810,7 @@ def get_execution(session_id: str) -> dict | None:
 
 
 def mark_carryover_applied(carryover_id: str) -> None:
-    with _store_lock:
+    with _store_lock, _store_flock():
         store = _load_store()
         co = store["carryovers"].get(carryover_id)
         if co:
@@ -749,7 +830,7 @@ def get_blockers_for_plan(plan_id: str) -> list:
 def record_blocker(plan_id: str, worker_id: str, reason_code: str, comment: str) -> dict:
     """Записывает препятствие от работника при утреннем принятии плана.
     Идемпотентно: одинаковый (plan_id, worker_id, reason_code) без resolved_at → возвращает существующий."""
-    with _store_lock:
+    with _store_lock, _store_flock():
         store = _load_store()
         if "blockers" not in store:
             store["blockers"] = {}
@@ -776,7 +857,7 @@ def record_blocker(plan_id: str, worker_id: str, reason_code: str, comment: str)
 
 def set_manual_baseline(worker_id: str, work_type_id: str, baseline: float) -> dict:
     """Владелец устанавливает/корректирует prior (manual_baseline_factor)."""
-    with _store_lock:
+    with _store_lock, _store_flock():
         store = _load_store()
         agg_key = f"{worker_id}:{work_type_id}"
         agg = store["productivity_aggregates"].get(agg_key, {

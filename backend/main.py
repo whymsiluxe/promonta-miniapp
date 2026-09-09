@@ -140,6 +140,12 @@ PLAN_SYNC_STATE_FILE = os.path.join(DATA_ROOT, 'plan_sync_state.json')
 WORK_CALENDAR_FILE = os.path.join(DATA_ROOT, 'work_calendar.json')
 dpl.configure(DAILY_PLAN_STORE_FILE, PLAN_SYNC_STATE_FILE, WORK_CALENDAR_FILE)
 
+# Finish projector outbox — durable event log for session_id→daily_execution application.
+# Written before apply_daily_execution so a crash between checkin commit and plan update
+# leaves a pending event that can be retried on startup.
+FINISH_OUTBOX_FILE = os.path.join(DATA_ROOT, 'finish_outbox.json')
+_finish_outbox_lock = __import__('threading').Lock()
+
 # Contract ingestion state (Round 5 — Drive scope gated)
 CONTRACT_INGEST_STATE_FILE = os.path.join(DATA_ROOT, 'contract_ingest_state.json')
 _CONTRACT_INGEST_LOCK = __import__('threading').Lock()
@@ -208,6 +214,17 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def _on_startup():
+    """Retry pending finish-outbox events from a previous crash."""
+    try:
+        retried = _retry_pending_outbox_events()
+        if retried:
+            print(f"[startup] Retried {retried} pending finish-outbox event(s)")
+    except Exception as e:
+        print(f"[startup] finish-outbox retry failed: {e}")
 
 
 @app.exception_handler(CorruptJsonError)
@@ -6483,6 +6500,83 @@ def _idempotency_save(key: str, response: dict):
 os.makedirs(CHECKIN_PHOTO_BASE, exist_ok=True)
 
 
+# ── Finish projector outbox ──────────────────────────────────────────────────
+# Guarantees that a DailyPlan execution update is never silently lost when a crash
+# occurs between the checkin_meta write and the daily_plan_store write.
+
+def _outbox_load() -> dict:
+    return _safe_load_json(FINISH_OUTBOX_FILE, {})
+
+
+def _outbox_save(outbox: dict) -> None:
+    _atomic_write_json(FINISH_OUTBOX_FILE, outbox)
+
+
+def _outbox_write_pending(session_id: str, plan_id: str, plan_version: int,
+                          worker_id: str, date_str: str, object_id: str,
+                          item_results: list) -> None:
+    with _finish_outbox_lock:
+        outbox = _outbox_load()
+        outbox[session_id] = {
+            "state": "pending",
+            "plan_id": plan_id,
+            "plan_version": plan_version,
+            "worker_id": str(worker_id),
+            "date": date_str,
+            "object_id": object_id,
+            "item_results": item_results,
+            "created_at": time.time(),
+            "last_attempt_at": None,
+            "error": None,
+        }
+        _outbox_save(outbox)
+
+
+def _outbox_mark_applied(session_id: str) -> None:
+    with _finish_outbox_lock:
+        outbox = _outbox_load()
+        if session_id in outbox:
+            outbox[session_id]["state"] = "applied"
+            outbox[session_id]["applied_at"] = time.time()
+            _outbox_save(outbox)
+
+
+def _outbox_mark_failed(session_id: str, error: str) -> None:
+    with _finish_outbox_lock:
+        outbox = _outbox_load()
+        if session_id in outbox:
+            outbox[session_id]["state"] = "failed"
+            outbox[session_id]["error"] = error[:500]
+            outbox[session_id]["last_attempt_at"] = time.time()
+            _outbox_save(outbox)
+
+
+def _retry_pending_outbox_events() -> int:
+    """Called at startup to apply any pending finish-projection events.
+    Returns count of retried events."""
+    with _finish_outbox_lock:
+        outbox = _outbox_load()
+    retried = 0
+    for session_id, evt in list(outbox.items()):
+        if evt.get("state") != "pending":
+            continue
+        try:
+            dpl.apply_daily_execution(
+                session_id=session_id,
+                daily_plan_id=evt["plan_id"],
+                plan_version=int(evt.get("plan_version") or 0),
+                worker_id=str(evt["worker_id"]),
+                date_str=evt["date"],
+                object_id=evt["object_id"],
+                item_results=evt.get("item_results") or [],
+            )
+            _outbox_mark_applied(session_id)
+            retried += 1
+        except Exception as e:
+            _outbox_mark_failed(session_id, str(e))
+    return retried
+
+
 def _load_checkin_meta() -> list:
     return _safe_load_json(CHECKIN_META_FILE, [])
 
@@ -6612,6 +6706,30 @@ async def checkin_start(
             raise HTTPException(403, "Нет доступа к этому объекту")
     else:
         assignment_id = _get_active_assignment_for_checkin(str(user['id']), object_id.strip(), date_str)
+
+    # Server-trust validation for optional DailyPlan linkage at Start
+    _dp_id_clean = daily_plan_id.strip()
+    if _dp_id_clean:
+        _dp_at_start = dpl.get_plan(_dp_id_clean)
+        if not _dp_at_start:
+            raise HTTPException(400, f"daily_plan_id {_dp_id_clean!r} не найден")
+        _wid_str = str(user['id'])
+        if _wid_str not in [str(w) for w in _dp_at_start.get('assigned_worker_ids', [])]:
+            raise HTTPException(403, "Этот план не назначен вам")
+        if _dp_at_start.get('object_id') != object_id.strip():
+            raise HTTPException(400, "daily_plan_id объект не совпадает с объектом смены")
+        if _dp_at_start.get('date') != date_str:
+            raise HTTPException(400, "daily_plan_id дата не совпадает с сегодняшней датой")
+        _dp_acc_clean = daily_plan_acceptance_id.strip()
+        if _dp_acc_clean:
+            _dp_store = dpl.get_store_snapshot()
+            _acc = _dp_store["acceptances"].get(_dp_acc_clean)
+            if not _acc:
+                raise HTTPException(400, f"acceptance_id {_dp_acc_clean!r} не найден")
+            if str(_acc.get("worker_id")) != _wid_str:
+                raise HTTPException(403, "acceptance_id принадлежит другому работнику")
+            if _acc.get("daily_plan_id") != _dp_id_clean:
+                raise HTTPException(400, "acceptance_id принадлежит другому плану")
 
     with _checkin_lock:
         # 10.29 (Fable-аудит): раньше можно было создать сколько угодно параллельных
@@ -6832,7 +6950,9 @@ async def checkin_finish(
         session['pause_minutes'] = max(0, int(pause_minutes or 0))
         _save_checkin_meta(items)
 
-    # Apply daily plan execution report (idempotent — safe to call even if repeated)
+    # Apply daily plan execution report via durable outbox.
+    # Outbox event is written AFTER checkin_meta is committed and BEFORE apply_daily_execution,
+    # so a crash between these two leaves a pending event retried on startup.
     if daily_plan_report.strip():
         try:
             rpt = json.loads(daily_plan_report)
@@ -6840,29 +6960,51 @@ async def checkin_finish(
             plan_ver = int(rpt.get('plan_version', 0) or session.get('daily_plan_version', 0) or 0)
             item_results = rpt.get('item_results') or []
             if plan_id and isinstance(item_results, list) and item_results:
-                dpl.apply_daily_execution(
-                    session_id=session_id,
-                    daily_plan_id=plan_id,
-                    plan_version=plan_ver,
-                    worker_id=str(session['user_id']),
-                    date_str=date_str,
-                    object_id=object_id,
-                    item_results=item_results,
-                )
-                # Auto-record productivity observations from execution
-                try:
-                    plan_obj = dpl.get_plan(plan_id)
-                    shift_hours = max(0.0, (session['finish_at'] - session.get('start_at', session['finish_at'])) / 3600.0)
-                    if plan_obj and shift_hours > 0:
-                        dpl.auto_record_execution_productivity(
+                # Server-trust validation: verify plan/worker/object/date/acceptance match
+                _plan_obj = dpl.get_plan(plan_id)
+                if _plan_obj:
+                    _worker_id_str = str(session['user_id'])
+                    if _worker_id_str not in [str(w) for w in _plan_obj.get('assigned_worker_ids', [])]:
+                        print(f'WARNING: finish plan_id {plan_id} worker not assigned — skipping execution')
+                        plan_id = ''
+                    elif _plan_obj.get('object_id') != object_id:
+                        print(f'WARNING: finish plan_id {plan_id} object mismatch — skipping execution')
+                        plan_id = ''
+                    elif _plan_obj.get('date') != date_str:
+                        print(f'WARNING: finish plan_id {plan_id} date mismatch — skipping execution')
+                        plan_id = ''
+                if plan_id:
+                    # Write outbox event before applying (durable, crash-safe)
+                    _outbox_write_pending(session_id, plan_id, plan_ver,
+                                          str(session['user_id']), date_str, object_id, item_results)
+                    try:
+                        dpl.apply_daily_execution(
                             session_id=session_id,
+                            daily_plan_id=plan_id,
+                            plan_version=plan_ver,
                             worker_id=str(session['user_id']),
-                            plan=plan_obj,
+                            date_str=date_str,
+                            object_id=object_id,
                             item_results=item_results,
-                            shift_hours=shift_hours,
                         )
-                except Exception as _pe:
-                    print(f'WARNING: auto_record_execution_productivity failed: {_pe}')
+                        _outbox_mark_applied(session_id)
+                        # Auto-record productivity observations from execution
+                        try:
+                            plan_obj = dpl.get_plan(plan_id)
+                            shift_hours = max(0.0, (session['finish_at'] - session.get('start_at', session['finish_at'])) / 3600.0)
+                            if plan_obj and shift_hours > 0:
+                                dpl.auto_record_execution_productivity(
+                                    session_id=session_id,
+                                    worker_id=str(session['user_id']),
+                                    plan=plan_obj,
+                                    item_results=item_results,
+                                    shift_hours=shift_hours,
+                                )
+                        except Exception as _pe:
+                            print(f'WARNING: auto_record_execution_productivity failed: {_pe}')
+                    except Exception as _ae:
+                        _outbox_mark_failed(session_id, str(_ae))
+                        print(f'WARNING: apply_daily_execution failed (event pending in outbox): {_ae}')
         except Exception as e:
             print(f'WARNING: apply_daily_execution failed: {e}')
 
@@ -8168,19 +8310,38 @@ def _compute_risk_level(
     amendments: list,
     blockers_for_plan: list,
     execution: dict | None,
+    predicted_finish_date: str | None = None,
+    contract_finish_date: str | None = None,
+    internal_target_date: str | None = None,
 ) -> str:
     """GREEN / YELLOW / ORANGE / RED per spec risk model.
 
-    RED is reserved for genuine contract-date risk (not implemented yet without
-    contract_finish_date in the store — returns ORANGE at most in Round 4).
+    RED:    predicted_finish_date > contract_finish_date (confirmed schedule breach)
+    ORANGE: blocker or blocked execution item; OR internal_target threatened with carryovers
+    YELLOW: pending amendment or carryover without a RED/ORANGE condition
+    GREEN:  none of the above
     """
     has_blocker = bool(blockers_for_plan)
     blocked_in_exec = execution and any(
         r.get("status") == "blocked"
         for r in execution.get("item_results", [])
     )
+    # RED: predicted delivery is past the contract deadline
+    if predicted_finish_date and contract_finish_date:
+        try:
+            if predicted_finish_date > contract_finish_date:
+                return "red"
+        except Exception:
+            pass
     if has_blocker or blocked_in_exec:
+        # ORANGE: also escalate when internal target is threatened with carryovers
         return "orange"
+    if internal_target_date and carryovers and predicted_finish_date:
+        try:
+            if predicted_finish_date > internal_target_date:
+                return "orange"
+        except Exception:
+            pass
     if amendments:
         return "yellow"
     if carryovers:
