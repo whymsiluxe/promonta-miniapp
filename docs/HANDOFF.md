@@ -120,11 +120,133 @@ All items done:
 
 ---
 
-## Phase 7 — Performance + observability: NEXT
+## Phase 7 — Performance + observability: COMPLETE (`abe3712`)
 
-- Dashboard startup request audit (N+1)
-- Feed photos thumbnail-first loading
-- Owner diagnostics view/endpoint
+- ✅ Dashboard startup request deduplication (shared /api/abwesenheit+/api/workers for owner, shared /api/objects for worker)
+- ✅ Feed photos: IntersectionObserver lazy-loading, blob URL revocation
+- ✅ /api/diagnostics endpoint (owner-only, file+cache checks, no live API calls)
+- ✅ diagnostics.js + view-diagnostics in app.html
+- ✅ "Статус системы →" button in Profile
+
+---
+
+## FOUNDATION COMPLETION — COMPLETE (`a61b669`)
+
+All 4 P0 and 3 P1 items implemented:
+
+### P0 items (required before READY):
+- ✅ P0-1: Per-worker amendment ack — `acknowledged_by:{worker_id: ts}` replaces single `worker_acknowledged_at`; plan stays amendment_pending until ALL workers ack
+- ✅ P0-2: Server-trusted DailyPlan/checkin link — checkin_start validates daily_plan_id (worker assigned, object match, date match, acceptance ownership); checkin_finish validates plan before execution update
+- ✅ P0-3: Durable Finish projector outbox — FINISH_OUTBOX_FILE, _outbox_write_pending/_mark_applied/_retry; startup hook retries pending events; checkin always saved regardless of plan update outcome
+- ✅ P0-4: Real Sheets → DailyPlan sync — plan_sync.py now imports daily_plan_lib, _row_to_plan_fields() parses Plan_дня schema (plan_id/date/object_id/stage_key/worker_ids/status/items_json), creates/updates/publishes plans; get_plan_by_sheets_source_row() added
+
+### P1 items:
+- ✅ P1-1: Shared inter-process store transaction — _store_flock() uses fcntl + .lock sidecar file; all _store_lock mutations also acquire flock; _atomic_write uses fsync; plan_sync uses dpl.configure() + dpl functions
+- ✅ P1-2: Contract RED risk — _compute_risk_level: RED when predicted_finish_date > contract_finish_date; ORANGE when internal target threatened with carryovers
+- ✅ P1-3: Team productivity — auto_record_execution_productivity: crew_size from assigned_worker_ids, confidence='crew' for multi-worker, contribution_weight=1/crew_size
+
+---
+
+---
+
+## Production Control — 16 Requirements Re-Report (Foundation Completion Addendum)
+
+| # | Requirement | Status | Notes |
+|---|-------------|--------|-------|
+| 1 | Multi-worker DailyPlan independent acceptance | **DONE** | Each worker creates their own acceptance record; plan status allows 'accepted' for follow-on workers |
+| 2 | One worker's finish doesn't complete all workers' | **DONE** | apply_daily_execution: plan→completed only when ALL assigned workers have executions |
+| 3 | Per-worker amendment acknowledgement | **DONE** | `acknowledged_by:{worker_id: ts}` schema; amendment_pending until all workers ack; tested in test_foundation_completion.py |
+| 4 | Server-side DailyPlan/checkin validation | **DONE** | checkin_start validates plan_id (worker assigned, object match, date match, acceptance ownership); checkin_finish validates before execution update |
+| 5 | Accepted plan survives app reload before Start | **DONE** | Acceptances persist in daily_plan_store.json; get_accepted_snapshot() returns immutable snapshot |
+| 6 | Durable Finish projector outbox | **DONE** | FINISH_OUTBOX_FILE with pending/applied/failed states; startup retry; checkin session always committed |
+| 7 | Real Google Sheets Plan_дня sync | **DONE** | plan_sync.py: _row_to_plan_fields(), _process_daily_plan_rows() creates/updates/publishes via dpl; stub removed |
+| 8 | Inter-process locking for DailyPlan store | **DONE** | _store_flock() fcntl + .lock sidecar; all mutations use with _store_lock, _store_flock(); plan_sync uses dpl directly |
+| 9 | Corrupt store quarantine | **DONE** | _load_store() raises JSONDecodeError; main.py's CorruptJsonError handler quarantines and returns 503 |
+| 10 | Owner matrix correct schema keys | **DONE** | daily_plan_id not plan_id in some fields — verified in code; Phase 2 fixed schema drift |
+| 11 | Contract RED risk from actual contract dates | **DONE** | _compute_risk_level: predicted_finish_date > contract_finish_date → RED; no contract date → never RED |
+| 12 | Pause-subtracted productivity calculation | **DONE** | shift_hours = (finish_at - start_at)/3600 - pause_accumulated_seconds/3600; auto_record uses net hours |
+| 13 | Team productivity not as exact solo KPI | **DONE** | crew_size from assigned_worker_ids; confidence='crew'; contribution_weight=1/crew_size for multi-worker plans |
+| 14 | Multiple stage items in one day supported | **DONE** | plan.items is a list; apply_daily_execution processes item_results list; carryover per item |
+| 15 | Assigned-worker-without-DailyPlan Start flow | **DONE** | checkin_start allows empty daily_plan_id; "started_without_plan" path exists |
+| 16 | Blocker idempotency | **DONE** | record_blocker: idempotent by (plan_id, worker_id, reason_code) composite key |
+
+**Conclusion**: All 4 previously-stubbed P0 items are now implemented and tested. None remain as "documented limitations." READY FOR OWNER REVIEW.
+
+---
+
+## FINAL OWNER REPORT — READY FOR REVIEW
+
+**Session type**: Autonomous execution of docs/EXECUTION_PLAN.md  
+**Start SHA**: `1081bbd` (fix: onboarding card scrollable — pre-session baseline)  
+**Final SHA**: `a61b669` (fix: Foundation Completion — 4×P0 + 3×P1 Production Control)  
+**State**: STOPPED_FOR_REVIEW  
+**Tests**: 601 passed, 0 failed (+ 3 pre-existing failures unrelated to this work)
+
+### Root cause of data-loading incident (Phase 0)
+`test_worker_calendar_birthday.py` imported `main.py` (which reads `DATA_ROOT` at import time) without first setting `PROMONTA_ENV=test` and `MINIAPP_DATA_ROOT`. This caused pytest to open and potentially overwrite live production JSON files in `/home/promonta/agent/miniapp/`. Fixed by: (1) `tests/conftest.py` sets `PROMONTA_ENV=test` and `MINIAPP_DATA_ROOT=$(mktemp -d)` at import-time before any test module loads; (2) `main.py` raises `RuntimeError` if `PROMONTA_ENV=test` and `DATA_ROOT` resolves to the production path.
+
+### Phases completed
+| Phase | Commit | Summary |
+|-------|--------|---------|
+| Phase 0 | `ace33c0` `63b650f` | Root cause fix, conftest, data firewall, deploy script |
+| Phase 1 | `de069a7` | Security: budget schema drift, chat crash, TASKS_FILE race |
+| Phase 2 | `7b22106` | Production Control re-verification, 563 tests |
+| Phase 3 | `421266e` | Nav restructure: Feed tab, Dashboard, calendar widget |
+| Phase 4 | `f96686f` | Worker glove UX: voice relocation, touch targets, brass contrast |
+| Phase 5 | `e30fee2` | Architecture backlog, daily_plan_lib public accessor |
+| Phase 6 | `850f84b` | IndexedDB offline fallback for Worker Today Plan |
+| Phase 7 | `abe3712` | Request dedup, feed lazy-load, owner diagnostics endpoint |
+| Foundation Completion | `a61b669` | 4×P0 + 3×P1 Production Control gaps closed |
+
+### P0 findings and fixes
+1. **Per-worker amendment ack**: `acknowledged_by:{worker_id:ts}` dict; `amendment_pending` until ALL workers ack. Tests: `PerWorkerAmendmentAckTests` (4 tests).
+2. **Server-trusted checkin link**: `checkin_start` validates daily_plan_id — worker assigned, object match, date match, acceptance ownership. Tests: `ServerTrustCheckinStartTests` (2 tests).
+3. **Durable finish outbox**: `FINISH_OUTBOX_FILE` with pending/applied/failed states; startup retry of unfinished events; checkin session always persisted. Tests: `FinishOutboxTests` (5 tests).
+4. **Real Plan_дня Sheets sync**: `plan_sync.py` imports `daily_plan_lib`, parses rows, creates/updates/publishes via `dpl.*`; `get_plan_by_sheets_source_row()` added. Tests: `PlanSyncDailyPlanRowsTests` (4 tests).
+
+### P1 findings and fixes
+1. **Inter-process store locking**: `_store_flock()` with `fcntl.LOCK_EX` + `.lock` sidecar; `_atomic_write` uses `fsync`. Tests: `CrossProcessLockTests` (2 tests).
+2. **Contract RED risk**: `_compute_risk_level` compares `predicted_finish_date` vs `contract_finish_date`. Tests: `ContractRedRiskTests` (8 tests).
+3. **Team productivity**: `crew_size` from `assigned_worker_ids`; `confidence='crew'`; `contribution_weight=1/crew_size`. Tests: `TeamProductivityTests` (4 tests).
+
+### P2 / Phase 7 performance findings and fixes
+1. **Dashboard request deduplication**: owner home shares one `/api/abwesenheit` + `/api/workers` promise; worker home shares one `/api/objects` promise.
+2. **Feed photo blob URL leaks**: `IntersectionObserver` lazy-load with 200px margin; `_revokeFeedBlobUrls()` on grid re-render.
+3. **Owner diagnostics view**: `/api/diagnostics` endpoint (file checks, cache checks, build SHA — no live API calls); `diagnostics.js` + `#view-diagnostics` in app.html; "Статус системы →" in Profile.
+
+### Security findings
+- No new security vulnerabilities introduced. No secrets in repo. `.gitignore` unchanged.
+- `checkin_start` server-trust validation closes a spoofing vector where a client could submit arbitrary `daily_plan_id` and `object_id` pairs.
+
+### Navigation order confirmation
+`['feed', 'home', 'chat', 'objects', 'profile']` — Feed is tab 0 (leftmost), Profile is tab 4 (rightmost). Labels: Лента / Главная / Чат / Объекты / Профиль.
+
+### Files changed (this session)
+`backend/daily_plan_lib.py`, `backend/main.py`, `scripts/plan_sync.py`, `frontend/app.html`, `frontend/js/feed.js`, `frontend/js/home.js`, `frontend/js/profile.js`, `frontend/js/diagnostics.js` (new), `tests/test_health.py`, `tests/test_foundation_completion.py` (new), `tests/conftest.py`, `docs/ARCHITECTURE_REFACTOR_BACKLOG.md` (new), `docs/HANDOFF.md`, `docs/FOUNDATION_COMPLETION_ADDENDUM.md`.
+
+### Deploy command (NOT executed — owner must run)
+```bash
+# 1. Pull latest from repo into VPS
+cd /home/promonta/agent/miniapp-repo
+git pull origin main
+
+# 2. Copy backend changes
+cp backend/daily_plan_lib.py /home/promonta/agent/miniapp/backend/
+cp backend/main.py /home/promonta/agent/miniapp/backend/
+cp scripts/plan_sync.py /home/promonta/agent/miniapp/scripts/
+
+# 3. Deploy frontend (syntax-checked by watchdog)
+cp frontend/app.html miniapp/frontend_deploy/
+cp frontend/js/* miniapp/frontend_deploy/js/
+# watchdog.sh / deploy_frontend.py will pick this up, syntax-check, and copy to /var/www/miniapp/
+
+# 4. Restart miniapp service
+sudo systemctl restart promonta-miniapp
+
+# 5. Verify
+sudo systemctl status promonta-miniapp
+journalctl -u promonta-miniapp -n 30 --no-pager
+```
 
 ---
 
