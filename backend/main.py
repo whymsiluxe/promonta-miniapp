@@ -878,6 +878,85 @@ def health_ready(user: dict = Depends(get_current_user), _: None = Depends(requi
     }
 
 
+@app.get("/api/diagnostics")
+def diagnostics(_: None = Depends(require_owner)):
+    """Owner-only system status snapshot — all checks are cheap (file I/O + in-memory cache
+    inspection only, no live Sheets or Drive API calls). Designed so a "данные не грузятся"
+    report can be diagnosed in under a minute without touching prod data."""
+    now = time.time()
+    result = {}
+
+    # ── Backend ──────────────────────────────────────────────────────────────
+    data_root_ok = os.path.isdir(DATA_ROOT) and os.access(DATA_ROOT, os.R_OK)
+    roles_ok = os.path.isfile(ROLES_FILE)
+    result['backend'] = 'ok' if (data_root_ok and roles_ok) else 'degraded'
+
+    # ── Sheets ────────────────────────────────────────────────────────────────
+    # Report based on the in-memory cache, not a live API call (fast, cheap).
+    # _sheets_cache maps tab_name → (timestamp, rows); the freshest entry tells us
+    # when Sheets was last successfully read since this process started.
+    sheets_entries = [(ts, tab) for tab, (ts, _) in _sheets_cache.items()]
+    if sheets_entries:
+        last_ts, _ = max(sheets_entries, key=lambda x: x[0])
+        age = int(now - last_ts)
+        result['sheets'] = 'ok' if age < SHEETS_CACHE_TTL * 4 else 'stale'
+        result['sheets_last_read_s'] = age
+    else:
+        result['sheets'] = 'not_loaded'
+        result['sheets_last_read_s'] = None
+
+    # ── Objects ───────────────────────────────────────────────────────────────
+    obj_cache = _sheets_cache.get('Объекты')
+    if obj_cache:
+        _, rows = obj_cache
+        obj_count = max(0, len(rows) - 1)  # subtract header row
+        result['objects'] = f'{obj_count} objects'
+    else:
+        result['objects'] = 'not_loaded'
+
+    # ── Feed ──────────────────────────────────────────────────────────────────
+    feed_ok = os.path.isfile(os.path.join(DATA_ROOT, 'activity_alerts.json'))
+    news_ok = os.path.isfile(NEWS_FEED_FILE)
+    result['feed'] = ('ok' if feed_ok else 'missing_alerts') + ('' if news_ok else '+news_missing')
+    if result['feed'] == 'ok':
+        result['feed'] = 'ok'
+
+    # ── Chat ──────────────────────────────────────────────────────────────────
+    result['chat'] = 'ok' if os.path.isfile(CHAT_FILE) else 'missing'
+
+    # ── DailyPlan-sync ────────────────────────────────────────────────────────
+    sync_state = _safe_load_json(PLAN_SYNC_STATE_FILE, {})
+    if sync_state.get('last_synced_at'):
+        sync_age = int(now - sync_state['last_synced_at'])
+        result['dailyplan_sync'] = 'ok' if sync_age < 3600 else 'stale'
+        result['dailyplan_sync_age_s'] = sync_age
+    elif os.path.isfile(PLAN_SYNC_STATE_FILE):
+        result['dailyplan_sync'] = 'file_exists_no_sync'
+        result['dailyplan_sync_age_s'] = None
+    else:
+        result['dailyplan_sync'] = 'not_configured'
+        result['dailyplan_sync_age_s'] = None
+
+    # ── Drive / Contracts ─────────────────────────────────────────────────────
+    result['drive_contracts'] = 'configured' if CONTRACTS_DRIVE_FOLDER_ID else 'not_configured'
+    result['contracts_ingested'] = len(
+        _safe_load_json(CONTRACT_INGEST_STATE_FILE, {}).get('contracts', {}) if os.path.isfile(CONTRACT_INGEST_STATE_FILE) else {}
+    )
+
+    # ── Build SHA ─────────────────────────────────────────────────────────────
+    version_info = _read_app_version()
+    result['build_sha'] = version_info['commit']
+    result['build_version'] = version_info['version']
+
+    overall = 'ok' if all(
+        v in ('ok', 'configured', 'not_configured')
+        for k, v in result.items()
+        if k in ('backend', 'sheets', 'chat')
+    ) else 'degraded'
+    result['overall'] = overall
+    return result
+
+
 @app.get("/api/me")
 def me(user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     return {"user_id": user['id'], "name": user.get('first_name'), "role": role}

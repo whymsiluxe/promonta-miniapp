@@ -104,3 +104,24 @@ Per the plan's "Deploy" section: do NOT run `deploy_frontend.py` against the liv
 (`/home/promonta/agent/miniapp`, `/var/www/miniapp`) are read-only reference points for
 verification (e.g. comparing deployed vs. repo state) but are never written to by this
 session. The final report documents the deploy plan; a human executes it later.
+
+## MANDATORY — Foundation Completion Addendum (added 2026-09-09, owner review of Phase 2)
+
+Before setting EXECUTION_STATE.txt to STOPPED_FOR_REVIEW or writing a final
+READY FOR OWNER REVIEW report: after Phase 7 is complete, you MUST read
+docs/FOUNDATION_COMPLETION_ADDENDUM.md in full and execute it as a mandatory
+FOUNDATION COMPLETION phase — not an optional backlog item.
+
+The owner explicitly rejected treating these as harmless documented limitations.
+Four items in that addendum (Sheets→DailyPlan sync, per-worker amendment ack,
+server-trusted DailyPlan/checkin linkage, durable Finish outbox) are original
+Production Control requirements, not deferred nice-to-haves.
+
+Do not mark EXECUTION_STATE.txt STOPPED_FOR_REVIEW or declare READY FOR OWNER
+REVIEW until the addendum's own re-report of all 16 Production Control items
+has been produced and none of those four specific items are missing. If any
+of the four remain missing after a good-faith attempt, the final status must
+explicitly read NOT READY with the specific blocker — do not soften this to
+a passing status.
+
+No production deployment, as already stated elsewhere in this file.

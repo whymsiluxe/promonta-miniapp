@@ -411,17 +411,42 @@ function _initFeedPhotoSwipeDots(grid) {
 
 let _feedPhotosCache = [];
 
+// Lazy-load auth images using IntersectionObserver — avoids fetching all blob URLs at once.
+// Falls back to immediate load if IntersectionObserver is unavailable.
+function _lazyLoadAuthImages(imgs) {
+  if (!('IntersectionObserver' in window)) {
+    imgs.forEach(img => authImg(img, img.dataset.authSrc));
+    return;
+  }
+  const observer = new IntersectionObserver((entries, obs) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      obs.unobserve(entry.target);
+      authImg(entry.target, entry.target.dataset.authSrc);
+    }
+  }, { rootMargin: '200px' });
+  imgs.forEach(img => observer.observe(img));
+}
+
+// Revoke all blob URLs currently set on imgs inside a container (called before innerHTML replace).
+function _revokeFeedBlobUrls(container) {
+  container.querySelectorAll('img[src^="blob:"]').forEach(img => {
+    try { URL.revokeObjectURL(img.src); } catch (_) {}
+  });
+}
+
 async function loadFeedPhotos() {
   const grid = document.getElementById('feed-photo-grid');
   try {
     const data = await api('/api/feed/photos');
     _feedPhotosCache = data.photos || [];
+    _revokeFeedBlobUrls(grid);
     if (!data.photos || data.photos.length === 0) {
       grid.innerHTML = '<div class="empty-state">Фото пока нет. Загрузите первым 📷</div>';
       return;
     }
     grid.innerHTML = data.photos.map(renderPhotoItem).join('');
-    grid.querySelectorAll('img[data-auth-src]').forEach(img => authImg(img, img.dataset.authSrc));
+    _lazyLoadAuthImages([...grid.querySelectorAll('img[data-auth-src]')]);
     _initFeedPhotoSwipeDots(grid);
     _markFeedRead('photos');
   } catch (e) {

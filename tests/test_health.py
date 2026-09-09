@@ -125,5 +125,39 @@ class HealthReadyEndpointTests(unittest.TestCase):
         self.assertNotIn(backend.BOT_TOKEN, serialized)
 
 
+class DiagnosticsEndpointTests(unittest.TestCase):
+    """/api/diagnostics — owner-only, cheap file + in-memory cache checks."""
+
+    def test_diagnostics_requires_owner(self):
+        import inspect
+        sig = inspect.signature(backend.diagnostics)
+        self.assertIn('_', sig.parameters)
+
+    def test_diagnostics_returns_required_keys(self):
+        result = backend.diagnostics(_=None)
+        for key in ('backend', 'sheets', 'objects', 'feed', 'chat',
+                    'dailyplan_sync', 'drive_contracts', 'build_sha', 'overall'):
+            self.assertIn(key, result, f"Missing key: {key}")
+
+    def test_diagnostics_backend_is_string(self):
+        result = backend.diagnostics(_=None)
+        self.assertIn(result['backend'], ('ok', 'degraded'),
+                      "backend check must return 'ok' or 'degraded'")
+
+    def test_diagnostics_overall_is_ok_or_degraded(self):
+        result = backend.diagnostics(_=None)
+        self.assertIn(result['overall'], ('ok', 'degraded'))
+
+    def test_diagnostics_build_sha_is_string(self):
+        result = backend.diagnostics(_=None)
+        self.assertIsInstance(result['build_sha'], str)
+
+    def test_diagnostics_does_not_expose_secrets(self):
+        result = backend.diagnostics(_=None)
+        serialized = json.dumps(result)
+        self.assertNotIn(backend.BOT_TOKEN, serialized)
+        self.assertNotIn('.sheets.json', serialized)
+
+
 if __name__ == '__main__':
     unittest.main()

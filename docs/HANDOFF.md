@@ -1,5 +1,12 @@
 # HANDOFF — Recovery + Architecture + UX Round
 
+> **MANDATORY BEFORE READY/STOPPED_FOR_REVIEW**: read docs/FOUNDATION_COMPLETION_ADDENDUM.md
+> and docs/AUTONOMOUS_EXECUTION_RULES.md's "Foundation Completion Addendum" section
+> (added 2026-09-09). Phase 2's "7 documented limitations" is REJECTED by the owner —
+> 4 of them are Production Control requirements, not backlog. Do this after Phase 7,
+> before any final status.
+
+
 > Maintained continuously per AUTONOMOUS_EXECUTION_RULES.md. A fresh session reading
 > this file must be able to resume with zero reliance on conversation memory.
 

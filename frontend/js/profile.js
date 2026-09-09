@@ -102,6 +102,7 @@ function _renderOwnerSelfProfile(slot) {
           <span class="home-section-title">Система</span>
         </div>
         <div id="profile-settings-sysinfo" class="profile-app-status"></div>
+        <button class="submit-btn profile-inline-btn" id="profile-system-status-btn" type="button" style="margin-top:0.75rem">Статус системы →</button>
       </div>
     </div>
   `;
@@ -119,6 +120,9 @@ function _bindOwnerSelfHandlers() {
   wrap?.addEventListener('click', triggerPhoto);
   document.getElementById('profile-owner-edit-photo')?.addEventListener('click', triggerPhoto);
   document.getElementById('profile-settings-photo-btn')?.addEventListener('click', triggerPhoto);
+  document.getElementById('profile-system-status-btn')?.addEventListener('click', () => {
+    if (typeof switchView === 'function') switchView('diagnostics');
+  });
   document.getElementById('profile-owner-edit-name')?.addEventListener('click', () => {
     // переключить на вкладку Настройки, где поле имени
     const settingsTab = document.querySelector('#profile-tabs .profile-tab[data-tab="settings"]');

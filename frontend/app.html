@@ -3490,6 +3490,16 @@ body.view-locked {
 .profile-app-status { font-size: 0.85rem; }
 .profile-app-status-row { display: flex; justify-content: space-between; padding: 0.3rem 0; color: var(--text-main); }
 .profile-app-status-row span:first-child { color: var(--text-light); }
+/* Phase 7: diagnostics view */
+.diag-overall { font-size: 1rem; font-weight: 600; text-align: center; padding: 0.75rem; border-radius: var(--radius-md); margin-bottom: 0.75rem; }
+.diag-overall-ok { background: rgba(34,197,94,.12); color: #15803d; }
+.diag-overall-warn { background: rgba(234,179,8,.12); color: #a16207; }
+.diag-table { background: var(--bg-card-raised); border-radius: var(--radius-md); overflow: hidden; }
+.diag-row { display: grid; grid-template-columns: 1.6rem 1fr auto; align-items: center; gap: 0.4rem; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--border-color); }
+.diag-row:last-child { border-bottom: none; }
+.diag-icon { font-size: 1rem; text-align: center; }
+.diag-label { font-size: 0.875rem; color: var(--text-main); }
+.diag-value { font-size: 0.8rem; color: var(--text-light); text-align: right; max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Раунд1: Worker Card — отдельный полноэкранный overlay (НЕ подмена профиля Owner) */
 .worker-card-overlay { position: fixed; inset: 0; z-index: 5200; background: var(--bg-app); display: flex; flex-direction: column; overflow: hidden; }
 .worker-card-panel { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 20px); }
@@ -5476,6 +5486,18 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
   </div>
 </div>
 
+<!-- ═══════════ СТАТУС СИСТЕМЫ — Phase 7, owner-only diagnostics view ═══════════ -->
+<div class="view" id="view-diagnostics">
+  <header style="display:flex;align-items:center;gap:0.5rem;">
+    <button class="back-btn" id="diag-back-btn" type="button" aria-label="Назад" style="background:none;border:none;color:var(--text-main);font-size:1.4rem;cursor:pointer;padding:0 0.25rem;">←</button>
+    <h1 style="margin:0;flex:1">Статус системы</h1>
+    <button class="submit-btn" id="diag-refresh-btn" type="button" style="padding:0.3rem 0.9rem;font-size:0.85rem;min-width:auto;">Обновить</button>
+  </header>
+  <div id="diag-content" style="padding:0.75rem">
+    <div style="color:var(--text-light);font-size:0.9rem;text-align:center;padding:2rem 0">Загрузка…</div>
+  </div>
+</div>
+
 <!-- ═══════════ НИЖНЕЕ МЕНЮ — Phase 3: Лента/Главная/Чат/Объекты/Профиль, с текстовыми метками (glove-friendly). Дефекты/Потребности — через Home-widget. ═══════════ -->
 <div class="bottom-nav" id="bottom-nav-owner">
   <div class="nav-item" data-view="feed">
@@ -5571,6 +5593,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 <script src="js/abwesenheit.js"></script>
 <script src="js/signature.js"></script>
 <script src="js/swipe-nav.js"></script>
+<script src="js/diagnostics.js"></script>
 
 <script>
 // Mängel — js/mangel.js (Фаза 3); Profile — js/profile.js (Фаза 8)
@@ -5718,8 +5741,11 @@ function switchView(viewName, opts = {}) {
     if (viewName === 'working-objects') initWorkingObjectsView();
     if (viewName === 'kontrol-day') initKontrolDayView();
     if (viewName === 'contracts') initContractsView();
+    if (viewName === 'diagnostics') initDiagnosticsView();
   } else if (viewName === 'chat') {
     _loadChatMessages(true);
+  } else if (viewName === 'diagnostics') {
+    _loadDiagnostics(document.getElementById('diag-content'));
   }
 
   initAccordions(document.getElementById(`view-${viewName}`));

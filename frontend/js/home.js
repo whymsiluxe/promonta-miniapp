@@ -119,10 +119,17 @@ async function _loadHomeData() {
   _loadHomeWeather();
   _loadHomeObjectsRings();
   _loadHomeAlerts();
-  _loadHomeAbwesenheitSummary();
   _loadHomeChatSummary();
   _loadHomeKontrolDaySummary();
-  _loadHomeCalendarWidget();
+  // Calendar widget and abwesenheit summary both need /api/abwesenheit/all — share one fetch
+  if (currentRole === 'owner') {
+    const _absPromise = api('/api/abwesenheit/all').catch(() => ({ entries: [] }));
+    const _wrkPromise = api('/api/workers').catch(() => ({ workers: [] }));
+    _loadHomeCalendarWidget(_absPromise, _wrkPromise);
+    _loadHomeAbwesenheitSummary(_absPromise);
+  } else {
+    _loadHomeAbwesenheitSummary();
+  }
 }
 
 async function _loadHomeKontrolDaySummary() {
@@ -143,7 +150,7 @@ async function _loadHomeKontrolDaySummary() {
 }
 
 // Phase 3.7 — compact staffing widget: today/tomorrow absences per worker, "Открыть календарь".
-async function _loadHomeCalendarWidget() {
+async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise) {
   const todayList = document.getElementById('hcw-today-list');
   const tomorrowList = document.getElementById('hcw-tomorrow-list');
   if (!todayList) return;
@@ -161,8 +168,8 @@ async function _loadHomeCalendarWidget() {
 
   try {
     const [absData, wrkData] = await Promise.all([
-      api('/api/abwesenheit/all'),
-      api('/api/workers'),
+      absDataPromise || api('/api/abwesenheit/all'),
+      wrkDataPromise || api('/api/workers'),
     ]);
     const entries = absData.entries || [];
     const workers = (wrkData.workers || []).filter(w => w.role !== 'owner');
@@ -196,13 +203,15 @@ async function _loadHomeCalendarWidget() {
 }
 
 // 10.11: Abwesenheit-плашка на Home — сводка вместо мелкой строки в Profile→Ещё.
-async function _loadHomeAbwesenheitSummary() {
+async function _loadHomeAbwesenheitSummary(absDataPromise) {
   const sub = document.getElementById('abwesenheit-quick-sub');
   if (!sub) return;
   try {
-    const data = currentRole === 'owner'
-      ? await api('/api/abwesenheit/all')
-      : await api('/api/abwesenheit');
+    const data = absDataPromise
+      ? await absDataPromise
+      : currentRole === 'owner'
+        ? await api('/api/abwesenheit/all')
+        : await api('/api/abwesenheit');
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const upcoming = (data.entries || [])
@@ -783,8 +792,10 @@ async function initWorkerHomeView(slot) {
   `;
 
   _loadHomeWeather();
-  _loadWorkerTileCounts();
-  _loadWorkerShiftCta();
+  // Fetch objects once and share between CTA and tile counts to avoid a duplicate request
+  const _workerObjPromise = api('/api/objects').catch(() => ({ objects: [] }));
+  _loadWorkerTileCounts(_workerObjPromise);
+  _loadWorkerShiftCta(_workerObjPromise);
   initFeedTabs();
   if (typeof renderHomeRadioPlayer === 'function') renderHomeRadioPlayer();
 }
@@ -793,13 +804,13 @@ async function initWorkerHomeView(slot) {
 // выполнять основную работу с одного экрана"). Не дублируем checkin.js-логику (завязана на
 // конкретные #checkin-start-btn/#checkin-finish-btn внутри object-view) — вместо этого показываем
 // статус смены на Home и одним тапом ведём в нужный объект, где реальная кнопка уже на месте.
-async function _loadWorkerShiftCta() {
+async function _loadWorkerShiftCta(objDataPromise) {
   const cta = document.getElementById('worker-shift-cta');
   if (!cta) return;
   try {
     const [checkinData, objData] = await Promise.all([
       api('/api/checkin'),
-      api('/api/objects'),
+      objDataPromise || api('/api/objects'),
     ]);
     const openSession = (checkinData.sessions || []).find(s => s.finish_at === null || s.finish_at === undefined);
     if (openSession) {
@@ -856,14 +867,14 @@ function _openWorkerAlerts(presetFilter) {
   });
 }
 
-async function _loadWorkerTileCounts() {
+async function _loadWorkerTileCounts(objDataPromise) {
   try {
     const chatData = await api('/api/chat/unread_count');
     _setWorkerBadge('worker-tile-messages-badge', chatData.unread || 0);
   } catch (e) {}
 
   try {
-    const objData = await api('/api/objects');
+    const objData = await (objDataPromise || api('/api/objects'));
     const myTasks = (objData.objects || []).filter(o =>
       (o.assigned_users || []).some(u => String(u.user_id) === String(currentUserId))
     ).length;
