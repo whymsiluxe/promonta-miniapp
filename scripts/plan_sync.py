@@ -214,10 +214,14 @@ def _row_to_plan_fields(row: dict) -> dict | None:
     items_raw = _get('items_json', 'items', 'Пункты', 'ITEMS_JSON')
     try:
         items = json.loads(items_raw) if items_raw else []
-        if not isinstance(items, list):
-            items = []
-    except Exception:
-        items = []
+    except Exception as e:
+        log.error("Row plan_id=%r: items_json is not valid JSON (%s) — skipping row, "
+                   "keeping existing plan untouched", _get('plan_id', 'PLAN_ID', 'id'), e)
+        return None
+    if not isinstance(items, list):
+        log.error("Row plan_id=%r: items_json must be a JSON list, got %s — skipping row, "
+                   "keeping existing plan untouched", _get('plan_id', 'PLAN_ID', 'id'), type(items).__name__)
+        return None
 
     return {
         "plan_id": plan_id,
