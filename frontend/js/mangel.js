@@ -15,7 +15,7 @@ const MANGEL_STATUS_LABEL = { 'gemeldet': 'gemeldet', 'in Bearbeitung': 'in-bear
 // 04.08 (Раунд 3, задача 2): единый резолвер русских подписей статусов дефекта.
 // Backend-значения (включая немецкие) НЕ мигрируем — переводим только на показ.
 const MANGEL_STATUS_LABEL_RU = {
-  'gemeldet': 'Новая',
+  'gemeldet': 'Новый',
   'in Bearbeitung': 'В работе',
   'needs_review': 'На проверке',
   'behoben': 'Устранено',
@@ -36,6 +36,15 @@ let _mangelIdempotencyKey = null;
 let _mangelTickets = [];
 let _mangelWorkers = [];        // 04.08 (1.1): кэш /api/workers, чтобы перестраивать optgroup без повторного GET
 let _mangelObjectsCache = [];   // 04.08 (1.1): кэш /api/objects (owner видит assigned_users)
+
+// Item 9/10 fix: cards showed the raw object_id ("OBJ-001") instead of the
+// human object name, which the owner found unreadable. Resolve via the
+// already-populated _mangelObjectsCache (same pattern as _rebuildMangelWorkerOptions).
+function _mangelObjectName(objectId) {
+  if (!objectId) return '—';
+  const obj = _mangelObjectsCache.find(o => (o['ID объекта'] || o['Объект']) === objectId);
+  return obj?.['Объект'] || objectId;
+}
 
 // Drag state
 let _mangelDragEl = null;
@@ -63,7 +72,7 @@ function renderMangelTicketCard(ticket) {
   // 21.07: stat-chip паттерн (тот же что rich-card объектов/инструментов, obj-stat-chip) —
   // единый визуальный язык вместо отдельного простого meta-текста.
   const chips = [
-    { label: esc(ticket.object_id) || '—', sub: 'объект', color: 'var(--text-light)' },
+    { label: esc(_mangelObjectName(ticket.object_id)), sub: 'объект', color: 'var(--text-light)' },
   ];
   // 28.07: owner request -- "фиксация кто добавил дефект" видна теперь и в UI, не
   // только в данных (created_by_name резолвится бэкендом).
@@ -250,7 +259,7 @@ async function openMangelTicketById(ticketId, chatReturn) {
 async function openMangelTicketModal(ticketId, chatReturn) {
   const ticket = _mangelTickets.find(t => t.id === ticketId);
   if (!ticket) return;
-  document.getElementById('mangel-modal-title').textContent = ticket.object_id || 'Тикет';
+  document.getElementById('mangel-modal-title').textContent = ticket.object_id ? _mangelObjectName(ticket.object_id) : 'Тикет';
   const body = document.getElementById('mangel-modal-body');
   const photoBlock = ticket.photo_paths?.length
     ? `<div class="mangel-modal-photo" data-auth-bg="/api/mangel/photos/${ticket.photo_paths[0]}/file"></div>` : '';
@@ -279,7 +288,7 @@ async function openMangelTicketModal(ticketId, chatReturn) {
     <div class="mangel-modal-detail-grid">
       <div class="mangel-modal-detail-row"><span>Статус</span><b>${esc(mangelStatusLabel(ticket.status))}</b></div>
       <div class="mangel-modal-detail-row"><span>Ответственный</span><b>${ticket.assigned_worker_name ? esc(ticket.assigned_worker_name) : (ticket.created_by_name ? esc(ticket.created_by_name) : 'Нет ответственного')}</b></div>
-      <div class="mangel-modal-detail-row"><span>Объект</span><b>${esc(ticket.object_id || '—')}</b></div>
+      <div class="mangel-modal-detail-row"><span>Объект</span><b>${esc(_mangelObjectName(ticket.object_id))}</b></div>
       ${ticket.created_by_name ? `<div class="mangel-modal-detail-row"><span>Создал</span><b>${esc(ticket.created_by_name)}</b></div>` : ''}
     </div>
     ${primaryHtml}

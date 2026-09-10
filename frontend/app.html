@@ -493,6 +493,15 @@ header h1 {
 .mangel-count { margin-left: auto; color: var(--text-light); font-size: 0.8rem; }
 .mangel-column-body { display: flex; flex-direction: column; gap: 0.5rem; min-height: 60px; }
 .mangel-card { background: var(--bg-card-raised); border-radius: var(--radius-md); padding: 0.65rem; cursor: pointer; box-shadow: var(--shadow-sm); touch-action: none; }
+/* Item 9 fix: obj-stat-chip / obj-chip-val / obj-chip-sub were referenced
+   in mangel.js's card template with NO corresponding CSS anywhere in the
+   codebase -- rendered as two unstyled inline spans that ran together on
+   one line ("OBJ-001объект") instead of the intended value-over-label
+   stack. New rules, matching .kpi-tile's column-stack convention. */
+.obj-chips-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; }
+.obj-stat-chip { display: flex; flex-direction: column; gap: 0.05rem; }
+.obj-chip-val { font-size: 0.82rem; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+.obj-chip-sub { font-size: 0.7rem; color: var(--text-light); line-height: 1.2; }
 
 /* Мои задачи — карточка назначения + кнопка чата по объекту (24.07) */
 .my-task-card { background: var(--bg-card-raised); border-radius: var(--radius-lg); padding: 0.85rem 0.9rem; box-shadow: var(--c-shadow-raised, var(--shadow-md)); display: flex; align-items: center; gap: 0.75rem; }
