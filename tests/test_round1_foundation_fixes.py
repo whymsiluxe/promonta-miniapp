@@ -359,6 +359,126 @@ class TestRound12FieldChangesRendered(unittest.TestCase):
                 f"resolver must be called shortly after this render site: {site!r}")
 
 
+# ── Round 1.2 #2: accepted-context snapshot survives later plan mutation ─────
+
+class TestRound12AcceptedContextSnapshot(unittest.TestCase):
+    """accept_plan() must freeze object_id/date/stage_key/assigned_worker_ids at
+    acceptance time. A later update_plan_fields() call (Sheets edit changing
+    object/date/workers) must NOT alter that frozen snapshot -- Check-in Finish
+    validation must use it, not the live (possibly mutated) plan fields, or an
+    already-accepted/already-started shift can wrongly skip DailyExecution."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="promonta-test-r12snap-")
+        os.environ["MINIAPP_DATA_ROOT"] = self._tmp
+        dpl.configure(
+            os.path.join(self._tmp, "daily_plan_store.json"),
+            os.path.join(self._tmp, "plan_sync_state.json"),
+            os.path.join(self._tmp, "work_calendar.json"),
+        )
+
+    def test_accepted_snapshot_frozen_at_acceptance_time(self):
+        worker = "w12snap"
+        plan = dpl.create_plan(
+            object_id="objX", stage_key="s1", date_str="2099-08-01",
+            assigned_worker_ids=[worker], items=[_make_item(0)], created_by="test",
+        )
+        dpl.publish_plan(plan["id"], "test")
+        acceptance = dpl.accept_plan(plan["id"], plan["version"], worker)
+
+        snap = acceptance.get("accepted_context_snapshot")
+        self.assertIsNotNone(snap, "accept_plan() must store accepted_context_snapshot")
+        self.assertEqual(snap["object_id"], "objX")
+        self.assertEqual(snap["date"], "2099-08-01")
+        self.assertIn(worker, [str(w) for w in snap["assigned_worker_ids"]])
+
+    def test_snapshot_unaffected_by_later_object_and_date_change(self):
+        """Exact owner scenario: worker accepts + starts on object X/date D, then
+        Sheets moves the plan to object Y/date D+1 -- accepted snapshot must
+        still show X/D so Finish can validate the already-running shift correctly."""
+        worker = "w12snap2"
+        plan = dpl.create_plan(
+            object_id="objX2", stage_key="s1", date_str="2099-08-02",
+            assigned_worker_ids=[worker], items=[_make_item(0)], created_by="test",
+        )
+        dpl.publish_plan(plan["id"], "test")
+        acceptance = dpl.accept_plan(plan["id"], plan["version"], worker)
+
+        # Sheets edit moves the live plan to a different object AND date
+        dpl.update_plan_fields(
+            plan_id=plan["id"], object_id="objY2", date_str="2099-08-03", updated_by="plan_sync",
+        )
+
+        live_plan = dpl.get_plan(plan["id"])
+        self.assertEqual(live_plan["object_id"], "objY2", "live plan IS mutated (expected)")
+        self.assertEqual(live_plan["date"], "2099-08-03", "live plan IS mutated (expected)")
+
+        # The accepted snapshot on the ORIGINAL acceptance record must be untouched
+        store = dpl.get_store_snapshot()
+        acc_after = store["acceptances"][acceptance["id"]]
+        snap_after = acc_after["accepted_context_snapshot"]
+        self.assertEqual(snap_after["object_id"], "objX2",
+            "accepted_context_snapshot must NOT change when the live plan is later mutated")
+        self.assertEqual(snap_after["date"], "2099-08-02",
+            "accepted_context_snapshot must NOT change when the live plan is later mutated")
+
+    def test_checkin_finish_validation_logic_uses_snapshot_not_live_plan(self):
+        """Replicates the exact comparison logic added to checkin_finish (main.py)
+        -- proves that using the accepted snapshot (not dpl.get_plan()) keeps
+        Finish's object/date check passing after a later plan mutation."""
+        worker = "w12snap3"
+        plan = dpl.create_plan(
+            object_id="objX3", stage_key="s1", date_str="2099-08-04",
+            assigned_worker_ids=[worker], items=[_make_item(0)], created_by="test",
+        )
+        dpl.publish_plan(plan["id"], "test")
+        acceptance = dpl.accept_plan(plan["id"], plan["version"], worker)
+
+        # Session recorded these at Start time (mirrors checkin_start's stored fields)
+        session_object_id, session_date_str = "objX3", "2099-08-04"
+
+        # Later Sheets edit moves the plan elsewhere
+        dpl.update_plan_fields(plan_id=plan["id"], object_id="objZ3", updated_by="plan_sync")
+
+        store = dpl.get_store_snapshot()
+        acc = store["acceptances"][acceptance["id"]]
+        snapshot = acc["accepted_context_snapshot"]
+
+        # This is the exact logic from checkin_finish's trusted path
+        worker_ok = worker in [str(w) for w in snapshot.get("assigned_worker_ids", [])]
+        object_ok = snapshot.get("object_id") == session_object_id
+        date_ok = snapshot.get("date") == session_date_str
+        self.assertTrue(worker_ok and object_ok and date_ok,
+            "Finish validation via accepted snapshot must still pass after the live plan moved objects")
+
+        # Sanity: the OLD (pre-1.2) approach of comparing against the live plan
+        # would have failed here -- this is exactly the bug being fixed.
+        live_plan = dpl.get_plan(plan["id"])
+        old_approach_object_ok = live_plan.get("object_id") == session_object_id
+        self.assertFalse(old_approach_object_ok,
+            "Sanity check: comparing against the live (mutated) plan must fail here, "
+            "confirming the snapshot-based fix is the one actually preventing the bug")
+
+    def test_newly_assigned_worker_cannot_claim_old_acceptance(self):
+        """A worker added only in a later version must not be able to reuse an
+        acceptance_id/session that belonged to the original assignment."""
+        worker_a = "w12snap4a"
+        worker_b_new = "w12snap4b"  # added later, never accepted anything
+        plan = dpl.create_plan(
+            object_id="objX4", stage_key="s1", date_str="2099-08-05",
+            assigned_worker_ids=[worker_a], items=[_make_item(0)], created_by="test",
+        )
+        dpl.publish_plan(plan["id"], "test")
+        acceptance = dpl.accept_plan(plan["id"], plan["version"], worker_a)
+
+        store = dpl.get_store_snapshot()
+        acc = store["acceptances"][acceptance["id"]]
+        # worker_b_new has no acceptance record of their own -- the snapshot on
+        # worker_a's acceptance must not validate for worker_b_new.
+        self.assertNotEqual(str(acc.get("worker_id")), worker_b_new)
+        self.assertNotIn(worker_b_new, [str(w) for w in acc["accepted_context_snapshot"]["assigned_worker_ids"]])
+
+
 # ── Round 1.1 #2+#3: update_plan_fields versioning + object_id ───────────────
 
 class TestRound11UpdatePlanFieldsVersioning(unittest.TestCase):

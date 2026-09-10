@@ -6961,19 +6961,49 @@ async def checkin_finish(
             plan_ver = int(rpt.get('plan_version', 0) or session.get('daily_plan_version', 0) or 0)
             item_results = rpt.get('item_results') or []
             if plan_id and isinstance(item_results, list) and item_results:
-                # Server-trust validation: verify plan/worker/object/date/acceptance match
-                _plan_obj = dpl.get_plan(plan_id)
-                if _plan_obj:
-                    _worker_id_str = str(session['user_id'])
-                    if _worker_id_str not in [str(w) for w in _plan_obj.get('assigned_worker_ids', [])]:
-                        print(f'WARNING: finish plan_id {plan_id} worker not assigned — skipping execution')
+                # Round 1.2 #2: validate against the worker's IMMUTABLE accepted
+                # context snapshot, not the live (possibly since-mutated-by-Sheets-
+                # edit) plan fields. A later update_plan_fields() call (object/date/
+                # worker/stage change) must never invalidate an already-accepted,
+                # already-started shift's Finish -- the accepted snapshot is the
+                # trusted historical truth for this comparison, not current plan state.
+                _worker_id_str = str(session['user_id'])
+                _acceptance_id = session.get('daily_plan_acceptance_id') or ''
+                _snapshot = None
+                if _acceptance_id:
+                    _dp_store = dpl.get_store_snapshot()
+                    _acc = _dp_store["acceptances"].get(_acceptance_id)
+                    if _acc and str(_acc.get('worker_id')) == _worker_id_str and _acc.get('daily_plan_id') == plan_id:
+                        _snapshot = _acc.get('accepted_context_snapshot')
+                if _snapshot:
+                    # Trusted path: compare against what THIS worker actually accepted.
+                    if _worker_id_str not in [str(w) for w in _snapshot.get('assigned_worker_ids', [])]:
+                        print(f'WARNING: finish plan_id {plan_id} worker not in accepted snapshot — skipping execution')
                         plan_id = ''
-                    elif _plan_obj.get('object_id') != object_id:
-                        print(f'WARNING: finish plan_id {plan_id} object mismatch — skipping execution')
+                    elif _snapshot.get('object_id') != object_id:
+                        print(f'WARNING: finish plan_id {plan_id} object mismatch vs accepted snapshot — skipping execution')
                         plan_id = ''
-                    elif _plan_obj.get('date') != date_str:
-                        print(f'WARNING: finish plan_id {plan_id} date mismatch — skipping execution')
+                    elif _snapshot.get('date') != date_str:
+                        print(f'WARNING: finish plan_id {plan_id} date mismatch vs accepted snapshot — skipping execution')
                         plan_id = ''
+                else:
+                    # Backward-compat fallback: no acceptance_id on this session, or
+                    # the acceptance predates round 1.2 (no snapshot stored yet).
+                    # Conservative choice: fall back to the live plan fields exactly
+                    # as before -- cannot fabricate a historical snapshot that was
+                    # never recorded. This preserves pre-1.2 behavior for old sessions
+                    # instead of silently skipping execution for them.
+                    _plan_obj = dpl.get_plan(plan_id)
+                    if _plan_obj:
+                        if _worker_id_str not in [str(w) for w in _plan_obj.get('assigned_worker_ids', [])]:
+                            print(f'WARNING: finish plan_id {plan_id} worker not assigned — skipping execution')
+                            plan_id = ''
+                        elif _plan_obj.get('object_id') != object_id:
+                            print(f'WARNING: finish plan_id {plan_id} object mismatch — skipping execution')
+                            plan_id = ''
+                        elif _plan_obj.get('date') != date_str:
+                            print(f'WARNING: finish plan_id {plan_id} date mismatch — skipping execution')
+                            plan_id = ''
                 if plan_id:
                     # Write outbox event before applying (durable, crash-safe)
                     _outbox_write_pending(session_id, plan_id, plan_ver,

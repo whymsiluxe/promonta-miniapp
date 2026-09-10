@@ -420,6 +420,21 @@ def accept_plan(plan_id: str, plan_version: int, worker_id: str) -> dict:
         snap = next((v for v in reversed(versions) if v["version"] == plan_version), None)
         accepted_snapshot_hash = snap["content_hash"] if snap else plan["content_hash"]
 
+        # Round 1.2 #2: immutable accepted-context snapshot. Later Sheet edits
+        # (update_plan_fields -- object_id/date/stage_key/assigned_worker_ids)
+        # mutate the live plan in place; without this snapshot, Check-in
+        # Start/Finish would validate against that mutated, no-longer-true-at-
+        # acceptance-time context and could wrongly reject/skip an otherwise
+        # valid already-running shift. This is the accepted historical truth,
+        # frozen at the moment of THIS acceptance -- never rewritten afterward.
+        accepted_context_snapshot = {
+            "object_id": plan.get("object_id"),
+            "date": plan.get("date"),
+            "stage_key": plan.get("stage_key"),
+            "assigned_worker_ids": list(plan.get("assigned_worker_ids", [])),
+            "plan_version": plan_version,
+        }
+
         acceptance = {
             "id": uuid.uuid4().hex,
             "idempotency_key": idempotency_key,
@@ -428,6 +443,7 @@ def accept_plan(plan_id: str, plan_version: int, worker_id: str) -> dict:
             "worker_id": str(worker_id),
             "accepted_at": time.time(),
             "accepted_snapshot_hash": accepted_snapshot_hash,
+            "accepted_context_snapshot": accepted_context_snapshot,
         }
 
         # Если было amendment_pending — ack этим работником. Только когда ВСЕ ackнули → accepted.
