@@ -510,7 +510,14 @@ async function submitMangelTicket() {
     _closeMangelForm();
     await loadMangelTickets();
     showToast('Дефект создан', 'success');
-    // 04.08 (1.4): если форму открыли из Object Info — вернуться туда и обновить секцию Дефекты.
+    // Item 4 fix: Object Info's Дефекты summary must refresh regardless of
+    // WHERE the ticket was created from -- previously only the return-to-
+    // Object-Info path refreshed it (via openObjectDetail's own tab reload),
+    // so a defect created from the Дефекты tab FAB directly never appeared
+    // in Object Info until the whole app was reloaded. _deleteMangelTicket
+    // already calls this unconditionally (mangel.js) -- create must match.
+    if (typeof _refreshObjInfoDefects === 'function') _refreshObjInfoDefects();
+    // 04.08 (1.4): если форму открыли из Object Info — вернуться туда.
     if (returnObj && typeof openObjectDetail === 'function') {
       window._mangelReturnToObject = null;
       openObjectDetail(returnObj.objectId, returnObj.objectName, 'info');
