@@ -268,6 +268,65 @@ class TestItem5FieldChangeDetection(unittest.TestCase):
             "worker_ids must be parsed from sheet row so change detection can compare them")
 
 
+# ── Round 1.1: Item 3+6 interaction — invalid row must not look deleted ──────
+
+class TestRound11InvalidRowNotTreatedAsDeleted(unittest.TestCase):
+    """A Sheet row that's present but fails validation (bad items_json) must
+    NOT be treated by reconciliation as if the row disappeared -- that would
+    wrongly cancel/source_delete an otherwise-untouched valid existing plan."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="promonta-test-r11-")
+        os.environ["MINIAPP_DATA_ROOT"] = self._tmp
+        dpl.configure(
+            os.path.join(self._tmp, "daily_plan_store.json"),
+            os.path.join(self._tmp, "plan_sync_state.json"),
+            os.path.join(self._tmp, "work_calendar.json"),
+        )
+        import importlib
+        import plan_sync
+        self.ps = importlib.reload(plan_sync)
+        self.ps.dpl = dpl
+
+    def test_malformed_items_json_on_existing_plan_does_not_cancel_it(self):
+        """Existing synced plan + same Sheet row present with same plan_id but
+        malformed items_json -> plan remains active and unchanged, sync error
+        recorded (not cancelled, not source_deleted)."""
+        plan_id = "r11-plan-1"
+        good_row = {
+            "plan_id": plan_id,
+            "date": "2099-05-01",
+            "object_id": "objR11",
+            "stage_key": "s1",
+            "worker_ids": "w1",
+            "status": "draft",
+            "items_json": '[{"id": "i1", "title": "Task", "planned_quantity": 5, "unit": "m2"}]',
+        }
+        state = {}
+        changed = self.ps._process_daily_plan_rows([good_row], state)
+        self.assertEqual(changed, 1)
+
+        plan = dpl.get_plan_by_sheets_source_row(plan_id)
+        self.assertIsNotNone(plan)
+        self.assertNotEqual(plan["status"], "cancelled")
+
+        # Same row, now with malformed items_json -- must NOT disappear from
+        # seen_plan_ids, must NOT be treated as a deleted row.
+        bad_row = dict(good_row)
+        bad_row["items_json"] = "{not valid json{{"
+        state2 = {}  # fresh state forces reprocessing (hash won't match empty state)
+        self.ps._process_daily_plan_rows([bad_row], state2)
+
+        plan_after = dpl.get_plan_by_sheets_source_row(plan_id)
+        self.assertIsNotNone(plan_after, "Plan must still exist")
+        self.assertNotEqual(plan_after["status"], "cancelled",
+            "Invalid-but-present row must NOT cause reconciliation to cancel the plan")
+        self.assertFalse(plan_after.get("source_deleted"),
+            "Invalid-but-present row must NOT cause reconciliation to mark source_deleted")
+        # Original valid items must be untouched
+        self.assertEqual(len(plan_after["items"]), 1)
+
+
 # ── Item 6: Sheet row deletion — cancelled/source_deleted exclusion ───────────
 
 class TestItem6RowDeletionExclusion(unittest.TestCase):

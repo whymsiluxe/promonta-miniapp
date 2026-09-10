@@ -178,6 +178,17 @@ def _process_stage_rows(rows: list[dict], state: dict) -> int:
     return len(rows)
 
 
+def _raw_row_plan_id(row: dict) -> str:
+    """Extracts plan_id from a raw Sheet row without full validation (item 3+6
+    interaction fix). Used so reconciliation can distinguish a row that's still
+    present-but-invalid from a row that's truly gone from the Sheet."""
+    for k in ('plan_id', 'PLAN_ID', 'id'):
+        v = row.get(k) or row.get(k.lower()) or row.get(k.upper()) or ''
+        if v:
+            return str(v).strip()
+    return ''
+
+
 def _row_to_plan_fields(row: dict) -> dict | None:
     """Parse a Plan_дня Sheet row into DailyPlan fields.
 
@@ -268,8 +279,21 @@ def _process_daily_plan_rows(rows: list[dict], state: dict) -> int:
     seen_plan_ids = set()
 
     for row in rows:
+        # Item 3+6 interaction fix: a row that's present in the Sheet but fails
+        # validation (bad items_json, missing plan_id, etc.) must still count as
+        # "present" for reconciliation purposes -- otherwise reconciliation later
+        # sees an empty slot for that plan_id and wrongly treats the row as
+        # deleted, cancelling/source-deleting an otherwise-untouched valid plan.
+        raw_pid = _raw_row_plan_id(row)
+        if raw_pid:
+            seen_plan_ids.add(raw_pid)
+
         fields = _row_to_plan_fields(row)
         if not fields:
+            # Row present but invalid: sync error already logged inside
+            # _row_to_plan_fields. Existing plan (if any) stays untouched --
+            # raw_pid is already in seen_plan_ids above, so reconciliation
+            # will not mark it cancelled/source_deleted.
             continue
 
         pid = fields["plan_id"]
