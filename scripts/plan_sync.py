@@ -203,7 +203,12 @@ def _row_to_plan_fields(row: dict) -> dict | None:
     if not date_str or not object_id:
         return None  # required fields missing
 
-    plan_id = _get('plan_id', 'PLAN_ID', 'id') or f"{object_id}:{date_str}:{stage_key}"
+    plan_id = _get('plan_id', 'PLAN_ID', 'id')
+    if not plan_id:
+        log.error("Row object_id=%r date=%r stage_key=%r: missing/blank plan_id — "
+                   "skipping row (no synthetic id, an explicit plan_id column value is required)",
+                   object_id, date_str, stage_key)
+        return None
 
     worker_ids_raw = _get('worker_ids', 'workers', 'Работники', 'WORKER_IDS')
     worker_ids = [w.strip() for w in worker_ids_raw.split(',') if w.strip()] if worker_ids_raw else []
