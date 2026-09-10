@@ -162,10 +162,12 @@ function _shouldShowPlanScreen(data) {
   if (!data || !data.has_plan || !data.plan) return false;
   const status = data.plan.status;
   const accepted = !!data.acceptance;
-  // 'accepted' included: on a multi-worker plan another worker may have already
-  // accepted (plan status flips to 'accepted' on first acceptance), but THIS
-  // worker's own acceptance (data.acceptance) is what actually gates the screen.
-  return (status === 'published' || status === 'amendment_pending' || status === 'accepted') && !accepted;
+  // 'accepted'/'in_progress' included: on a multi-worker plan another worker may
+  // have already accepted (status -> accepted) or even finished their own part
+  // (status -> in_progress, set by apply_daily_execution) before THIS worker got
+  // to accept. THIS worker's own acceptance (data.acceptance) is what actually
+  // gates the screen, not the shared plan status.
+  return (status === 'published' || status === 'amendment_pending' || status === 'accepted' || status === 'in_progress') && !accepted;
 }
 
 function _startTodayPlanPolling() {

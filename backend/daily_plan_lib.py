@@ -332,8 +332,10 @@ def accept_plan(plan_id: str, plan_version: int, worker_id: str) -> dict:
         if existing:
             return existing
 
-        # "accepted" is allowed: another worker may have already accepted a multi-worker plan.
-        if plan["status"] not in ("published", "amendment_pending", "accepted"):
+        # "accepted"/"in_progress" allowed: another assigned worker may have already
+        # accepted (accepted) or even finished their part (in_progress, set by
+        # apply_daily_execution) before this worker got to accept their own share.
+        if plan["status"] not in ("published", "amendment_pending", "accepted", "in_progress"):
             raise ValueError(f"Plan status {plan['status']!r} cannot be accepted")
 
         # Snapshot hash на момент принятия — фиксируем что именно принял работник
@@ -705,8 +707,11 @@ def get_today_plan_for_worker(worker_id: str, date_str: str) -> dict | None:
         p for p in store["daily_plans"].values()
         if p["date"] == date_str and wid in [str(w) for w in p["assigned_worker_ids"]]
     ]
-    STATUS_PRIORITY = {"accepted": 0, "amendment_pending": 1, "published": 2,
-                       "completed": 3, "draft": 4}
+    # in_progress: shared plan status set by apply_daily_execution() once at least
+    # one assigned worker has finished -- an unaccepted worker's plan is still just
+    # as urgent to surface as 'accepted', so it shares priority 0.
+    STATUS_PRIORITY = {"accepted": 0, "in_progress": 0, "amendment_pending": 1,
+                       "published": 2, "completed": 3, "draft": 4}
     candidates.sort(key=lambda p: STATUS_PRIORITY.get(p["status"], 99))
     return candidates[0] if candidates else None
 

@@ -184,6 +184,41 @@ class DailyPlanLibTests(unittest.TestCase):
         self.assertEqual(carryovers[0]['item_id'], 'item-2')
         self.assertEqual(carryovers[0]['remaining_quantity'], 5.0)
 
+    def test_second_worker_can_accept_after_plan_in_progress(self):
+        # P0 follow-up regression (10.09.2026): apply_daily_execution() moves the
+        # shared plan.status to 'in_progress' once ANY assigned worker finishes,
+        # before all assigned workers have accepted. A second, not-yet-accepted
+        # worker must still be able to see and accept the plan while it's
+        # 'in_progress' -- previously accept_plan()'s status gate and
+        # get_today_plan_for_worker()'s STATUS_PRIORITY (in_progress fell through
+        # to priority 99) could both make the plan effectively invisible/unacceptable
+        # to worker B.
+        items = [self._make_item(1)]
+        plan = self.dpl.create_plan(
+            object_id='OBJ-MULTI-IP', stage_key='OBJ-MULTI-IP-S1', date_str='2026-09-10',
+            assigned_worker_ids=['700', '701'], items=items, created_by='owner',
+        )
+        self.dpl.publish_plan(plan['id'], 'owner')
+
+        # Worker 700 accepts and finishes their part.
+        self.dpl.accept_plan(plan['id'], 1, '700')
+        results = [{"item_id": "item-1", "status": "done", "actual_quantity": 10.0,
+                    "reason_code": None, "comment": ""}]
+        self.dpl.apply_daily_execution(
+            'sess-ip-700', plan['id'], 1, '700', '2026-09-10', 'OBJ-MULTI-IP', results)
+
+        stored_plan = self.dpl.get_plan(plan['id'])
+        self.assertEqual(stored_plan['status'], 'in_progress')
+
+        # Worker 701 has NOT accepted yet -- must still find the plan via the
+        # worker-facing lookup, and must still be able to accept it.
+        found = self.dpl.get_today_plan_for_worker('701', '2026-09-10')
+        self.assertIsNotNone(found)
+        self.assertEqual(found['id'], plan['id'])
+
+        acceptance = self.dpl.accept_plan(plan['id'], 1, '701')
+        self.assertEqual(acceptance['worker_id'], '701')
+
     def test_apply_execution_idempotent(self):
         items = [self._make_item()]
         plan = self.dpl.create_plan(
