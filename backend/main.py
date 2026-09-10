@@ -132,22 +132,124 @@ except ImportError:
 
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
-ROLES_FILE = os.path.join(DATA_ROOT, 'roles.json')
+# Phase A: ~45 JSON-store/dir path constants moved to backend/core/paths.py.
+# Imported by name (not `from core import paths`) so `backend.ROLES_FILE` etc.
+# keep working for tests that do `import main as backend`. Relative-then-
+# absolute fallback, same pattern as core.time and the work_types/etc. block.
+try:
+    from .core.paths import (
+        CHAT_ARCHIVE_FILE,
+        OBJECT_INFO_FILE,
+        TASKS_FILE,
+        OBJECT_DOC_DIR,
+        CHAT_ATTACH_DIR,
+        CHAT_FILE,
+        ANGEBOT_OUT_DIR,
+        CHECKIN_PHOTO_BASE,
+        ACTIVITY_ALERTS_FILE,
+        WORK_CALENDAR_FILE,
+        WORKER_PROFILES_FILE,
+        OBJECT_ASSIGNMENTS_FILE,
+        AI_MODEL_FILE,
+        WEATHER_REACTIONS_FILE,
+        CHAT_THREAD_META_FILE,
+        PHOTO_DIR,
+        NOTIFIED_USERS_FILE,
+        RECHNUNG_OUT_DIR,
+        DAILY_PLAN_STORE_FILE,
+        OBJECT_IMAGES_FILE,
+        CHECKIN_META_FILE,
+        NEWS_COMMENTS_FILE,
+        BLOCKER_PHOTO_DIR,
+        TRANSCRIBE_AUDIO_DIR,
+        ALERT_DISMISSALS_FILE,
+        BIRTHDAY_ALERTS_FILE,
+        AI_RATE_FILE,
+        CONTRACT_INGEST_STATE_FILE,
+        AVATAR_DIR,
+        CHAT_READS_FILE,
+        NEWS_READS_FILE,
+        WORKER_AI_RATE_FILE,
+        FINISH_OUTBOX_FILE,
+        PHOTO_META_FILE,
+        NEWS_REACTIONS_FILE,
+        ROLES_FILE,
+        AUDIT_FILE,
+        APP_VERSION_FILE,
+        OBJECT_PHOTO_DIR,
+        CRITICAL_ALERT_PHOTO_DIR,
+        CRITICAL_ALERTS_FILE,
+        FEED_READS_FILE,
+        CHAT_REACTIONS_FILE,
+        PLAN_SYNC_STATE_FILE,
+        MANGEL_PHOTO_DIR,
+        ABWESENHEIT_FILE,
+    )
+except ImportError:
+    from core.paths import (  # noqa: E402
+        CHAT_ARCHIVE_FILE,
+        OBJECT_INFO_FILE,
+        TASKS_FILE,
+        OBJECT_DOC_DIR,
+        CHAT_ATTACH_DIR,
+        CHAT_FILE,
+        ANGEBOT_OUT_DIR,
+        CHECKIN_PHOTO_BASE,
+        ACTIVITY_ALERTS_FILE,
+        WORK_CALENDAR_FILE,
+        WORKER_PROFILES_FILE,
+        OBJECT_ASSIGNMENTS_FILE,
+        AI_MODEL_FILE,
+        WEATHER_REACTIONS_FILE,
+        CHAT_THREAD_META_FILE,
+        PHOTO_DIR,
+        NOTIFIED_USERS_FILE,
+        RECHNUNG_OUT_DIR,
+        DAILY_PLAN_STORE_FILE,
+        OBJECT_IMAGES_FILE,
+        CHECKIN_META_FILE,
+        NEWS_COMMENTS_FILE,
+        BLOCKER_PHOTO_DIR,
+        TRANSCRIBE_AUDIO_DIR,
+        ALERT_DISMISSALS_FILE,
+        BIRTHDAY_ALERTS_FILE,
+        AI_RATE_FILE,
+        CONTRACT_INGEST_STATE_FILE,
+        AVATAR_DIR,
+        CHAT_READS_FILE,
+        NEWS_READS_FILE,
+        WORKER_AI_RATE_FILE,
+        FINISH_OUTBOX_FILE,
+        PHOTO_META_FILE,
+        NEWS_REACTIONS_FILE,
+        ROLES_FILE,
+        AUDIT_FILE,
+        APP_VERSION_FILE,
+        OBJECT_PHOTO_DIR,
+        CRITICAL_ALERT_PHOTO_DIR,
+        CRITICAL_ALERTS_FILE,
+        FEED_READS_FILE,
+        CHAT_REACTIONS_FILE,
+        PLAN_SYNC_STATE_FILE,
+        MANGEL_PHOTO_DIR,
+        ABWESENHEIT_FILE,
+    )
+# moved to core/paths.py -- ROLES_FILE
 
 # DailyPlan store — производственный контроль (Round 1)
-DAILY_PLAN_STORE_FILE = os.path.join(DATA_ROOT, 'daily_plan_store.json')
-PLAN_SYNC_STATE_FILE = os.path.join(DATA_ROOT, 'plan_sync_state.json')
-WORK_CALENDAR_FILE = os.path.join(DATA_ROOT, 'work_calendar.json')
+# moved to core/paths.py -- DAILY_PLAN_STORE_FILE
+# moved to core/paths.py -- PLAN_SYNC_STATE_FILE
+# moved to core/paths.py -- WORK_CALENDAR_FILE
 dpl.configure(DAILY_PLAN_STORE_FILE, PLAN_SYNC_STATE_FILE, WORK_CALENDAR_FILE)
 
 # Finish projector outbox — durable event log for session_id→daily_execution application.
 # Written before apply_daily_execution so a crash between checkin commit and plan update
 # leaves a pending event that can be retried on startup.
-FINISH_OUTBOX_FILE = os.path.join(DATA_ROOT, 'finish_outbox.json')
+# moved to core/paths.py -- FINISH_OUTBOX_FILE
 _finish_outbox_lock = __import__('threading').Lock()
 
 # Contract ingestion state (Round 5 — Drive scope gated)
-CONTRACT_INGEST_STATE_FILE = os.path.join(DATA_ROOT, 'contract_ingest_state.json')
+# moved to core/paths.py -- CONTRACT_INGEST_STATE_FILE
 _CONTRACT_INGEST_LOCK = __import__('threading').Lock()
 CONTRACTS_DRIVE_FOLDER_ID = os.environ.get('CONTRACTS_DRIVE_FOLDER_ID', '')
 INIT_DATA_MAX_AGE = 3600  # секунд — Telegram initData считается протухшим через час
@@ -249,7 +351,7 @@ async def _corrupt_json_handler(request, exc: CorruptJsonError):
         content={"detail": "Данные временно недоступны (повреждённый файл), обратитесь к владельцу"},
     )
 
-AUDIT_FILE = os.path.join(DATA_ROOT, 'audit.log')
+# moved to core/paths.py -- AUDIT_FILE
 AUDIT_LOCK = __import__('threading').Lock()
 
 
@@ -583,7 +685,7 @@ def _save_roles(roles: dict):
     _atomic_write_json(ROLES_FILE, roles)
 
 
-NOTIFIED_USERS_FILE = os.path.join(DATA_ROOT, 'notified_users.json')
+# moved to core/paths.py -- NOTIFIED_USERS_FILE
 NOTIFIED_USERS_TTL = 7 * 86400  # 7 дней — потом можно напомнить owner'у снова (10.29)
 
 
@@ -818,7 +920,7 @@ def revoke_role(target_user_id: str, user: dict = Depends(get_current_user), _: 
 # не является git-репозиторием, git там просто не сработает). Файл опционален --
 # если деплой был сделан вручную без записи VERSION, health всё равно отвечает,
 # просто без SHA.
-APP_VERSION_FILE = os.path.join(BACKEND_DIR, 'VERSION')
+# moved to core/paths.py -- APP_VERSION_FILE
 
 
 def _read_app_version() -> dict:
@@ -1034,7 +1136,7 @@ def list_workers(user: dict = Depends(get_current_user)):
 
 
 # ---------- Профиль работника: навыки + онбординг-квиз (Фаза 2/8) ----------
-WORKER_PROFILES_FILE = os.path.join(DATA_ROOT, 'worker_profiles.json')
+# moved to core/paths.py -- WORKER_PROFILES_FILE
 # 01.08 (единый каталог видов работ): SKILL_OPTIONS был вручную продублированным
 # списком из 19 строк, отдельно от frontend ONBOARDING_GROUPS/BUBBLE_STAGE_OPTIONS --
 # новый навык мог появиться в одном месте и отсутствовать в другом (реальный
@@ -1375,7 +1477,7 @@ def verify_worker_skill(user_id: str, skill_id: str, body: SkillVerificationBody
 
 
 # ---------- Фаза 8: аватар + агрегированная статистика профиля ----------
-AVATAR_DIR = os.path.join(DATA_ROOT, 'avatars')
+# moved to core/paths.py -- AVATAR_DIR
 AVATAR_MAX_BYTES = 4 * 1024 * 1024
 os.makedirs(AVATAR_DIR, exist_ok=True)
 
@@ -1765,9 +1867,9 @@ def get_dashboard_team_hours(date_from: str = '', date_to: str = '',
 
 
 # ---------- Назначения работников на объекты (Фаза 2c, восстановлено после инцидента Фазы 3) ----------
-OBJECT_ASSIGNMENTS_FILE = os.path.join(DATA_ROOT, 'object_assignments.json')
-OBJECT_IMAGES_FILE = os.path.join(DATA_ROOT, 'object_images.json')
-OBJECT_PHOTO_DIR = os.path.join(DATA_ROOT, 'object_photos')
+# moved to core/paths.py -- OBJECT_ASSIGNMENTS_FILE
+# moved to core/paths.py -- OBJECT_IMAGES_FILE
+# moved to core/paths.py -- OBJECT_PHOTO_DIR
 
 
 def _load_assignments() -> dict:
@@ -2913,7 +3015,7 @@ def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_r
     return {"alerts": filtered, "count": len(filtered)}
 
 
-ALERT_DISMISSALS_FILE = os.path.join(DATA_ROOT, 'alert_dismissals.json')
+# moved to core/paths.py -- ALERT_DISMISSALS_FILE
 ALERT_DISMISS_TTL = 24 * 3600
 
 
@@ -3126,7 +3228,7 @@ def send_pdf_to_chat(chat_id, file_path, filename, caption):
 
 
 ANGEBOT_SCRIPT = '/home/promonta/agent/miniapp/angebot_free.js'
-ANGEBOT_OUT_DIR = os.path.join(DATA_ROOT, 'angebote')
+# moved to core/paths.py -- ANGEBOT_OUT_DIR
 os.makedirs(ANGEBOT_OUT_DIR, exist_ok=True)
 
 
@@ -3225,8 +3327,8 @@ def complete_task(task_id: str, user: dict = Depends(get_current_user), _: None 
 
 
 # ---------- Инфо объекта (24.07, Step 3): work-items + документы ----------
-OBJECT_INFO_FILE = os.path.join(DATA_ROOT, 'object_info.json')
-OBJECT_DOC_DIR = os.path.join(DATA_ROOT, 'object_documents')
+# moved to core/paths.py -- OBJECT_INFO_FILE
+# moved to core/paths.py -- OBJECT_DOC_DIR
 os.makedirs(OBJECT_DOC_DIR, exist_ok=True)
 
 
@@ -3426,7 +3528,7 @@ def update_object_status(object_id: str, body: StatusBody, user: dict = Depends(
 
 # ---------- Rechnung generator ----------
 RECHNUNG_SCRIPT = '/home/promonta/agent/miniapp/rechnung.js'
-RECHNUNG_OUT_DIR = os.path.join(DATA_ROOT, 'rechnungen')
+# moved to core/paths.py -- RECHNUNG_OUT_DIR
 os.makedirs(RECHNUNG_OUT_DIR, exist_ok=True)
 
 
@@ -3492,7 +3594,7 @@ def create_rechnung(body: RechnungBody, user: dict = Depends(get_current_user), 
 WEATHER_FEED_FILE = '/home/promonta/agent/.weather_feed.json'
 
 
-WEATHER_REACTIONS_FILE = os.path.join(DATA_ROOT, 'weather_reactions.json')
+# moved to core/paths.py -- WEATHER_REACTIONS_FILE
 # {entry_key: {user_id: true}} — entry_key = "{object}::{created}" (weather-записи не имеют своего id).
 
 
@@ -3544,9 +3646,9 @@ def react_weather_entry(body: dict, user: dict = Depends(get_current_user)):
 # ---------- News feed (Фаза 9, 10.32 — лайки + read-tracking для адаптивной фильтрации) ----------
 # Наполняется отдельным cron-пайплайном на VPS (WebSearch/RSS → AI-саммари), здесь чтение + реакции.
 NEWS_FEED_FILE = '/home/promonta/agent/.news_feed.json'
-NEWS_REACTIONS_FILE = os.path.join(DATA_ROOT, 'news_reactions.json')
+# moved to core/paths.py -- NEWS_REACTIONS_FILE
 # {post_id: {user_id: "like"|"dislike"}} — по одной реакции на пост от юзера, апдейт при повторном клике.
-NEWS_READS_FILE = os.path.join(DATA_ROOT, 'news_reads.json')
+# moved to core/paths.py -- NEWS_READS_FILE
 # {user_id: {category: read_count}} — накопитель для будущей адаптивной фильтрации ленты под интересы.
 
 
@@ -3566,7 +3668,7 @@ def _save_news_reads(data: dict):
     _atomic_write_json(NEWS_READS_FILE, data)
 
 
-BIRTHDAY_ALERTS_FILE = os.path.join(DATA_ROOT, 'birthday_alerts.json')
+# moved to core/paths.py -- BIRTHDAY_ALERTS_FILE
 def _load_birthday_alerts() -> list:
     return _safe_load_json(BIRTHDAY_ALERTS_FILE, [])
 
@@ -3703,8 +3805,8 @@ def react_news_post(post_id: str, body: NewsReactionIn, user: dict = Depends(get
 # cron-пайплайн) — {post_id: [ {id,user_id,name,text,ts,reply_to} ]}. Тот же lifecycle,
 # что у фото-комментариев. Read-markers — {user_id: {last_news_read_at, last_photos_read_at,
 # last_info_read_at}} (epoch); unread = публикации/активность новее отметки.
-NEWS_COMMENTS_FILE = os.path.join(DATA_ROOT, 'news_comments.json')
-FEED_READS_FILE = os.path.join(DATA_ROOT, 'feed_reads.json')
+# moved to core/paths.py -- NEWS_COMMENTS_FILE
+# moved to core/paths.py -- FEED_READS_FILE
 
 
 def _load_news_comments() -> dict:
@@ -3833,8 +3935,8 @@ def get_feed_unread(user: dict = Depends(get_current_user)):
 # ---------- Photo feed ----------
 # Хранение: файлы на диске + метадата в JSON. Любой сотрудник грузит фото с объекта,
 # все видят общей лентой (без ролевых ограничений — как командный чат).
-PHOTO_DIR = os.path.join(DATA_ROOT, 'feed_photos')
-PHOTO_META_FILE = os.path.join(DATA_ROOT, 'feed_photos.json')
+# moved to core/paths.py -- PHOTO_DIR
+# moved to core/paths.py -- PHOTO_META_FILE
 PHOTO_MAX_BYTES = 8 * 1024 * 1024  # 8 МБ
 PHOTO_MAX_COUNT = 300  # старые фото (и файлы) обрезаются сверху этого лимита
 _photo_lock = __import__('threading').Lock()
@@ -4056,7 +4158,7 @@ def delete_feed_photo_comment(photo_id: str, comment_id: str, user: dict = Depen
 # Base comment lifecycle (add/get/delete news+photo) уже есть из Раунда 5 — здесь только
 # недостающее: серверная карточка-пересылка в чат и лёгкие in-app алерты о новых
 # комментариях (НЕ critical_alerts — без telegram-пуша/ack, отдельный activity_alerts.json).
-ACTIVITY_ALERTS_FILE = os.path.join(DATA_ROOT, 'activity_alerts.json')
+# moved to core/paths.py -- ACTIVITY_ALERTS_FILE
 
 
 def _load_activity_alerts() -> list:
@@ -4228,8 +4330,8 @@ def get_feed_photo_file(photo_id: str, index: int = 0, user: dict = Depends(get_
 # ---------- Team Chat ----------
 # Хранение: JSON-файл, последние 200 сообщений. Polling с фронта каждые 8 сек.
 # Инстанс один, файл достаточен — без WebSocket и БД для простоты.
-CHAT_FILE = os.path.join(DATA_ROOT, 'chat_messages.json')
-CHAT_ARCHIVE_FILE = os.path.join(DATA_ROOT, 'chat_messages_archive.json')
+# moved to core/paths.py -- CHAT_FILE
+# moved to core/paths.py -- CHAT_ARCHIVE_FILE
 CHAT_MAX = 200
 _chat_lock = __import__('threading').Lock()
 
@@ -4278,7 +4380,7 @@ def _purge_old_chat(messages: list) -> list:
     return keep
 
 
-CHAT_READS_FILE = os.path.join(DATA_ROOT, 'chat_reads.json')
+# moved to core/paths.py -- CHAT_READS_FILE
 def _load_reads() -> dict:
     return _safe_load_json(CHAT_READS_FILE, {})
 
@@ -4287,7 +4389,7 @@ def _save_reads(reads: dict):
     _atomic_write_json(CHAT_READS_FILE, reads)
 
 
-CHAT_THREAD_META_FILE = os.path.join(DATA_ROOT, 'chat_thread_meta.json')
+# moved to core/paths.py -- CHAT_THREAD_META_FILE
 def _load_chat_thread_meta() -> dict:
     return _safe_load_json(CHAT_THREAD_META_FILE, {})
 
@@ -4296,7 +4398,7 @@ def _save_chat_thread_meta(meta: dict):
     _atomic_write_json(CHAT_THREAD_META_FILE, meta)
 
 
-CHAT_REACTIONS_FILE = os.path.join(DATA_ROOT, 'chat_reactions.json')
+# moved to core/paths.py -- CHAT_REACTIONS_FILE
 CHAT_REACTION_OPTIONS = ['👍', '✅', '👀', '❗']
 
 
@@ -4709,7 +4811,7 @@ def mark_chat_read(with_: str = '', thread_key: str = '', user: dict = Depends(g
     return {"ok": True}
 
 
-CHAT_ATTACH_DIR = os.path.join(DATA_ROOT, 'chat_attachments')
+# moved to core/paths.py -- CHAT_ATTACH_DIR
 os.makedirs(CHAT_ATTACH_DIR, exist_ok=True)
 
 
@@ -4777,7 +4879,7 @@ def _transcribe_voice(path: str) -> str:
 
 
 TRANSCRIBE_MAX_BYTES = 8 * 1024 * 1024
-TRANSCRIBE_AUDIO_DIR = os.path.join(DATA_ROOT, 'transcribe_audio')
+# moved to core/paths.py -- TRANSCRIBE_AUDIO_DIR
 os.makedirs(TRANSCRIBE_AUDIO_DIR, exist_ok=True)
 
 
@@ -5273,11 +5375,11 @@ def get_chat_thread_status(with_: str = '', user: dict = Depends(get_current_use
 # ---------- AI Chat (GLM / Sonnet / Opus, переключаемо) ----------
 # GLM — бесплатный, экономит лимиты (z.ai). Sonnet/Opus — через claude CLI по OAuth-подписке владельца.
 # Доступ только для owner, rate limit 20 запросов/час.
-AI_RATE_FILE = os.path.join(DATA_ROOT, 'ai_chat_rate.json')
+# moved to core/paths.py -- AI_RATE_FILE
 AI_RATE_LIMIT = 20
 AI_RATE_WINDOW = 3600
 
-AI_MODEL_FILE = os.path.join(DATA_ROOT, 'ai_model.json')
+# moved to core/paths.py -- AI_MODEL_FILE
 AI_MODELS = ('glm', 'sonnet', 'opus')
 AI_MODEL_DEFAULT = 'glm'
 CLAUDE_BIN = os.environ.get('CLAUDE_BIN', 'claude')
@@ -5517,7 +5619,7 @@ def ai_chat(body: AiChatBody, user: dict = Depends(get_current_user), role: str 
 # Owner explicit decision (2026-07-27): worker не должен видеть чувствительные
 # данные фирмы через AI, в отличие от owner-чата, который специально видит
 # весь контекст.
-WORKER_AI_RATE_FILE = os.path.join(DATA_ROOT, 'worker_ai_chat_rate.json')
+# moved to core/paths.py -- WORKER_AI_RATE_FILE
 WORKER_AI_RATE_LIMIT = 15
 
 WORKER_AI_SYSTEM_PROMPT = (
@@ -5814,7 +5916,7 @@ def _find_stage_by_row(object_id: str, row_num: int) -> dict:
     return stage
 
 
-BLOCKER_PHOTO_DIR = os.path.join(DATA_ROOT, 'blocker_photos')
+# moved to core/paths.py -- BLOCKER_PHOTO_DIR
 os.makedirs(BLOCKER_PHOTO_DIR, exist_ok=True)
 
 
@@ -6136,7 +6238,7 @@ def decide_stage_request_endpoint(object_id: str, request_id: str, body: StageRe
 
 
 # ---------- Потребности (10.33) — worker → owner запросы (инструмент/материалы/защита) ----------
-TASKS_FILE = os.path.join(DATA_ROOT, 'tasks.json')
+# moved to core/paths.py -- TASKS_FILE
 def _load_tasks() -> list:
     return _safe_load_json(TASKS_FILE, [])
 
@@ -6292,7 +6394,7 @@ def update_task_status(task_id: str, body: TaskStatusBody, user: dict = Depends(
 # вызовы ml.xxx() ниже по файлу не меняются.
 ml = _load_repo_mangel_lib()
 
-MANGEL_PHOTO_DIR = os.path.join(DATA_ROOT, 'feed_photos')  # переиспользуем feed_photos/
+# moved to core/paths.py -- MANGEL_PHOTO_DIR
 
 
 class MangelStatusBody(BaseModel):
@@ -6475,8 +6577,8 @@ def get_mangel_comments(ticket_id: str, user: dict = Depends(get_current_user), 
 
 
 # ---------- Фотоотчёт старт/финиш смены — Фаза 4a ----------
-CHECKIN_PHOTO_BASE = os.path.join(DATA_ROOT, 'checkin_photos')
-CHECKIN_META_FILE = os.path.join(DATA_ROOT, 'checkin_meta.json')
+# moved to core/paths.py -- CHECKIN_PHOTO_BASE
+# moved to core/paths.py -- CHECKIN_META_FILE
 CHECKIN_MAX_BYTES = 8 * 1024 * 1024
 _checkin_lock = __import__('threading').Lock()
 
@@ -7595,8 +7697,8 @@ def analyze_checkin_defects(session_id: str, user: dict = Depends(get_current_us
 
 
 # ---------- Critical Alerts — persisted, с deadline/comment/photo (Фаза 10.16) ----------
-CRITICAL_ALERTS_FILE = os.path.join(DATA_ROOT, 'critical_alerts.json')
-CRITICAL_ALERT_PHOTO_DIR = os.path.join(DATA_ROOT, 'critical_alert_photos')
+# moved to core/paths.py -- CRITICAL_ALERTS_FILE
+# moved to core/paths.py -- CRITICAL_ALERT_PHOTO_DIR
 os.makedirs(CRITICAL_ALERT_PHOTO_DIR, exist_ok=True)
 
 
@@ -7802,7 +7904,7 @@ def create_critical_alert_endpoint(body: CriticalAlertCreateBody, user: dict = D
 
 
 # ---------- Abwesenheit — Фаза 5 (календарь отсутствий работников) ----------
-ABWESENHEIT_FILE = os.path.join(DATA_ROOT, 'abwesenheit.json')
+# moved to core/paths.py -- ABWESENHEIT_FILE
 ABWESENHEIT_REASONS = ('Krankheit', 'Urlaub', 'Sonstiges')
 
 

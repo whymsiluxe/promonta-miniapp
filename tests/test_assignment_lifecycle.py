@@ -551,11 +551,19 @@ class CandidatesPrivacyTests(unittest.TestCase):
 
 class ProductionPackageImportTests(unittest.TestCase):
     """Production запускается как `uvicorn miniapp.main:app` с
-    WorkingDirectory=/home/promonta/agent -- package-import сценарий (namespace
-    package, нет __init__.py), sys.path[0] = родительская директория пакета, НЕ
-    директория main.py. Top-level `import main` (как во всех остальных тестах этого
-    файла) не ловит эту разницу вообще -- собираем временный пакет и импортируем
-    как package member, ровно как это делает uvicorn в проде."""
+    WorkingDirectory=/home/promonta/agent -- package-import сценарий,
+    sys.path[0] = родительская директория пакета, НЕ директория main.py.
+    Top-level `import main` (как во всех остальных тестах этого файла) не ловит
+    эту разницу вообще -- собираем временный пакет и импортируем как package
+    member, ровно как это делает uvicorn в проде.
+
+    10.09: backend/__init__.py делает `miniapp` РЕАЛЬНЫМ Python-пакетом, не
+    implicit namespace package -- Phase A extraction (core/time.py, core/paths.py)
+    обнажила ненадёжность relative-import резолюции вложенных submodule'ей
+    (from .core.X import Y) именно в namespace-package режиме: воспроизводимо
+    падало в некоторых temp-directory сценариях, не воспроизводилось в реальной
+    prod-структуре -- сама неоднозначность была источником риска, не конкретный
+    баг в перенесённом коде. __init__.py убирает эту неоднозначность архитектурно."""
 
     def test_main_importable_as_package_member(self):
         import shutil
@@ -590,6 +598,76 @@ class ProductionPackageImportTests(unittest.TestCase):
         self.assertIn('miniapp.work_types', result.stdout)
         self.assertIn('miniapp.profile_skills', result.stdout)
         self.assertIn('miniapp.assignment_matching', result.stdout)
+
+    def test_production_layout_resolves_module_identities_correctly(self):
+        """Rigorous production-layout check (owner spec, 10.09): build the exact
+        real directory shape -- agent/miniapp/__init__.py, main.py, core/__init__.py,
+        core/time.py -- cwd at agent/, sys.path=[agent/, ...], import miniapp.main.
+        Asserts real package identity, not just "did it not crash":
+        - miniapp.__file__ points at __init__.py (proves it's a real package, not
+          a namespace package)
+        - miniapp.__path__ is exactly the one expected runtime directory
+        - business_now.__module__ == 'miniapp.core.time' (proves the relative
+          import inside main.py resolved through the miniapp package, not some
+          other path)
+        - dpl.__name__ == 'miniapp.daily_plan_lib'
+        - route count unchanged
+        """
+        import shutil
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            agent_dir = os.path.join(tmp, 'agent')
+            pkg_dir = os.path.join(agent_dir, 'miniapp')
+            os.makedirs(pkg_dir)
+            backend_dir = os.path.join(os.path.dirname(__file__), '..', 'backend')
+            for fname in os.listdir(backend_dir):
+                src = os.path.join(backend_dir, fname)
+                if fname.endswith('.py'):
+                    shutil.copy(src, pkg_dir)
+                elif os.path.isdir(src) and fname == 'core':
+                    shutil.copytree(src, os.path.join(pkg_dir, fname))
+
+            self.assertTrue(os.path.isfile(os.path.join(pkg_dir, '__init__.py')),
+                "backend/__init__.py must exist and be copied -- miniapp must be "
+                "a real package, not an implicit namespace package")
+
+            script = (
+                "import sys, os; sys.path.insert(0, '.'); import miniapp.main as m; "
+                "print('ROUTES', len(m.app.routes)); "
+                "print('MINIAPP_FILE', miniapp.__file__ if False else __import__('miniapp').__file__); "
+                "print('MINIAPP_PATH', list(__import__('miniapp').__path__)); "
+                "print('BUSINESS_NOW_MODULE', m.business_now.__module__); "
+                "print('DPL_NAME', m.dpl.__name__)"
+            )
+            env = dict(os.environ)
+            env['BOT_TOKEN'] = 'test-dummy'
+            env['MINIAPP_DATA_ROOT'] = tempfile.mkdtemp()
+            result = subprocess.run(
+                [sys.executable, '-c', script], cwd=agent_dir, env=env,
+                capture_output=True, text=True, timeout=30,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        out = result.stdout
+
+        self.assertIn('ROUTES 176', out, out)
+
+        self.assertIn('MINIAPP_FILE', out)
+        miniapp_file_line = next(l for l in out.splitlines() if l.startswith('MINIAPP_FILE'))
+        self.assertTrue(miniapp_file_line.endswith('__init__.py'),
+            f"miniapp.__file__ must point at __init__.py (real package), got: {miniapp_file_line}")
+
+        self.assertIn('MINIAPP_PATH', out)
+        path_line = next(l for l in out.splitlines() if l.startswith('MINIAPP_PATH'))
+        self.assertIn(pkg_dir, path_line,
+            f"miniapp.__path__ must be exactly the runtime dir, got: {path_line}")
+        # A real package's __path__ is a plain list with exactly one entry --
+        # not a duplicated/ambiguous _NamespacePath.
+        self.assertEqual(path_line.count(pkg_dir), 1,
+            f"miniapp.__path__ must contain the runtime dir exactly once, got: {path_line}")
+
+        self.assertIn('BUSINESS_NOW_MODULE miniapp.core.time', out, out)
+        self.assertIn('DPL_NAME miniapp.daily_plan_lib', out, out)
 
 
 # ---------- Deploy/rollback coverage for new modules (доп.раунд П1) ----------

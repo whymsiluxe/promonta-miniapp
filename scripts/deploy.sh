@@ -209,6 +209,11 @@ echo "== 10/14 Копирование backend в serving-путь =="
 # ВАЖНО: tools_lib.py/mangel_lib.py/objekte_lib.py/roadmap_lib.py обязаны лежать РЯДОМ
 # с main.py -- изолированный importlib-loader (_load_repo_*_lib в main.py) резолвит их
 # по BACKEND_DIR = os.path.dirname(main.py), не по глобальному sys.path.
+# 10.09: backend/__init__.py делает serving-директорию РЕАЛЬНЫМ Python-пакетом
+# `miniapp`, а не implicit namespace package -- production запускает
+# `uvicorn miniapp.main:app`, и relative-импорты внутри main.py (from .core.time
+# import ...) должны резолвиться однозначно, без namespace-package edge cases.
+cp "$REPO_DIR/backend/__init__.py" "${BACKEND_SERVING_DIR}/__init__.py"
 cp "$REPO_DIR/backend/main.py" "${BACKEND_SERVING_DIR}/main.py"
 cp "$REPO_DIR/backend/tools_lib.py" "${BACKEND_SERVING_DIR}/tools_lib.py"
 cp "$REPO_DIR/backend/mangel_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py"
