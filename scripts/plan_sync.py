@@ -332,6 +332,26 @@ def _process_daily_plan_rows(rows: list[dict], state: dict) -> int:
                     log.warning("Could not publish DailyPlan %s (status=%s): %s",
                                 existing["id"], existing.get("status"), e)
 
+    # Item 6: reconciliation — a sync-managed plan whose Sheet row disappeared
+    # this run must not be left dangling as an active candidate. Only plans this
+    # sync run has previously created/updated (sheets_source_row set) are in scope;
+    # manually-created plans (no sheets_source_row) are never touched here.
+    store_snapshot = dpl.get_store_snapshot()
+    for plan in store_snapshot["daily_plans"].values():
+        src_row = plan.get("sheets_source_row")
+        if not src_row or src_row in seen_plan_ids:
+            continue
+        if plan["status"] in ("cancelled",) or plan.get("source_deleted"):
+            continue
+        try:
+            dpl.mark_plan_source_deleted(plan["id"])
+            log.info("DailyPlan %s: Sheet row %r disappeared — marked %s",
+                      plan["id"], src_row,
+                      "source_deleted" if plan.get("status") != "draft" else "cancelled")
+            changed += 1
+        except Exception as e:
+            log.error("Failed to reconcile removed row for DailyPlan %s: %s", plan["id"], e)
+
     return changed
 
 

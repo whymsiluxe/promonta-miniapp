@@ -751,6 +751,29 @@ def get_plan_by_sheets_source_row(sheets_source_row: str) -> dict | None:
     )
 
 
+def mark_plan_source_deleted(plan_id: str) -> dict | None:
+    """Sheet row for this plan disappeared (item 6). Never-accepted plans are
+    cancelled outright; accepted/started/executed plans are flagged source_deleted
+    so history/snapshot/execution/carryover records survive, but the plan stops
+    appearing as an active candidate for workers or Owner Today."""
+    with _store_lock, _store_flock():
+        store = _load_store()
+        plan = store["daily_plans"].get(plan_id)
+        if not plan:
+            return None
+
+        has_acceptance = any(
+            a["daily_plan_id"] == plan_id
+            for a in store["acceptances"].values()
+        )
+        if has_acceptance:
+            plan["source_deleted"] = True
+        else:
+            plan["status"] = "cancelled"
+        _save_store(store)
+        return plan
+
+
 def get_today_plan_for_worker(worker_id: str, date_str: str) -> dict | None:
     """Возвращает первый план работника на эту дату (по порядку: published/accepted/
     amendment_pending в приоритете над draft)."""
@@ -759,6 +782,7 @@ def get_today_plan_for_worker(worker_id: str, date_str: str) -> dict | None:
     candidates = [
         p for p in store["daily_plans"].values()
         if p["date"] == date_str and wid in [str(w) for w in p["assigned_worker_ids"]]
+        and p["status"] not in ("cancelled",) and not p.get("source_deleted")
     ]
     # in_progress: shared plan status set by apply_daily_execution() once at least
     # one assigned worker has finished -- an unaccepted worker's plan is still just
@@ -798,9 +822,14 @@ def get_carryovers_for_worker(worker_id: str, target_date_str: str) -> list:
 
 
 def get_pending_plans_for_owner_today(date_str: str) -> list:
-    """Все планы на эту дату для Контроль дня — используется в owner/today endpoint."""
+    """Все активные планы на эту дату для Контроль дня — используется в owner/today
+    endpoint. Cancelled/source_deleted исключены (item 6) — они остаются в store
+    для истории, но не должны появляться как активная строка."""
     store = _load_store()
-    return [p for p in store["daily_plans"].values() if p["date"] == date_str]
+    return [
+        p for p in store["daily_plans"].values()
+        if p["date"] == date_str and p["status"] not in ("cancelled",) and not p.get("source_deleted")
+    ]
 
 
 def get_worker_productivity(worker_id: str) -> dict | None:
