@@ -7941,8 +7941,9 @@ def daily_plan_accept(
     plan = dpl.get_plan(plan_id)
     if not plan:
         raise HTTPException(404, "План не найден")
-    if plan["status"] not in ("published", "amendment_pending"):
-        raise HTTPException(400, f"План в статусе {plan['status']!r} нельзя принять")
+    # Статус-гейт живёт в dpl.accept_plan() (включая 'accepted' для multi-worker
+    # планов, где один работник уже принял) -- не дублировать его здесь со
+    # старым списком статусов, которые расходятся с библиотекой.
 
     try:
         acceptance = dpl.accept_plan(plan_id, plan["version"], str(user['id']))

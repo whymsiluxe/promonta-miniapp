@@ -162,7 +162,10 @@ function _shouldShowPlanScreen(data) {
   if (!data || !data.has_plan || !data.plan) return false;
   const status = data.plan.status;
   const accepted = !!data.acceptance;
-  return (status === 'published' || status === 'amendment_pending') && !accepted;
+  // 'accepted' included: on a multi-worker plan another worker may have already
+  // accepted (plan status flips to 'accepted' on first acceptance), but THIS
+  // worker's own acceptance (data.acceptance) is what actually gates the screen.
+  return (status === 'published' || status === 'amendment_pending' || status === 'accepted') && !accepted;
 }
 
 function _startTodayPlanPolling() {

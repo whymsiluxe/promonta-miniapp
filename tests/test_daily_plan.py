@@ -373,6 +373,28 @@ class DailyPlanRouteTests(unittest.TestCase):
             plan_id=plan['id'], user={'id': 555}, role='worker')
         self.assertEqual(result['status'], 'accepted')
 
+    def test_second_worker_can_accept_after_first_worker_accepted(self):
+        # P0 regression (09.09.2026): dpl.accept_plan() allows status 'accepted' for
+        # a second assigned worker, but the HTTP endpoint had its own stricter
+        # pre-check (only 'published'/'amendment_pending') that rejected the second
+        # worker's request with a 400 before the library code ever ran.
+        body = self.backend.DailyPlanIn(
+            object_id='OBJ-MULTI-ACCEPT', stage_key='OBJ-MULTI-ACCEPT-S1',
+            date='2026-09-10', assigned_worker_ids=['555', '556'],
+            items=[self.backend.DailyPlanItemIn(id='ma1', sequence=1, title='T')],
+            publish=True,
+        )
+        plan = self.backend.daily_plan_create(body=body, user={'id': 1})
+
+        first = self.backend.daily_plan_accept(
+            plan_id=plan['id'], user={'id': 555}, role='worker')
+        self.assertEqual(first['status'], 'accepted')
+
+        # Must NOT raise HTTPException(400) -- this is the exact bug scenario.
+        second = self.backend.daily_plan_accept(
+            plan_id=plan['id'], user={'id': 556}, role='worker')
+        self.assertEqual(second['status'], 'accepted')
+
     def test_owner_cannot_accept_as_worker(self):
         body = self.backend.DailyPlanIn(
             object_id='OBJ-OWNR', stage_key='OBJ-OWNR-S1',
