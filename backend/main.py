@@ -234,6 +234,54 @@ except ImportError:
         MANGEL_PHOTO_DIR,
         ABWESENHEIT_FILE,
     )
+
+# Phase A step 3: numeric limits/TTLs moved to backend/core/limits.py.
+try:
+    from .core.limits import (
+        ONLINE_THRESHOLD_SECONDS,
+        CHECKIN_MAX_BYTES,
+        PHOTO_MAX_FILES,
+        INIT_DATA_MAX_AGE,
+        ALERT_DISMISS_TTL,
+        PHOTO_MAX_COUNT,
+        AI_UPLOAD_MAX_BYTES,
+        PHOTO_MAX_BYTES,
+        SHEETS_CACHE_TTL,
+        SESSION_TOKEN_MAX_AGE,
+        NOTIFIED_USERS_TTL,
+        OBJECT_PHOTO_MAX,
+        AI_RATE_WINDOW,
+        WORKER_AI_RATE_LIMIT,
+        AVATAR_MAX_BYTES,
+        TRANSCRIBE_MAX_BYTES,
+        CHAT_RETENTION_SECONDS,
+        _IDEMPOTENCY_TTL,
+        CHAT_MAX,
+        AI_RATE_LIMIT,
+    )
+except ImportError:
+    from core.limits import (  # noqa: E402
+        ONLINE_THRESHOLD_SECONDS,
+        CHECKIN_MAX_BYTES,
+        PHOTO_MAX_FILES,
+        INIT_DATA_MAX_AGE,
+        ALERT_DISMISS_TTL,
+        PHOTO_MAX_COUNT,
+        AI_UPLOAD_MAX_BYTES,
+        PHOTO_MAX_BYTES,
+        SHEETS_CACHE_TTL,
+        SESSION_TOKEN_MAX_AGE,
+        NOTIFIED_USERS_TTL,
+        OBJECT_PHOTO_MAX,
+        AI_RATE_WINDOW,
+        WORKER_AI_RATE_LIMIT,
+        AVATAR_MAX_BYTES,
+        TRANSCRIBE_MAX_BYTES,
+        CHAT_RETENTION_SECONDS,
+        _IDEMPOTENCY_TTL,
+        CHAT_MAX,
+        AI_RATE_LIMIT,
+    )
 # moved to core/paths.py -- ROLES_FILE
 
 # DailyPlan store — производственный контроль (Round 1)
@@ -252,7 +300,7 @@ _finish_outbox_lock = __import__('threading').Lock()
 # moved to core/paths.py -- CONTRACT_INGEST_STATE_FILE
 _CONTRACT_INGEST_LOCK = __import__('threading').Lock()
 CONTRACTS_DRIVE_FOLDER_ID = os.environ.get('CONTRACTS_DRIVE_FOLDER_ID', '')
-INIT_DATA_MAX_AGE = 3600  # секунд — Telegram initData считается протухшим через час
+# moved to core/limits.py -- INIT_DATA_MAX_AGE
 
 # 31.07 (Release-аудит П4): для этих сторов corrupt JSON НЕ должен молча деградировать
 # к default -- следующий же write через _atomic_write_json/update_json_transaction
@@ -451,7 +499,7 @@ def validate_init_data(init_data: str) -> dict:
 # срок жизни. Whitelist/роль НЕ кэшируются в токене (token несёт только user_id + exp) --
 # каждый запрос по-прежнему смотрит актуальный roles.json, так что revoke долступа
 # работает мгновенно даже с валидным токеном.
-SESSION_TOKEN_MAX_AGE = 12 * 3600  # 12 часов
+# moved to core/limits.py -- SESSION_TOKEN_MAX_AGE
 
 
 def _session_secret() -> bytes:
@@ -686,7 +734,7 @@ def _save_roles(roles: dict):
 
 
 # moved to core/paths.py -- NOTIFIED_USERS_FILE
-NOTIFIED_USERS_TTL = 7 * 86400  # 7 дней — потом можно напомнить owner'у снова (10.29)
+# moved to core/limits.py -- NOTIFIED_USERS_TTL
 
 
 def _load_notified_users() -> dict:
@@ -729,7 +777,7 @@ def _notify_owner_new_user(user: dict, roles: dict):
 # сети" до первого запроса после рестарта) — приемлемо для присутствия-индикатора,
 # не для чего-то critical.
 _last_seen: dict = {}
-ONLINE_THRESHOLD_SECONDS = 5 * 60
+# moved to core/limits.py -- ONLINE_THRESHOLD_SECONDS
 
 
 def get_current_user(
@@ -1478,7 +1526,7 @@ def verify_worker_skill(user_id: str, skill_id: str, body: SkillVerificationBody
 
 # ---------- Фаза 8: аватар + агрегированная статистика профиля ----------
 # moved to core/paths.py -- AVATAR_DIR
-AVATAR_MAX_BYTES = 4 * 1024 * 1024
+# moved to core/limits.py -- AVATAR_MAX_BYTES
 os.makedirs(AVATAR_DIR, exist_ok=True)
 
 
@@ -1888,7 +1936,7 @@ def _save_object_images(images: dict):
     _atomic_write_json(OBJECT_IMAGES_FILE, images)
 
 
-OBJECT_PHOTO_MAX = 8  # разумный потолок для carousel, не безлимит
+# moved to core/limits.py -- OBJECT_PHOTO_MAX
 
 
 @app.post("/api/objects/{object_id}/image")
@@ -1969,7 +2017,7 @@ def get_object_image_file(object_id: str, index: int = 0, user: dict = Depends(g
 
 
 _sheets_cache: dict = {}
-SHEETS_CACHE_TTL = 45  # секунд — list_objects/get_alerts дёргались синхронно на Google Sheets
+# moved to core/limits.py -- SHEETS_CACHE_TTL
                         # на каждый запрос, блокируя event loop на время RTT (10.29, Fable-аудит)
 
 
@@ -3016,7 +3064,7 @@ def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_r
 
 
 # moved to core/paths.py -- ALERT_DISMISSALS_FILE
-ALERT_DISMISS_TTL = 24 * 3600
+# moved to core/limits.py -- ALERT_DISMISS_TTL
 
 
 def _load_alert_dismissals() -> dict:
@@ -3937,8 +3985,8 @@ def get_feed_unread(user: dict = Depends(get_current_user)):
 # все видят общей лентой (без ролевых ограничений — как командный чат).
 # moved to core/paths.py -- PHOTO_DIR
 # moved to core/paths.py -- PHOTO_META_FILE
-PHOTO_MAX_BYTES = 8 * 1024 * 1024  # 8 МБ
-PHOTO_MAX_COUNT = 300  # старые фото (и файлы) обрезаются сверху этого лимита
+# moved to core/limits.py -- PHOTO_MAX_BYTES
+# moved to core/limits.py -- PHOTO_MAX_COUNT
 _photo_lock = __import__('threading').Lock()
 
 os.makedirs(PHOTO_DIR, exist_ok=True)
@@ -4031,7 +4079,7 @@ def list_feed_photos(user: dict = Depends(get_current_user)):
     return {"photos": photos}
 
 
-PHOTO_MAX_FILES = 10  # разумный потолок на пост, не архитектурное ограничение
+# moved to core/limits.py -- PHOTO_MAX_FILES
 
 
 @app.post("/api/feed/photos")
@@ -4332,7 +4380,7 @@ def get_feed_photo_file(photo_id: str, index: int = 0, user: dict = Depends(get_
 # Инстанс один, файл достаточен — без WebSocket и БД для простоты.
 # moved to core/paths.py -- CHAT_FILE
 # moved to core/paths.py -- CHAT_ARCHIVE_FILE
-CHAT_MAX = 200
+# moved to core/limits.py -- CHAT_MAX
 _chat_lock = __import__('threading').Lock()
 
 
@@ -4367,7 +4415,7 @@ def _save_chat(messages: list):
     _atomic_write_json(CHAT_FILE, messages)
 
 
-CHAT_RETENTION_SECONDS = 7 * 24 * 3600  # 7 дней — сообщения старше удаляются автоматически
+# moved to core/limits.py -- CHAT_RETENTION_SECONDS
 
 
 def _purge_old_chat(messages: list) -> list:
@@ -4878,7 +4926,7 @@ def _transcribe_voice(path: str) -> str:
     return ' '.join(s.text.strip() for s in segments).strip()
 
 
-TRANSCRIBE_MAX_BYTES = 8 * 1024 * 1024
+# moved to core/limits.py -- TRANSCRIBE_MAX_BYTES
 # moved to core/paths.py -- TRANSCRIBE_AUDIO_DIR
 os.makedirs(TRANSCRIBE_AUDIO_DIR, exist_ok=True)
 
@@ -5376,8 +5424,8 @@ def get_chat_thread_status(with_: str = '', user: dict = Depends(get_current_use
 # GLM — бесплатный, экономит лимиты (z.ai). Sonnet/Opus — через claude CLI по OAuth-подписке владельца.
 # Доступ только для owner, rate limit 20 запросов/час.
 # moved to core/paths.py -- AI_RATE_FILE
-AI_RATE_LIMIT = 20
-AI_RATE_WINDOW = 3600
+# moved to core/limits.py -- AI_RATE_LIMIT
+# moved to core/limits.py -- AI_RATE_WINDOW
 
 # moved to core/paths.py -- AI_MODEL_FILE
 AI_MODELS = ('glm', 'sonnet', 'opus')
@@ -5620,7 +5668,7 @@ def ai_chat(body: AiChatBody, user: dict = Depends(get_current_user), role: str 
 # данные фирмы через AI, в отличие от owner-чата, который специально видит
 # весь контекст.
 # moved to core/paths.py -- WORKER_AI_RATE_FILE
-WORKER_AI_RATE_LIMIT = 15
+# moved to core/limits.py -- WORKER_AI_RATE_LIMIT
 
 WORKER_AI_SYSTEM_PROMPT = (
     "Ты помощник для строителей. Отвечай только на общие вопросы о строительных "
@@ -5675,7 +5723,7 @@ def set_ai_model(body: AiModelBody, user: dict = Depends(get_current_user), role
     return {"model": body.model}
 
 
-AI_UPLOAD_MAX_BYTES = 8 * 1024 * 1024  # 8 МБ
+# moved to core/limits.py -- AI_UPLOAD_MAX_BYTES
 
 
 @app.post("/api/ai-chat/upload")
@@ -6579,7 +6627,7 @@ def get_mangel_comments(ticket_id: str, user: dict = Depends(get_current_user), 
 # ---------- Фотоотчёт старт/финиш смены — Фаза 4a ----------
 # moved to core/paths.py -- CHECKIN_PHOTO_BASE
 # moved to core/paths.py -- CHECKIN_META_FILE
-CHECKIN_MAX_BYTES = 8 * 1024 * 1024
+# moved to core/limits.py -- CHECKIN_MAX_BYTES
 _checkin_lock = __import__('threading').Lock()
 
 # 10.40: idempotency-key для checkin start/finish — при плохой связи на объекте
@@ -6587,7 +6635,7 @@ _checkin_lock = __import__('threading').Lock()
 # создаёт дубль сессии, либо возвращает пугающую 409/400 ошибку на успешное действие.
 # Кэш в памяти (не переживает restart) — приемлемо, ключ живёт секунды/минуты, не дни.
 _idempotency_cache = {}  # key -> (timestamp, response_dict)
-_IDEMPOTENCY_TTL = 600  # 10 минут
+# moved to core/limits.py -- _IDEMPOTENCY_TTL
 
 
 def _idempotency_get(key: str):
