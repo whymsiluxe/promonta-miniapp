@@ -12,11 +12,14 @@
 # полная atomic-symlink-гарантия, но закрывает главный риск: backend/frontend/VERSION
 # от РАЗНЫХ SHA после упавшего деплоя.
 #
-# Запуск: на VPS, из корня репозитория (/home/promonta/agent/miniapp-repo):
-#   sudo scripts/deploy.sh
-# (sudo нужен для записи в /var/www/miniapp/, владелец root; без sudo backend-
-# часть всё равно задеплоится, если пользователь promonta имеет права на
-# /home/promonta/agent/miniapp/, но frontend-шаг откажет.)
+# Запуск: на VPS, из корня репозитория (/home/promonta/agent/miniapp-repo), как
+# пользователь promonta -- НЕ через sudo/root:
+#   bash scripts/deploy.sh
+# (10.09, deploy permissions fix: /var/www/miniapp -- root:webdeploy 2775 setgid,
+# promonta -- член группы webdeploy, пишет туда напрямую без sudo. До этой правки
+# скрипт требовал root целиком из-за frontend-шага; тот узкий сценарий больше не
+# нужен -- не запускать через sudo по старой памяти, это лишний root-доступ без
+# необходимости.)
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -247,7 +250,11 @@ rsync -av --delete \
 # версии, деплой -- единственное место, где появляется версия).
 sed -i -E "s#(src=\"js/[^\"]+)\"#\1?v=${CURRENT_SHA}\"#g; s#(href=\"css/[^\"]+)\"#\1?v=${CURRENT_SHA}\"#g" \
   "${FRONTEND_SERVING_DIR}/app.html"
-chown -R root:root "$FRONTEND_SERVING_DIR" 2>/dev/null || echo "предупреждение: chown пропущен (не root) -- проверь права вручную"
+# 10.09 (deploy permissions fix): /var/www/miniapp is now root:webdeploy 2775
+# (setgid) -- promonta is a webdeploy group member and can write here directly,
+# no root/sudo needed for this step any more. New files inherit the webdeploy
+# group automatically via setgid; no chown required after rsync.
+echo "OK (group-writable via webdeploy, no chown needed)"
 echo "OK"
 
 echo "== 12/14 Restart backend =="
