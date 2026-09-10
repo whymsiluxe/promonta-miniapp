@@ -322,6 +322,43 @@ class TestRound11StatusFieldTransitions(unittest.TestCase):
             "Status-field edits must never cancel an accepted plan")
 
 
+# ── Round 1.2 #1: amendment UI renders field_changes, not just item diffs ────
+
+class TestRound12FieldChangesRendered(unittest.TestCase):
+    """today-plan.js must render diff.field_changes (object/date/worker/stage
+    changes from update_plan_fields) with human labels, not fall through to
+    'Нет деталей изменений'."""
+
+    def test_field_change_rendering_function_exists_and_used(self):
+        with open(os.path.join(os.path.dirname(__file__), "..", "frontend", "js", "today-plan.js")) as f:
+            js = f.read()
+        self.assertIn("_renderFieldChangesHtml", js,
+            "today-plan.js must have a field_changes renderer, not only diff.changed/added/removed")
+        self.assertIn("field_changes", js,
+            "the renderer must actually read diff.field_changes from the amendment")
+        for label in ("ОБЪЕКТ", "ДАТА", "РАБОТНИКИ", "ЭТАП"):
+            self.assertIn(label, js,
+                f"field_changes renderer must have a Russian label for '{label}'")
+
+    def test_field_change_resolver_wired_into_screen_render(self):
+        with open(os.path.join(os.path.dirname(__file__), "..", "frontend", "js", "today-plan.js")) as f:
+            js = f.read()
+        self.assertIn("_resolveAmendmentFieldNames", js,
+            "raw object_id/worker_id values in field_changes must be resolved to real names")
+        # Both screen-render call sites (initial open + amendment-ack re-render)
+        # must be immediately followed by a resolver call within a few lines.
+        render_call_sites = [
+            "screen.innerHTML = _renderScreenHTML(data, mandatory);",
+            "screen.innerHTML = _renderScreenHTML(freshData, mandatory);",
+        ]
+        for site in render_call_sites:
+            idx = js.find(site)
+            self.assertNotEqual(idx, -1, f"expected render call site not found: {site!r}")
+            nearby = js[idx:idx + 300]
+            self.assertIn("_resolveAmendmentFieldNames(", nearby,
+                f"resolver must be called shortly after this render site: {site!r}")
+
+
 # ── Round 1.1 #2+#3: update_plan_fields versioning + object_id ───────────────
 
 class TestRound11UpdatePlanFieldsVersioning(unittest.TestCase):

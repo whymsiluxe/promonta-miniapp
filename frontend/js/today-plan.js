@@ -208,6 +208,7 @@ function _openTodayPlanScreen(data, { mandatory = true } = {}) {
     _planScreenOpen = true;
     screen.innerHTML = _renderScreenHTML(data, mandatory);
     screen.style.display = 'flex';
+    _resolveAmendmentFieldNames(screen);
 
     const plan = data.plan;
     const accepted = !!data.acceptance;
@@ -237,6 +238,7 @@ function _openTodayPlanScreen(data, { mandatory = true } = {}) {
           if ((freshData.pending_amendments || []).length > 0) {
             // More amendments for this worker — re-render the screen
             screen.innerHTML = _renderScreenHTML(freshData, mandatory);
+            _resolveAmendmentFieldNames(screen);
           } else {
             _closeTodayPlanScreen();
             resolve();
@@ -378,12 +380,19 @@ function _renderScreenHTML(data, mandatory) {
       const added = diff.added || [];
       const removed = diff.removed || [];
       const changed = diff.changed || [];
+      const fieldChanges = diff.field_changes || {};
       let diffLines = '';
       if (changed.length) diffLines += `<div class="tp-diff-section"><div class="tp-diff-label">БЫЛО → СТАЛО</div>${changed.map(c => `<div class="tp-diff-row tp-diff-changed"><span class="tp-diff-old">${esc(c.old && c.old.title || JSON.stringify(c.old))}</span><span class="tp-diff-arrow">→</span><span class="tp-diff-new">${esc(c.new && c.new.title || JSON.stringify(c.new))}</span></div>`).join('')}</div>`;
       if (added.length)   diffLines += `<div class="tp-diff-section"><div class="tp-diff-label">ДОБАВЛЕНО</div>${added.map(i => `<div class="tp-diff-row tp-diff-added">+ ${esc(i.title || JSON.stringify(i))}</div>`).join('')}</div>`;
       if (removed.length) diffLines += `<div class="tp-diff-section"><div class="tp-diff-label">УДАЛЕНО</div>${removed.map(i => `<div class="tp-diff-row tp-diff-removed">− ${esc(i.title || JSON.stringify(i))}</div>`).join('')}</div>`;
+      // Round 1.2 #1: field_changes (object_id/date/assigned_worker_ids/stage_key)
+      // -- IDs shown first, resolved to real names async by _resolveAmendmentFieldNames()
+      // right after render (same pattern as _resolveBarObjectName for the plan bar).
+      diffLines += _renderFieldChangesHtml(fieldChanges);
       if (!diffLines) diffLines = '<div class="tp-diff-row">Нет деталей изменений</div>';
-      return `<div class="tp-amendment-block" data-amendment-id="${esc(amend.id)}"><div class="tp-amend-title">Изменение плана</div>${diffLines}</div>`;
+      return `<div class="tp-amendment-block" data-amendment-id="${esc(amend.id)}">
+        <div class="tp-amend-title">Изменение плана</div>${diffLines}
+      </div>`;
     }).join('');
   }
 
@@ -585,6 +594,81 @@ function _updateTodayPlanBar(data) {
   // Tap on bar info or button → open plan card
   bar.querySelector('#tp-bar-tap-zone')?.addEventListener('click', _openPlanCard);
   bar.querySelector('#tp-bar-open-btn')?.addEventListener('click', _openPlanCard);
+}
+
+// Round 1.2 #1: human-readable labels for update_plan_fields()-generated
+// amendments (object/date/worker/stage changes, distinct from item add/remove/
+// change diffs which were already rendered). IDs are shown immediately; real
+// names are resolved async and swapped in via data-amend-field markers, same
+// two-step pattern as _resolveBarObjectName below.
+const FIELD_CHANGE_LABELS = {
+  object_id: 'ОБЪЕКТ',
+  date: 'ДАТА',
+  assigned_worker_ids: 'РАБОТНИКИ',
+  stage_key: 'ЭТАП',
+};
+
+function _renderFieldChangesHtml(fieldChanges) {
+  const keys = Object.keys(fieldChanges || {}).filter(k => FIELD_CHANGE_LABELS[k]);
+  if (!keys.length) return '';
+  return keys.map(key => {
+    const { old: oldVal, new: newVal } = fieldChanges[key];
+    const oldText = _formatFieldChangeValue(key, oldVal);
+    const newText = _formatFieldChangeValue(key, newVal);
+    return `<div class="tp-diff-section" data-amend-field="${esc(key)}">
+      <div class="tp-diff-label">${FIELD_CHANGE_LABELS[key]}</div>
+      <div class="tp-diff-row tp-diff-changed">
+        <span class="tp-diff-old" data-amend-field-old="${esc(key)}">${esc(oldText)}</span>
+        <span class="tp-diff-arrow">→</span>
+        <span class="tp-diff-new" data-amend-field-new="${esc(key)}">${esc(newText)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function _formatFieldChangeValue(key, value) {
+  if (key === 'date' && value) {
+    try { return fmtDateHuman(value); } catch (_) { return value; }
+  }
+  if (key === 'assigned_worker_ids' && Array.isArray(value)) {
+    return value.length ? value.join(', ') : '—';
+  }
+  return value != null && value !== '' ? String(value) : '—';
+}
+
+// Resolves object_id/assigned_worker_ids raw IDs in already-rendered amendment
+// field_changes to real names -- best-effort, IDs stay visible on failure.
+async function _resolveAmendmentFieldNames(screen) {
+  const objectEls = screen.querySelectorAll('[data-amend-field="object_id"] [data-amend-field-old], [data-amend-field="object_id"] [data-amend-field-new]');
+  const workerEls = screen.querySelectorAll('[data-amend-field="assigned_worker_ids"] [data-amend-field-old], [data-amend-field="assigned_worker_ids"] [data-amend-field-new]');
+  if (!objectEls.length && !workerEls.length) return;
+
+  try {
+    if (objectEls.length) {
+      const data = await api('/api/objects');
+      const objects = data.objects || [];
+      objectEls.forEach(el => {
+        const obj = objects.find(o => o['ID объекта'] === el.textContent);
+        if (obj?.['Объект']) el.textContent = obj['Объект'];
+      });
+    }
+  } catch (_) { /* IDs stay visible */ }
+
+  try {
+    if (workerEls.length) {
+      const data = await api('/api/workers');
+      const workers = data.workers || [];
+      workerEls.forEach(el => {
+        const ids = el.textContent.split(',').map(s => s.trim()).filter(Boolean);
+        if (!ids.length) return;
+        const names = ids.map(id => {
+          const w = workers.find(w => String(w.user_id) === id);
+          return w?.name || id;
+        });
+        el.textContent = names.join(', ');
+      });
+    }
+  } catch (_) { /* IDs stay visible */ }
 }
 
 async function _resolveBarObjectName(objectId) {
