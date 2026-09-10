@@ -664,14 +664,21 @@ def require_owner(role: str = Depends(get_role)):
         raise HTTPException(403, "owner only")
 
 
-def business_now():
-    """03.08 (доп.раунд, ТЗ Задача 5): единая точка для ТЕКУЩЕГО момента по бизнес-
-    таймзоне (Europe/Berlin) -- в отличие от datetime.utcnow()/technical timestamps
-    (created_at/updated_at/audit/expiry), которые ОСТАЮТСЯ в UTC намеренно (не
-    business-date). Используется везде, где "сегодня"/"сейчас" должно совпадать с тем,
-    что видит владелец/работник на часах в Chemnitz, не с UTC-датой сервера."""
-    from zoneinfo import ZoneInfo
-    return datetime.now(ZoneInfo('Europe/Berlin'))
+# Phase A: leaf business_now() moved to backend/core/time.py (zero deps).
+# business_today()/business_today_str()/_today_berlin_str() STAY here, calling
+# the module-local `business_now` name -- tests monkeypatch `backend.business_now`
+# via patch.object(backend, 'business_now', ...), and these wrappers must keep
+# resolving that same patched name at call time, not a separate copy baked into
+# core.time's own namespace (which patch.object(backend, ...) would not reach).
+# Same relative-then-absolute fallback as the work_types/profile_skills/etc.
+# import block above (line ~119) -- `from .core.time import` resolves when
+# main.py is imported as `miniapp.main` (package member, production/uvicorn),
+# plain `from core.time import` resolves when main.py is loaded as a top-level
+# module (tests, `uvicorn main:app` from backend_dir).
+try:
+    from .core.time import business_now
+except ImportError:
+    from core.time import business_now  # noqa: E402
 
 
 def business_today():
@@ -687,15 +694,9 @@ def business_today_str() -> str:
 
 
 def _today_berlin_str() -> str:
-    """03.08: единая точка для 'сегодня' по Europe/Berlin -- сервер работает в UTC,
-    прямой date.today()/datetime.now() без таймзоны даёт неверную дату вечером/ночью
-    по местному времени (тот же класс бага, что уже чинили на frontend, см.
-    shared.js todayBerlin()).
-
-    03.08 (доп.раунд): оставлен как тонкая обёртка над business_today_str() --
-    has_active_object_access() уже использовала это имя до появления единого
-    business_*() набора хелперов (ТЗ Задача 5), переименовывать вызывающий код везде
-    не требовалось, раз поведение идентично."""
+    """03.08: тонкая обёртка над business_today_str() -- has_active_object_access()
+    уже использовала это имя до появления единого business_*() набора хелперов,
+    переименовывать вызывающий код везде не требовалось, раз поведение идентично."""
     return business_today_str()
 
 
