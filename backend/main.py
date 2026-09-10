@@ -282,6 +282,59 @@ except ImportError:
         CHAT_MAX,
         AI_RATE_LIMIT,
     )
+
+# Phase A step 4: MIME allowlists/sniffers + simple enum constants moved to
+# backend/core/constants.py.
+try:
+    from .core.constants import (
+        _ALLOWED_IMAGE_MIME_EXT,
+        sniff_image,
+        sniff_image_or_pdf,
+        _ALLOWED_AUDIO_MIME_EXT,
+        _ALLOWED_CHAT_ATTACHMENT_MIME_EXT,
+        sniff_audio,
+        sniff_chat_attachment,
+        _INVISIBLE_FILLER_CHARS,
+        BUDGET_FIELDS,
+        VALID_OBJECT_STATUSES,
+        CHAT_REACTION_OPTIONS,
+        THREAD_TYPE_BY_PREFIX,
+        DEFAULT_THREAD_PREFS,
+        AI_MODELS,
+        AI_MODEL_DEFAULT,
+        _OWNER_AI_ENV_ALLOWLIST,
+        TASK_PRIORITIES,
+        TASK_CATEGORIES,
+        TASK_STATUSES,
+        ABWESENHEIT_REASONS,
+        ABWESENHEIT_PUBLIC_FIELDS,
+        _EMPTY_CONTRACT_STORE,
+    )
+except ImportError:
+    from core.constants import (  # noqa: E402
+        _ALLOWED_IMAGE_MIME_EXT,
+        sniff_image,
+        sniff_image_or_pdf,
+        _ALLOWED_AUDIO_MIME_EXT,
+        _ALLOWED_CHAT_ATTACHMENT_MIME_EXT,
+        sniff_audio,
+        sniff_chat_attachment,
+        _INVISIBLE_FILLER_CHARS,
+        BUDGET_FIELDS,
+        VALID_OBJECT_STATUSES,
+        CHAT_REACTION_OPTIONS,
+        THREAD_TYPE_BY_PREFIX,
+        DEFAULT_THREAD_PREFS,
+        AI_MODELS,
+        AI_MODEL_DEFAULT,
+        _OWNER_AI_ENV_ALLOWLIST,
+        TASK_PRIORITIES,
+        TASK_CATEGORIES,
+        TASK_STATUSES,
+        ABWESENHEIT_REASONS,
+        ABWESENHEIT_PUBLIC_FIELDS,
+        _EMPTY_CONTRACT_STORE,
+    )
 # moved to core/paths.py -- ROLES_FILE
 
 # DailyPlan store — производственный контроль (Round 1)
@@ -649,67 +702,9 @@ def _safe_load_json(path: str, default):
         return default
 
 
-_ALLOWED_IMAGE_MIME_EXT = {
-    'image/jpeg': 'jpg',
-    'image/png': 'png',
-    'image/webp': 'webp',
-    'image/gif': 'gif',
-}
-
-
-def sniff_image(raw: bytes) -> str | None:
-    """Content-Type из клиента (file.content_type) -- заголовок, который клиент
-    присылает сам, ничего не проверяя по факту (spoofable: переименовать .exe в
-    .jpg с Content-Type: image/jpeg проходило раньше без вопросов). Смотрит
-    реальные magic bytes через libmagic, возвращает канонический MIME из
-    allowlist или None, если это не один из 4 разрешённых форматов изображений
-    -- вызывающий код решает как реагировать (обычно HTTPException 400)."""
-    detected = magic.from_buffer(raw, mime=True)
-    return detected if detected in _ALLOWED_IMAGE_MIME_EXT else None
-
-
-def sniff_image_or_pdf(raw: bytes) -> str | None:
-    """Как sniff_image(), плюс PDF -- для endpoints, что принимают либо
-    изображение, либо документ (object documents, AI attachments)."""
-    detected = magic.from_buffer(raw, mime=True)
-    if detected in _ALLOWED_IMAGE_MIME_EXT or detected == 'application/pdf':
-        return detected
-    return None
-
-
-# 30.07 (Release-аудит P0): chat-вложения/голосовые/transcribe раньше принимали
-# ЛЮБОЙ файл без magic-byte проверки (только size limit) -- единственные upload
-# endpoints без sniff_image()/sniff_image_or_pdf(), в отличие от avatar/object-photo/
-# document/feed/mangel/blocker, которые уже так делали. Расширенный allowlist:
-# изображения + PDF (вложение может быть и документом) + аудио (голосовые).
-_ALLOWED_AUDIO_MIME_EXT = {
-    'audio/ogg': 'ogg', 'application/ogg': 'ogg',
-    'audio/webm': 'webm', 'video/webm': 'webm',  # webm audio-only контейнер иногда детектится как video/webm
-    'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a',
-    'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/vnd.wave': 'wav',
-}
-_ALLOWED_CHAT_ATTACHMENT_MIME_EXT = {**_ALLOWED_IMAGE_MIME_EXT, 'application/pdf': 'pdf', **_ALLOWED_AUDIO_MIME_EXT}
-
-
-def sniff_audio(raw: bytes) -> str | None:
-    """Как sniff_image(), но для голосовых -- отдельная функция (не смешиваем
-    allowlist изображений с аудио, вызывающий код явно говорит что ожидает)."""
-    detected = magic.from_buffer(raw, mime=True)
-    return detected if detected in _ALLOWED_AUDIO_MIME_EXT else None
-
-
-def sniff_chat_attachment(raw: bytes) -> tuple[str, str] | None:
-    """Чат принимает и фото, и голосовые, и документы через один и тот же upload
-    endpoint (/api/chat/messages/attachment) -- единая проверка на объединённый
-    allowlist. Возвращает (mime, безопасное_расширение) или None, если формат не
-    разрешён. Расширение ВСЕГДА берётся из этой таблицы (не из имени файла от
-    клиента) -- закрывает как "любой файл проходит", так и path-traversal через
-    непровалидированное имя/расширение (10.07 -- Release-аудит P0)."""
-    detected = magic.from_buffer(raw, mime=True)
-    ext = _ALLOWED_CHAT_ATTACHMENT_MIME_EXT.get(detected)
-    if ext is None:
-        return None
-    return detected, ext
+# moved to core/constants.py -- _ALLOWED_IMAGE_MIME_EXT, sniff_image,
+# sniff_image_or_pdf, _ALLOWED_AUDIO_MIME_EXT, _ALLOWED_CHAT_ATTACHMENT_MIME_EXT,
+# sniff_audio, sniff_chat_attachment
 
 
 def _csv_safe(value) -> str:
@@ -1231,10 +1226,7 @@ def _get_worker_skills_v2(user_id) -> list:
     return skills_v2
 
 
-_INVISIBLE_FILLER_CHARS = (
-    'ᅟᅠㅤﾠ'  # Hangul choseong/jungseong filler + halfwidth filler —
-                                 # популярный трюк для "невидимого" имени в Telegram
-)
+# moved to core/constants.py -- _INVISIBLE_FILLER_CHARS
 
 
 def _gps_suspect(lat: str, lon: str) -> bool:
@@ -2035,7 +2027,7 @@ def _cached_get_used_range(tab_name: str):
 # All known column names for the budget-percent field (live Sheet uses 'потрачено в % от бюджета';
 # objekte_lib historically wrote '% бюджета'; alerts route also fell back to 'Потрачено %').
 # Strip ALL aliases from worker DTOs so a column rename cannot accidentally re-expose the field.
-BUDGET_FIELDS = ['Бюджет (EUR)', 'Потрачено (EUR)', 'потрачено в % от бюджета', '% бюджета', 'Потрачено %']
+# moved to core/constants.py -- BUDGET_FIELDS
 
 
 @app.get("/api/objects")
@@ -3559,7 +3551,7 @@ class StatusBody(BaseModel):
     status: str
 
 
-VALID_OBJECT_STATUSES = {'В работе', 'Пауза', 'Завершён'}
+# moved to core/constants.py -- VALID_OBJECT_STATUSES
 
 
 @app.patch("/api/objects/{object_id}/status")
@@ -4447,7 +4439,7 @@ def _save_chat_thread_meta(meta: dict):
 
 
 # moved to core/paths.py -- CHAT_REACTIONS_FILE
-CHAT_REACTION_OPTIONS = ['👍', '✅', '👀', '❗']
+# moved to core/constants.py -- CHAT_REACTION_OPTIONS
 
 
 def _load_chat_reactions() -> list:
@@ -4613,7 +4605,7 @@ def _message_preview(msg: dict | None) -> str:
     return ''
 
 
-THREAD_TYPE_BY_PREFIX = {'obj:': 'OBJECT', 'mangel:': 'DEFECT', 'task:': 'TASK'}
+# moved to core/constants.py -- THREAD_TYPE_BY_PREFIX
 
 
 @app.get("/api/chat/threads")
@@ -5334,7 +5326,7 @@ def _chat_thread_participants(thread_id: str) -> list:
     return thread_id.split('-')
 
 
-DEFAULT_THREAD_PREFS = {'muted': False, 'pinned': False, 'archived': False}
+# moved to core/constants.py -- DEFAULT_THREAD_PREFS
 
 
 def _thread_user_prefs(meta: dict, thread_id: str, uid: str) -> dict:
@@ -5428,8 +5420,8 @@ def get_chat_thread_status(with_: str = '', user: dict = Depends(get_current_use
 # moved to core/limits.py -- AI_RATE_WINDOW
 
 # moved to core/paths.py -- AI_MODEL_FILE
-AI_MODELS = ('glm', 'sonnet', 'opus')
-AI_MODEL_DEFAULT = 'glm'
+# moved to core/constants.py -- AI_MODELS
+# moved to core/constants.py -- AI_MODEL_DEFAULT
 CLAUDE_BIN = os.environ.get('CLAUDE_BIN', 'claude')
 
 # 03.08 (ТЗ Задача 2, safe freeze): Owner AI (sonnet/opus) запускает `claude` CLI как
@@ -5446,7 +5438,7 @@ OWNER_AI_ENABLED = os.environ.get('OWNER_AI_ENABLED', 'false').strip().lower() i
 # claude CLI работает по уже сохранённому OAuth-токену в HOME, тоже ок). Полный
 # os.environ до этого включал BOT_TOKEN/GLM_KEY/DATA_ROOT/все остальные секреты
 # процесса -- subprocess их не использует и не должен их видеть.
-_OWNER_AI_ENV_ALLOWLIST = ('PATH', 'HOME', 'ANTHROPIC_API_KEY', 'LANG', 'LC_ALL')
+# moved to core/constants.py -- _OWNER_AI_ENV_ALLOWLIST
 
 
 def _owner_ai_subprocess_env() -> dict:
@@ -6295,11 +6287,11 @@ def _save_tasks(items: list):
     _atomic_write_json(TASKS_FILE, items)
 
 
-TASK_PRIORITIES = ('обычная', 'срочно')
+# moved to core/constants.py -- TASK_PRIORITIES
 
 # 27.07 (B7): категория запроса -- material/tool/ppe/access/other, отдельно от
 # priority. Ключи латиницей (стабильный API contract), label для UI -- по месту рендера.
-TASK_CATEGORIES = ('materials', 'tool', 'ppe', 'access', 'other')
+# moved to core/constants.py -- TASK_CATEGORIES
 
 
 class TaskCreateBody(BaseModel):
@@ -6318,7 +6310,7 @@ class TaskStatusBody(BaseModel):
 # ORDERED/DELIVERED/DECLINED/CANCELLED) -- старые значения ('открыто','в работе','закрыто')
 # сохранены как есть для обратной совместимости с уже существующими записями в tasks.json,
 # новые статусы добавлены поверх, не переименовывая старые.
-TASK_STATUSES = ('открыто', 'в работе', 'закрыто', 'принято', 'заказано', 'выдано', 'отклонено')
+# moved to core/constants.py -- TASK_STATUSES
 
 
 @app.get("/api/tasks")
@@ -7953,7 +7945,7 @@ def create_critical_alert_endpoint(body: CriticalAlertCreateBody, user: dict = D
 
 # ---------- Abwesenheit — Фаза 5 (календарь отсутствий работников) ----------
 # moved to core/paths.py -- ABWESENHEIT_FILE
-ABWESENHEIT_REASONS = ('Krankheit', 'Urlaub', 'Sonstiges')
+# moved to core/constants.py -- ABWESENHEIT_REASONS
 
 
 def _load_abwesenheit() -> list:
@@ -8137,7 +8129,7 @@ def list_my_abwesenheit(user: dict = Depends(get_current_user)):
 # 31.07 (доп.раунд, П2): reason убран из публичного набора -- свободная строка,
 # может содержать мед./личные детали не хуже note (изначально П5 прошлого раунда
 # скрыл только note, оставив reason по ошибке).
-ABWESENHEIT_PUBLIC_FIELDS = {'id', 'user_id', 'name', 'date_from', 'date_to', 'open_ended', 'status'}
+# moved to core/constants.py -- ABWESENHEIT_PUBLIC_FIELDS
 
 
 @app.get("/api/abwesenheit/all")
@@ -8812,7 +8804,7 @@ def daily_plan_replan(
 
 # ── Contract ingestion routes (Round 5 — Drive scope gated) ─────────────────
 
-_EMPTY_CONTRACT_STORE = {"contracts": {}}
+# moved to core/constants.py -- _EMPTY_CONTRACT_STORE
 
 
 def _load_contract_store() -> dict:
