@@ -325,6 +325,7 @@ def _process_daily_plan_rows(rows: list[dict], state: dict) -> int:
                     plan_id=existing["id"],
                     worker_ids=fields["worker_ids"],
                     date_str=fields["date"],
+                    object_id=fields["object_id"],
                     stage_key=fields["stage_key"],
                     updated_by="plan_sync",
                 )

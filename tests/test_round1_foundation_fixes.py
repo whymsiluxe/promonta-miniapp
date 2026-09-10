@@ -268,6 +268,68 @@ class TestItem5FieldChangeDetection(unittest.TestCase):
             "worker_ids must be parsed from sheet row so change detection can compare them")
 
 
+# ── Round 1.1 #2+#3: update_plan_fields versioning + object_id ───────────────
+
+class TestRound11UpdatePlanFieldsVersioning(unittest.TestCase):
+    """update_plan_fields must bump plan.version and write a version_record --
+    plan_version_before == plan_version_after (the pre-1.1 bug) breaks history
+    reconstruction. Also verifies object_id is now a detected/updateable field."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="promonta-test-r11v-")
+        os.environ["MINIAPP_DATA_ROOT"] = self._tmp
+        dpl.configure(
+            os.path.join(self._tmp, "daily_plan_store.json"),
+            os.path.join(self._tmp, "plan_sync_state.json"),
+            os.path.join(self._tmp, "work_calendar.json"),
+        )
+
+    def test_field_change_bumps_version_and_writes_version_record(self):
+        plan = dpl.create_plan(
+            object_id="objR11v", stage_key="s1", date_str="2099-06-01",
+            assigned_worker_ids=["w1"], items=[_make_item(0)], created_by="test",
+        )
+        old_version = plan["version"]
+
+        dpl.update_plan_fields(plan_id=plan["id"], worker_ids=["w1", "w2"], updated_by="test")
+
+        updated = dpl.get_plan(plan["id"])
+        self.assertEqual(updated["version"], old_version + 1,
+            "A field-only change must bump plan.version, not leave it unchanged")
+
+        versions = dpl.get_plan_versions(plan["id"])
+        self.assertTrue(any(v["version"] == updated["version"] for v in versions),
+            "A version_record must exist for the new version so history is reconstructable")
+
+    def test_amendment_version_before_after_differ_when_accepted(self):
+        plan = dpl.create_plan(
+            object_id="objR11v2", stage_key="s1", date_str="2099-06-02",
+            assigned_worker_ids=["w1"], items=[_make_item(0)], created_by="test",
+        )
+        dpl.publish_plan(plan["id"], "test")
+        dpl.accept_plan(plan["id"], plan["version"], "w1")
+
+        dpl.update_plan_fields(plan_id=plan["id"], date_str="2099-06-03", updated_by="test")
+
+        pending = dpl.get_pending_amendments(plan["id"])
+        self.assertEqual(len(pending), 1)
+        amend = pending[0]
+        self.assertNotEqual(amend["plan_version_before"], amend["plan_version_after"],
+            "Post-acceptance field change must produce a real version bump, "
+            "not plan_version_before == plan_version_after")
+
+    def test_object_id_change_is_detected_and_applied(self):
+        plan = dpl.create_plan(
+            object_id="objR11v-old", stage_key="s1", date_str="2099-06-04",
+            assigned_worker_ids=["w1"], items=[_make_item(0)], created_by="test",
+        )
+        dpl.update_plan_fields(plan_id=plan["id"], object_id="objR11v-new", updated_by="test")
+
+        updated = dpl.get_plan(plan["id"])
+        self.assertEqual(updated["object_id"], "objR11v-new",
+            "object_id must be updateable via update_plan_fields (was missing before round 1.1)")
+
+
 # ── Round 1.1: Item 3+6 interaction — invalid row must not look deleted ──────
 
 class TestRound11InvalidRowNotTreatedAsDeleted(unittest.TestCase):

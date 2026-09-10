@@ -296,12 +296,18 @@ def update_plan_fields(
     plan_id: str,
     worker_ids: list | None = None,
     date_str: str | None = None,
+    object_id: str | None = None,
     stage_key: str | None = None,
     updated_by: str = "plan_sync",
 ) -> dict:
-    """Обновляет worker_ids/date/stage_key плана вне items (Sheets-синк, item 5).
-    Если план уже принят — переводит в amendment_pending так же, как update_plan_items,
-    чтобы затронутые работники увидели изменение через тот же amendment-путь."""
+    """Обновляет worker_ids/date/object_id/stage_key плана вне items (Sheets-синк,
+    item 5). Каждое реальное изменение бампает version и пишет version_record —
+    та же versioned-модель что update_plan_items (round 1.1 fix: раньше amendment
+    создавался с plan_version_before == plan_version_after, что не давало
+    реконструировать историю). Если план уже принят — переводит в amendment_pending
+    так же, как update_plan_items, чтобы затронутые работники увидели изменение
+    через тот же amendment-путь. Server-side accepted/checkin history никогда не
+    переписывается деструктивно — только новая версия поверх."""
     with _store_lock, _store_flock():
         store = _load_store()
         plan = store["daily_plans"].get(plan_id)
@@ -315,6 +321,9 @@ def update_plan_fields(
         if date_str is not None and date_str != plan.get("date"):
             changed_fields["date"] = (plan.get("date"), date_str)
             plan["date"] = date_str
+        if object_id is not None and object_id != plan.get("object_id"):
+            changed_fields["object_id"] = (plan.get("object_id"), object_id)
+            plan["object_id"] = object_id
         if stage_key is not None and stage_key != plan.get("stage_key"):
             changed_fields["stage_key"] = (plan.get("stage_key"), stage_key)
             plan["stage_key"] = stage_key
@@ -322,18 +331,33 @@ def update_plan_fields(
         if not changed_fields:
             return plan
 
+        old_version = plan["version"]
+        new_version = old_version + 1
+        now = time.time()
+        plan["version"] = new_version
+        store["versions"].setdefault(plan_id, []).append({
+            "id": uuid.uuid4().hex,
+            "daily_plan_id": plan_id,
+            "version": new_version,
+            "items_snapshot": plan["items"],
+            "content_hash": plan["content_hash"],
+            "created_at": now,
+            "change_type": "sheets_field_edit",
+            "change_summary": "Изменены поля плана (не items): " + ", ".join(changed_fields.keys()),
+            "field_changes": {k: {"old": v[0], "new": v[1]} for k, v in changed_fields.items()},
+        })
+
         has_acceptance = any(
             a["daily_plan_id"] == plan_id
             for a in store["acceptances"].values()
         )
         if has_acceptance:
             plan["status"] = "amendment_pending"
-            now = time.time()
             amendment = {
                 "id": uuid.uuid4().hex,
                 "daily_plan_id": plan_id,
-                "plan_version_before": plan["version"],
-                "plan_version_after": plan["version"],
+                "plan_version_before": old_version,
+                "plan_version_after": new_version,
                 "diff": {"field_changes": {k: {"old": v[0], "new": v[1]} for k, v in changed_fields.items()}},
                 "created_at": now,
                 "created_by": updated_by,
