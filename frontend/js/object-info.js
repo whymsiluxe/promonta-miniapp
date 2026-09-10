@@ -892,7 +892,7 @@ async function _loadObjInfoItems(objectId) {
   try {
     const { items } = await api(`/api/objects/${objectId}/info-items`);
     if (!items.length) {
-      list.innerHTML = `<div class="obj-info-empty-row"><span>Работы 0</span></div>`;
+      list.innerHTML = `<div class="obj-info-empty-row"><span>Виды работ не добавлены</span></div>`;
       return;
     }
     list.innerHTML = items.map(i => `
