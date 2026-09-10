@@ -6125,9 +6125,16 @@ async function initApp() {
   // 24.07: юзер явно потребовал "всё необходимое грузится пока идёт анимация, не по
   // кускам во время использования" — список этапов конкретного объекта (открывается
   // через "Этапы объекта") требует object_id, известный только после /api/objects.
+  // 11.09 (perf-раунд): раньше без фильтра/лимита -- N запросов на КАЖДЫЙ объект
+  // независимо от статуса, N растёт линейно с базой объектов без верхней границы.
+  // Ограничиваем активными объектами (тот же фильтр 'В работе', что уже использует
+  // Home rings, home.js) и тем же капом в 6 -- пользователь открывает "Этапы объекта"
+  // почти всегда для активного объекта, не для завершённого/на паузе; if he does open
+  // a non-prefetched one, it's a normal single live fetch, not a regression.
   AppBootstrap.register('stages', () => _objectsPrefetch.then(data => {
     const objects = data?.objects || [];
-    return Promise.allSettled(objects.map(o => prefetchTracked(`/api/objects/${o['ID объекта']}/stages`)));
+    const active = objects.filter(o => o['Статус'] === 'В работе').slice(0, 6);
+    return Promise.allSettled(active.map(o => prefetchTracked(`/api/objects/${o['ID объекта']}/stages`)));
   }), { critical: false });
 
   // Раунд 5 §2/§9: медиа первой страницы фото — прогреваем изображения пока идёт
