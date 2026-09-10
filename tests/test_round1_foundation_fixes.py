@@ -268,6 +268,60 @@ class TestItem5FieldChangeDetection(unittest.TestCase):
             "worker_ids must be parsed from sheet row so change detection can compare them")
 
 
+# ── Round 1.1 #4: Sheet status field transition audit ────────────────────────
+
+class TestRound11StatusFieldTransitions(unittest.TestCase):
+    """Documents and locks the ONLY status transition plan_sync applies from a
+    Sheet edit: draft -> published. Everything else (accepted/in_progress/
+    amendment_pending/cancelled/completed) must be left alone -- a later Sheet
+    edit must never silently unpublish or destroy accepted/in-progress history."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="promonta-test-r11status-")
+        os.environ["MINIAPP_DATA_ROOT"] = self._tmp
+        dpl.configure(
+            os.path.join(self._tmp, "daily_plan_store.json"),
+            os.path.join(self._tmp, "plan_sync_state.json"),
+            os.path.join(self._tmp, "work_calendar.json"),
+        )
+        import importlib
+        import plan_sync
+        self.ps = importlib.reload(plan_sync)
+        self.ps.dpl = dpl
+
+    def _row(self, plan_id, status, obj="objR11status"):
+        return {
+            "plan_id": plan_id, "date": "2099-07-01", "object_id": obj, "stage_key": "s1",
+            "worker_ids": "w1", "status": status,
+            "items_json": '[{"id": "i1", "title": "T", "planned_quantity": 1, "unit": "m2"}]',
+        }
+
+    def test_draft_to_published_is_applied(self):
+        pid = "r11status-1"
+        self.ps._process_daily_plan_rows([self._row(pid, "draft")], {})
+        plan = dpl.get_plan_by_sheets_source_row(pid)
+        self.assertEqual(plan["status"], "draft")
+
+        self.ps._process_daily_plan_rows([self._row(pid, "published")], {})
+        plan = dpl.get_plan_by_sheets_source_row(pid)
+        self.assertEqual(plan["status"], "published")
+
+    def test_accepted_plan_not_unpublished_by_sheet_status_edit(self):
+        pid = "r11status-2"
+        self.ps._process_daily_plan_rows([self._row(pid, "published")], {})
+        plan = dpl.get_plan_by_sheets_source_row(pid)
+        dpl.accept_plan(plan["id"], plan["version"], "w1")
+
+        # Sheet still says "published" (or even reverted to "draft" text) --
+        # must not destroy the accepted status.
+        self.ps._process_daily_plan_rows([self._row(pid, "draft")], {})
+        plan_after = dpl.get_plan_by_sheets_source_row(pid)
+        self.assertNotEqual(plan_after["status"], "draft",
+            "A later Sheet status edit must never revert an accepted plan back to draft")
+        self.assertNotIn(plan_after["status"], ("cancelled",),
+            "Status-field edits must never cancel an accepted plan")
+
+
 # ── Round 1.1 #2+#3: update_plan_fields versioning + object_id ───────────────
 
 class TestRound11UpdatePlanFieldsVersioning(unittest.TestCase):
