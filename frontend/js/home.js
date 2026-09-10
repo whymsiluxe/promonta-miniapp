@@ -125,7 +125,12 @@ async function _loadHomeData() {
   if (currentRole === 'owner') {
     const _absPromise = api('/api/abwesenheit/all').catch(() => ({ entries: [] }));
     const _wrkPromise = api('/api/workers').catch(() => ({ workers: [] }));
-    _loadHomeCalendarWidget(_absPromise, _wrkPromise);
+    // Item 13: real assignment/shift status comes from /api/dashboard/team-plan,
+    // not from absence data alone (absence-only made every non-absent worker
+    // show as "Свободен" regardless of whether they were actually assigned).
+    const _teamPlanTodayPromise = api('/api/dashboard/team-plan?date=' + todayBerlin()).catch(() => ({ objects: [] }));
+    const _teamPlanTomorrowPromise = api('/api/dashboard/team-plan?date=' + tomorrowBerlin()).catch(() => ({ objects: [] }));
+    _loadHomeCalendarWidget(_absPromise, _wrkPromise, _teamPlanTodayPromise, _teamPlanTomorrowPromise);
     _loadHomeAbwesenheitSummary(_absPromise);
   } else {
     _loadHomeAbwesenheitSummary();
@@ -150,7 +155,7 @@ async function _loadHomeKontrolDaySummary() {
 }
 
 // Phase 3.7 — compact staffing widget: today/tomorrow absences per worker, "Открыть календарь".
-async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise) {
+async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise, teamPlanTodayPromise, teamPlanTomorrowPromise) {
   const todayList = document.getElementById('hcw-today-list');
   const tomorrowList = document.getElementById('hcw-tomorrow-list');
   if (!todayList) return;
@@ -164,9 +169,11 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise) {
   if (tomorrowDateEl) tomorrowDateEl.textContent = new Date(tomorrowStr + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 
   try {
-    const [absData, wrkData] = await Promise.all([
+    const [absData, wrkData, teamPlanToday, teamPlanTomorrow] = await Promise.all([
       absDataPromise || api('/api/abwesenheit/all'),
       wrkDataPromise || api('/api/workers'),
+      teamPlanTodayPromise || api('/api/dashboard/team-plan?date=' + todayStr),
+      teamPlanTomorrowPromise || api('/api/dashboard/team-plan?date=' + tomorrowStr),
     ]);
     const entries = absData.entries || [];
     const workers = (wrkData.workers || []).filter(w => w.role !== 'owner');
@@ -175,18 +182,43 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise) {
       return entries.find(e => e.name === workerName && e.date_from <= dateStr && (!e.date_to || e.date_to >= dateStr));
     }
 
-    function renderList(dateStr) {
+    // Item 13: build uid -> assignment map from team-plan (real assignment source),
+    // not just "not absent = free".
+    function assignmentMap(teamPlanData) {
+      const map = {};
+      for (const obj of (teamPlanData.objects || [])) {
+        for (const a of (obj.assignments || [])) {
+          if (a.assignment_status === 'declined') continue;
+          map[String(a.user_id)] = { objectName: obj.object_name, shiftState: a.shift_state };
+        }
+      }
+      return map;
+    }
+    const assignedToday = assignmentMap(teamPlanToday);
+    const assignedTomorrow = assignmentMap(teamPlanTomorrow);
+
+    function renderList(dateStr, assignedMap) {
       if (workers.length === 0) return '<div class="hcw-row">Нет работников</div>';
       return workers.map(w => {
         const entry = absenceFor(w.name, dateStr);
-        const statusText = entry ? `Отсутствует${entry.reason ? ' · ' + entry.reason : ''}` : 'Свободен';
-        const cls = entry ? 'hcw-absent' : 'hcw-free';
+        const assignment = assignedMap[String(w.user_id)];
+        let statusText, cls;
+        if (entry) {
+          statusText = `Отсутствует${entry.reason ? ' · ' + entry.reason : ''}`;
+          cls = 'hcw-absent';
+        } else if (assignment) {
+          statusText = assignment.objectName || 'Назначен';
+          cls = 'hcw-assigned';
+        } else {
+          statusText = 'Свободен';
+          cls = 'hcw-free';
+        }
         return `<div class="hcw-row"><span class="hcw-worker-name">${esc(w.name)}</span><span class="hcw-status ${cls}">${esc(statusText)}</span></div>`;
       }).join('');
     }
 
-    todayList.innerHTML = renderList(todayStr);
-    tomorrowList.innerHTML = renderList(tomorrowStr);
+    todayList.innerHTML = renderList(todayStr, assignedToday);
+    tomorrowList.innerHTML = renderList(tomorrowStr, assignedTomorrow);
 
     const summaryEl = document.getElementById('hcw-summary');
     if (summaryEl && workers.length > 0) {

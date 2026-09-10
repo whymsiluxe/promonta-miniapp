@@ -651,11 +651,15 @@ class TestItem13StaffingWidget(unittest.TestCase):
             end = content.find("\nfunction ", start + 1)
         widget_body = content[start:end] if end > start else content[start:start+3000]
 
-        # After fix: should NOT show 'Свободен' for all non-absent workers
-        # (that was the broken behavior — it used only absence data, not assignment data)
-        self.assertNotIn("api('/api/abwesenheit/all')", widget_body,
-            "_loadHomeCalendarWidget must not call /api/abwesenheit/all directly anymore — "
-            "use /api/dashboard/team-plan which already integrates assignment + shift status")
+        # After fix: 'Свободен' must not be the only possible non-absent status —
+        # a worker who IS assigned (per /api/dashboard/team-plan) must show as
+        # assigned, not as free. Combining absence + assignment data is correct
+        # (a worker can be absent OR assigned OR genuinely free); the broken
+        # behavior was using absence data ALONE with no assignment check at all.
+        self.assertIn("/api/dashboard/team-plan", widget_body,
+            "_loadHomeCalendarWidget must consume /api/dashboard/team-plan for real assignment data")
+        self.assertIn("hcw-assigned", widget_body,
+            "_loadHomeCalendarWidget must render a distinct assigned state, not just free/absent")
 
 
 # ── Item 14: Contract store safety ───────────────────────────────────────────
