@@ -3114,15 +3114,16 @@ import urllib.request as _urlreq
 from fastapi.responses import FileResponse
 
 
-def send_telegram_message(chat_id, text):
-    """sendMessage через Bot API — тем же стандартно-библиотечным путём, что send_pdf_to_chat."""
-    body = json.dumps({'chat_id': chat_id, 'text': text}).encode()
-    req = _urlreq.Request(
-        f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
-        data=body, method='POST',
-        headers={'Content-Type': 'application/json'}
-    )
-    _urlreq.urlopen(req, timeout=10)
+# moved to core/telegram.py -- send_telegram_message (extracted ahead of the
+# rest of Phase A's permissions.py step, to unblock it later: get_current_user
+# -> _notify_owner_new_user -> send_telegram_message was the one upward edge
+# out of the permissions chain back into main.py-local code, per the Phase A
+# dependency map's R4 risk. This leaf move stands on its own regardless of
+# whether/when the rest of permissions.py gets extracted.)
+try:
+    from .core.telegram import send_telegram_message
+except ImportError:
+    from core.telegram import send_telegram_message  # noqa: E402
 
 
 def send_pdf_to_chat(chat_id, file_path, filename, caption):
