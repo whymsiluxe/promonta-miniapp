@@ -943,8 +943,8 @@ def diagnostics(_: None = Depends(require_owner)):
 
     # ── DailyPlan-sync ────────────────────────────────────────────────────────
     sync_state = _safe_load_json(PLAN_SYNC_STATE_FILE, {})
-    if sync_state.get('last_synced_at'):
-        sync_age = int(now - sync_state['last_synced_at'])
+    if sync_state.get('last_sync_at'):
+        sync_age = int(now - sync_state['last_sync_at'])
         result['dailyplan_sync'] = 'ok' if sync_age < 3600 else 'stale'
         result['dailyplan_sync_age_s'] = sync_age
     elif os.path.isfile(PLAN_SYNC_STATE_FILE):
