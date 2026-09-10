@@ -219,10 +219,20 @@ cp "$REPO_DIR/backend/profile_skills.py" "${BACKEND_SERVING_DIR}/profile_skills.
 cp "$REPO_DIR/backend/assignment_matching.py" "${BACKEND_SERVING_DIR}/assignment_matching.py"
 cp "$REPO_DIR/backend/angebot_free.js" "${BACKEND_SERVING_DIR}/angebot_free.js"
 cp "$REPO_DIR/backend/rechnung.js" "${BACKEND_SERVING_DIR}/rechnung.js"
+# 10.09 (Phase A fix): backend/core/ subpackage must travel with main.py --
+# `from .core.time import ...` / `from core.time import ...` in main.py resolve
+# to nothing without it. This was missed when Phase A step 1 landed and only
+# caught by a real prod deploy attempt (ModuleNotFoundError: No module named
+# 'core') -- the test suite's py_compile/package-import test copies core/ via
+# shutil.copytree, but this script still used one cp per file and never
+# picked up new subdirectories automatically.
+rm -rf "${BACKEND_SERVING_DIR}/core"
+cp -r "$REPO_DIR/backend/core" "${BACKEND_SERVING_DIR}/core"
 python3 -m py_compile "${BACKEND_SERVING_DIR}/main.py" "${BACKEND_SERVING_DIR}/tools_lib.py" \
   "${BACKEND_SERVING_DIR}/mangel_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py" \
   "${BACKEND_SERVING_DIR}/roadmap_lib.py" "${BACKEND_SERVING_DIR}/work_types.py" \
-  "${BACKEND_SERVING_DIR}/profile_skills.py" "${BACKEND_SERVING_DIR}/assignment_matching.py"
+  "${BACKEND_SERVING_DIR}/profile_skills.py" "${BACKEND_SERVING_DIR}/assignment_matching.py" \
+  "${BACKEND_SERVING_DIR}/core/time.py"
 node --check "${BACKEND_SERVING_DIR}/angebot_free.js"
 node --check "${BACKEND_SERVING_DIR}/rechnung.js"
 # Version-файл для /api/health -- version/commit видны в ответе без git subprocess
