@@ -566,8 +566,14 @@ class ProductionPackageImportTests(unittest.TestCase):
             os.makedirs(pkg_dir)
             backend_dir = os.path.join(os.path.dirname(__file__), '..', 'backend')
             for fname in os.listdir(backend_dir):
+                src = os.path.join(backend_dir, fname)
                 if fname.endswith('.py'):
-                    shutil.copy(os.path.join(backend_dir, fname), pkg_dir)
+                    shutil.copy(src, pkg_dir)
+                elif os.path.isdir(src) and fname == 'core':
+                    # Phase A: backend/core/ subpackage must travel with main.py
+                    # for `import miniapp.main` to resolve its `from core.time
+                    # import ...` -- flat *.py copy alone misses subdirectories.
+                    shutil.copytree(src, os.path.join(pkg_dir, fname))
             script = (
                 "import sys; sys.path.insert(0, '.'); import miniapp.main as m; "
                 "print('OK', len(m.app.routes), m.wt.__name__, m.pskills.__name__, m.amatch.__name__)"
