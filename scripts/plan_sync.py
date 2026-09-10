@@ -295,6 +295,18 @@ def _process_daily_plan_rows(rows: list[dict], state: dict) -> int:
             except Exception as e:
                 log.error("Failed to create DailyPlan for row %s: %s", pid, e)
         else:
+            # Existing plan: detect non-items field changes (item 5) before items
+            try:
+                dpl.update_plan_fields(
+                    plan_id=existing["id"],
+                    worker_ids=fields["worker_ids"],
+                    date_str=fields["date"],
+                    stage_key=fields["stage_key"],
+                    updated_by="plan_sync",
+                )
+            except Exception as e:
+                log.error("Failed to update fields for DailyPlan %s: %s", existing["id"], e)
+
             # Existing plan: update items if content changed; publish if newly marked published
             new_items_hash = dpl._items_hash(fields["items"])
             if new_items_hash != existing.get("content_hash"):

@@ -292,6 +292,59 @@ def update_plan_items(
     return plan
 
 
+def update_plan_fields(
+    plan_id: str,
+    worker_ids: list | None = None,
+    date_str: str | None = None,
+    stage_key: str | None = None,
+    updated_by: str = "plan_sync",
+) -> dict:
+    """Обновляет worker_ids/date/stage_key плана вне items (Sheets-синк, item 5).
+    Если план уже принят — переводит в amendment_pending так же, как update_plan_items,
+    чтобы затронутые работники увидели изменение через тот же amendment-путь."""
+    with _store_lock, _store_flock():
+        store = _load_store()
+        plan = store["daily_plans"].get(plan_id)
+        if not plan:
+            raise KeyError(f"Plan {plan_id} not found")
+
+        changed_fields = {}
+        if worker_ids is not None and sorted(worker_ids) != sorted(plan.get("assigned_worker_ids", [])):
+            changed_fields["assigned_worker_ids"] = (plan.get("assigned_worker_ids", []), worker_ids)
+            plan["assigned_worker_ids"] = worker_ids
+        if date_str is not None and date_str != plan.get("date"):
+            changed_fields["date"] = (plan.get("date"), date_str)
+            plan["date"] = date_str
+        if stage_key is not None and stage_key != plan.get("stage_key"):
+            changed_fields["stage_key"] = (plan.get("stage_key"), stage_key)
+            plan["stage_key"] = stage_key
+
+        if not changed_fields:
+            return plan
+
+        has_acceptance = any(
+            a["daily_plan_id"] == plan_id
+            for a in store["acceptances"].values()
+        )
+        if has_acceptance:
+            plan["status"] = "amendment_pending"
+            now = time.time()
+            amendment = {
+                "id": uuid.uuid4().hex,
+                "daily_plan_id": plan_id,
+                "plan_version_before": plan["version"],
+                "plan_version_after": plan["version"],
+                "diff": {"field_changes": {k: {"old": v[0], "new": v[1]} for k, v in changed_fields.items()}},
+                "created_at": now,
+                "created_by": updated_by,
+                "acknowledged_by": {},
+            }
+            store["amendments"][amendment["id"]] = amendment
+
+        _save_store(store)
+    return plan
+
+
 def _compute_diff(old_items: list, new_items: list) -> dict:
     old_by_id = {i["id"]: i for i in old_items}
     new_by_id = {i["id"]: i for i in new_items}
