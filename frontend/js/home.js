@@ -207,8 +207,14 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise, teamPlanT
           statusText = `Отсутствует${entry.reason ? ' · ' + entry.reason : ''}`;
           cls = 'hcw-absent';
         } else if (assignment) {
-          statusText = assignment.objectName || 'Назначен';
-          cls = 'hcw-assigned';
+          // Round 1.1 #5: show object + real shift state (Работает/Назначен),
+          // not just the object name -- shiftState only means something for
+          // today (team-plan only computes it for is_today; tomorrow has none
+          // yet, since the shift hasn't started).
+          const SHIFT_LABELS = { active: 'Работает', finished: 'Завершил', not_started: 'Назначен' };
+          const shiftLabel = SHIFT_LABELS[assignment.shiftState] || 'Назначен';
+          statusText = assignment.objectName ? `${assignment.objectName} · ${shiftLabel}` : shiftLabel;
+          cls = assignment.shiftState === 'active' ? 'hcw-working' : 'hcw-assigned';
         } else {
           statusText = 'Свободен';
           cls = 'hcw-free';

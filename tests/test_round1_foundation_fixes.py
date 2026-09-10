@@ -806,6 +806,17 @@ class TestItem12BerlinDate(unittest.TestCase):
 class TestItem13StaffingWidget(unittest.TestCase):
     """_loadHomeCalendarWidget must consume /api/dashboard/team-plan."""
 
+    def test_round11_shift_state_is_rendered_not_just_object_name(self):
+        """Round 1.1 #5: widget must show real shift status (Работает/Назначен/
+        Завершил), not just the object name -- Иван -> Müller alone isn't enough."""
+        with open(os.path.join(os.path.dirname(__file__), "..", "frontend", "js", "home.js")) as f:
+            home_js = f.read()
+        self.assertIn("shiftState", home_js,
+            "staffing widget must read shift_state from team-plan assignment data")
+        for label in ("Работает", "Назначен"):
+            self.assertIn(label, home_js,
+                f"staffing widget must render a '{label}' shift-status label, not just object name")
+
     def test_home_js_uses_team_plan_endpoint(self):
         """home.js _loadHomeCalendarWidget must call /api/dashboard/team-plan."""
         with open(os.path.join(os.path.dirname(__file__), "..", "frontend", "js", "home.js")) as f:
