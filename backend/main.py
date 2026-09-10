@@ -8377,7 +8377,7 @@ def daily_plan_owner_matrix(
         plan_id = plan["id"]
         acceptance_list = [
             a for a in store["acceptances"].values()
-            if a["plan_id"] == plan_id
+            if a.get("daily_plan_id") == plan_id
         ]
         executions = [
             e for e in store["executions"].values()
@@ -8387,9 +8387,11 @@ def daily_plan_owner_matrix(
             c for c in store["carryovers"].values()
             if c.get("source_plan_id") == plan_id
         ]
+        # Per item 8: amendments have no object_id/status field of their own —
+        # resolve via daily_plan_id, and use the pending-amendment semantics
+        # already implemented in get_pending_amendments (not-acked-by-all).
         amendments = [
-            a for a in store["amendments"].values()
-            if a["plan_id"] == plan_id and a.get("status") == "pending"
+            a for a in dpl.get_pending_amendments(plan_id)
         ]
         rows.append({
             "plan_id": plan_id,
@@ -8452,7 +8454,7 @@ def daily_plan_replan(
     for plan in plans:
         plan_blockers = [
             b for b in store.get("blockers", {}).values()
-            if b.get("plan_id") == plan["id"]
+            if b.get("daily_plan_id") == plan["id"]
         ]
         if plan_blockers:
             plans_with_blockers.append({"plan_id": plan["id"], "date": plan["date"],
@@ -8465,9 +8467,11 @@ def daily_plan_replan(
             "detail": plans_with_blockers,
         })
 
+    # Item 8: amendments have no object_id/status field — resolve via the
+    # object's plans -> daily_plan_id chain instead, using the existing
+    # not-acked-by-all semantics in get_pending_amendments().
     pending_amendments = [
-        a for a in store["amendments"].values()
-        if a.get("object_id") == object_id and a.get("status") == "pending"
+        a for plan in plans for a in dpl.get_pending_amendments(plan["id"])
     ]
     if pending_amendments:
         issues.append({
