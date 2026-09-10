@@ -160,8 +160,8 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise) {
 
   const todayDateEl = document.getElementById('hcw-today-date');
   const tomorrowDateEl = document.getElementById('hcw-tomorrow-date');
-  if (todayDateEl) todayDateEl.textContent = now.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
-  if (tomorrowDateEl) tomorrowDateEl.textContent = tomorrow.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  if (todayDateEl) todayDateEl.textContent = new Date(todayStr + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  if (tomorrowDateEl) tomorrowDateEl.textContent = new Date(tomorrowStr + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 
   try {
     const [absData, wrkData] = await Promise.all([
