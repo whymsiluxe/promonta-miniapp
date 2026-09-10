@@ -479,6 +479,107 @@ class TestRound12AcceptedContextSnapshot(unittest.TestCase):
         self.assertNotIn(worker_b_new, [str(w) for w in acc["accepted_context_snapshot"]["assigned_worker_ids"]])
 
 
+# ── Round 1.2 follow-up P0: outbox reliability (owner deep-audit findings) ───
+
+class TestOutboxDeadLetterAndReconciliation(unittest.TestCase):
+    """Owner found the outbox retry machinery had two deeper P0 gaps beyond the
+    accepted-context snapshot fix: (1) a 'failed' event was permanently stuck,
+    never auto-retried; (2) a crash between the checkin_meta commit and the
+    outbox write meant the execution report was lost with no way to reconstruct
+    it -- nothing existed to retry FROM. Both are fixed: new pending/retrying/
+    applied/dead_letter state machine with attempt_count + cap, and the raw
+    report is now persisted into the checkin session itself (in the SAME atomic
+    write as finish_at) so startup reconciliation can rebuild a missing outbox
+    entry from it."""
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="promonta-test-outbox-")
+        backend.FINISH_OUTBOX_FILE = os.path.join(self._tmp, "finish_outbox.json")
+        backend.CHECKIN_META_FILE = os.path.join(self._tmp, "checkin_meta.json")
+        backend.DAILY_PLAN_STORE_FILE = os.path.join(self._tmp, "daily_plan_store.json")
+        backend.PLAN_SYNC_STATE_FILE = os.path.join(self._tmp, "plan_sync_state.json")
+        backend.WORK_CALENDAR_FILE = os.path.join(self._tmp, "work_calendar.json")
+        dpl.configure(backend.DAILY_PLAN_STORE_FILE, backend.PLAN_SYNC_STATE_FILE,
+                       backend.WORK_CALENDAR_FILE)
+
+    def test_reconciliation_rebuilds_missing_outbox_event(self):
+        """Simulates the exact crash scenario: finished session with a
+        pending_execution_report field set, but NO outbox entry at all (as if
+        the process died right after the checkin_meta write, before
+        _outbox_write_pending ran). Reconciliation must reconstruct it."""
+        plan = dpl.create_plan(
+            object_id="objOutbox", stage_key="s1", date_str="2099-09-01",
+            assigned_worker_ids=["wOutbox"], items=[_make_item(0)], created_by="test",
+        )
+        dpl.publish_plan(plan["id"], "test")
+
+        report = json.dumps({
+            "plan_id": plan["id"],
+            "plan_version": plan["version"],
+            "item_results": [{"item_id": "item0", "status": "done", "actual_quantity": 5.0}],
+        })
+        session = {
+            "id": "crash-session-1",
+            "object_id": "objOutbox",
+            "date": "2099-09-01",
+            "user_id": "wOutbox",
+            "finish_at": int(time.time()),
+            "daily_plan_id": plan["id"],
+            "pending_execution_report": report,
+        }
+        backend._save_checkin_meta([session])
+
+        # No outbox entry exists yet -- this is the crash gap.
+        self.assertEqual(backend._outbox_load(), {})
+
+        reconciled = backend._reconcile_missing_outbox_events()
+        self.assertEqual(reconciled, 1)
+
+        outbox = backend._outbox_load()
+        self.assertIn("crash-session-1", outbox)
+        self.assertEqual(outbox["crash-session-1"]["state"], "pending")
+        self.assertEqual(outbox["crash-session-1"]["plan_id"], plan["id"])
+
+    def test_reconciliation_skips_sessions_without_pending_report(self):
+        """A normal finished session (no crash) has no pending_execution_report
+        set, or it was already cleared after a successful apply -- reconciliation
+        must not create spurious outbox entries for it."""
+        session = {
+            "id": "normal-session-1", "object_id": "objY", "date": "2099-09-02",
+            "user_id": "w2", "finish_at": int(time.time()), "daily_plan_id": None,
+            "pending_execution_report": None,
+        }
+        backend._save_checkin_meta([session])
+        reconciled = backend._reconcile_missing_outbox_events()
+        self.assertEqual(reconciled, 0)
+        self.assertEqual(backend._outbox_load(), {})
+
+    def test_reconciliation_skips_sessions_with_existing_outbox_entry(self):
+        """A session whose outbox event already exists (normal successful path,
+        or already reconciled on a prior startup) must not be reconciled again."""
+        session = {
+            "id": "already-has-outbox", "object_id": "objZ", "date": "2099-09-03",
+            "user_id": "w3", "finish_at": int(time.time()), "daily_plan_id": "planZ",
+            "pending_execution_report": json.dumps({"plan_id": "planZ", "plan_version": 1, "item_results": [{"x": 1}]}),
+        }
+        backend._save_checkin_meta([session])
+        backend._outbox_write_pending("already-has-outbox", "planZ", 1, "w3", "2099-09-03", "objZ", [{"x": 1}])
+        reconciled = backend._reconcile_missing_outbox_events()
+        self.assertEqual(reconciled, 0, "must not double-reconcile a session that already has an outbox entry")
+
+    def test_clear_pending_execution_report_after_successful_apply(self):
+        session = {
+            "id": "clear-test-1", "object_id": "objC", "date": "2099-09-04",
+            "user_id": "wC", "finish_at": int(time.time()), "daily_plan_id": "planC",
+            "pending_execution_report": json.dumps({"plan_id": "planC", "plan_version": 1, "item_results": []}),
+        }
+        backend._save_checkin_meta([session])
+        backend._clear_pending_execution_report("clear-test-1")
+        items = backend._load_checkin_meta()
+        session_after = next(i for i in items if i["id"] == "clear-test-1")
+        self.assertIsNone(session_after["pending_execution_report"])
+
+
 # ── Round 1.1 #2+#3: update_plan_fields versioning + object_id ───────────────
 
 class TestRound11UpdatePlanFieldsVersioning(unittest.TestCase):

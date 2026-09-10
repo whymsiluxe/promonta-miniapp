@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
@@ -268,11 +269,51 @@ class FinishOutboxTests(unittest.TestCase):
         self.assertIn('applied_at', outbox['sess2'])
 
     def test_mark_failed_changes_state(self):
+        """Owner P0 fix: first failure -> 'retrying' (still auto-retried on next
+        startup), not a terminal 'failed' state -- only OUTBOX_MAX_ATTEMPTS
+        consecutive failures reach the terminal 'dead_letter' state."""
         backend._outbox_write_pending('sess3', 'plan1', 1, '42', '2026-09-15', 'OBJ-1', [])
         backend._outbox_mark_failed('sess3', 'Some error')
         outbox = backend._outbox_load()
-        self.assertEqual(outbox['sess3']['state'], 'failed')
+        self.assertEqual(outbox['sess3']['state'], 'retrying')
         self.assertEqual(outbox['sess3']['error'], 'Some error')
+        self.assertEqual(outbox['sess3']['attempt_count'], 1)
+
+    def test_mark_failed_reaches_dead_letter_after_max_attempts(self):
+        backend._outbox_write_pending('sess3dl', 'plan1', 1, '42', '2026-09-15', 'OBJ-1', [])
+        for _ in range(backend.OUTBOX_MAX_ATTEMPTS):
+            backend._outbox_mark_failed('sess3dl', 'Some error')
+        outbox = backend._outbox_load()
+        self.assertEqual(outbox['sess3dl']['state'], 'dead_letter')
+        self.assertEqual(outbox['sess3dl']['attempt_count'], backend.OUTBOX_MAX_ATTEMPTS)
+        self.assertEqual(backend._outbox_dead_letter_count(), 1)
+
+    def test_retrying_events_are_retried_but_dead_letter_is_not(self):
+        backend._outbox_write_pending('sess3r', 'plan1', 1, '42', '2026-09-15', 'OBJ-1', [])
+        backend._outbox_mark_failed('sess3r', 'transient error')
+        outbox = backend._outbox_load()
+        self.assertEqual(outbox['sess3r']['state'], 'retrying')
+
+        backend._outbox_write_pending('sess3dl2', 'plan1', 1, '42', '2026-09-15', 'OBJ-1', [])
+        for _ in range(backend.OUTBOX_MAX_ATTEMPTS):
+            backend._outbox_mark_failed('sess3dl2', 'permanent error')
+        outbox = backend._outbox_load()
+        self.assertEqual(outbox['sess3dl2']['state'], 'dead_letter')
+
+        # apply_daily_execution succeeds trivially against an empty store (idempotent
+        # no-op for a nonexistent plan) -- force a real failure via mock so the retry
+        # pass actually exercises the "failed again -> attempt_count increments,
+        # still retryable" path, not accidental success.
+        with unittest.mock.patch.object(dpl, 'apply_daily_execution', side_effect=RuntimeError('boom')):
+            backend._retry_pending_outbox_events()
+        outbox = backend._outbox_load()
+        self.assertEqual(outbox['sess3r']['attempt_count'], 2,
+            "a 'retrying' event must be attempted again on the next retry pass")
+        self.assertEqual(outbox['sess3r']['state'], 'retrying',
+            "still under OUTBOX_MAX_ATTEMPTS -- stays retrying, not dead_letter")
+        self.assertEqual(outbox['sess3dl2']['attempt_count'], backend.OUTBOX_MAX_ATTEMPTS,
+            "a 'dead_letter' event must NOT be auto-retried")
+        self.assertEqual(outbox['sess3dl2']['state'], 'dead_letter')
 
     def test_retry_applies_pending_events(self):
         """_retry_pending_outbox_events applies events that have a real plan."""

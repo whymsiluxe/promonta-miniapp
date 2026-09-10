@@ -218,7 +218,15 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def _on_startup():
-    """Retry pending finish-outbox events from a previous crash."""
+    """Retry pending finish-outbox events from a previous crash, and reconcile
+    any finished checkin session whose outbox event never got written at all
+    (crash between checkin_meta commit and outbox write)."""
+    try:
+        reconciled = _reconcile_missing_outbox_events()
+        if reconciled:
+            print(f"[startup] Reconciled {reconciled} missing finish-outbox event(s)")
+    except Exception as e:
+        print(f"[startup] finish-outbox reconciliation failed: {e}")
     try:
         retried = _retry_pending_outbox_events()
         if retried:
@@ -954,6 +962,11 @@ def diagnostics(_: None = Depends(require_owner)):
     else:
         result['dailyplan_sync'] = 'not_configured'
         result['dailyplan_sync_age_s'] = None
+
+    # ── Finish outbox (DailyPlan execution projection) ──────────────────────────
+    _dead_letter_count = _outbox_dead_letter_count()
+    result['finish_outbox'] = 'red' if _dead_letter_count > 0 else 'ok'
+    result['finish_outbox_dead_letter_count'] = _dead_letter_count
 
     # ── Drive / Contracts ─────────────────────────────────────────────────────
     result['drive_contracts'] = 'configured' if CONTRACTS_DRIVE_FOLDER_ID else 'not_configured'
@@ -6513,6 +6526,17 @@ def _outbox_save(outbox: dict) -> None:
     _atomic_write_json(FINISH_OUTBOX_FILE, outbox)
 
 
+# Round 1.2 follow-up (owner P0 finding): the original state machine was
+# pending -> applied | failed, and startup retry only ever looked at "pending"
+# -- once an event became "failed" it was permanently stuck (no automatic path
+# back to being retried). New state machine: pending -> retrying -> applied |
+# dead_letter, with attempt_count. Both "pending" and "retrying" are retried on
+# every startup; after OUTBOX_MAX_ATTEMPTS failures the event becomes
+# "dead_letter" and must surface in owner diagnostics (RED) for manual handling
+# -- never silently dropped, never silently retried forever either.
+OUTBOX_MAX_ATTEMPTS = 10
+
+
 def _outbox_write_pending(session_id: str, plan_id: str, plan_version: int,
                           worker_id: str, date_str: str, object_id: str,
                           item_results: list) -> None:
@@ -6528,6 +6552,7 @@ def _outbox_write_pending(session_id: str, plan_id: str, plan_version: int,
             "item_results": item_results,
             "created_at": time.time(),
             "last_attempt_at": None,
+            "attempt_count": 0,
             "error": None,
         }
         _outbox_save(outbox)
@@ -6543,23 +6568,34 @@ def _outbox_mark_applied(session_id: str) -> None:
 
 
 def _outbox_mark_failed(session_id: str, error: str) -> None:
+    """Records a failed attempt. Stays retryable ("retrying") until
+    OUTBOX_MAX_ATTEMPTS is reached, then becomes a permanent "dead_letter" --
+    at that point only manual owner intervention (fixing the underlying data
+    issue, then a manual re-trigger) should touch it again."""
     with _finish_outbox_lock:
         outbox = _outbox_load()
         if session_id in outbox:
-            outbox[session_id]["state"] = "failed"
-            outbox[session_id]["error"] = error[:500]
-            outbox[session_id]["last_attempt_at"] = time.time()
+            evt = outbox[session_id]
+            evt["attempt_count"] = evt.get("attempt_count", 0) + 1
+            evt["error"] = error[:500]
+            evt["last_attempt_at"] = time.time()
+            if evt["attempt_count"] >= OUTBOX_MAX_ATTEMPTS:
+                evt["state"] = "dead_letter"
+            else:
+                evt["state"] = "retrying"
             _outbox_save(outbox)
 
 
 def _retry_pending_outbox_events() -> int:
-    """Called at startup to apply any pending finish-projection events.
-    Returns count of retried events."""
+    """Called at startup to apply any pending/retrying finish-projection events.
+    dead_letter events are intentionally NOT retried automatically -- they need
+    manual owner review (surfaced via diagnostics, see _outbox_dead_letter_count).
+    Returns count of successfully applied events."""
     with _finish_outbox_lock:
         outbox = _outbox_load()
     retried = 0
     for session_id, evt in list(outbox.items()):
-        if evt.get("state") != "pending":
+        if evt.get("state") not in ("pending", "retrying"):
             continue
         try:
             dpl.apply_daily_execution(
@@ -6572,10 +6608,75 @@ def _retry_pending_outbox_events() -> int:
                 item_results=evt.get("item_results") or [],
             )
             _outbox_mark_applied(session_id)
+            _clear_pending_execution_report(session_id)
             retried += 1
         except Exception as e:
             _outbox_mark_failed(session_id, str(e))
     return retried
+
+
+def _outbox_dead_letter_count() -> int:
+    """Owner diagnostics: count of finish-projection events that exhausted all
+    retry attempts and need manual review. A non-zero count means a completed
+    shift's DailyExecution was never recorded and needs a human to look."""
+    outbox = _outbox_load()
+    return sum(1 for evt in outbox.values() if evt.get("state") == "dead_letter")
+
+
+def _clear_pending_execution_report(session_id: str) -> None:
+    """Once a finish-projection event is successfully applied (either inline in
+    checkin_finish or via startup retry), clear the raw report we stashed on the
+    checkin_meta session as a crash-window safety net -- it's done its job, no
+    need to keep the raw JSON blob around forever."""
+    with _checkin_lock:
+        items = _load_checkin_meta()
+        session = next((i for i in items if i.get('id') == session_id), None)
+        if session and session.get('pending_execution_report'):
+            session['pending_execution_report'] = None
+            _save_checkin_meta(items)
+
+
+def _reconcile_missing_outbox_events() -> int:
+    """Startup reconciliation (owner P0 finding): a finished checkin session can
+    have pending_execution_report set (the crash-window fix above) but no
+    corresponding outbox event at all, if the process died between the
+    checkin_meta commit and the _outbox_write_pending call in checkin_finish.
+    Without this, such a session's DailyExecution is silently lost forever --
+    nothing would ever retry it, because _retry_pending_outbox_events only
+    looks at events that already exist in the outbox. This scans finished
+    sessions for that exact gap and reconstructs the missing outbox entry so
+    the normal pending/retrying machinery picks it up on this same startup.
+    Returns count of reconstructed events."""
+    items = _load_checkin_meta()
+    outbox = _outbox_load()
+    reconciled = 0
+    for session in items:
+        if session.get('finish_at') is None:
+            continue
+        report_raw = session.get('pending_execution_report')
+        if not report_raw:
+            continue
+        session_id = session.get('id')
+        if session_id in outbox:
+            continue  # outbox event already exists (normal path or already reconciled)
+        try:
+            rpt = json.loads(report_raw)
+        except Exception as e:
+            print(f'WARNING: reconcile — session {session_id} has unparseable pending_execution_report: {e}')
+            continue
+        plan_id = rpt.get('plan_id', '') or session.get('daily_plan_id', '')
+        plan_ver = int(rpt.get('plan_version', 0) or session.get('daily_plan_version', 0) or 0)
+        item_results = rpt.get('item_results') or []
+        if not (plan_id and isinstance(item_results, list) and item_results):
+            continue
+        _outbox_write_pending(
+            session_id=session_id, plan_id=plan_id, plan_version=plan_ver,
+            worker_id=str(session['user_id']), date_str=session['date'],
+            object_id=session['object_id'], item_results=item_results,
+        )
+        reconciled += 1
+        print(f'[startup] Reconciled missing outbox event for session {session_id} (crash-window recovery)')
+    return reconciled
 
 
 def _load_checkin_meta() -> list:
@@ -6949,6 +7050,18 @@ async def checkin_finish(
             session['pause_accumulated_seconds'] = session.get('pause_accumulated_seconds', 0) + elapsed
             session['pause_started_at'] = None
         session['pause_minutes'] = max(0, int(pause_minutes or 0))
+        # P0 fix (owner review): persist the raw execution report INSIDE the same
+        # checkin_meta write that commits finish_at -- previously daily_plan_report
+        # only existed as a request Form parameter, never durably stored anywhere
+        # until the outbox write a few lines below. A crash between this save and
+        # that outbox write meant the report was permanently lost: finish_at=true,
+        # photos saved, but no outbox event and no way to reconstruct item_results
+        # from checkin_meta.json alone (there was nothing to reconstruct FROM).
+        # Now it's part of this one atomic write -- reconciliation on startup can
+        # find a finished session with pending_execution_report set and no
+        # outbox event, and rebuild the outbox entry from it (see
+        # _reconcile_missing_outbox_events below).
+        session['pending_execution_report'] = daily_plan_report.strip() or None
         _save_checkin_meta(items)
 
     # Apply daily plan execution report via durable outbox.
@@ -7019,6 +7132,7 @@ async def checkin_finish(
                             item_results=item_results,
                         )
                         _outbox_mark_applied(session_id)
+                        _clear_pending_execution_report(session_id)
                         # Auto-record productivity observations from execution
                         try:
                             plan_obj = dpl.get_plan(plan_id)
