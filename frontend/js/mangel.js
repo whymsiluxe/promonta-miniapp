@@ -256,6 +256,8 @@ async function openMangelTicketById(ticketId, chatReturn) {
 
 // chatReturn: контекст возврата из чата этого тикета. По умолчанию — на экран Дефекты
 // и обратно в этот тикет; из Object Info передаётся 'object-detail' (остаться на объекте).
+let _mangelModalUnregister = null;
+
 async function openMangelTicketModal(ticketId, chatReturn) {
   const ticket = _mangelTickets.find(t => t.id === ticketId);
   if (!ticket) return;
@@ -623,8 +625,30 @@ function initMangelView() {
     if (card) openMangelTicketModal(card.dataset.ticketId);
   });
 
-  document.getElementById('mangel-modal-close-btn').addEventListener('click', () => {
-    document.getElementById('mangel-ticket-modal').style.display = 'none';
-    _updateMangelFab();
-  });
+  document.getElementById('mangel-modal-close-btn').addEventListener('click', () => _closeMangelTicketModal());
+
+  // Item 3 (back-navigation audit) fix: this modal only ever closed via the
+  // explicit x button -- no NavigationManager.registerOverlay(), same bug
+  // class as the document viewer (item 5). Telegram Back/hardware-back/swipe
+  // had no way to close it, matching the owner's explicit "Defect modal ->
+  // Defects" test case.
+  if (typeof NavigationManager !== 'undefined' && !_mangelModalUnregister) {
+    _mangelModalUnregister = NavigationManager.registerOverlay(() => _closeMangelTicketModalInternal());
+  }
+}
+
+// Called from NavigationManager (Telegram Back/hardware-back/swipe) -- overlay
+// already popped, do not call the unregister function again.
+function _closeMangelTicketModalInternal() {
+  document.getElementById('mangel-ticket-modal').style.display = 'none';
+  _mangelModalUnregister = null;
+  _updateMangelFab();
+}
+
+// Called from the in-app x button tap -- overlay still in NavigationManager's
+// stack, must explicitly unregister.
+function _closeMangelTicketModal() {
+  if (_mangelModalUnregister) { _mangelModalUnregister(); _mangelModalUnregister = null; }
+  document.getElementById('mangel-ticket-modal').style.display = 'none';
+  _updateMangelFab();
 }
