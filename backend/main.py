@@ -8485,11 +8485,17 @@ def daily_plan_replan(
             "description": f"Неподтверждённые изменения плана ({len(pending_amendments)})",
         })
 
-    risk_level = "green"
-    if plans_with_blockers:
-        risk_level = "orange"
-    elif open_carryovers or pending_amendments:
-        risk_level = "yellow"
+    # Item 10: use the shared 4-tier risk function instead of an independent
+    # inline 3-tier calc (which had no RED tier and could drift from owner/today's
+    # logic). RED stays unreachable here until a caller supplies
+    # predicted_finish_date/contract_finish_date -- no contract-date source exists
+    # yet in this codebase; adding one is out of scope for a Round 1 bug fix.
+    risk_level = _compute_risk_level(
+        carryovers=open_carryovers,
+        amendments=pending_amendments,
+        blockers_for_plan=plans_with_blockers,
+        execution=None,
+    )
 
     recommendations = []
     if open_carryovers:
