@@ -178,9 +178,19 @@ All 4 P0 and 3 P1 items implemented:
 
 **Session type**: Autonomous execution of docs/EXECUTION_PLAN.md  
 **Start SHA**: `1081bbd` (fix: onboarding card scrollable — pre-session baseline)  
-**Final SHA**: `a61b669` (fix: Foundation Completion — 4×P0 + 3×P1 Production Control)  
+**Final SHA**: `1628201` (fix: P0 follow-up — in_progress plan status still blocked second-worker acceptance)  
 **State**: STOPPED_FOR_REVIEW  
-**Tests**: 601 passed, 0 failed (+ 3 pre-existing failures unrelated to this work)
+**Tests**: 603 passed, 0 failed (+ 3 pre-existing failures unrelated to this work)
+
+### Post-report P0 fixes (after `a61b669`)
+
+Three additional commits were made during final verification:
+
+| Commit | Summary |
+|--------|---------|
+| `5aa3fa5` | ux: show date on Лента/Инфо weather-alert compact rows (compact severity rows had no date — now shows `entry.created` via existing `fmtFeedDate()`) |
+| `12eda32` | fix: P0 multi-worker DailyPlan acceptance blocked by stale HTTP/frontend gates — HTTP endpoint had its own stricter status pre-check rejecting the second worker's acceptance request before library code ran; frontend `_shouldShowPlanScreen()` had same stale status list. Fix: removed duplicated status gate from HTTP endpoint; added `accepted` to frontend allowed statuses. Regression test added. |
+| `1628201` | fix: P0 follow-up — `in_progress` plan status still blocked second-worker acceptance — `apply_daily_execution()` moves plan to `in_progress` once ANY worker finishes, before all workers have accepted; `accept_plan()` status gate and `get_today_plan_for_worker()` STATUS_PRIORITY didn't handle this. Frontend `_shouldShowPlanScreen()` also blocked. All three fixed; regression test added. |
 
 ### Root cause of data-loading incident (Phase 0)
 `test_worker_calendar_birthday.py` imported `main.py` (which reads `DATA_ROOT` at import time) without first setting `PROMONTA_ENV=test` and `MINIAPP_DATA_ROOT`. This caused pytest to open and potentially overwrite live production JSON files in `/home/promonta/agent/miniapp/`. Fixed by: (1) `tests/conftest.py` sets `PROMONTA_ENV=test` and `MINIAPP_DATA_ROOT=$(mktemp -d)` at import-time before any test module loads; (2) `main.py` raises `RuntimeError` if `PROMONTA_ENV=test` and `DATA_ROOT` resolves to the production path.
@@ -197,6 +207,7 @@ All 4 P0 and 3 P1 items implemented:
 | Phase 6 | `850f84b` | IndexedDB offline fallback for Worker Today Plan |
 | Phase 7 | `abe3712` | Request dedup, feed lazy-load, owner diagnostics endpoint |
 | Foundation Completion | `a61b669` | 4×P0 + 3×P1 Production Control gaps closed |
+| Post-report P0 fixes | `5aa3fa5` `12eda32` `1628201` | UX date on Инфо rows; multi-worker acceptance HTTP gate; in_progress acceptance edge case |
 
 ### P0 findings and fixes
 1. **Per-worker amendment ack**: `acknowledged_by:{worker_id:ts}` dict; `amendment_pending` until ALL workers ack. Tests: `PerWorkerAmendmentAckTests` (4 tests).
