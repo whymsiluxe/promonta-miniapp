@@ -8521,13 +8521,10 @@ _EMPTY_CONTRACT_STORE = {"contracts": {}}
 
 
 def _load_contract_store() -> dict:
-    if not os.path.exists(CONTRACT_INGEST_STATE_FILE):
-        return {"contracts": {}}
-    try:
-        with open(CONTRACT_INGEST_STATE_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except json.JSONDecodeError:
-        return {"contracts": {}}
+    """Item 14: routed through the existing safe-store mechanism (CRITICAL_JSON_PATHS
+    already includes CONTRACT_INGEST_STATE_FILE) instead of a raw json.load() that
+    silently wiped the contract list on any corruption."""
+    return _safe_load_json(CONTRACT_INGEST_STATE_FILE, {"contracts": {}})
 
 
 def _save_contract_store(data: dict) -> None:
