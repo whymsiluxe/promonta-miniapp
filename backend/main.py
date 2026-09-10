@@ -8043,12 +8043,15 @@ def daily_plan_owner_today(
     plans = dpl.get_pending_plans_for_owner_today(today)
 
     checkin_items = _load_checkin_meta()
+    # Item 9: key sessions on (worker_id, object_id) not worker_id alone -- a
+    # worker with two same-day shifts on different objects must not have one
+    # session silently overwrite the other in this dict.
     active_sessions = {
-        str(s["user_id"]): s for s in checkin_items
+        (str(s["user_id"]), str(s.get("object_id", ""))): s for s in checkin_items
         if s.get("date") == today and s.get("finish_at") is None
     }
     finished_sessions = {
-        str(s["user_id"]): s for s in checkin_items
+        (str(s["user_id"]), str(s.get("object_id", ""))): s for s in checkin_items
         if s.get("date") == today and s.get("finish_at") is not None
     }
 
@@ -8056,16 +8059,17 @@ def daily_plan_owner_today(
     for plan in plans:
         for worker_id in plan.get("assigned_worker_ids", []):
             wid = str(worker_id)
+            skey = (wid, str(plan.get("object_id", "")))
             acceptance = dpl.get_acceptance(plan["id"], wid)
-            amendments = dpl.get_pending_amendments(plan["id"])
+            amendments = dpl.get_pending_amendments(plan["id"], wid)
             execution = None
-            session = finished_sessions.get(wid) or active_sessions.get(wid)
+            session = finished_sessions.get(skey) or active_sessions.get(skey)
             if session and session.get("finish_at"):
                 execution = dpl.get_execution(session["id"])
             carryovers = dpl.get_carryovers_for_worker(wid, today)
 
             plan_status_label = _daily_plan_status_label(plan, acceptance, amendments)
-            shift_status = _checkin_shift_status(wid, active_sessions, finished_sessions)
+            shift_status = _checkin_shift_status(skey, active_sessions, finished_sessions)
 
             plan_blockers = dpl.get_blockers_for_plan(plan["id"])
             risk_level = _compute_risk_level(carryovers, amendments, plan_blockers, execution)
@@ -8278,13 +8282,14 @@ def _daily_plan_status_label(plan: dict, acceptance: dict | None, amendments: li
     return s.upper()
 
 
-def _checkin_shift_status(worker_id: str, active: dict, finished: dict) -> str:
-    if worker_id in active:
-        s = active[worker_id]
+def _checkin_shift_status(session_key, active: dict, finished: dict) -> str:
+    """session_key: (worker_id, object_id) tuple (item 9) — matches active/finished dicts."""
+    if session_key in active:
+        s = active[session_key]
         if s.get("pause_started_at"):
             return "paused"
         return "working"
-    if worker_id in finished:
+    if session_key in finished:
         return "finished"
     return "not_started"
 
