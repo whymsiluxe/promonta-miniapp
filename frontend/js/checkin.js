@@ -571,7 +571,7 @@ function initCheckinControls() {
       _closeCheckinManualForm();
       return;
     }
-    document.getElementById('checkin-date-input').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('checkin-date-input').value = todayBerlin();
     form.style.display = 'block';
   });
   document.getElementById('checkin-manual-cancel-btn').addEventListener('click', _closeCheckinManualForm);

@@ -349,7 +349,7 @@ async function _loadBirthdayBanner() {
     const list = data.birthdays || [];
     if (!list.length) { slot.innerHTML = ''; return; }
     slot.innerHTML = list.map(b => {
-      const soon = b.date === new Date().toISOString().slice(0, 10);
+      const soon = b.date === todayBerlin();
       return `<div class="feed-birthday-card">
         <span class="feed-birthday-icon">🎂</span>
         <span class="feed-birthday-text">У ${esc(b.name)} день рождения ${soon ? 'сегодня!' : new Date(b.date).toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'})}</span>

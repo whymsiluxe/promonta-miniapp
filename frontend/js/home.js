@@ -155,11 +155,8 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise) {
   const tomorrowList = document.getElementById('hcw-tomorrow-list');
   if (!todayList) return;
 
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  const todayStr = todayBerlin();
+  const tomorrowStr = tomorrowBerlin();
 
   const todayDateEl = document.getElementById('hcw-today-date');
   const tomorrowDateEl = document.getElementById('hcw-tomorrow-date');
@@ -1034,7 +1031,7 @@ async function initWorkingObjectsView() {
 
     const workers = (workersData.workers || []).filter(w => w.role === 'worker');
     const objects = objectsData.objects || [];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayBerlin();
     const absentToday = (absenceData.entries || []).filter(e =>
       e.status !== 'rejected' && e.status !== 'cancelled' && e.date_from <= today && e.date_to >= today
     );
