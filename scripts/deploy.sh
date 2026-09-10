@@ -258,7 +258,10 @@ echo "OK (group-writable via webdeploy, no chown needed)"
 echo "OK"
 
 echo "== 12/14 Restart backend =="
-systemctl restart "$SERVICE_NAME"
+# 10.09: sudoers grants promonta NOPASSWD exactly this one systemctl call
+# (/etc/sudoers.d/promonta-miniapp-deploy) -- the only remaining root-need
+# in this script, everything else now runs as plain promonta.
+sudo /bin/systemctl restart "$SERVICE_NAME"
 sleep 3
 if ! systemctl is-active --quiet "$SERVICE_NAME"; then
   echo "ОШИБКА: $SERVICE_NAME не активен после restart -- см. journalctl -u $SERVICE_NAME" >&2

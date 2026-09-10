@@ -2,7 +2,9 @@
 # Promonta miniapp rollback -- Release-аудит Этап 8. Восстанавливает production
 # файлы из backup, созданного scripts/deploy.sh (/tmp/rollback_backup_<timestamp>/).
 #
-# Запуск: sudo scripts/rollback.sh /tmp/rollback_backup_20260730_153917
+# Запуск: как пользователь promonta, БЕЗ sudo/root (10.09, deploy permissions fix --
+# /var/www/miniapp теперь root:webdeploy 2775 setgid, promonta пишет напрямую):
+#   bash scripts/rollback.sh /tmp/rollback_backup_20260730_153917
 set -euo pipefail
 
 BACKEND_SERVING_DIR="/home/promonta/agent/miniapp"
@@ -117,14 +119,16 @@ echo "OK"
 echo "== 4/6 Восстановление frontend (если было в backup) =="
 if [[ -d "$BACKUP_DIR/frontend" ]]; then
   rsync -a --delete "$BACKUP_DIR/frontend/" "${FRONTEND_SERVING_DIR}/"
-  chown -R root:root "$FRONTEND_SERVING_DIR" 2>/dev/null || echo "предупреждение: chown пропущен (не root)"
+  # 10.09: no chown needed -- root:webdeploy 2775 setgid on FRONTEND_SERVING_DIR
+  # means new files inherit the webdeploy group automatically.
   echo "OK"
 else
   echo "(в этом backup не было frontend -- пропущено)"
 fi
 
 echo "== 5/6 Restart backend =="
-systemctl restart "$SERVICE_NAME"
+# 10.09: sudoers grants promonta NOPASSWD exactly this one systemctl call.
+sudo /bin/systemctl restart "$SERVICE_NAME"
 sleep 3
 if ! systemctl is-active --quiet "$SERVICE_NAME"; then
   echo "ОШИБКА: $SERVICE_NAME не активен после restart даже после отката -- требуется ручное вмешательство" >&2
