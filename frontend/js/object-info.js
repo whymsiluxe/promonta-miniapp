@@ -982,33 +982,95 @@ async function _uploadObjInfoDoc(objectId, file) {
 
 // Viewer -- полноэкранный, back возвращает ровно на Инфо-таб этого объекта (не reload, не
 // switchView -- та же логика что чат-таб в object-detail: не .view-элемент, отдельный overlay).
-function _openObjInfoDocViewer(objectId, fname, contentType, name) {
+//
+// Item 5 fix (owner screenshot: broken image, no way back except quitting the
+// Mini App): two independent bugs fixed here.
+// 1) NavigationManager.registerOverlay() was never called -- every other
+//    full-screen overlay in the app does this (Object Detail, Mangel menu),
+//    so Telegram's BackButton/hardware-back/swipe-back had no idea this
+//    viewer existed and fell through to whatever the app's root back-handler
+//    does (which, for the owner, meant leaving the Mini App entirely).
+// 2) The image loaded via a raw <img src="...">, which sends no auth header
+//    -- the endpoint requires Telegram session auth, so it always 401'd and
+//    rendered as a broken image icon. Now uses authImageUrl() (shared.js),
+//    the same blob-URL pattern already used correctly elsewhere in the app
+//    (mangel.js photo thumbnails/full view). Works for the iframe (PDF) path
+//    too, since authImageUrl() just fetches+blobs regardless of content type.
+let _objDocViewerUnregister = null;
+let _objDocViewerBlobUrl = null;
+
+async function _openObjInfoDocViewer(objectId, fname, contentType, name) {
   let viewer = document.getElementById('obj-info-doc-viewer');
   if (!viewer) {
     viewer = document.createElement('div');
     viewer.id = 'obj-info-doc-viewer';
     document.body.appendChild(viewer);
   }
-  const src = `${API_BASE}/api/objects/${objectId}/documents/${fname}/file`;
   const isImage = (contentType || '').startsWith('image/');
+  const isPdf = contentType === 'application/pdf';
   viewer.innerHTML = `
     <div class="obj-doc-viewer-header">
       <button id="obj-doc-viewer-back" class="chat-back-btn" type="button" aria-label="Назад">←</button>
       <h1>${esc(name)}</h1>
     </div>
     <div class="obj-doc-viewer-body">
-      ${isImage
-        ? `<img src="${src}" alt="${esc(name)}">`
-        : `<iframe src="${src}" title="${esc(name)}"></iframe>`}
+      ${isImage || isPdf
+        ? '<div class="obj-doc-viewer-loading">Загрузка…</div>'
+        : `<div class="obj-doc-viewer-loading">Формат не поддерживается для просмотра</div>`}
     </div>
   `;
   viewer.style.display = 'flex';
   document.getElementById('obj-doc-viewer-back').addEventListener('click', _closeObjInfoDocViewer);
+  if (typeof NavigationManager !== 'undefined' && !_objDocViewerUnregister) {
+    // Same Internal/manual split as Object Detail (_closeObjectDetailInternal
+    // vs closeObjectDetail): when NavigationManager itself calls this (Telegram
+    // Back/hardware-back/swipe), the overlay is already popped -- calling the
+    // unregister function again here would be a no-op stack pop on an already-
+    // empty slot, but to match the established convention exactly, the
+    // Telegram-back path does NOT re-invoke _objDocViewerUnregister.
+    _objDocViewerUnregister = NavigationManager.registerOverlay(() => _closeObjInfoDocViewerInternal());
+  }
+
+  if (!isImage && !isPdf) return;
+
+  try {
+    const path = `/api/objects/${objectId}/documents/${fname}/file`;
+    const blobUrl = await authImageUrl(path);
+    _objDocViewerBlobUrl = blobUrl;
+    const body = viewer.querySelector('.obj-doc-viewer-body');
+    if (!body) return; // viewer was closed while the fetch was in flight
+    body.innerHTML = isImage
+      ? `<img src="${blobUrl}" alt="${esc(name)}">`
+      : `<iframe src="${blobUrl}" title="${esc(name)}"></iframe>`;
+  } catch (e) {
+    const body = viewer.querySelector('.obj-doc-viewer-body');
+    if (body) body.innerHTML = `<div class="obj-doc-viewer-loading">Не удалось загрузить файл: ${esc(e.message)}</div>`;
+  }
 }
 
-function _closeObjInfoDocViewer() {
+// Called from NavigationManager (Telegram Back/hardware-back/swipe) -- overlay
+// is already popped, do not call the unregister function again.
+function _closeObjInfoDocViewerInternal() {
   const viewer = document.getElementById('obj-info-doc-viewer');
   if (viewer) viewer.style.display = 'none';
+  if (_objDocViewerBlobUrl) {
+    _revokeIfBlobUrl(_objDocViewerBlobUrl);
+    _objDocViewerBlobUrl = null;
+  }
+  _objDocViewerUnregister = null;
+}
+
+// Called from the in-app "←" button tap -- overlay is still in NavigationManager's
+// stack, must explicitly unregister or the next Back would try to close an
+// already-closed screen.
+function _closeObjInfoDocViewer() {
+  if (_objDocViewerUnregister) { _objDocViewerUnregister(); _objDocViewerUnregister = null; }
+  const viewer = document.getElementById('obj-info-doc-viewer');
+  if (viewer) viewer.style.display = 'none';
+  if (_objDocViewerBlobUrl) {
+    _revokeIfBlobUrl(_objDocViewerBlobUrl);
+    _objDocViewerBlobUrl = null;
+  }
 }
 
 // 25.07 v3: Задачи объекта и Дефекты (список) теперь рендерятся внутри Инфо
