@@ -243,21 +243,25 @@ async function loadObjectWorkTasks(objectId, listEl, countEl) {
       listEl.innerHTML = data.tasks.map(renderTaskRow).join('');
     }
     if (countEl) countEl.textContent = `(${data.tasks.length})`;
-    attachTaskHandlers(listEl, objectId);
+    attachTaskHandlers(listEl, objectId, countEl);
   } catch (e) {
     listEl.innerHTML = `<div style="padding:0.3rem 0;color:var(--red);font-size:0.85rem">Ошибка: ${esc(e.message)}</div>`;
   }
 }
 
-function attachTaskHandlers(listEl, objectId) {
+// Item 8 fix: countEl is now passed through explicitly instead of re-derived
+// via listEl.closest('.card').querySelector('.tasks-count') -- that lookup
+// assumed a '.card' ancestor that only exists in the Objects-list context.
+// Object Info's tasks section (object-info.js) wraps this same list in a bare
+// <div>, so .closest('.card') returned null and .querySelector on it crashed
+// with "null is not an object (evaluating 'card.querySelector')".
+function attachTaskHandlers(listEl, objectId, countEl) {
   listEl.querySelectorAll('.checkbox:not(.disabled)').forEach(box => {
     box.addEventListener('click', async () => {
       const taskId = box.closest('.task-row').dataset.taskId;
       box.classList.add('disabled');
       try {
         await api(`/api/tasks/${taskId}/complete`, { method: 'PATCH' });
-        const card = listEl.closest('.card');
-        const countEl = card.querySelector('.tasks-count');
         await loadObjectWorkTasks(objectId, listEl, countEl);
       } catch (e) {
         showToast('Ошибка: ' + e.message, 'error');
