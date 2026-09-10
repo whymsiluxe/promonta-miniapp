@@ -7902,7 +7902,7 @@ def daily_plan_today(
 
     carryovers = dpl.get_carryovers_for_worker(worker_id, today)
     acceptance = dpl.get_acceptance(plan["id"], worker_id)
-    amendments = dpl.get_pending_amendments(plan["id"])
+    amendments = dpl.get_pending_amendments(plan["id"], worker_id)
 
     # Если план принят — отдаём snapshot принятой версии, не текущий Sheet
     if acceptance:

@@ -162,6 +162,10 @@ function _shouldShowPlanScreen(data) {
   if (!data || !data.has_plan || !data.plan) return false;
   const status = data.plan.status;
   const accepted = !!data.acceptance;
+  // If THIS worker has pending amendments they haven't acked yet, always show
+  // the screen regardless of their acceptance state (a prior acceptance is stale
+  // vs. the new plan version and must not gate the amendment screen away).
+  if ((data.pending_amendments || []).length > 0) return true;
   // 'accepted'/'in_progress' included: on a multi-worker plan another worker may
   // have already accepted (status -> accepted) or even finished their own part
   // (status -> in_progress, set by apply_daily_execution) before THIS worker got
@@ -213,6 +217,37 @@ function _openTodayPlanScreen(data, { mandatory = true } = {}) {
       _closeTodayPlanScreen();
       resolve();
     });
+
+    // Amendment acknowledgement CTA (takes priority over plain acceptance)
+    const amendAckBtn = screen.querySelector('#tp-amend-ack-btn');
+    if (amendAckBtn && plan) {
+      amendAckBtn.addEventListener('click', async () => {
+        amendAckBtn.disabled = true;
+        amendAckBtn.textContent = 'Принимаю…';
+        const planId = amendAckBtn.dataset.planId;
+        const amendmentId = amendAckBtn.dataset.amendmentId;
+        try {
+          await api(`/api/daily-plan/${planId}/amendments/${amendmentId}/accept`, { method: 'POST' });
+          hapticImpact('medium');
+          // Re-fetch plan state so other pending amendments (if any) are surfaced
+          const freshData = await api('/api/daily-plan/today');
+          _todayPlanState = freshData; window._todayPlanState = freshData;
+          if (freshData.acceptance) _tpDbSave(freshData);
+          _updateTodayPlanBar(freshData);
+          if ((freshData.pending_amendments || []).length > 0) {
+            // More amendments for this worker — re-render the screen
+            screen.innerHTML = _renderScreenHTML(freshData, mandatory);
+          } else {
+            _closeTodayPlanScreen();
+            resolve();
+          }
+        } catch (e) {
+          showToast('Не удалось принять изменения: ' + e.message, 'error');
+          amendAckBtn.disabled = false;
+          amendAckBtn.textContent = 'ПОНЯТНО — ПРИНЯТЬ ИЗМЕНЕНИЯ';
+        }
+      });
+    }
 
     // Acceptance CTA
     const acceptBtn = screen.querySelector('#tp-accept-btn');
@@ -320,22 +355,50 @@ function _renderScreenHTML(data, mandatory) {
   const done = items.filter(i => i.status === 'done').length;
   const total = items.length;
 
+  const pendingAmendments = data.pending_amendments || [];
+  const hasPendingAmendment = pendingAmendments.length > 0;
+
   // Status badge text
   let statusBadge = '';
-  if (!accepted) {
-    statusBadge = '<span class="tp-status-badge tp-status-pending">Ожидает принятия</span>';
-  } else if (status === 'amendment_pending') {
+  if (hasPendingAmendment) {
     statusBadge = '<span class="tp-status-badge tp-status-amend">Изменения от руководителя</span>';
+  } else if (!accepted) {
+    statusBadge = '<span class="tp-status-badge tp-status-pending">Ожидает принятия</span>';
   } else {
     statusBadge = '<span class="tp-status-badge tp-status-accepted">План принят</span>';
   }
 
   const planBody = renderDailyPlan(data, 'worker');
 
+  // Amendment diff block — rendered when THIS worker has unacknowledged amendments
+  let amendmentHtml = '';
+  if (hasPendingAmendment) {
+    amendmentHtml = pendingAmendments.map(amend => {
+      const diff = amend.diff || {};
+      const added = diff.added || [];
+      const removed = diff.removed || [];
+      const changed = diff.changed || [];
+      let diffLines = '';
+      if (changed.length) diffLines += `<div class="tp-diff-section"><div class="tp-diff-label">БЫЛО → СТАЛО</div>${changed.map(c => `<div class="tp-diff-row tp-diff-changed"><span class="tp-diff-old">${esc(c.old && c.old.title || JSON.stringify(c.old))}</span><span class="tp-diff-arrow">→</span><span class="tp-diff-new">${esc(c.new && c.new.title || JSON.stringify(c.new))}</span></div>`).join('')}</div>`;
+      if (added.length)   diffLines += `<div class="tp-diff-section"><div class="tp-diff-label">ДОБАВЛЕНО</div>${added.map(i => `<div class="tp-diff-row tp-diff-added">+ ${esc(i.title || JSON.stringify(i))}</div>`).join('')}</div>`;
+      if (removed.length) diffLines += `<div class="tp-diff-section"><div class="tp-diff-label">УДАЛЕНО</div>${removed.map(i => `<div class="tp-diff-row tp-diff-removed">− ${esc(i.title || JSON.stringify(i))}</div>`).join('')}</div>`;
+      if (!diffLines) diffLines = '<div class="tp-diff-row">Нет деталей изменений</div>';
+      return `<div class="tp-amendment-block" data-amendment-id="${esc(amend.id)}"><div class="tp-amend-title">Изменение плана</div>${diffLines}</div>`;
+    }).join('');
+  }
+
   // Footer CTAs — all interactive actions disabled when offline (read-only fallback)
   let footerHtml = '';
   if (isOffline) {
     footerHtml = '<div class="tp-offline-footer">Действия недоступны офлайн</div>';
+  } else if (hasPendingAmendment) {
+    // Amendment acknowledgement takes priority — even over first-time acceptance
+    const amendId = pendingAmendments[0].id;
+    footerHtml = `
+      <button class="tp-cta-btn tp-accept-btn" id="tp-amend-ack-btn"
+              type="button" data-plan-id="${esc(plan.id)}" data-amendment-id="${esc(amendId)}">
+        ПОНЯТНО — ПРИНЯТЬ ИЗМЕНЕНИЯ
+      </button>`;
   } else if (!accepted) {
     footerHtml = `
       <button class="tp-cta-btn tp-accept-btn" id="tp-accept-btn" type="button">
@@ -362,6 +425,7 @@ function _renderScreenHTML(data, mandatory) {
         ${total > 0 ? `<div class="tp-item-count">${total} ${_pluralRu(total, 'задание', 'задания', 'заданий')}</div>` : ''}
       </div>
       <div class="tp-body">
+        ${amendmentHtml}
         ${planBody}
       </div>
       <div class="tp-footer">
