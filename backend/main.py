@@ -1226,6 +1226,22 @@ def get_my_profile(user: dict = Depends(get_current_user)):
             healed_name = candidate
     if healed_name:
         profile = {**profile, 'name': healed_name}
+    else:
+        # Item 5 fix (owner report: square/garbled glyphs in profile name):
+        # the healing above only overwrites profile['name'] when a usable
+        # replacement (Telegram first_name) exists. If BOTH the stored name
+        # AND the current first_name fail sanitization (real case: Telegram
+        # first_name genuinely contains only Hangul filler characters, not a
+        # rendering/font bug -- confirmed by reading the raw string, not
+        # guessed), the original unsanitized value was passed straight
+        # through to the client. Never silently strip a legitimate Cyrillic
+        # name (sanitize_display_name already handles that correctly) --
+        # only replace when sanitization proves there is truly nothing
+        # displayable left, falling back to the Telegram user_id like the
+        # rest of the app already does when no name is available at all.
+        existing_sanitized = _sanitize_display_name(profile.get('name'), '')
+        if not existing_sanitized:
+            profile = {**profile, 'name': str(user['id'])}
     skills_v2 = _get_worker_skills_v2(user['id'])
     role = _load_roles().get(str(user['id']), 'worker')
     return {
