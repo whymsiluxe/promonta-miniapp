@@ -6006,7 +6006,14 @@ function _applyViewportHeightNow() {
 
     if (actualInset > 120) {
       _lastKeyboardInset = actualInset;
-      try { sessionStorage.setItem('keyboardInsetPortrait', String(actualInset)); } catch (e) {}
+      // 09.09: localStorage, не sessionStorage -- owner подтвердил живьём, что каждое
+      // закрытие/переоткрытие Telegram Mini App (не просто смена вкладки/экрана внутри
+      // него) даёт кэшу задержку каждый раз одинаковую, будто он никогда не срабатывает.
+      // Причина: Telegram переоткрывает Mini App как свежую загрузку страницы -- новый
+      // JS-контекст, sessionStorage (живёт только пока жива вкладка/страница) пуст
+      // каждый раз, кэш никогда не накапливался между запусками. localStorage переживает
+      // это переоткрытие, sessionStorage больше не подходит для этого конкретного кейса.
+      try { localStorage.setItem('keyboardInsetPortrait', String(actualInset)); } catch (e) {}
     }
   } else {
     document.documentElement.style.setProperty('--tg-fullscreen-height', h + 'px');
@@ -6024,7 +6031,7 @@ function _applyViewportHeightNow() {
 // от чего (нет ещё сохранённого значения) -- там остаётся обычный мгновенный snap.
 let _lastKeyboardInset = 0;
 try {
-  const cached = Number(sessionStorage.getItem('keyboardInsetPortrait'));
+  const cached = Number(localStorage.getItem('keyboardInsetPortrait'));
   if (cached > 120) _lastKeyboardInset = cached;
 } catch (e) {}
 let _chatComposerPredicting = false;
