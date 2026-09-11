@@ -1481,10 +1481,32 @@ function _watchChatDialogClose() {
   _chatBodyClassObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 }
 
+// 09.09 v11c: --chat-composer-height fallback (64px) был меньше реальной высоты
+// .chat-input-bar (padding 0.5rem/0.6rem/safe-area + иконки-кнопки в реальности
+// дают больше 64px) -- .chat-messages'ный нижний резерв всегда был чуть занижен,
+// отсюда owner report "прокрутить не даёт, совсем немного" -- последняя строка
+// сообщения технически помещалась в DOM, но пары пикселей не хватало чтобы она
+// вышла из-под composer/клавиатуры. ResizeObserver отслеживает РЕАЛЬНУЮ высоту
+// (textarea растёт на несколько строк -- составитель тоже растёт) вместо
+// захардкоженного значения.
+let _chatComposerHeightObserver = null;
+function _observeChatComposerHeight(barEl) {
+  if (!barEl || !window.ResizeObserver) return;
+  if (_chatComposerHeightObserver) _chatComposerHeightObserver.disconnect();
+  _chatComposerHeightObserver = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      const h = Math.ceil(entry.borderBoxSize?.[0]?.blockSize || entry.contentRect.height);
+      if (h > 0) document.documentElement.style.setProperty('--chat-composer-height', h + 'px');
+    }
+  });
+  _chatComposerHeightObserver.observe(barEl);
+}
+
 async function initChatView() {
   _closeChatMessageOverlays(); // 03.08: тот же idempotent-паттерн, что _revokeAllChatBlobUrls ниже
   _watchChatDialogClose();
   _revokeAllChatBlobUrls();
+  _observeChatComposerHeight(document.getElementById('chat-input-bar'));
   if (!_chatMyId) {
     try {
       const me = await api('/api/me');

@@ -210,6 +210,12 @@ function initAiView() {
 
   _renderAiMessages();
   _initAiModelSelect();
+  // 09.09 v11c: тот же ResizeObserver что chat.js -- --chat-composer-height
+  // общая переменная для .chat-input-bar/.ai-input-bar (CSS), но текущий bar
+  // (общий или ИИ) может отличаться по высоте -- наблюдаем именно активный.
+  if (typeof _observeChatComposerHeight === 'function') {
+    _observeChatComposerHeight(document.querySelector('.ai-input-bar'));
+  }
 
   const sendBtn = document.getElementById('ai-send');
   const clearBtn = document.getElementById('ai-clear');
