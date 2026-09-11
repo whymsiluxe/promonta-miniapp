@@ -425,8 +425,39 @@ function _asBindConfirmStep() {
         _renderObjTeamAndShifts(closedObjectId);
       }
     } catch (e) {
-      errEl.textContent = 'Ошибка: ' + e.message;
-      errEl.style.display = 'block';
+      const isCompleted = e.message && e.message.includes('Объект завершён');
+      if (isCompleted) {
+        errEl.innerHTML = `Объект завершён — назначение недоступно.
+          <button type="button" id="as-reopen-object-btn" style="display:block;margin-top:0.5rem;width:100%;padding:0.45rem 0.75rem;border:none;border-radius:8px;background:var(--primary);color:#fff;font-size:0.9rem;cursor:pointer;">
+            Перевести объект в «В работе» и назначить
+          </button>`;
+        errEl.style.display = 'block';
+        const reopenBtn = document.getElementById('as-reopen-object-btn');
+        if (reopenBtn) {
+          reopenBtn.addEventListener('click', async () => {
+            reopenBtn.disabled = true;
+            reopenBtn.textContent = 'Меняю статус...';
+            try {
+              await api(`/api/objects/${_asState.objectId}/status`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status: 'В работе' }),
+              });
+              errEl.style.display = 'none';
+              errEl.innerHTML = '';
+              // Re-submit the assignment now that the object is active again
+              btn.disabled = false;
+              btn.click();
+            } catch (e2) {
+              reopenBtn.disabled = false;
+              reopenBtn.textContent = 'Перевести объект в «В работе» и назначить';
+              errEl.innerHTML = 'Не удалось изменить статус объекта: ' + e2.message;
+            }
+          });
+        }
+      } else {
+        errEl.textContent = 'Ошибка: ' + e.message;
+        errEl.style.display = 'block';
+      }
       submitting = false;
       btn.disabled = false;
       btn.textContent = `Назначить ${_asState.userIds.length} работник${_asState.userIds.length === 1 ? 'а' : 'ов'}`;
