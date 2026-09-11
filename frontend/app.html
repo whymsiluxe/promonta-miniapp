@@ -4219,7 +4219,16 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .hcw-day-section { margin-bottom: 0.6rem; }
 .hcw-day-label { font-size: 0.78rem; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.35rem; }
 .hcw-list { display: flex; flex-direction: column; gap: 0.3rem; }
-.hcw-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.2rem 0; }
+.hcw-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.2rem 0; cursor: pointer; }
+/* 09.09: аватар + имя кликабельны (Worker Card), отдельная "+" кнопка (Assignment
+   Sheet) -- см. _bindHcwRowInteractions в home.js. Touch target >= 44px на кнопке
+   (спека внешнего разбора), аватар меньше визуально (28px), но клик по всей .hcw-row
+   тоже открывает карточку (кликабельная область больше самого кружка). */
+.hcw-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.75rem; font-weight: 700; overflow: hidden; }
+.hcw-avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.hcw-assign-btn { flex-shrink: 0; width: 44px; height: 44px; border: none; background: none; color: var(--accent); font-size: 1.3rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+.hcw-assign-btn:active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.hcw-object-link { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px; }
 .hcw-worker-name { font-size: 0.9rem; color: var(--text-main); font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hcw-status { font-size: 0.82rem; white-space: nowrap; }
 .hcw-free { color: var(--accent); }

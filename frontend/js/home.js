@@ -183,13 +183,15 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise, teamPlanT
     }
 
     // Item 13: build uid -> assignment map from team-plan (real assignment source),
-    // not just "not absent = free".
+    // not just "not absent = free". 09.09: object_id added -- needed to make the
+    // object name in the dashboard row clickable (open the actual object), not just
+    // display text.
     function assignmentMap(teamPlanData) {
       const map = {};
       for (const obj of (teamPlanData.objects || [])) {
         for (const a of (obj.assignments || [])) {
           if (a.assignment_status === 'declined') continue;
-          map[String(a.user_id)] = { objectName: obj.object_name, shiftState: a.shift_state };
+          map[String(a.user_id)] = { objectId: obj.object_id, objectName: obj.object_name, shiftState: a.shift_state };
         }
       }
       return map;
@@ -219,12 +221,32 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise, teamPlanT
           statusText = 'Свободен';
           cls = 'hcw-free';
         }
-        return `<div class="hcw-row"><span class="hcw-worker-name">${esc(w.name)}</span><span class="hcw-status ${cls}">${esc(statusText)}</span></div>`;
+        // 09.09 (external review item 3): dashboard staffing rows were static text --
+        // no user_id on the DOM, no avatar, no click handler at all. Owner report:
+        // "Расписание команды в дашборде не интерактивно". Now: avatar+name open
+        // Worker Card (reuses openWorkerCard, no new implementation), a separate
+        // "+" button opens the assignment sheet (reuses openAssignmentSheet), and
+        // the object name (when assigned) opens that object.
+        const avatarInitial = (w.name || '?')[0].toUpperCase();
+        const avatarHtml = w.has_avatar
+          ? `<span class="hcw-avatar" data-uid="${esc(w.user_id)}" style="background:hsl(${_chatAvatarHue(w.user_id)} 45% 42%)"><img class="hcw-avatar-img" data-uid="${esc(w.user_id)}" alt=""></span>`
+          : `<span class="hcw-avatar" data-uid="${esc(w.user_id)}" style="background:hsl(${_chatAvatarHue(w.user_id)} 45% 42%)">${esc(avatarInitial)}</span>`;
+        const objectClickable = assignment && assignment.objectId
+          ? `<span class="hcw-object-link" data-object-id="${esc(assignment.objectId)}" data-object-name="${esc(assignment.objectName || '')}">${esc(statusText)}</span>`
+          : esc(statusText);
+        return `<div class="hcw-row" data-uid="${esc(w.user_id)}">
+          ${avatarHtml}
+          <span class="hcw-worker-name" data-uid="${esc(w.user_id)}">${esc(w.name)}</span>
+          <span class="hcw-status ${cls}">${objectClickable}</span>
+          <button type="button" class="hcw-assign-btn" data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}" aria-label="Назначить">+</button>
+        </div>`;
       }).join('');
     }
 
     todayList.innerHTML = renderList(todayStr, assignedToday);
     tomorrowList.innerHTML = renderList(tomorrowStr, assignedTomorrow);
+    _bindHcwRowInteractions(todayList);
+    _bindHcwRowInteractions(tomorrowList);
 
     const summaryEl = document.getElementById('hcw-summary');
     if (summaryEl && workers.length > 0) {
@@ -235,6 +257,40 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise, teamPlanT
   } catch (e) {
     todayList.innerHTML = '<div class="hcw-error">Не удалось загрузить</div>';
   }
+}
+
+// 09.09: делегирует клики по аватару/имени -> Worker Card, "+" -> Assignment Sheet,
+// имя объекта -> Object Detail. Переиспользует существующие функции (openWorkerCard,
+// openAssignmentSheet, openObjectDetail) -- не отдельная реализация назначения.
+function _bindHcwRowInteractions(listEl) {
+  if (!listEl) return;
+  listEl.querySelectorAll('.hcw-avatar-img[data-uid]').forEach(img => {
+    if (typeof authImg === 'function') authImg(img, `/api/profile/${img.dataset.uid}/avatar`);
+  });
+  listEl.querySelectorAll('[data-uid]').forEach(el => {
+    if (el.classList.contains('hcw-assign-btn')) return;
+    el.addEventListener('click', () => {
+      if (typeof openWorkerCard === 'function') openWorkerCard(el.dataset.uid);
+    });
+  });
+  listEl.querySelectorAll('.hcw-assign-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof openAssignmentSheet === 'function') {
+        openAssignmentSheet({ userId: btn.dataset.uid, userName: btn.dataset.name });
+      } else {
+        showToast('Форма назначения недоступна', 'error');
+      }
+    });
+  });
+  listEl.querySelectorAll('.hcw-object-link[data-object-id]').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof openObjectDetail === 'function') {
+        openObjectDetail(link.dataset.objectId, link.dataset.objectName);
+      }
+    });
+  });
 }
 
 // 10.11: Abwesenheit-плашка на Home — сводка вместо мелкой строки в Profile→Ещё.
