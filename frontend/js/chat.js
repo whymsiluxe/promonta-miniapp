@@ -20,6 +20,11 @@ let _chatIsOwner = false;
 let _chatActiveThread = null; // null = группа, иначе user_id собеседника (DM)
 let _chatActiveThreadKey = null; // 10.36: чат объекта/дефекта (obj:OBJ-001 / mangel:ticket_id) — приоритет над _chatActiveThread
 let _chatWorkers = [];
+// 09.09: owner попросил -- вкладка Чат -> Объекты должна показывать ВСЕ объекты
+// сразу (как личные чаты показывают ВСЕХ работников), не только те где уже была
+// переписка. Раньше filtered = _chatMyThreads.filter(startsWith('obj:')) -- объект
+// без единого сообщения не имел thread_key вообще, поэтому не появлялся в списке.
+let _chatObjectsCache = [];
 let _chatReturnToView = null; // 21.07: откуда открыт чат (Потребности/Дефекты) — назад должен вернуть туда, не в общий список тредов
 let _chatReplyTarget = null; // {id, name, preview} — выбранное сообщение для ответа, до отправки
 
@@ -905,6 +910,19 @@ async function markChatRead(threadUserId, threadKey) {
   } catch (e) {}
 }
 
+// 09.09: список ВСЕХ объектов для вкладки Чат -> Объекты -- см. _chatObjectsCache
+// объявление выше. Тот же источник что objects.js/mangel.js, свой кэш (не делимся
+// глобальной переменной между файлами -- независимые модули, каждый со своим кэшем,
+// установленный паттерн в этом проекте, см. _mangelObjectsCache в mangel.js).
+async function _loadChatObjects() {
+  try {
+    const res = await api('/api/objects');
+    _chatObjectsCache = res.objects || [];
+  } catch (e) {
+    _chatObjectsCache = [];
+  }
+}
+
 // ── Thread-selector (Фаза 6): список контактов, "Общий чат" закреплён первым ──
 async function _loadChatWorkers() {
   try {
@@ -1241,14 +1259,54 @@ function renderChatThreadList() {
     listEl.querySelectorAll('.chat-thread-item[data-thread]').forEach(item => {
       _attachChatThreadLongPress(item, item.dataset.thread, { to_user_id: item.dataset.thread });
     });
+  } else if (_chatCategory === 'obj') {
+    // 09.09: owner попросил показывать ВСЕ объекты сразу, не только те где уже
+    // была переписка (те же права, что личные чаты -- видны ВСЕ работники сразу).
+    // Сливаем полный список объектов (_chatObjectsCache) с существующими тредами
+    // (_chatMyThreads, есть только для объектов где уже отправлялось хоть одно
+    // сообщение) по object_id -- объект без переписки получает placeholder-превью
+    // вместо last_preview и открывается тем же openObjectOrMangelChat() как обычно
+    // (сам эндпоинт создаёт тред при первой отправке, ничего менять не нужно).
+    const threadsByObjId = {};
+    _chatMyThreads.filter(t => t.thread_key.startsWith('obj:')).forEach(t => {
+      threadsByObjId[t.thread_key.slice(4)] = t;
+    });
+    let merged = _chatObjectsCache.map(obj => {
+      const oid = String(obj['ID объекта'] || '');
+      const existing = threadsByObjId[oid];
+      return existing || {
+        thread_key: `obj:${oid}`,
+        title: obj['Объект'] || oid,
+        last_preview: '',
+        last_ts: 0,
+      };
+    });
+    if (q) merged = merged.filter(t => t.title.toLowerCase().includes(q) || (t.last_preview || '').toLowerCase().includes(q));
+    const viewThreads = _applyThreadPrefsView(merged, t => t.thread_key);
+    listEl.innerHTML = viewThreads.map(({ it: t, prefs }) => `
+      <div class="chat-thread-item" data-thread-key="${t.thread_key}">
+        <div class="chat-thread-avatar group" style="background:color-mix(in srgb, var(--c-brass, var(--accent)) 16%, var(--bg-card-raised));color:var(--c-brass, var(--accent));border-color:color-mix(in srgb, var(--c-brass, var(--accent)) 35%, transparent)"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
+        <div class="chat-thread-info">
+          <div class="chat-thread-name">${_escChat(t.title)}</div>
+          <div class="chat-thread-preview">${_escChat(t.last_preview || 'Начать переписку')}</div>
+        </div>
+        <div class="chat-thread-meta">
+          ${_threadPrefsIcons(prefs)}
+          ${_threadTimeLabel(t.last_ts) ? `<span class="chat-thread-time">${_threadTimeLabel(t.last_ts)}</span>` : ''}
+          ${_threadBadge(_chatUnreadByThread[t.thread_key] || 0)}
+        </div>
+      </div>`).join('') || `<div class="chat-empty">${q ? 'Ничего не найдено' : 'Нет объектов'}</div>`;
+    listEl.querySelectorAll('[data-thread-key]').forEach(item => {
+      _attachChatThreadLongPress(item, item.dataset.threadKey, { thread_key: item.dataset.threadKey });
+    });
   } else {
-    const prefix = _chatCategory === 'obj' ? 'obj:' : _chatCategory === 'mangel' ? 'mangel:' : 'task:';
+    const prefix = _chatCategory === 'mangel' ? 'mangel:' : 'task:';
     let filtered = _chatMyThreads.filter(t => t.thread_key.startsWith(prefix));
     if (q) filtered = filtered.filter(t => t.title.toLowerCase().includes(q) || (t.last_preview || '').toLowerCase().includes(q));
     const viewThreads = _applyThreadPrefsView(filtered, t => t.thread_key);
     listEl.innerHTML = viewThreads.map(({ it: t, prefs }) => `
       <div class="chat-thread-item" data-thread-key="${t.thread_key}">
-        <div class="chat-thread-avatar group" style="background:${_chatCategory === 'obj' ? 'color-mix(in srgb, var(--c-brass, var(--accent)) 16%, var(--bg-card-raised))' : 'color-mix(in srgb, #9A4B42 16%, var(--bg-card-raised))'};color:${_chatCategory === 'obj' ? 'var(--c-brass, var(--accent))' : '#9A4B42'};border-color:${_chatCategory === 'obj' ? 'color-mix(in srgb, var(--c-brass, var(--accent)) 35%, transparent)' : 'color-mix(in srgb, #9A4B42 35%, transparent)'}"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
+        <div class="chat-thread-avatar group" style="background:color-mix(in srgb, #9A4B42 16%, var(--bg-card-raised));color:#9A4B42;border-color:color-mix(in srgb, #9A4B42 35%, transparent)"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
         <div class="chat-thread-info">
           <div class="chat-thread-name">${_escChat(t.title)}</div>
           <div class="chat-thread-preview">${_escChat(t.last_preview || '')}</div>
@@ -1520,6 +1578,7 @@ async function initChatView() {
   }
 
   await _loadChatWorkers();
+  await _loadChatObjects();
   renderChatThreadList();
   _loadUnreadByThread();
   _loadMyChatThreads();
