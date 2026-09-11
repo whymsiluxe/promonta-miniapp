@@ -156,13 +156,49 @@ class BatchAssignmentTests(unittest.TestCase):
                 return None
             mock_txn.side_effect = fake_txn
             body = backend.BatchAssignBody(
-                user_ids=['10', '20'], work_type_id='tile_work',
+                user_ids=['10', '20'], work_type_ids=['tile_work'],
                 date_from='2026-08-05', date_to='2026-08-16',
             )
             result = backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
         self.assertEqual(len(result['created']), 2)
         ids = [c['assignment_id'] for c in result['created']]
         self.assertEqual(len(ids), len(set(ids)))
+
+    def test_multiple_work_types_create_separate_assignments_per_user(self):
+        # 09.09: owner попросил отмечать несколько видов работ сразу для одного
+        # назначения -- один batch-запрос с 2 work_type_ids на 1 работника должен
+        # создать 2 отдельных assignment-записи (один work_type_id на запись,
+        # backend-модель данных этого не меняла), не одну запись с двумя видами.
+        with patch.object(backend, '_load_abwesenheit', return_value=[]), \
+             patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
+             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(backend, 'update_json_transaction') as mock_txn:
+            def fake_txn(path, default, mutator):
+                data = {}
+                mutator(data)
+                self.captured = data
+                return None
+            mock_txn.side_effect = fake_txn
+            body = backend.BatchAssignBody(
+                user_ids=['10'], work_type_ids=['tile_work', 'demolition'],
+                date_from='2026-08-05', date_to='2026-08-16',
+            )
+            result = backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
+        self.assertEqual(len(result['created']), 2)
+        created_work_types = {c['work_type_id'] for c in result['created']}
+        self.assertEqual(created_work_types, {'tile_work', 'demolition'})
+        stored = self.captured['OBJ-1']
+        self.assertEqual(len(stored), 2)
+        self.assertEqual({a['work_type_id'] for a in stored}, {'tile_work', 'demolition'})
+        ids = [a['id'] for a in stored]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_empty_work_type_ids_rejected(self):
+        with patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS):
+            body = backend.BatchAssignBody(user_ids=['10'], work_type_ids=[], date_from='2026-08-05', date_to='2026-08-16')
+            with self.assertRaises(HTTPException) as ctx:
+                backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
+        self.assertEqual(ctx.exception.status_code, 400)
 
     def test_duplicate_user_ids_deduplicated(self):
         with patch.object(backend, '_load_abwesenheit', return_value=[]), \
@@ -175,7 +211,7 @@ class BatchAssignmentTests(unittest.TestCase):
                 return None
             mock_txn.side_effect = fake_txn
             body = backend.BatchAssignBody(
-                user_ids=['10', '10', '10'], work_type_id='tile_work',
+                user_ids=['10', '10', '10'], work_type_ids=['tile_work'],
                 date_from='2026-08-05', date_to='2026-08-16',
             )
             result = backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
@@ -194,7 +230,7 @@ class BatchAssignmentTests(unittest.TestCase):
                 return None
             mock_txn.side_effect = fake_txn
             body = backend.BatchAssignBody(
-                user_ids=['10', '20'], work_type_id='tile_work',
+                user_ids=['10', '20'], work_type_ids=['tile_work'],
                 date_from='2026-08-05', date_to='2026-08-16',
             )
             result = backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
@@ -215,7 +251,7 @@ class BatchAssignmentTests(unittest.TestCase):
                 return None
             mock_txn.side_effect = fake_txn
             body = backend.BatchAssignBody(
-                user_ids=['10'], work_type_id='tile_work',
+                user_ids=['10'], work_type_ids=['tile_work'],
                 date_from='2026-08-05', date_to='2026-08-16',
             )
             with self.assertRaises(HTTPException) as ctx:
@@ -224,34 +260,34 @@ class BatchAssignmentTests(unittest.TestCase):
 
     def test_empty_user_ids_rejected(self):
         with patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS):
-            body = backend.BatchAssignBody(user_ids=[], work_type_id='tile_work', date_from='2026-08-05', date_to='2026-08-16')
+            body = backend.BatchAssignBody(user_ids=[], work_type_ids=['tile_work'], date_from='2026-08-05', date_to='2026-08-16')
             with self.assertRaises(HTTPException) as ctx:
                 backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
         self.assertEqual(ctx.exception.status_code, 400)
 
     def test_unknown_work_type_rejected(self):
-        body = backend.BatchAssignBody(user_ids=['10'], work_type_id='not_a_real_skill', date_from='2026-08-05', date_to='2026-08-16')
+        body = backend.BatchAssignBody(user_ids=['10'], work_type_ids=['not_a_real_skill'], date_from='2026-08-05', date_to='2026-08-16')
         with self.assertRaises(HTTPException) as ctx:
             backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
         self.assertEqual(ctx.exception.status_code, 400)
 
     def test_date_from_after_date_to_rejected(self):
         with patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS):
-            body = backend.BatchAssignBody(user_ids=['10'], work_type_id='tile_work', date_from='2026-08-16', date_to='2026-08-05')
+            body = backend.BatchAssignBody(user_ids=['10'], work_type_ids=['tile_work'], date_from='2026-08-16', date_to='2026-08-05')
             with self.assertRaises(HTTPException) as ctx:
                 backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
         self.assertEqual(ctx.exception.status_code, 400)
 
     def test_nonexistent_object_rejected(self):
         with patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS):
-            body = backend.BatchAssignBody(user_ids=['10'], work_type_id='tile_work', date_from='2026-08-05', date_to='2026-08-16')
+            body = backend.BatchAssignBody(user_ids=['10'], work_type_ids=['tile_work'], date_from='2026-08-05', date_to='2026-08-16')
             with self.assertRaises(HTTPException) as ctx:
                 backend.batch_assign('OBJ-NONEXISTENT', body, user=OWNER, _=None)
         self.assertEqual(ctx.exception.status_code, 404)
 
     def test_completed_object_rejected(self):
         with patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_COMPLETED_ROWS):
-            body = backend.BatchAssignBody(user_ids=['10'], work_type_id='tile_work', date_from='2026-08-05', date_to='2026-08-16')
+            body = backend.BatchAssignBody(user_ids=['10'], work_type_ids=['tile_work'], date_from='2026-08-05', date_to='2026-08-16')
             with self.assertRaises(HTTPException) as ctx:
                 backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
         self.assertEqual(ctx.exception.status_code, 400)
@@ -259,7 +295,7 @@ class BatchAssignmentTests(unittest.TestCase):
     def test_unknown_user_id_rejected(self):
         with patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
              patch.object(backend, '_load_roles', return_value={}):
-            body = backend.BatchAssignBody(user_ids=['999'], work_type_id='tile_work', date_from='2026-08-05', date_to='2026-08-16')
+            body = backend.BatchAssignBody(user_ids=['999'], work_type_ids=['tile_work'], date_from='2026-08-05', date_to='2026-08-16')
             with self.assertRaises(HTTPException) as ctx:
                 backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
         self.assertEqual(ctx.exception.status_code, 400)
@@ -267,7 +303,7 @@ class BatchAssignmentTests(unittest.TestCase):
     def test_owner_user_id_rejected(self):
         with patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
              patch.object(backend, '_load_roles', return_value={'1': 'owner'}):
-            body = backend.BatchAssignBody(user_ids=['1'], work_type_id='tile_work', date_from='2026-08-05', date_to='2026-08-16')
+            body = backend.BatchAssignBody(user_ids=['1'], work_type_ids=['tile_work'], date_from='2026-08-05', date_to='2026-08-16')
             with self.assertRaises(HTTPException) as ctx:
                 backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
         self.assertEqual(ctx.exception.status_code, 400)

@@ -42,6 +42,16 @@ async function createSkillPicker(container, opts = {}) {
   // следующего рендера). Теперь single-select -- встроенный режим: toggle() сам
   // снимает предыдущий выбор перед добавлением нового, picker никогда не уничтожается.
   const singleSelect = !!opts.singleSelect;
+  // 09.09: hideFeatured -- owner попросил убрать "Часто используемые" именно из
+  // Assignment Sheet (шаг выбора вида работ) -- список фичатуренных карточек там не
+  // нужен, но онбординг/профиль (два других вызывающих места) его используют,
+  // поэтому опция, не безусловное удаление секции из компонента.
+  const hideFeatured = !!opts.hideFeatured;
+  // 09.09: allLabel -- owner попросил "Все навыки" -> "Виды работ" в контексте
+  // Assignment Sheet (это ровно то же понятие, что owner уже переименовал в других
+  // местах интерфейса по исходному 15-пунктному плану) -- опция вместо жёсткой
+  // замены текста, чтобы онбординг (широкий "навыки работника") не поменялся заодно.
+  const allLabel = opts.allLabel || 'Все навыки';
   let catalog;
   try {
     catalog = await _loadSkillCatalog();
@@ -115,9 +125,11 @@ async function createSkillPicker(container, opts = {}) {
     const prevSelectionEnd = prevSearchInput ? prevSearchInput.selectionEnd : null;
 
     container.innerHTML = `
+      ${hideFeatured ? '' : `
       <div class="skill-picker-featured-label">Часто используемые</div>
       <div class="skill-picker-featured-grid">${featuredHtml}</div>
-      <div class="skill-picker-all-label">Все навыки</div>
+      `}
+      <div class="skill-picker-all-label">${_escSkill(allLabel)}</div>
       <input type="search" class="skill-picker-search-input" placeholder="Поиск..." value="${_escSkill(searchQuery)}">
       <div class="skill-picker-groups">${groupsHtml}</div>
     `;

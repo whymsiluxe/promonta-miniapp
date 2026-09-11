@@ -2463,7 +2463,7 @@ def get_assignment_candidates(object_id: str, work_type_id: str, date_from: str,
 
 class BatchAssignBody(BaseModel):
     user_ids: list[str]
-    work_type_id: str
+    work_type_ids: list[str]
     date_from: str
     date_to: str
     task_note: str = ''
@@ -2479,10 +2479,22 @@ def batch_assign(object_id: str, body: BatchAssignBody,
 
     01.08 (доп.раунд П6): усилена валидация -- раньше не проверялось, что объект
     вообще существует/не завершён, что user_id реально есть в roles, что его роль
-    именно worker (owner или человек без роли мог случайно попасть в назначение)."""
-    wtype = wt.get_work_type(body.work_type_id)
-    if wtype is None or not wtype.get('active'):
-        raise HTTPException(400, "Неизвестный или неактивный вид работ")
+    именно worker (owner или человек без роли мог случайно попасть в назначение).
+
+    09.09: work_type_id (одиночный) -> work_type_ids (список) -- owner попросил
+    отмечать несколько видов работ сразу в Assignment Sheet вместо одного запроса
+    на каждый вид работы с фронтенда. Создаёт одно назначение на каждую пару
+    (user_id, work_type_id) -- та же дедупликация/absence/cross-object проверка,
+    что раньше, просто теперь по обеим осям, не только по user_id."""
+    work_type_ids = list(dict.fromkeys(body.work_type_ids))  # без дублей, сохраняя порядок
+    if not work_type_ids:
+        raise HTTPException(400, "Укажите хотя бы один вид работ")
+    wtypes = {}
+    for wtid in work_type_ids:
+        wtype = wt.get_work_type(wtid)
+        if wtype is None or not wtype.get('active'):
+            raise HTTPException(400, "Неизвестный или неактивный вид работ")
+        wtypes[wtid] = wtype
 
     rows = _cached_get_used_range('Объекты')
     object_row = None
@@ -2528,53 +2540,54 @@ def batch_assign(object_id: str, body: BatchAssignBody,
         abwesenheit = _load_abwesenheit()
         created, skipped = [], []
         for uid in user_ids:
-            # duplicate check: тот же worker, тот же work_type, пересекающийся период,
-            # статус не declined -- та же логика что assign_user() выше, для консистентности.
-            dup = any(
-                a['user_id'] == uid and a.get('work_type_id') == body.work_type_id
-                and _assignment_status(a) != 'declined'
-                and _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', ''))
-                for a in assignments[key]
-            )
-            if dup:
-                skipped.append({"user_id": uid, "reason": "overlap"})
-                continue
-            absence_hit = any(
-                str(e.get('user_id')) == uid and e.get('status') == 'approved'
-                and _dates_overlap(body.date_from, body.date_to, e.get('date_from', ''), e.get('date_to', ''))
-                for e in abwesenheit
-            )
-            if absence_hit:
-                skipped.append({"user_id": uid, "reason": "absence"})
-                continue
-            cross_object_hit = False
-            for other_oid, other_list in assignments.items():
-                if other_oid == key:
+            for wtid in work_type_ids:
+                # duplicate check: тот же worker, тот же work_type, пересекающийся период,
+                # статус не declined -- та же логика что assign_user() выше, для консистентности.
+                dup = any(
+                    a['user_id'] == uid and a.get('work_type_id') == wtid
+                    and _assignment_status(a) != 'declined'
+                    and _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', ''))
+                    for a in assignments[key]
+                )
+                if dup:
+                    skipped.append({"user_id": uid, "work_type_id": wtid, "reason": "overlap"})
                     continue
-                if any(a['user_id'] == uid and _assignment_status(a) != 'declined'
-                       and _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', ''))
-                       for a in other_list):
-                    cross_object_hit = True
-                    break
-            if cross_object_hit:
-                skipped.append({"user_id": uid, "reason": "overlap"})
-                continue
-            assignment_id = uuid.uuid4().hex
-            assignments[key].append({
-                'id': assignment_id,
-                'user_id': uid,
-                'stage_id': wtype['name'],  # legacy-совместимость (текстовое отображение)
-                'work_type_id': body.work_type_id,
-                'date_from': body.date_from,
-                'date_to': body.date_to,
-                'assigned_at': datetime.utcnow().isoformat(),
-                'status': 'pending',
-                'decline_reason': '',
-                'responded_at': '',
-                'task_note': task_note,
-                'created_by': str(user['id']),
-            })
-            created.append({"user_id": uid, "assignment_id": assignment_id})
+                absence_hit = any(
+                    str(e.get('user_id')) == uid and e.get('status') == 'approved'
+                    and _dates_overlap(body.date_from, body.date_to, e.get('date_from', ''), e.get('date_to', ''))
+                    for e in abwesenheit
+                )
+                if absence_hit:
+                    skipped.append({"user_id": uid, "work_type_id": wtid, "reason": "absence"})
+                    continue
+                cross_object_hit = False
+                for other_oid, other_list in assignments.items():
+                    if other_oid == key:
+                        continue
+                    if any(a['user_id'] == uid and _assignment_status(a) != 'declined'
+                           and _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', ''))
+                           for a in other_list):
+                        cross_object_hit = True
+                        break
+                if cross_object_hit:
+                    skipped.append({"user_id": uid, "work_type_id": wtid, "reason": "overlap"})
+                    continue
+                assignment_id = uuid.uuid4().hex
+                assignments[key].append({
+                    'id': assignment_id,
+                    'user_id': uid,
+                    'stage_id': wtypes[wtid]['name'],  # legacy-совместимость (текстовое отображение)
+                    'work_type_id': wtid,
+                    'date_from': body.date_from,
+                    'date_to': body.date_to,
+                    'assigned_at': datetime.utcnow().isoformat(),
+                    'status': 'pending',
+                    'decline_reason': '',
+                    'responded_at': '',
+                    'task_note': task_note,
+                    'created_by': str(user['id']),
+                })
+                created.append({"user_id": uid, "work_type_id": wtid, "assignment_id": assignment_id})
         result_holder['created'] = created
         result_holder['skipped'] = skipped
 

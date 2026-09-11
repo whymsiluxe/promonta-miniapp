@@ -38,7 +38,7 @@ async function openAssignmentSheet(opts = {}) {
     objectName: opts.objectName || '',
     userIds: opts.userId ? [String(opts.userId)] : [],
     userNames: opts.userId ? { [String(opts.userId)]: opts.userName || '' } : {},
-    workTypeId: '',
+    workTypeIds: [],
     workTypeName: '',
     dateFrom: '',
     dateTo: '',
@@ -112,27 +112,32 @@ function _asWorkTypeStepHtml() {
 async function _asBindWorkTypeStep() {
   const container = document.getElementById('as-worktype-picker');
   const nextBtn = document.getElementById('as-worktype-next');
-  let selectedId = _asState.workTypeId;
-  // 03.08: singleSelect -- Assignment Sheet выбирает ОДИН вид работ на назначение.
-  // Раньше это имитировалось вручную (selected.clear()+picker.destroy()+пересоздание
-  // на каждый второй тап), теперь встроенный режим picker'а.
+  let selectedIds = new Set(_asState.workTypeIds);
+  // 09.09: multi-select -- owner попросил отмечать НЕСКОЛЬКО видов работ сразу (тап
+  // подсвечивает/снимает, как чекбокс, не одиночный выбор). Backend
+  // /assignments/batch тоже изменён (BatchAssignBody.work_type_id -> work_type_ids
+  // list[str], main.py) -- создаёт по одному назначению на каждую пару (user,
+  // work_type) за ОДИН запрос, не по отдельному запросу на вид работы. singleSelect
+  // убран (был true).
   await createSkillPicker(container, {
-    initialSelected: selectedId ? new Set([selectedId]) : new Set(),
-    singleSelect: true,
+    initialSelected: selectedIds,
+    hideFeatured: true,
+    allLabel: 'Виды работ',
     onChange: (selected) => {
-      selectedId = Array.from(selected)[0] || '';
-      nextBtn.disabled = !selectedId;
+      selectedIds = new Set(selected);
+      nextBtn.disabled = selectedIds.size === 0;
     },
   });
-  nextBtn.disabled = !selectedId;
+  nextBtn.disabled = selectedIds.size === 0;
   nextBtn.addEventListener('click', async () => {
-    if (!selectedId) return;
-    _asState.workTypeId = selectedId;
+    if (selectedIds.size === 0) return;
+    _asState.workTypeIds = Array.from(selectedIds);
     try {
       const catalog = await api('/api/work-types');
       const all = [...catalog.featured, ...catalog.groups.flatMap(g => g.items)];
-      const found = all.find(w => w.id === selectedId);
-      _asState.workTypeName = found ? found.name : selectedId;
+      _asState.workTypeName = _asState.workTypeIds
+        .map(id => (all.find(w => w.id === id) || {}).name || id)
+        .join(', ');
     } catch (e) { /* оставляем как есть */ }
     _asState.step = _asState.mode === 'from_object' ? 'period' : 'period';
     _asRender();
@@ -288,7 +293,10 @@ async function _asBindWorkersStep() {
   const listEl = document.getElementById('as-candidates-list');
   try {
     const params = new URLSearchParams({
-      object_id: _asState.objectId, work_type_id: _asState.workTypeId,
+      // Кандидаты ранжируются по ОДНОМУ виду работ (используем первый выбранный как
+      // подсказку для сортировки "подходят лучше всего") -- сам список работников не
+      // меняется от количества выбранных видов работ, это не жёсткое ограничение.
+      object_id: _asState.objectId, work_type_id: _asState.workTypeIds[0] || '',
       date_from: _asState.dateFrom, date_to: _asState.dateTo,
     });
     const data = await api(`/api/assignment-candidates?${params.toString()}`);
@@ -392,7 +400,7 @@ function _asBindConfirmStep() {
         method: 'POST',
         body: JSON.stringify({
           user_ids: _asState.userIds,
-          work_type_id: _asState.workTypeId,
+          work_type_ids: _asState.workTypeIds,
           date_from: _asState.dateFrom,
           date_to: _asState.dateTo,
           task_note: _asState.taskNote,
