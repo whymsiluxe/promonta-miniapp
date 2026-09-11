@@ -1136,6 +1136,12 @@ header h1 {
 .bottom-sheet-overlay {
   display: none;
   position: fixed; inset: 0; z-index: 1300;
+  /* 09.09: height via --tg-vp-height so the overlay shrinks when keyboard opens
+     in Telegram fullscreen mode (same pattern as .obj-stage-add-sheet). Without
+     this, the overlay stayed full-screen behind the keyboard and the panel
+     (align-items:flex-end inside) didn't move up -- reported as textarea lagging
+     behind the keyboard. */
+  height: var(--tg-vp-height, 100dvh);
   align-items: flex-end;
   background: rgba(10,10,10,0.55);
   opacity: 0;
@@ -3077,7 +3083,7 @@ body.chat-reply-active .chat-messages {
 .profile-skills-sheet .profile-skills-sheet-body { max-height: 55vh; overflow-y: auto; padding: 0.5rem 1rem; }
 
 /* ═══════════ Единый Assignment Sheet (01.08) ═══════════ */
-.assignment-sheet-panel { max-height: 85vh; display: flex; flex-direction: column; }
+.assignment-sheet-panel { max-height: min(85vh, calc(var(--tg-vp-height, 100dvh) - 16px)); display: flex; flex-direction: column; }
 .assignment-sheet-body { flex: 1; overflow-y: auto; padding: 0.75rem 1rem; min-height: 0; }
 .assignment-sheet-quick-dates { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
 .as-quick-date-btn {
