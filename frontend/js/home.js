@@ -185,8 +185,12 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise, teamPlanT
     // на backend, см. list_workers) исключает и null, и любую будущую третью роль.
     const workers = (wrkData.workers || []).filter(w => w.role === 'worker');
 
-    function absenceFor(workerName, dateStr) {
-      return entries.find(e => e.name === workerName && e.date_from <= dateStr && (!e.date_to || e.date_to >= dateStr));
+    function absenceFor(workerId, dateStr) {
+      return entries.find(e =>
+        String(e.user_id) === String(workerId)
+        && e.date_from <= dateStr
+        && (!e.date_to || e.date_to >= dateStr)
+      );
     }
 
     // Item 13: build uid -> assignment map from team-plan (real assignment source),
@@ -209,7 +213,7 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise, teamPlanT
     function renderList(dateStr, assignedMap) {
       if (workers.length === 0) return '<div class="hcw-row">Нет работников</div>';
       return workers.map(w => {
-        const entry = absenceFor(w.name, dateStr);
+        const entry = absenceFor(w.user_id, dateStr);
         const assignment = assignedMap[String(w.user_id)];
         let statusText, cls;
         if (entry) {
@@ -262,9 +266,9 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise, teamPlanT
       // объект завтра. "Свободен" в самих строках списка (renderList выше) уже
       // правильно проверяет и absence, И assignedTomorrow -- сводка ниже эту же
       // логику не переиспользовала, отдельно и неверно пересчитывала.
-      const absentCount = workers.filter(w => absenceFor(w.name, tomorrowStr)).length;
+      const absentCount = workers.filter(w => absenceFor(w.user_id, tomorrowStr)).length;
       const assignedCount = workers.filter(w =>
-        !absenceFor(w.name, tomorrowStr) && assignedTomorrow[String(w.user_id)]
+        !absenceFor(w.user_id, tomorrowStr) && assignedTomorrow[String(w.user_id)]
       ).length;
       const freeCount = workers.length - absentCount - assignedCount;
       summaryEl.textContent = `${freeCount} свободно · ${absentCount} отсутствует`;

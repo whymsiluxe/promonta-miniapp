@@ -717,25 +717,37 @@ class DeployRollbackNewModulesTests(unittest.TestCase):
         # loop. Verify via manifest.sh (single source of truth) + that deploy.sh sources it.
         with open(self._script_path('manifest.sh'), encoding='utf-8') as f:
             manifest = f.read()
+        with open(self._script_path('runtime_manifest.sh'), encoding='utf-8') as f:
+            runtime_manifest = f.read()
         with open(self._script_path('deploy.sh'), encoding='utf-8') as f:
             deploy = f.read()
         for mod in ('work_types.py', 'profile_skills.py', 'assignment_matching.py'):
             self.assertIn(mod, manifest, f"{mod} not in manifest.sh")
+        self.assertIn('BACKEND_PY_LIBS', runtime_manifest)
+        self.assertIn('BACKEND_JS_FILES', runtime_manifest)
+        self.assertIn('BACKEND_CORE_DIR', runtime_manifest)
         self.assertIn('manifest.sh', deploy, "deploy.sh must source manifest.sh")
-        self.assertIn('BACKEND_PY_LIBS', deploy, "deploy.sh must use BACKEND_PY_LIBS loop")
-        self.assertIn('.ABSENT', deploy, "deploy.sh must still use ABSENT-marker pattern")
+        self.assertIn('runtime_manifest.sh', deploy, "deploy.sh must source runtime_manifest.sh")
+        self.assertIn('backend_runtime_backup', deploy)
+        self.assertIn('backend_runtime_deploy', deploy)
 
     def test_rollback_sh_covers_all_three_new_modules(self):
         # 11.09 (Phase 1): individual restore blocks replaced with manifest-driven loop.
         with open(self._script_path('manifest.sh'), encoding='utf-8') as f:
             manifest = f.read()
+        with open(self._script_path('runtime_manifest.sh'), encoding='utf-8') as f:
+            runtime_manifest = f.read()
         with open(self._script_path('rollback.sh'), encoding='utf-8') as f:
             rollback = f.read()
         for mod in ('work_types.py', 'profile_skills.py', 'assignment_matching.py'):
             self.assertIn(mod, manifest, f"{mod} not in manifest.sh")
+        self.assertIn('BACKEND_PY_LIBS', runtime_manifest)
+        self.assertIn('BACKEND_JS_FILES', runtime_manifest)
+        self.assertIn('BACKEND_CORE_DIR', runtime_manifest)
         self.assertIn('manifest.sh', rollback, "rollback.sh must source manifest.sh")
-        self.assertIn('BACKEND_PY_LIBS', rollback, "rollback.sh must use BACKEND_PY_LIBS loop")
-        self.assertIn('.ABSENT', rollback, "rollback.sh must still use ABSENT-marker pattern")
+        self.assertIn('runtime_manifest.sh', rollback, "rollback.sh must source runtime_manifest.sh")
+        self.assertIn('backend_runtime_restore', rollback)
+        self.assertIn('backend_runtime_syntax_check', rollback)
 
     def test_health_ready_checks_new_modules(self):
         with patch.object(backend, 'os') as mock_os:

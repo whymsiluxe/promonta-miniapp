@@ -4,9 +4,14 @@
 The MIME allowlists and their sniff_*() functions are kept together (not split
 across files) because they're a single cohesive unit -- each sniffer reads
 exactly one allowlist dict defined right above it. Only dependency: the
-`magic` library (python-magic), imported at module level same as main.py did.
+optional `magic` library (python-magic). Local/dev environments do not always
+have system libmagic installed, so import/use failures fall back to conservative
+magic-byte checks for the formats Promonta explicitly allows.
 """
-import magic
+try:
+    import magic as _magic
+except ImportError:
+    _magic = None
 
 _ALLOWED_IMAGE_MIME_EXT = {
     'image/jpeg': 'jpg',
@@ -16,6 +21,41 @@ _ALLOWED_IMAGE_MIME_EXT = {
 }
 
 
+def _fallback_detect_mime(raw: bytes) -> str | None:
+    if raw.startswith(b'\xff\xd8\xff'):
+        return 'image/jpeg'
+    if raw.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'image/png'
+    if raw.startswith((b'GIF87a', b'GIF89a')):
+        return 'image/gif'
+    if len(raw) >= 12 and raw[:4] == b'RIFF' and raw[8:12] == b'WEBP':
+        return 'image/webp'
+    if raw.startswith(b'%PDF-'):
+        return 'application/pdf'
+    if raw.startswith(b'OggS'):
+        return 'audio/ogg'
+    if raw.startswith(b'ID3') or (len(raw) >= 2 and raw[0] == 0xFF and (raw[1] & 0xE0) == 0xE0):
+        return 'audio/mpeg'
+    if len(raw) >= 12 and raw[:4] == b'RIFF' and raw[8:12] == b'WAVE':
+        return 'audio/wav'
+    if len(raw) >= 12 and raw[4:8] == b'ftyp':
+        return 'audio/mp4'
+    if raw.startswith(b'\x1a\x45\xdf\xa3'):
+        return 'video/webm'
+    return None
+
+
+def _detect_mime(raw: bytes) -> str | None:
+    if _magic is not None:
+        try:
+            detected = _magic.from_buffer(raw, mime=True)
+            if detected and detected != 'application/octet-stream':
+                return detected
+        except Exception:
+            pass
+    return _fallback_detect_mime(raw)
+
+
 def sniff_image(raw: bytes) -> str | None:
     """Content-Type из клиента (file.content_type) -- заголовок, который клиент
     присылает сам, ничего не проверяя по факту (spoofable: переименовать .exe в
@@ -23,14 +63,14 @@ def sniff_image(raw: bytes) -> str | None:
     реальные magic bytes через libmagic, возвращает канонический MIME из
     allowlist или None, если это не один из 4 разрешённых форматов изображений
     -- вызывающий код решает как реагировать (обычно HTTPException 400)."""
-    detected = magic.from_buffer(raw, mime=True)
+    detected = _detect_mime(raw)
     return detected if detected in _ALLOWED_IMAGE_MIME_EXT else None
 
 
 def sniff_image_or_pdf(raw: bytes) -> str | None:
     """Как sniff_image(), плюс PDF -- для endpoints, что принимают либо
     изображение, либо документ (object documents, AI attachments)."""
-    detected = magic.from_buffer(raw, mime=True)
+    detected = _detect_mime(raw)
     if detected in _ALLOWED_IMAGE_MIME_EXT or detected == 'application/pdf':
         return detected
     return None
@@ -53,7 +93,7 @@ _ALLOWED_CHAT_ATTACHMENT_MIME_EXT = {**_ALLOWED_IMAGE_MIME_EXT, 'application/pdf
 def sniff_audio(raw: bytes) -> str | None:
     """Как sniff_image(), но для голосовых -- отдельная функция (не смешиваем
     allowlist изображений с аудио, вызывающий код явно говорит что ожидает)."""
-    detected = magic.from_buffer(raw, mime=True)
+    detected = _detect_mime(raw)
     return detected if detected in _ALLOWED_AUDIO_MIME_EXT else None
 
 
@@ -64,7 +104,7 @@ def sniff_chat_attachment(raw: bytes) -> tuple[str, str] | None:
     разрешён. Расширение ВСЕГДА берётся из этой таблицы (не из имени файла от
     клиента) -- закрывает как "любой файл проходит", так и path-traversal через
     непровалидированное имя/расширение (10.07 -- Release-аудит P0)."""
-    detected = magic.from_buffer(raw, mime=True)
+    detected = _detect_mime(raw)
     ext = _ALLOWED_CHAT_ATTACHMENT_MIME_EXT.get(detected)
     if ext is None:
         return None

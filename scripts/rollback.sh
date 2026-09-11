@@ -7,6 +7,9 @@
 #   bash scripts/rollback.sh /tmp/rollback_backup_20260730_153917
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/runtime_manifest.sh"
+
 BACKEND_SERVING_DIR="/home/promonta/agent/miniapp"
 FRONTEND_SERVING_DIR="/var/www/miniapp"
 SERVICE_NAME="promonta-miniapp.service"
@@ -34,48 +37,61 @@ if [[ -z "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]]; then
   echo "ОШИБКА: $BACKUP_DIR пуст -- нечего восстанавливать" >&2
   exit 1
 fi
-if [[ ! -f "$BACKUP_DIR/main.py" ]]; then
-  echo "ОШИБКА: $BACKUP_DIR/main.py отсутствует -- это не похоже на backup от deploy.sh" >&2
+HAS_RUNTIME_MANIFEST=0
+if [[ -f "$BACKUP_DIR/backend_runtime/.manifest" ]]; then
+  HAS_RUNTIME_MANIFEST=1
+fi
+if [[ "$HAS_RUNTIME_MANIFEST" == "1" && ! -f "$BACKUP_DIR/backend_runtime/main.py" ]]; then
+  echo "ОШИБКА: $BACKUP_DIR/backend_runtime/main.py отсутствует -- runtime backup неполный" >&2
+  exit 1
+fi
+if [[ "$HAS_RUNTIME_MANIFEST" != "1" && ! -f "$BACKUP_DIR/main.py" ]]; then
+  echo "ОШИБКА: ни backend_runtime/.manifest, ни main.py не найдены -- это не похоже на backup от deploy.sh" >&2
   exit 1
 fi
 echo "OK: $BACKUP_DIR содержит:"
 find "$BACKUP_DIR" -type f | sed 's/^/  /'
 
 echo "== 2/6 Syntax-check backup перед восстановлением =="
-python3 -m py_compile "$BACKUP_DIR/main.py"
-for _f in "${BACKEND_PY_LIBS[@]}"; do
-  if [[ -f "$BACKUP_DIR/${_f}" ]]; then python3 -m py_compile "$BACKUP_DIR/${_f}"; fi
-done
-if [[ -d "$BACKUP_DIR/${BACKEND_CORE_DIR}" ]]; then
-  python3 -m py_compile "$BACKUP_DIR/${BACKEND_CORE_DIR}"/*.py
+if [[ "$HAS_RUNTIME_MANIFEST" == "1" ]]; then
+  backend_runtime_syntax_check "$BACKUP_DIR/backend_runtime"
+else
+  python3 -m py_compile "$BACKUP_DIR/main.py"
+  for _f in "${BACKEND_PY_LIBS[@]}"; do
+    if [[ -f "$BACKUP_DIR/${_f}" ]]; then python3 -m py_compile "$BACKUP_DIR/${_f}"; fi
+  done
+  if [[ -d "$BACKUP_DIR/${BACKEND_CORE_DIR}" ]]; then
+    python3 -m py_compile "$BACKUP_DIR/${BACKEND_CORE_DIR}"/*.py
+  fi
+  for _f in "${BACKEND_JS_FILES[@]}"; do
+    if [[ -f "$BACKUP_DIR/${_f}" ]]; then node --check "$BACKUP_DIR/${_f}"; fi
+  done
 fi
-for _f in "${BACKEND_JS_FILES[@]}"; do
-  if [[ -f "$BACKUP_DIR/${_f}" ]]; then node --check "$BACKUP_DIR/${_f}"; fi
-done
 echo "OK"
 
 echo "== 3/6 Восстановление backend =="
-cp "$BACKUP_DIR/main.py" "${BACKEND_SERVING_DIR}/main.py"
-# 11.09 (Phase 1): manifest-driven restore loop -- all BACKEND_PY_LIBS with ABSENT-marker
-# support (backup contains file -> restore; backup has .ABSENT -> delete from serving dir).
-for _f in "${BACKEND_PY_LIBS[@]}"; do
-  if [[ -f "$BACKUP_DIR/${_f}" ]]; then
-    cp "$BACKUP_DIR/${_f}" "${BACKEND_SERVING_DIR}/${_f}"
-  elif [[ -f "$BACKUP_DIR/.${_f}.ABSENT" ]]; then
-    rm -f "${BACKEND_SERVING_DIR}/${_f}"
+if [[ "$HAS_RUNTIME_MANIFEST" == "1" ]]; then
+  backend_runtime_restore "$BACKUP_DIR" "$BACKEND_SERVING_DIR"
+else
+  cp "$BACKUP_DIR/main.py" "${BACKEND_SERVING_DIR}/main.py"
+  for _f in "${BACKEND_PY_LIBS[@]}"; do
+    if [[ -f "$BACKUP_DIR/${_f}" ]]; then
+      cp "$BACKUP_DIR/${_f}" "${BACKEND_SERVING_DIR}/${_f}"
+    elif [[ -f "$BACKUP_DIR/.${_f}.ABSENT" ]]; then
+      rm -f "${BACKEND_SERVING_DIR}/${_f}"
+    fi
+  done
+  for _f in "${BACKEND_JS_FILES[@]}"; do
+    if [[ -f "$BACKUP_DIR/${_f}" ]]; then
+      cp "$BACKUP_DIR/${_f}" "${BACKEND_SERVING_DIR}/${_f}"
+    fi
+  done
+  if [[ -d "$BACKUP_DIR/${BACKEND_CORE_DIR}" ]]; then
+    rm -rf "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}"
+    cp -r "$BACKUP_DIR/${BACKEND_CORE_DIR}" "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}"
+  elif [[ -f "$BACKUP_DIR/.${BACKEND_CORE_DIR}.ABSENT" ]]; then
+    rm -rf "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}"
   fi
-done
-for _f in "${BACKEND_JS_FILES[@]}"; do
-  if [[ -f "$BACKUP_DIR/${_f}" ]]; then
-    cp "$BACKUP_DIR/${_f}" "${BACKEND_SERVING_DIR}/${_f}"
-  fi
-done
-# Restore core/ subpackage (11.09: previously not restored on rollback).
-if [[ -d "$BACKUP_DIR/${BACKEND_CORE_DIR}" ]]; then
-  rm -rf "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}"
-  cp -r "$BACKUP_DIR/${BACKEND_CORE_DIR}" "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}"
-elif [[ -f "$BACKUP_DIR/.${BACKEND_CORE_DIR}.ABSENT" ]]; then
-  rm -rf "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}"
 fi
 # VERSION -- симметрично deploy.sh: backup либо содержит старый VERSION (сценарий A,
 # восстановить), либо маркер .VERSION_ABSENT (сценарий B, файла до deploy не было --

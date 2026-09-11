@@ -8,6 +8,7 @@ Tests covering:
 """
 import os
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -138,3 +139,60 @@ class RequireAngebotAccessTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             backend.require_angebot_access(role='manager')
         self.assertEqual(ctx.exception.status_code, 403)
+
+
+class PdfGeneratorPathTests(unittest.TestCase):
+    """PDF generators must be repo/runtime-local, not hardwired to prod paths."""
+
+    def test_pdf_generator_scripts_resolve_from_backend_dir(self):
+        self.assertEqual(backend.ANGEBOT_SCRIPT, os.path.join(backend.BACKEND_DIR, 'angebot_free.js'))
+        self.assertEqual(backend.RECHNUNG_SCRIPT, os.path.join(backend.BACKEND_DIR, 'rechnung.js'))
+
+    def test_pdf_filename_is_safe_for_multipart_header(self):
+        filename = backend._safe_pdf_filename('Angebot', ' ACME "bad"\r\n.pdf ')
+        self.assertEqual(filename, 'Angebot_ACME_bad.pdf')
+        self.assertNotIn('\r', filename)
+        self.assertNotIn('\n', filename)
+        self.assertNotIn('"', filename)
+
+
+class CreateObjectIntegrationPathTests(unittest.TestCase):
+    def test_create_object_scripts_are_validated_before_subprocess(self):
+        with patch.object(backend, 'CREATE_OBJECT_SCRIPT', '/missing/create_object.py'), \
+             patch.object(backend, 'CREATE_OBJECT_FOLDER_SCRIPT', '/missing/create_object_folder.py'), \
+             patch.object(backend.subprocess, 'run') as run_mock:
+            with self.assertRaises(HTTPException) as ctx:
+                backend.create_object_endpoint(
+                    backend.NewObjectBody(name='Obj', adresse='Adr', budget='1000'),
+                    background_tasks=MagicMock(),
+                    user=OWNER,
+                    _=None,
+                )
+        self.assertEqual(ctx.exception.status_code, 500)
+        run_mock.assert_not_called()
+
+    def test_create_object_uses_configured_scripts_and_current_python(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            create_script = os.path.join(tmp, 'create_object.py')
+            folder_script = os.path.join(tmp, 'create_object_folder.py')
+            open(create_script, 'w').close()
+            open(folder_script, 'w').close()
+            result = MagicMock(returncode=0, stdout='OK: OBJ-1\n', stderr='')
+            tasks = MagicMock()
+
+            with patch.object(backend, 'CREATE_OBJECT_SCRIPT', create_script), \
+                 patch.object(backend, 'CREATE_OBJECT_FOLDER_SCRIPT', folder_script), \
+                 patch.object(backend.subprocess, 'run', return_value=result) as run_mock:
+                response = backend.create_object_endpoint(
+                    backend.NewObjectBody(name='Obj', adresse='Adr', budget='1000'),
+                    background_tasks=tasks,
+                    user=OWNER,
+                    _=None,
+                )
+
+        self.assertEqual(response['object_id'], 'OBJ-1')
+        self.assertEqual(run_mock.call_args[0][0][0], sys.executable)
+        self.assertEqual(run_mock.call_args[0][0][1], create_script)
+        tasks.add_task.assert_called_once()
+        self.assertEqual(tasks.add_task.call_args[0][1][0], sys.executable)
+        self.assertEqual(tasks.add_task.call_args[0][1][1], folder_script)

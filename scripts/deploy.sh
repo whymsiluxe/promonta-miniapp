@@ -25,9 +25,11 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
-# Backend artifact manifest (single source of truth for what gets deployed/backed up/rolled back)
+# Backend artifact manifest (single source of truth) + runtime helper functions
 # shellcheck source=manifest.sh
 source "$REPO_DIR/scripts/manifest.sh"
+# shellcheck source=runtime_manifest.sh
+source "$REPO_DIR/scripts/runtime_manifest.sh"
 
 # Production paths -- НЕ угадано, сверено с реальным systemd unit
 # (/etc/systemd/system/promonta-miniapp.service, WorkingDirectory=/home/promonta/agent,
@@ -94,15 +96,12 @@ fi
 echo "OK: working tree чист"
 
 echo "== 4/14 Python syntax-check =="
-python3 -m py_compile backend/*.py backend/core/*.py
+python3 -m compileall -q backend tests
 echo "OK"
 
-echo "== 5/14 node --check (frontend/js/*.js + backend PDF-скрипты) =="
-for f in frontend/js/*.js; do
-  node --check "$f"
-done
-node --check backend/angebot_free.js
-node --check backend/rechnung.js
+echo "== 5/14 node --check (recursive frontend/js + backend runtime JS) =="
+find frontend/js -name '*.js' -print0 | xargs -0 -n1 node --check
+backend_runtime_syntax_check "$REPO_DIR/backend"
 echo "OK"
 
 echo "== 6/14 Полный test suite (изолированный env, БЕЗ production credentials) =="
@@ -151,31 +150,7 @@ fi
 
 echo "== 8/14 Создание timestamped backup =="
 mkdir -p "$BACKUP_DIR"
-if [[ -f "${BACKEND_SERVING_DIR}/main.py" ]]; then
-  cp "${BACKEND_SERVING_DIR}/main.py" "${BACKUP_DIR}/main.py"
-fi
-# 11.09 (Phase 1): manifest-driven backup loop -- replaces per-file if/cp blocks.
-# All BACKEND_PY_LIBS get ABSENT markers (handles files that didn't exist before
-# a given deploy -- rollback.sh uses the marker to know to delete the file).
-for _f in "${BACKEND_PY_LIBS[@]}"; do
-  if [[ -f "${BACKEND_SERVING_DIR}/${_f}" ]]; then
-    cp "${BACKEND_SERVING_DIR}/${_f}" "${BACKUP_DIR}/${_f}"
-  else
-    touch "${BACKUP_DIR}/.${_f}.ABSENT"
-  fi
-done
-for _f in "${BACKEND_JS_FILES[@]}"; do
-  if [[ -f "${BACKEND_SERVING_DIR}/${_f}" ]]; then
-    cp "${BACKEND_SERVING_DIR}/${_f}" "${BACKUP_DIR}/${_f}"
-  fi
-done
-# Backup core/ subpackage (11.09: previously missing from backup -- rollback left
-# stale core/ behind when a core/ update needed reverting).
-if [[ -d "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}" ]]; then
-  cp -r "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}" "${BACKUP_DIR}/${BACKEND_CORE_DIR}"
-else
-  touch "${BACKUP_DIR}/.${BACKEND_CORE_DIR}.ABSENT"
-fi
+backend_runtime_backup "$BACKEND_SERVING_DIR" "$BACKUP_DIR"
 if [[ -f "${BACKEND_SERVING_DIR}/VERSION" ]]; then
   cp "${BACKEND_SERVING_DIR}/VERSION" "${BACKUP_DIR}/VERSION"
 else
@@ -190,41 +165,17 @@ if [[ -z "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]]; then
   echo "ОШИБКА: backup-директория пуста после копирования -- деплой остановлен" >&2
   exit 1
 fi
+if [[ ! -f "${BACKUP_DIR}/backend_runtime/.manifest" || ! -f "${BACKUP_DIR}/backend_runtime/main.py" ]]; then
+  echo "ОШИБКА: backend runtime backup неполный -- деплой остановлен" >&2
+  exit 1
+fi
 echo "OK: backup сохранён в $BACKUP_DIR"
 find "$BACKUP_DIR" -type f | sed 's/^/  /'
 BACKUP_READY=1
 
 echo "== 10/14 Копирование backend в serving-путь =="
-# ВАЖНО: tools_lib.py/mangel_lib.py/objekte_lib.py/roadmap_lib.py обязаны лежать РЯДОМ
-# с main.py -- изолированный importlib-loader (_load_repo_*_lib в main.py) резолвит их
-# по BACKEND_DIR = os.path.dirname(main.py), не по глобальному sys.path.
-# 10.09: backend/__init__.py делает serving-директорию РЕАЛЬНЫМ Python-пакетом
-# `miniapp`, а не implicit namespace package -- production запускает
-# `uvicorn miniapp.main:app`, и relative-импорты внутри main.py (from .core.time
-# import ...) должны резолвиться однозначно, без namespace-package edge cases.
-cp "$REPO_DIR/backend/__init__.py" "${BACKEND_SERVING_DIR}/__init__.py"
-cp "$REPO_DIR/backend/main.py" "${BACKEND_SERVING_DIR}/main.py"
-# 11.09 (Phase 1): manifest-driven copy loop -- single source of truth in manifest.sh
-for _f in "${BACKEND_PY_LIBS[@]}"; do
-  cp "$REPO_DIR/backend/${_f}" "${BACKEND_SERVING_DIR}/${_f}"
-done
-for _f in "${BACKEND_JS_FILES[@]}"; do
-  cp "$REPO_DIR/backend/${_f}" "${BACKEND_SERVING_DIR}/${_f}"
-done
-# 10.09 (Phase A fix): backend/core/ subpackage must travel with main.py --
-# `from .core.time import ...` / `from core.time import ...` in main.py resolve
-# to nothing without it. This was missed when Phase A step 1 landed and only
-# caught by a real prod deploy attempt (ModuleNotFoundError: No module named
-# 'core') -- the test suite's py_compile/package-import test copies core/ via
-# shutil.copytree, but this script still used one cp per file and never
-# picked up new subdirectories automatically.
-rm -rf "${BACKEND_SERVING_DIR}/core"
-cp -r "$REPO_DIR/backend/core" "${BACKEND_SERVING_DIR}/core"
-_py_check=("${BACKEND_SERVING_DIR}/main.py")
-for _f in "${BACKEND_PY_LIBS[@]}"; do _py_check+=("${BACKEND_SERVING_DIR}/${_f}"); done
-for _f in "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}"/*.py; do _py_check+=("${_f}"); done
-python3 -m py_compile "${_py_check[@]}"
-for _f in "${BACKEND_JS_FILES[@]}"; do node --check "${BACKEND_SERVING_DIR}/${_f}"; done
+backend_runtime_deploy "$REPO_DIR/backend" "$BACKEND_SERVING_DIR"
+backend_runtime_syntax_check "$BACKEND_SERVING_DIR"
 # Version-файл для /api/health -- version/commit видны в ответе без git subprocess
 # на каждый запрос (main.py читает VERSION рядом с собой, см. APP_VERSION_FILE).
 cat > "${BACKEND_SERVING_DIR}/VERSION" <<EOF

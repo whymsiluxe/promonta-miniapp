@@ -13,6 +13,7 @@ import threading
 import time
 import unittest
 import unittest.mock
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
@@ -236,6 +237,58 @@ class ServerTrustCheckinStartTests(unittest.TestCase):
         self.assertIn('999', [str(w) for w in _plan['assigned_worker_ids']])
         self.assertEqual(_plan['object_id'], 'OBJ-1')
         self.assertIsNotNone(acc)
+
+    def test_start_with_daily_plan_requires_acceptance_id(self):
+        plan = self._create_published_plan()
+        from fastapi import HTTPException
+        import asyncio
+        with patch.object(backend, '_get_active_assignment_for_checkin', return_value='assign-1'), \
+             patch.object(backend, '_load_checkin_meta', return_value=[]):
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(backend.checkin_start(
+                    object_id='OBJ-1',
+                    lat='51.0', lon='12.0',
+                    daily_plan_id=plan['id'],
+                    daily_plan_version='999',
+                    daily_plan_acceptance_id='',
+                    user={'id': 999, 'first_name': 'Worker'},
+                    role='worker',
+                    idempotency_key='',
+                ))
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_start_derives_daily_plan_version_from_acceptance_not_client(self):
+        plan = self._create_published_plan()
+        acceptance = dpl.accept_plan(plan['id'], 1, '999')
+        saved = {}
+
+        def fake_save(items):
+            saved['items'] = items
+
+        from fastapi import HTTPException
+        import asyncio
+        with patch.object(backend, '_get_active_assignment_for_checkin', return_value='assign-1'), \
+             patch.object(backend, '_load_checkin_meta', return_value=[]), \
+             patch.object(backend, '_save_checkin_meta', side_effect=fake_save), \
+             patch.object(backend, '_save_checkin_photos', new=unittest.mock.AsyncMock(return_value=[])):
+            try:
+                result = asyncio.run(backend.checkin_start(
+                    object_id='OBJ-1',
+                    lat='51.0', lon='12.0',
+                    daily_plan_id=plan['id'],
+                    daily_plan_version='999',
+                    daily_plan_acceptance_id=acceptance['id'],
+                    user={'id': 999, 'first_name': 'Worker'},
+                    role='worker',
+                    idempotency_key='',
+                ))
+            except HTTPException as exc:
+                self.fail(f"valid accepted plan start should not fail: {exc.detail}")
+
+        self.assertEqual(result['daily_plan_id'], plan['id'])
+        self.assertEqual(result['daily_plan_acceptance_id'], acceptance['id'])
+        self.assertEqual(result['daily_plan_version'], '1')
+        self.assertEqual(saved['items'][0]['daily_plan_version'], '1')
 
 
 # ══════════════════════════════════════════════════════════════════════════════

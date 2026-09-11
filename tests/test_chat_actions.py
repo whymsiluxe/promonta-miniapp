@@ -52,7 +52,8 @@ class ReplyTests(unittest.TestCase):
 
     def test_cannot_quote_message_from_other_dm(self):
         source = _msg('m1', 10, text='private', to_user_id='1')  # DM 10<->1
-        with patch.object(backend, '_load_chat', return_value=[source]):
+        with patch.object(backend, '_load_chat', return_value=[source]), \
+             patch.object(backend, '_load_roles', return_value={'1': 'owner', '20': 'worker', '30': 'worker'}):
             body = backend.ChatMessageBody(text='re', to_user_id='30', reply_to_id='m1')  # 20 -> 30
             with self.assertRaises(HTTPException) as ctx:
                 backend.post_chat_message(body, user=WORKER_B, role='worker')
@@ -126,6 +127,51 @@ class DeleteAccessTests(unittest.TestCase):
              patch.object(backend, '_load_chat_reactions', return_value=[]):
             result = backend.delete_chat_message('m1', user=OWNER, role='owner')
         self.assertEqual(result['status'], 'ok')
+
+
+class ThreadDeleteTests(unittest.TestCase):
+    def test_owner_delete_dm_removes_only_exact_thread_pair(self):
+        messages = [
+            _msg('owner-a-1', 1, to_user_id='10'),
+            _msg('a-owner-1', 10, to_user_id='1'),
+            _msg('a-b-1', 10, to_user_id='20'),
+            _msg('b-a-1', 20, to_user_id='10'),
+            _msg('b-c-1', 20, to_user_id='30'),
+            _msg('group-a', 10, to_user_id=None),
+        ]
+        reactions = [
+            {'message_id': 'owner-a-1', 'user_id': '10', 'reaction': '👍'},
+            {'message_id': 'a-b-1', 'user_id': '20', 'reaction': '👍'},
+            {'message_id': 'b-c-1', 'user_id': '30', 'reaction': '👍'},
+        ]
+        saved = {}
+
+        def fake_save_chat(items):
+            saved['messages'] = items
+
+        def fake_save_reactions(items):
+            saved['reactions'] = items
+
+        with patch.object(backend, '_load_chat', return_value=messages), \
+             patch.object(backend, '_save_chat', side_effect=fake_save_chat), \
+             patch.object(backend, '_archive_chat_messages') as archive_mock, \
+             patch.object(backend, '_load_chat_reactions', return_value=reactions), \
+             patch.object(backend, '_save_chat_reactions', side_effect=fake_save_reactions), \
+             patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker', '30': 'worker'}):
+            result = backend.delete_chat_thread(thread_key='', with_='10', user=OWNER, _=None)
+
+        self.assertEqual(result['deleted_count'], 2)
+        self.assertEqual({m['id'] for m in saved['messages']}, {'a-b-1', 'b-a-1', 'b-c-1', 'group-a'})
+        archive_mock.assert_called_once()
+        self.assertEqual({m['id'] for m in archive_mock.call_args[0][0]}, {'owner-a-1', 'a-owner-1'})
+        self.assertEqual({r['message_id'] for r in saved['reactions']}, {'a-b-1', 'b-c-1'})
+
+    def test_new_dm_to_revoked_user_is_rejected(self):
+        with patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker'}):
+            body = backend.ChatMessageBody(text='hello', to_user_id='999')
+            with self.assertRaises(HTTPException) as ctx:
+                backend.post_chat_message(body, user=OWNER, role='owner')
+        self.assertEqual(ctx.exception.status_code, 404)
 
 
 class AttachmentAccessTests(unittest.TestCase):

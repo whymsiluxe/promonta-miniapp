@@ -18,7 +18,7 @@ const FIRMA = {
   gf: 'Ihor Keksel (GF)',
 };
 
-const LOGO_PATH = '/home/promonta/agent/miniapp/promonta-logo.png';
+const LOGO_PATH = path.join(__dirname, 'promonta-logo.png');
 const DUNKELBLAU = '#1B2B5E';
 const ORANGE = '#F59E0B';
 const GRAU = '#666666';

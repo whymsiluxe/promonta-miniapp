@@ -17,6 +17,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
@@ -178,6 +179,49 @@ class MangelLibAtomicWriteTests(unittest.TestCase):
             self.assertEqual(len(final['comments']), 1)
         finally:
             mangel_lib.MANGEL_FILE = original_file
+
+
+class ObjectInfoTransactionTests(unittest.TestCase):
+    """Object Info mutations must not use load->mutate->save; that pattern loses
+    concurrent writes. Route handlers should go through update_json_transaction()."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.old_file = backend.OBJECT_INFO_FILE
+        backend.OBJECT_INFO_FILE = os.path.join(self.tmpdir, 'object_info.json')
+
+    def tearDown(self):
+        backend.OBJECT_INFO_FILE = self.old_file
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_description_and_items_do_not_call_legacy_load_helper(self):
+        with patch.object(backend, '_load_object_info', side_effect=AssertionError('legacy load helper used')):
+            desc = backend.update_object_description(
+                'OBJ-1',
+                backend.ObjectDescriptionBody(description='Описание'),
+                user={'id': 1, 'first_name': 'Owner'},
+                _=None,
+            )
+            created = backend.create_object_info_item(
+                'OBJ-1',
+                backend.InfoItemBody(text='Штукатурка', qty='10 m2'),
+                user={'id': 10, 'first_name': 'Worker'},
+                _=None,
+            )
+            deleted = backend.delete_object_info_item(
+                'OBJ-1',
+                created['item']['id'],
+                user={'id': 1, 'first_name': 'Owner'},
+                _=None,
+            )
+
+        self.assertEqual(desc['description'], 'Описание')
+        self.assertEqual(created['item']['text'], 'Штукатурка')
+        self.assertEqual(deleted['status'], 'ok')
+        with open(backend.OBJECT_INFO_FILE, encoding='utf-8') as f:
+            stored = json.load(f)
+        self.assertEqual(stored['OBJ-1']['description'], 'Описание')
+        self.assertEqual(stored['OBJ-1']['items'], [])
 
 
 if __name__ == '__main__':

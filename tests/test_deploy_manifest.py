@@ -89,24 +89,30 @@ class ManifestCompletenessTests(unittest.TestCase):
         with open(deploy_path, encoding='utf-8') as f:
             content = f.read()
         self.assertIn('manifest.sh', content, "deploy.sh must source manifest.sh")
-        self.assertIn('BACKEND_PY_LIBS', content, "deploy.sh must use BACKEND_PY_LIBS loop")
+        self.assertIn('runtime_manifest.sh', content, "deploy.sh must source runtime_manifest.sh")
+        self.assertIn('backend_runtime_backup', content, "deploy.sh must use runtime backup helper")
+        self.assertIn('backend_runtime_deploy', content, "deploy.sh must use runtime deploy helper")
 
     def test_rollback_sh_sources_manifest(self):
         rollback_path = os.path.join(REPO_ROOT, 'scripts', 'rollback.sh')
         with open(rollback_path, encoding='utf-8') as f:
             content = f.read()
         self.assertIn('manifest.sh', content, "rollback.sh must source manifest.sh")
-        self.assertIn('BACKEND_PY_LIBS', content, "rollback.sh must use BACKEND_PY_LIBS loop")
+        self.assertIn('runtime_manifest.sh', content, "rollback.sh must source runtime_manifest.sh")
+        self.assertIn('backend_runtime_restore', content, "rollback.sh must use runtime restore helper")
 
     def test_daily_plan_lib_in_deploy_backup_and_copy(self):
         """daily_plan_lib.py must be handled by the manifest loop in deploy.sh, not left out."""
         deploy_path = os.path.join(REPO_ROOT, 'scripts', 'deploy.sh')
         with open(deploy_path, encoding='utf-8') as f:
             content = f.read()
-        # Since deploy.sh uses the loop, it must NOT have a hardcoded individual cp for daily_plan_lib
-        # (that was the old broken pattern). The manifest loop is sufficient.
-        self.assertIn('BACKEND_PY_LIBS', content,
-                      "deploy.sh must deploy daily_plan_lib.py via the BACKEND_PY_LIBS manifest loop")
+        self.assertIn('backend_runtime_deploy', content,
+                      "deploy.sh must deploy daily_plan_lib.py via the runtime manifest helper")
+        runtime_manifest_path = os.path.join(REPO_ROOT, 'scripts', 'runtime_manifest.sh')
+        with open(runtime_manifest_path, encoding='utf-8') as f:
+            runtime_content = f.read()
+        self.assertIn('BACKEND_PY_LIBS', runtime_content,
+                      "runtime_manifest.sh must derive runtime entries from BACKEND_PY_LIBS")
 
 
 class DeployRollbackRoundTripTests(unittest.TestCase):

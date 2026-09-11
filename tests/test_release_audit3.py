@@ -100,6 +100,14 @@ class PersistentCorruptLockTests(unittest.TestCase):
     def test_corrupt_chat_archive_not_overwritten_with_empty_list(self):
         self.assertIn(backend.CHAT_ARCHIVE_FILE, backend.CRITICAL_JSON_PATHS)
 
+    def test_business_critical_projection_stores_are_critical(self):
+        critical_filenames = {os.path.basename(path) for path in backend.CRITICAL_JSON_PATHS}
+        self.assertIn('finish_outbox.json', critical_filenames)
+        self.assertIn('object_info.json', critical_filenames)
+        self.assertIn('object_images.json', critical_filenames)
+        self.assertIn('work_calendar.json', critical_filenames)
+        self.assertIn('chat_thread_meta.json', critical_filenames)
+
 
 # ---------- П2: reason скрыт для чужих в abwesenheit/all ----------
 

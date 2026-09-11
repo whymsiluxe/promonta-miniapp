@@ -119,5 +119,47 @@ class DashboardTodayBoundaryTests(unittest.TestCase):
         self.assertEqual(result['date'], MIDNIGHT_EDGE_BERLIN_DATE)
 
 
+class AbwesenheitBusinessDateBoundaryTests(unittest.TestCase):
+    def test_close_abwesenheit_uses_berlin_business_today(self):
+        entry = {
+            'id': 'abw-1', 'user_id': '10', 'name': 'Ivan',
+            'date_from': '2026-08-01', 'date_to': '2026-08-31',
+            'open_ended': True, 'status': 'approved',
+        }
+        saved = {}
+
+        def fake_save(items):
+            saved['items'] = items
+
+        with patch.object(backend, 'business_now', return_value=MIDNIGHT_EDGE_BERLIN), \
+             patch.object(backend, '_load_abwesenheit', return_value=[entry]), \
+             patch.object(backend, '_save_abwesenheit', side_effect=fake_save):
+            result = backend.close_abwesenheit('abw-1', user=WORKER_A, role='worker')
+
+        self.assertEqual(result['date_to'], MIDNIGHT_EDGE_BERLIN_DATE)
+        self.assertFalse(result['open_ended'])
+        self.assertEqual(saved['items'][0]['date_to'], MIDNIGHT_EDGE_BERLIN_DATE)
+
+    def test_auto_close_open_ended_uses_berlin_business_today(self):
+        entry = {
+            'id': 'abw-1', 'user_id': '10', 'name': 'Ivan',
+            'date_from': MIDNIGHT_EDGE_UTC_DATE, 'date_to': MIDNIGHT_EDGE_UTC_DATE,
+            'open_ended': True, 'status': 'approved',
+        }
+        saved = {}
+
+        def fake_save(items):
+            saved['items'] = items
+
+        with patch.object(backend, 'business_now', return_value=MIDNIGHT_EDGE_BERLIN), \
+             patch.object(backend, '_load_abwesenheit', return_value=[entry]), \
+             patch.object(backend, '_save_abwesenheit', side_effect=fake_save), \
+             patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker'}), \
+             patch.object(backend, 'send_telegram_message'):
+            backend._auto_close_expired_open_ended_abwesenheit()
+
+        self.assertFalse(saved['items'][0]['open_ended'])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 from datetime import datetime, timedelta
 from urllib.parse import parse_qsl, quote
@@ -18,7 +19,6 @@ from urllib.parse import parse_qsl, quote
 from fastapi import FastAPI, Header, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 import base64
-import magic
 from pydantic import BaseModel
 
 sys.path.insert(0, '/home/promonta/agent')
@@ -32,6 +32,9 @@ sys.path.insert(0, '/home/promonta/agent')
 # пути к файлу через importlib.util, без малейшего влияния на глобальный sys.path.
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
+AGENT_ROOT = os.environ.get('PROMONTA_AGENT_ROOT', '/home/promonta/agent')
+CREATE_OBJECT_SCRIPT = os.environ.get('PROMONTA_CREATE_OBJECT_SCRIPT', os.path.join(AGENT_ROOT, 'create_object.py'))
+CREATE_OBJECT_FOLDER_SCRIPT = os.environ.get('PROMONTA_CREATE_OBJECT_FOLDER_SCRIPT', os.path.join(AGENT_ROOT, 'create_object_folder.py'))
 
 _PROD_DATA_ROOT = '/home/promonta/agent/miniapp'
 _is_test_context = (
@@ -3299,7 +3302,42 @@ def send_pdf_to_chat(chat_id, file_path, filename, caption):
         print(f'WARNING: sendDocument fehlgeschlagen: {e}')
 
 
-ANGEBOT_SCRIPT = '/home/promonta/agent/miniapp/angebot_free.js'
+def _run_pdf_generator(script_path: str, config: dict, timeout: int = 30):
+    if not os.path.isfile(script_path):
+        raise HTTPException(500, f'PDF-Generator fehlt: {os.path.basename(script_path)}')
+
+    tmp = tempfile.NamedTemporaryFile('w', encoding='utf-8', suffix='.json', delete=False)
+    try:
+        with tmp:
+            json.dump(config, tmp, ensure_ascii=False)
+        result = subprocess.run(['node', script_path, tmp.name], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise HTTPException(504, 'PDF-Generierung dauert zu lange') from e
+    finally:
+        try:
+            os.remove(tmp.name)
+        except FileNotFoundError:
+            pass
+
+    if result.returncode != 0:
+        raise HTTPException(500, f'PDF-Generierung fehlgeschlagen: {result.stderr[-500:]}')
+    return result
+
+
+def _safe_pdf_filename(prefix: str, customer_name: str) -> str:
+    name = re.sub(r'[^\w.-]+', '_', (customer_name or '').strip(), flags=re.UNICODE).strip('._')
+    if name.lower().endswith('.pdf'):
+        name = name[:-4].rstrip('._')
+    return f"{prefix}_{(name or 'kunde')[:80]}.pdf"
+
+
+def _require_server_script(script_path: str, label: str):
+    if not script_path or not os.path.isfile(script_path):
+        raise HTTPException(500, f'{label} не найден: {script_path or "-"}')
+    return script_path
+
+
+ANGEBOT_SCRIPT = os.path.join(BACKEND_DIR, 'angebot_free.js')
 # moved to core/paths.py -- ANGEBOT_OUT_DIR
 os.makedirs(ANGEBOT_OUT_DIR, exist_ok=True)
 
@@ -3351,19 +3389,9 @@ def create_angebot(body: AngebotBody, user: dict = Depends(get_current_user), _:
     if config.get('signatureBase64'):
         config['signedAt'] = datetime.now().strftime('%d.%m.%Y %H:%M')
 
-    config_path = f'/tmp/{uuid.uuid4().hex}.json'
-    with open(config_path, 'w', encoding='utf-8') as f:
-        json.dump(config, f, ensure_ascii=False)
+    _run_pdf_generator(ANGEBOT_SCRIPT, config)
 
-    try:
-        result = subprocess.run(['node', ANGEBOT_SCRIPT, config_path],
-                               capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            raise HTTPException(500, f'PDF-Generierung fehlgeschlagen: {result.stderr[-500:]}')
-    finally:
-        os.remove(config_path)
-
-    filename = f"Angebot_{body.kunde.name.replace(' ', '_')}.pdf"
+    filename = _safe_pdf_filename('Angebot', body.kunde.name)
     send_pdf_to_chat(user['id'], out_path, filename, f'Angebot für {body.kunde.name}')
     return FileResponse(out_path, media_type='application/pdf', filename=filename)
 
@@ -3412,9 +3440,21 @@ def _save_object_info(data: dict):
     _atomic_write_json(OBJECT_INFO_FILE, data)
 
 
+def _new_object_info_entry() -> dict:
+    return {"items": [], "documents": [], "description": ""}
+
+
+def _ensure_object_info_entry(data: dict, object_id: str) -> dict:
+    entry = data.setdefault(object_id, _new_object_info_entry())
+    entry.setdefault("items", [])
+    entry.setdefault("documents", [])
+    entry.setdefault("description", "")
+    return entry
+
+
 def _object_info_entry(object_id: str) -> dict:
     data = _load_object_info()
-    return data.get(object_id, {"items": [], "documents": [], "description": ""})
+    return data.get(object_id, _new_object_info_entry())
 
 
 # 25.07: Инфо-таб реструктурирован (6 плоских табов -> 2), владелец попросил
@@ -3431,11 +3471,15 @@ class ObjectDescriptionBody(BaseModel):
 
 @app.patch("/api/objects/{object_id}/description")
 def update_object_description(object_id: str, body: ObjectDescriptionBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    data = _load_object_info()
-    entry = data.setdefault(object_id, {"items": [], "documents": [], "description": ""})
-    entry["description"] = body.description.strip()[:2000]
-    _save_object_info(data)
-    return {"description": entry["description"]}
+    description = body.description.strip()[:2000]
+
+    def _mutator(data):
+        entry = _ensure_object_info_entry(data, object_id)
+        entry["description"] = description
+        return entry["description"]
+
+    saved = update_json_transaction(OBJECT_INFO_FILE, {}, _mutator)
+    return {"description": saved}
 
 
 @app.get("/api/objects/{object_id}/info-items")
@@ -3459,24 +3503,28 @@ def create_object_info_item(object_id: str, body: InfoItemBody, user: dict = Dep
         "created_by": user.get('first_name', str(user['id'])),
         "created_at": int(time.time()),
     }
-    data = _load_object_info()
-    entry = data.setdefault(object_id, {"items": [], "documents": []})
-    entry.setdefault("items", []).append(item)
-    _save_object_info(data)
+
+    def _mutator(data):
+        entry = _ensure_object_info_entry(data, object_id)
+        entry["items"].append(item)
+        return item
+
+    update_json_transaction(OBJECT_INFO_FILE, {}, _mutator)
     return {"item": item}
 
 
 @app.delete("/api/objects/{object_id}/info-items/{item_id}")
 def delete_object_info_item(object_id: str, item_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    data = _load_object_info()
-    entry = data.get(object_id)
-    if not entry:
-        raise HTTPException(404, "Не найдено")
-    before = len(entry.get("items", []))
-    entry["items"] = [i for i in entry.get("items", []) if i["id"] != item_id]
-    if len(entry["items"]) == before:
-        raise HTTPException(404, "Не найдено")
-    _save_object_info(data)
+    def _mutator(data):
+        entry = data.get(object_id)
+        if not entry:
+            raise HTTPException(404, "Не найдено")
+        before = len(entry.get("items", []))
+        entry["items"] = [i for i in entry.get("items", []) if i["id"] != item_id]
+        if len(entry["items"]) == before:
+            raise HTTPException(404, "Не найдено")
+
+    update_json_transaction(OBJECT_INFO_FILE, {}, _mutator)
     return {"status": "ok"}
 
 
@@ -3507,24 +3555,29 @@ async def upload_object_document(object_id: str, file: UploadFile = File(...), u
         "uploaded_by": user.get('first_name', str(user['id'])),
         "uploaded_at": int(time.time()),
     }
-    data = _load_object_info()
-    entry = data.setdefault(object_id, {"items": [], "documents": []})
-    entry.setdefault("documents", []).append(doc)
-    _save_object_info(data)
+
+    def _mutator(data):
+        entry = _ensure_object_info_entry(data, object_id)
+        entry["documents"].append(doc)
+        return doc
+
+    update_json_transaction(OBJECT_INFO_FILE, {}, _mutator)
     return {"document": doc}
 
 
 @app.delete("/api/objects/{object_id}/documents/{doc_id}")
 def delete_object_document(object_id: str, doc_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    data = _load_object_info()
-    entry = data.get(object_id)
-    if not entry:
-        raise HTTPException(404, "Не найдено")
-    doc = next((d for d in entry.get("documents", []) if d["id"] == doc_id), None)
-    if not doc:
-        raise HTTPException(404, "Не найдено")
-    entry["documents"] = [d for d in entry.get("documents", []) if d["id"] != doc_id]
-    _save_object_info(data)
+    def _mutator(data):
+        entry = data.get(object_id)
+        if not entry:
+            raise HTTPException(404, "Не найдено")
+        doc = next((d for d in entry.get("documents", []) if d["id"] == doc_id), None)
+        if not doc:
+            raise HTTPException(404, "Не найдено")
+        entry["documents"] = [d for d in entry.get("documents", []) if d["id"] != doc_id]
+        return doc
+
+    doc = update_json_transaction(OBJECT_INFO_FILE, {}, _mutator)
     fpath = os.path.join(OBJECT_DOC_DIR, doc["file"])
     if os.path.exists(fpath):
         os.remove(fpath)
@@ -3554,7 +3607,10 @@ class NewObjectBody(BaseModel):
 
 @app.post("/api/objects")
 def create_object_endpoint(body: NewObjectBody, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    args = ['python3', '/home/promonta/agent/create_object.py', body.name, body.adresse, body.budget]
+    _require_server_script(CREATE_OBJECT_SCRIPT, "Скрипт создания объекта")
+    _require_server_script(CREATE_OBJECT_FOLDER_SCRIPT, "Скрипт создания папки объекта")
+
+    args = [sys.executable, CREATE_OBJECT_SCRIPT, body.name, body.adresse, body.budget]
     if body.start:
         args.append(f'--start={body.start}')
     if body.end:
@@ -3572,7 +3628,7 @@ def create_object_endpoint(body: NewObjectBody, background_tasks: BackgroundTask
     if object_id:
         background_tasks.add_task(
             subprocess.run,
-            ['python3', '/home/promonta/agent/create_object_folder.py', object_id, body.name],
+            [sys.executable, CREATE_OBJECT_FOLDER_SCRIPT, object_id, body.name],
             capture_output=True, text=True, timeout=30
         )
 
@@ -3599,7 +3655,7 @@ def update_object_status(object_id: str, body: StatusBody, user: dict = Depends(
 
 
 # ---------- Rechnung generator ----------
-RECHNUNG_SCRIPT = '/home/promonta/agent/miniapp/rechnung.js'
+RECHNUNG_SCRIPT = os.path.join(BACKEND_DIR, 'rechnung.js')
 # moved to core/paths.py -- RECHNUNG_OUT_DIR
 os.makedirs(RECHNUNG_OUT_DIR, exist_ok=True)
 
@@ -3645,19 +3701,9 @@ def create_rechnung(body: RechnungBody, user: dict = Depends(get_current_user), 
     if config.get('signatureBase64'):
         config['signedAt'] = datetime.now().strftime('%d.%m.%Y %H:%M')
 
-    config_path = f'/tmp/{uuid.uuid4().hex}.json'
-    with open(config_path, 'w', encoding='utf-8') as f:
-        json.dump(config, f, ensure_ascii=False)
+    _run_pdf_generator(RECHNUNG_SCRIPT, config)
 
-    try:
-        result = subprocess.run(['node', RECHNUNG_SCRIPT, config_path],
-                               capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            raise HTTPException(500, f'PDF-Generierung fehlgeschlagen: {result.stderr[-500:]}')
-    finally:
-        os.remove(config_path)
-
-    filename = f"Rechnung_{body.kunde.name.replace(' ', '_')}.pdf"
+    filename = _safe_pdf_filename('Rechnung', body.kunde.name)
     send_pdf_to_chat(user['id'], out_path, filename, f'{body.nummer} — {body.kunde.name}')
     return FileResponse(out_path, media_type='application/pdf', filename=filename)
 
@@ -4364,6 +4410,7 @@ def forward_comment(body: CommentForwardBody, user: dict = Depends(get_current_u
         _check_thread_access(body.thread_key, str(user['id']), role)
     else:
         _reject_self_chat(user['id'], body.to_user_id)
+        _validate_dm_recipient(body.to_user_id)
         thread_id = _chat_thread_id(user['id'], body.to_user_id)
         thread_meta = _load_chat_thread_meta()
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
@@ -4511,6 +4558,16 @@ def _reject_self_chat(user_id, to_user_id: str | None):
     (thread_key path) are unaffected."""
     if to_user_id and str(to_user_id) == str(user_id):
         raise HTTPException(400, "Нельзя написать самому себе")
+
+
+def _validate_dm_recipient(to_user_id: str | None):
+    """DM targets must be active authorized users. A profile-only/revoked user
+    must not become a new ghost thread target."""
+    if not to_user_id:
+        return
+    roles = _load_roles()
+    if str(to_user_id) not in roles:
+        raise HTTPException(404, "Пользователь не найден или доступ отозван")
 
 
 def _object_chat_participants(object_id: str) -> list:
@@ -4896,6 +4953,7 @@ def post_chat_attachment(thread_key: str = Form(''), to_user_id: str = Form(''),
         _check_thread_access(thread_key, str(user['id']), role)
     else:
         _reject_self_chat(user['id'], to_user_id or None)
+        _validate_dm_recipient(to_user_id or None)
         thread_id = _chat_thread_id(user['id'], to_user_id or None)
         thread_meta = _load_chat_thread_meta()
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
@@ -5022,6 +5080,7 @@ async def post_chat_voice(thread_key: str = Form(''), to_user_id: str = Form('')
         _check_thread_access(thread_key, str(user['id']), role)
     else:
         _reject_self_chat(user['id'], to_user_id or None)
+        _validate_dm_recipient(to_user_id or None)
         thread_id = _chat_thread_id(user['id'], to_user_id or None)
         thread_meta = _load_chat_thread_meta()
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
@@ -5178,6 +5237,7 @@ def post_chat_message(body: ChatMessageBody, user: dict = Depends(get_current_us
         _check_thread_access(body.thread_key, str(user['id']), role)
     else:
         _reject_self_chat(user['id'], body.to_user_id)
+        _validate_dm_recipient(body.to_user_id)
         thread_id = _chat_thread_id(user['id'], body.to_user_id)
         thread_meta = _load_chat_thread_meta()
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
@@ -5237,6 +5297,7 @@ def forward_chat_message(msg_id: str, body: ChatMessageBody, user: dict = Depend
         _check_thread_access(body.thread_key, uid, role)
     else:
         _reject_self_chat(user['id'], body.to_user_id)
+        _validate_dm_recipient(body.to_user_id)
         thread_id = _chat_thread_id(user['id'], body.to_user_id)
         thread_meta = _load_chat_thread_meta()
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
@@ -5295,9 +5356,14 @@ def delete_chat_thread(thread_key: str = '', with_: str = '', user: dict = Depen
             to_delete = [m for m in messages if m.get('thread_key') == thread_key]
             remaining = [m for m in messages if m.get('thread_key') != thread_key]
         else:
-            to_delete = [m for m in messages if not m.get('thread_key') and (
-                (str(m.get('user_id')) == with_) or (str(m.get('to_user_id')) == with_)
-            )]
+            _reject_self_chat(user['id'], with_)
+            _validate_dm_recipient(with_)
+            target_thread_id = _chat_thread_id(user['id'], with_)
+            to_delete = [
+                m for m in messages
+                if not m.get('thread_key')
+                and _chat_thread_id(m.get('user_id'), m.get('to_user_id')) == target_thread_id
+            ]
             deleted_ids = {m['id'] for m in to_delete}
             remaining = [m for m in messages if m['id'] not in deleted_ids]
         _save_chat(remaining)
@@ -5387,6 +5453,8 @@ def set_chat_thread_prefs(body: ChatThreadPrefsBody, user: dict = Depends(get_cu
         _check_thread_access(body.thread_key, uid, role)
         thread_id = body.thread_key
     else:
+        _reject_self_chat(user['id'], body.to_user_id)
+        _validate_dm_recipient(body.to_user_id)
         thread_id = _chat_thread_id(user['id'], body.to_user_id)
 
     with _chat_lock:
@@ -5407,6 +5475,8 @@ def set_chat_thread_prefs(body: ChatThreadPrefsBody, user: dict = Depends(get_cu
 
 @app.post("/api/chat/threads/close")
 def close_chat_thread(body: ChatThreadCloseBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    _reject_self_chat(user['id'], body.to_user_id)
+    _validate_dm_recipient(body.to_user_id)
     thread_id = _chat_thread_id(user['id'], body.to_user_id)
     meta = _load_chat_thread_meta()
     # Phase 06: было meta[thread_id] = {...} -- полная перезапись стирала бы
@@ -5429,6 +5499,8 @@ def close_chat_thread(body: ChatThreadCloseBody, user: dict = Depends(get_curren
 
 @app.post("/api/chat/threads/reopen")
 def reopen_chat_thread(body: ChatThreadCloseBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
+    _reject_self_chat(user['id'], body.to_user_id)
+    _validate_dm_recipient(body.to_user_id)
     thread_id = _chat_thread_id(user['id'], body.to_user_id)
     meta = _load_chat_thread_meta()
     if thread_id in meta:
@@ -6985,6 +7057,9 @@ async def checkin_start(
 
     # Server-trust validation for optional DailyPlan linkage at Start
     _dp_id_clean = daily_plan_id.strip()
+    _dp_session_plan_id = None
+    _dp_session_plan_version = None
+    _dp_session_acceptance_id = None
     if _dp_id_clean:
         _dp_at_start = dpl.get_plan(_dp_id_clean)
         if not _dp_at_start:
@@ -6997,15 +7072,27 @@ async def checkin_start(
         if _dp_at_start.get('date') != date_str:
             raise HTTPException(400, "daily_plan_id дата не совпадает с сегодняшней датой")
         _dp_acc_clean = daily_plan_acceptance_id.strip()
-        if _dp_acc_clean:
-            _dp_store = dpl.get_store_snapshot()
-            _acc = _dp_store["acceptances"].get(_dp_acc_clean)
-            if not _acc:
-                raise HTTPException(400, f"acceptance_id {_dp_acc_clean!r} не найден")
-            if str(_acc.get("worker_id")) != _wid_str:
-                raise HTTPException(403, "acceptance_id принадлежит другому работнику")
-            if _acc.get("daily_plan_id") != _dp_id_clean:
-                raise HTTPException(400, "acceptance_id принадлежит другому плану")
+        if not _dp_acc_clean:
+            raise HTTPException(400, "Сначала примите план дня")
+        _dp_store = dpl.get_store_snapshot()
+        _acc = _dp_store["acceptances"].get(_dp_acc_clean)
+        if not _acc:
+            raise HTTPException(400, f"acceptance_id {_dp_acc_clean!r} не найден")
+        if str(_acc.get("worker_id")) != _wid_str:
+            raise HTTPException(403, "acceptance_id принадлежит другому работнику")
+        if _acc.get("daily_plan_id") != _dp_id_clean:
+            raise HTTPException(400, "acceptance_id принадлежит другому плану")
+        _snapshot = _acc.get("accepted_context_snapshot") or {}
+        if _snapshot:
+            if _wid_str not in [str(w) for w in _snapshot.get("assigned_worker_ids", [])]:
+                raise HTTPException(403, "Вы не назначены на принятую версию плана")
+            if _snapshot.get("object_id") != object_id.strip():
+                raise HTTPException(400, "Принятый план относится к другому объекту")
+            if _snapshot.get("date") != date_str:
+                raise HTTPException(400, "Принятый план относится к другой дате")
+        _dp_session_plan_id = _dp_id_clean
+        _dp_session_plan_version = str(_acc.get("plan_version") or _snapshot.get("plan_version") or _dp_at_start.get("version") or '')
+        _dp_session_acceptance_id = _dp_acc_clean
 
     with _checkin_lock:
         # 10.29 (Fable-аудит): раньше можно было создать сколько угодно параллельных
@@ -7029,10 +7116,10 @@ async def checkin_start(
         "start_lat": lat,
         "start_lon": lon,
         "start_gps_suspect": _gps_suspect(lat, lon),
-        "stage_name": stage_name.strip()[:200] or None,
-        "daily_plan_id": daily_plan_id.strip() or None,
-        "daily_plan_version": daily_plan_version.strip() or None,
-        "daily_plan_acceptance_id": daily_plan_acceptance_id.strip() or None,
+        "stage_name": (stage_name.strip()[:200] if isinstance(stage_name, str) else '') or None,
+        "daily_plan_id": _dp_session_plan_id,
+        "daily_plan_version": _dp_session_plan_version,
+        "daily_plan_acceptance_id": _dp_session_acceptance_id,
         "finish_at": None,
         "finish_photos": [],
         "finish_lat": None,
@@ -8088,7 +8175,7 @@ def close_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), rol
         raise HTTPException(404, "Запись не найдена")
     if entry['user_id'] != str(user['id']) and role != 'owner':
         raise HTTPException(403, "Можно закрывать только свои записи")
-    entry['date_to'] = datetime.utcnow().strftime('%Y-%m-%d')
+    entry['date_to'] = business_today_str()
     entry['open_ended'] = False
     _save_abwesenheit(items)
     return entry
@@ -8124,7 +8211,7 @@ def _auto_close_expired_open_ended_abwesenheit():
     """10.29 (Fable-аудит): open_ended заявка без ручного закрытия молча висела
     до конца месяца без уведомления. Ленивая проверка при каждом GET (не отдельный
     systemd timer) — закрывает просроченные и пушит worker'у + owner'у."""
-    today_str = datetime.utcnow().strftime('%Y-%m-%d')
+    today_str = business_today_str()
     items = _load_abwesenheit()
     expired = [i for i in items if i.get('open_ended') and i['date_to'] < today_str]
     if not expired:
@@ -8978,5 +9065,10 @@ CRITICAL_JSON_PATHS.update({
     rl.ROADMAP_FILE,
     rl.STAGE_REQUESTS_FILE,
     DAILY_PLAN_STORE_FILE,
+    FINISH_OUTBOX_FILE,
+    OBJECT_INFO_FILE,
+    OBJECT_IMAGES_FILE,
+    WORK_CALENDAR_FILE,
+    CHAT_THREAD_META_FILE,
     CONTRACT_INGEST_STATE_FILE,
 })
