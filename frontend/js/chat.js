@@ -204,7 +204,18 @@ function _renderChatMessages(messages) {
     container.insertAdjacentHTML('beforeend', html);
     _chatLastRenderSig = sig;
     _chatLastRenderedIds = newIds;
-    if (wasAtBottom) container.scrollTop = container.scrollHeight;
+    // 09.09 v11b: rAF -- browser must apply the new bubble's height AND the
+    // keyboard-aware bottom padding (--chat-keyboard-inset, see CSS) before
+    // scrollHeight is measured, otherwise this can scroll to a stale height
+    // and still leave the latest message partially behind the composer/
+    // keyboard. Own sent messages ALWAYS scroll into view (the whole point of
+    // sending is to see it land) regardless of wasAtBottom; incoming/other
+    // messages only auto-scroll if the user was already near the bottom.
+    const lastAppended = appended[appended.length - 1];
+    const forceScroll = wasAtBottom || (lastAppended && lastAppended.user_id === _chatMyId);
+    if (forceScroll) {
+      requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
+    }
     // Bind handlers/auth-media only on the newly appended bubbles, not the
     // whole container -- avoids re-attaching duplicate listeners on untouched
     // existing bubbles.
@@ -265,7 +276,9 @@ function _renderChatMessages(messages) {
   }).join('');
 
   if (wasAtBottom || messages.length === 1) {
-    container.scrollTop = container.scrollHeight;
+    // 09.09 v11b: rAF -- same reasoning as the append-only path above (browser
+    // must apply keyboard-aware padding before scrollHeight is measured).
+    requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
   }
 
   _attachChatBubbleHandlers(container);

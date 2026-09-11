@@ -484,34 +484,27 @@ function fmtDateRangeHuman(isoFrom, isoTo) {
   return `${fmtDateHuman(isoFrom)} — ${fmtDateHuman(isoTo)}`;
 }
 
-// 09.09 v10 (P0 chat keyboard final fix, root cause 2): tapping Send must NEVER
-// close the keyboard. pointerdown.preventDefault() alone was NOT sufficient on
-// owner's real Telegram iOS WKWebView (live device testing confirmed the keyboard
-// still closed/reopened on some sends). Dedicated touchstart/touchend binding
-// takes over the whole gesture on touch devices; click remains the fallback path
-// for mouse/desktop (no touch events fire there).
+// 09.09 v11b (P0 chat keyboard UX CONTRACT, FINAL owner decision): keyboard
+// STAYS OPEN after Send -- standard messenger UX (Telegram/WhatsApp/iMessage),
+// matches the 10-sends-in-a-row acceptance test. The brief v11 detour that
+// closed the keyboard on Send was a wrong diagnosis of a real bug: the actual
+// problem was never that the keyboard stayed open -- it was that
+// .chat-messages' bottom padding didn't account for --chat-keyboard-inset
+// (fixed separately in the CSS, see that rule), so a newly sent message
+// rendered behind the still-open keyboard, invisible. Fixing the padding
+// fixes the real bug without giving up the correct "keyboard stays open" UX.
 //
-// Design, per the standard chat UX every real messenger uses (Telegram/WhatsApp):
-// tap Send -> message sends -> textarea stays focused -> keyboard stays open.
-//
-// touchstart: preventDefault (passive:false is required for this to work) --
-//   stops the browser from shifting focus off the textarea at the START of the
-//   gesture, before the send even happens. Marks a module-level "send touch
-//   active" flag so a transient blur during this gesture (if the WebView still
-//   fires one despite preventDefault) is ignored by the focusin/focusout chat
-//   composer handlers in app.html, instead of being treated as a genuine
-//   keyboard-close signal.
-// touchend: preventDefault (suppresses the synthetic click that would otherwise
-//   follow and double-send), synchronously re-focuses the textarea if it
-//   somehow lost focus (before any await/network work -- must happen in the
-//   same synchronous tick as the user gesture or iOS won't honor the refocus),
-//   then calls the actual send function.
+// touchstart: preventDefault (passive:false required) -- prevents the browser
+//   from shifting focus at the START of the gesture, before send even happens.
+// touchend: preventDefault (suppresses the trailing synthetic click), keeps
+//   focus/keyboard exactly as they are (no blur, no close, no refocus --
+//   there is nothing to fix here since focus was never lost in the first
+//   place once touchstart's preventDefault does its job), calls sendFn().
 function _bindTouchSafeSend(sendBtn, inputEl, sendFn) {
   let touchHandled = false;
   sendBtn.addEventListener('touchstart', (e) => {
     e.preventDefault();
     touchHandled = true;
-    _chatSendTouchActive = true;
   }, { passive: false });
   sendBtn.addEventListener('touchend', (e) => {
     e.preventDefault();
@@ -519,14 +512,10 @@ function _bindTouchSafeSend(sendBtn, inputEl, sendFn) {
       inputEl.focus({ preventScroll: true });
     }
     sendFn();
-    _chatSendTouchActive = false;
-    // touchend on a button is normally followed by a synthetic click ~300ms
-    // later (or sooner) on some WebViews -- suppress exactly one, so mouse
-    // users elsewhere aren't affected and a genuine second tap still works.
     setTimeout(() => { touchHandled = false; }, 400);
   }, { passive: false });
   sendBtn.addEventListener('click', () => {
-    if (touchHandled) return; // this click is the synthetic follow-up to touchend above
+    if (touchHandled) return; // synthetic follow-up to touchend above
     sendFn();
   });
 }
