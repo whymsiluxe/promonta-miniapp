@@ -6015,69 +6015,26 @@ function _applyViewportHeightNow() {
       document.documentElement.style.setProperty('--tg-fullscreen-height', _fullViewportHeight + 'px');
     }
 
-    // Реальный keyboard inset. Мгновенный reconcile, БЕЗ анимации на этом шаге --
-    // событие приходит уже постфактум (клавиатура физически домонтировалась раньше),
-    // анимировать нечего, только зафиксировать финальное значение. Плавность даёт
-    // ПРЕДСКАЗАННОЕ движение на focus (см. _predictKeyboardOpen), которое стартует
-    // ДО этого события, не после.
+    // 09.09 v10: predictive-анимация (v9) ПОЛНОСТЬЮ УБРАНА -- давала 2 новых бага
+    // на живом устройстве: (1) focusout-хендлер предсказывал закрытие клавиатуры
+    // на КАЖДУЮ потерю фокуса composer-поля, включая случаи когда клавиатура должна
+    // оставаться открытой (например в момент отправки сообщения) -- отсюда owner
+    // report "отправка работает только со второго тапа: первый тап роняет composer
+    // вниз (предсказанное закрытие), клавиатура на деле не закрывалась, второй тап
+    // поднимает обратно"; (2) на "Квартира Вебер" composer улетел в самый верх экрана
+    // при обычном тапе на поле -- вероятно рассинхрон между предсказанным и реальным
+    // --keyboard-inset. Простой мгновенный reconcile без предсказания -- вариант 1 из
+    // внешнего разбора ("надёжнее чем пытаться сгладить уже случившееся движение"),
+    // выбран как безопасный откат после того как architecture v9 (сам факт что
+    // контейнер больше не меняет height, только composer через transform) уже
+    // показала себя устойчивой -- проблема была именно в слое поверх неё, не в
+    // самой архитектуре.
     const actualInset = keyboardLikelyOpen ? Math.max(0, _fullViewportHeight - vv.height) : 0;
     document.documentElement.style.setProperty('--keyboard-inset', actualInset + 'px');
-    _chatComposerPredicting = false; // реальные данные пришли -- предсказание больше не нужно
-
-    if (actualInset > 120) {
-      _lastKeyboardInset = actualInset;
-      // 09.09: localStorage, не sessionStorage -- owner подтвердил живьём, что каждое
-      // закрытие/переоткрытие Telegram Mini App (не просто смена вкладки/экрана внутри
-      // него) даёт кэшу задержку каждый раз одинаковую, будто он никогда не срабатывает.
-      // Причина: Telegram переоткрывает Mini App как свежую загрузку страницы -- новый
-      // JS-контекст, sessionStorage (живёт только пока жива вкладка/страница) пуст
-      // каждый раз, кэш никогда не накапливался между запусками. localStorage переживает
-      // это переоткрытие, sessionStorage больше не подходит для этого конкретного кейса.
-      try { localStorage.setItem('keyboardInsetPortrait', String(actualInset)); } catch (e) {}
-    }
   } else {
     document.documentElement.style.setProperty('--tg-fullscreen-height', h + 'px');
   }
 }
-
-// 09.09 v9: predictive keyboard animation -- живые замеры на устройстве owner'а
-// показали focus срабатывает ~480-560ms РАНЬШЕ настоящего visualViewport.resize
-// (который приходит уже когда клавиатура физически полностью открылась). Ждать
-// этого события и потом анимировать -- всегда анимация ВДОГОНКУ уже случившемуся
-// скачку (это и провалилось в v8/FLIP). Вместо этого: используем последнее известное
-// значение высоты клавиатуры (сохранённое в _applyViewportHeightNow при реальном
-// resize) и начинаем анимацию СРАЗУ на focus -- одновременно с нативной анимацией
-// клавиатуры, не после неё. Первое открытие клавиатуры в сессии предсказывать не
-// от чего (нет ещё сохранённого значения) -- там остаётся обычный мгновенный snap.
-let _lastKeyboardInset = 0;
-try {
-  const cached = Number(localStorage.getItem('keyboardInsetPortrait'));
-  if (cached > 120) _lastKeyboardInset = cached;
-} catch (e) {}
-let _chatComposerPredicting = false;
-
-function _predictKeyboardOpen() {
-  if (!_lastKeyboardInset) return; // нет сохранённого значения -- ждём обычный snap
-  _chatComposerPredicting = true;
-  document.documentElement.style.setProperty('--keyboard-inset', _lastKeyboardInset + 'px');
-}
-
-document.addEventListener('focusin', (e) => {
-  const el = e.target;
-  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return;
-  if (el.closest('.chat-input-bar, .ai-input-bar')) _predictKeyboardOpen();
-}, true);
-// Клавиатура закрывается (blur на composer-поле) -- тот же принцип: не ждать
-// финального resize, снять предсказанный inset сразу, реальный reconcile (0px)
-// прилетит из visualViewport чуть позже и просто подтвердит то же самое значение.
-document.addEventListener('focusout', (e) => {
-  const el = e.target;
-  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return;
-  if (!el.closest('.chat-input-bar, .ai-input-bar')) return;
-  if (document.activeElement && (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement)) return; // фокус ушёл на другое поле того же бара
-  _chatComposerPredicting = true;
-  document.documentElement.style.setProperty('--keyboard-inset', '0px');
-}, true);
 
 // Любой input/textarea в фокусе — прокручиваем в видимую часть экрана (над клавиатурой),
 // не полагаясь только на нативное поведение WebView (на iOS scrollIntoView сам по себе
@@ -6096,6 +6053,14 @@ function _scrollFieldIntoView(el) {
 document.addEventListener('focusin', (e) => {
   const el = e.target;
   if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return;
+  // 09.09: chat/AI composer поля исключены -- они уже позиционируются явно через
+  // --keyboard-inset + transform (position:absolute, см. .chat-input-bar CSS).
+  // Общий scrollIntoView({block:'center'}) для ЛЮБОГО input/textarea конфликтовал с
+  // этим позиционированием -- вероятная причина owner report "в Квартира Вебер поле
+  // при фокусе улетело почти наверх экрана": scrollIntoView двигал ВЕСЬ скролл-контейнер
+  // чата, пытаясь отцентрировать поле, поверх уже корректного transform-позиционирования
+  // самого composer'а -- два независимых механизма двигали одно и то же одновременно.
+  if (el.closest('.chat-input-bar, .ai-input-bar')) return;
 
   const accordionBody = el.closest('.accordion-body');
   let settleDelay = 320; // fallback ожидание, чуть больше времени клавиатуры

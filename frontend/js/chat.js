@@ -651,14 +651,23 @@ async function _sendChatAttachment(file) {
   }
 }
 
+let _chatSending = false;
 async function _sendChatMessage() {
   const input = document.getElementById('chat-input');
   const btn = document.getElementById('chat-send');
   const text = input.value.trim();
   if (!text) return;
-
+  // 09.09: input.disabled=true УБРАН -- ставить disabled на элемент, который в этот
+  // момент в фокусе, форсирует blur на iOS (input теряет фокус синхронно), клавиатура
+  // начинает закрываться -- ровно тот цикл blur->keyboard-close->focus->keyboard-open
+  // на КАЖДУЮ отправку, который owner описал как "отправка только со второго тапа,
+  // строка падает-поднимается". Guard теперь через модуль-переменную _chatSending +
+  // disabled только на кнопку (кнопка и так не в фокусе, ей можно). Текст сообщения
+  // забираем в переменную ДО очистки поля -- input.value используется для восстановления
+  // при ошибке, но НЕ трогаем фокус/disabled состояние поля вообще.
+  if (_chatSending) return;
+  _chatSending = true;
   btn.disabled = true;
-  input.disabled = true;
   try {
     await api('/api/chat/messages', {
       method: 'POST',
@@ -667,8 +676,13 @@ async function _sendChatMessage() {
         reply_to_id: _chatReplyTarget ? _chatReplyTarget.id : null,
       }),
     });
-    input.value = '';
-    input.style.height = 'auto';
+    // Восстанавливаем отправленный текст, только если юзер не успел напечатать что-то
+    // новое пока запрос летел -- иначе очистка поля стёрла бы уже введённый следующий
+    // черновик.
+    if (input.value.trim() === text) {
+      input.value = '';
+      input.style.height = 'auto';
+    }
     _clearChatReplyTarget();
     _chatLastRenderSig = null;
     await _loadChatMessages(true);
@@ -684,9 +698,8 @@ async function _sendChatMessage() {
       setTimeout(() => { errEl.style.display = 'none'; }, 4000);
     }
   } finally {
+    _chatSending = false;
     btn.disabled = false;
-    input.disabled = false;
-    input.focus();
   }
 }
 
@@ -1375,6 +1388,14 @@ async function initChatView() {
   const sendBtn = document.getElementById('chat-send');
   const input = document.getElementById('chat-input');
 
+  // 09.09: pointerdown preventDefault -- на iOS тап по кнопке начинается с
+  // pointerdown/mousedown, который браузер может использовать чтобы снять фокус с
+  // textarea ДО того как click вообще сработает -- в этот промежуток клавиатура уже
+  // начинает закрываться, composer (position:absolute) уезжает, а сам click иногда
+  // попадает уже мимо (кнопка физически сдвинулась под пальцем). preventDefault на
+  // pointerdown у кнопки-НЕ-input сохраняет фокус на textarea, click всё равно
+  // срабатывает нормально следом.
+  sendBtn.addEventListener('pointerdown', e => e.preventDefault());
   sendBtn.addEventListener('click', _sendChatMessage);
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) {

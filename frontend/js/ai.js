@@ -133,8 +133,10 @@ async function _sendAiMessage() {
   input.style.height = 'auto';
   _renderAiMessages();
 
+  // 09.09: input.disabled=true убран -- тот же баг что был в _sendChatMessage
+  // (chat.js) -- disabled на элементе в фокусе форсирует blur на iOS, клавиатура
+  // закрывается на каждую отправку. Кнопку по-прежнему можно дизейблить (не в фокусе).
   btn.disabled = true;
-  input.disabled = true;
 
   const container = document.getElementById('ai-messages');
   const typingId = 'ai-typing-' + Date.now();
@@ -164,8 +166,6 @@ async function _sendAiMessage() {
     _aiMessages.pop();
   } finally {
     btn.disabled = false;
-    input.disabled = false;
-    input.focus();
   }
 }
 
@@ -216,6 +216,9 @@ function initAiView() {
   const input = document.getElementById('ai-input');
   const fileInput = document.getElementById('ai-file-input');
 
+  // 09.09: тот же фикс что chat.js -- preventDefault на pointerdown сохраняет фокус
+  // на textarea при тапе по кнопке отправки, клавиатура не закрывается на пол-пути.
+  sendBtn.addEventListener('pointerdown', e => e.preventDefault());
   sendBtn.addEventListener('click', _sendAiMessage);
   clearBtn.addEventListener('click', _clearAiChat);
   if (fileInput) {

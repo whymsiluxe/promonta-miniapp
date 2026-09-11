@@ -390,7 +390,17 @@ function _asBindConfirmStep() {
   const btn = document.getElementById('as-confirm-submit');
   const errEl = document.getElementById('as-confirm-error');
   let submitting = false; // защита от двойного тапа
-  btn.addEventListener('click', async () => {
+
+  // 09.09: вынесено в отдельную функцию -- раньше "Перевести объект в работе" после
+  // успешной смены статуса вызывал btn.click() чтобы "повторить" отправку, но
+  // `submitting` в этот момент ещё оставался true (сброс в false стоял в конце catch
+  // блока ЭТОГО ЖЕ вызова, который ещё не успел выполниться -- JS синхронный, catch
+  // не завершился к моменту btn.click()) -- синтетический клик мгновенно проходил
+  // `if (submitting) return` и молча ничего не делал. Owner подтвердил живьём: статус
+  // объекта меняется, назначение не создаётся. Теперь submitAssignment() вызывается
+  // НАПРЯМУЮ (await), не через синтетический DOM click -- нет гонки с closures другого
+  // вызова этого же обработчика.
+  async function submitAssignment() {
     if (submitting) return;
     submitting = true;
     btn.disabled = true;
@@ -429,14 +439,14 @@ function _asBindConfirmStep() {
       if (isCompleted) {
         errEl.innerHTML = `Объект завершён — назначение недоступно.
           <button type="button" id="as-reopen-object-btn" style="display:block;margin-top:0.5rem;width:100%;padding:0.45rem 0.75rem;border:none;border-radius:8px;background:var(--primary);color:#fff;font-size:0.9rem;cursor:pointer;">
-            Перевести объект в «В работе» и назначить
+            Возобновить работы и назначить
           </button>`;
         errEl.style.display = 'block';
         const reopenBtn = document.getElementById('as-reopen-object-btn');
         if (reopenBtn) {
           reopenBtn.addEventListener('click', async () => {
             reopenBtn.disabled = true;
-            reopenBtn.textContent = 'Меняю статус...';
+            reopenBtn.textContent = 'Возобновляю работы...';
             try {
               await api(`/api/objects/${_asState.objectId}/status`, {
                 method: 'PATCH',
@@ -444,12 +454,12 @@ function _asBindConfirmStep() {
               });
               errEl.style.display = 'none';
               errEl.innerHTML = '';
-              // Re-submit the assignment now that the object is active again
-              btn.disabled = false;
-              btn.click();
+              reopenBtn.textContent = 'Назначаю...';
+              // Прямой вызов, не синтетический click -- см. комментарий у submitAssignment().
+              await submitAssignment();
             } catch (e2) {
               reopenBtn.disabled = false;
-              reopenBtn.textContent = 'Перевести объект в «В работе» и назначить';
+              reopenBtn.textContent = 'Возобновить работы и назначить';
               errEl.innerHTML = 'Не удалось изменить статус объекта: ' + e2.message;
             }
           });
@@ -462,7 +472,9 @@ function _asBindConfirmStep() {
       btn.disabled = false;
       btn.textContent = `Назначить ${_asState.userIds.length} работник${_asState.userIds.length === 1 ? 'а' : 'ов'}`;
     }
-  });
+  }
+
+  btn.addEventListener('click', submitAssignment);
 }
 
 function _asBindStepHandlers(step) {
