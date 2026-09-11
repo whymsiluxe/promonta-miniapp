@@ -61,6 +61,15 @@ body {
    чтобы оставаться поверх клавиатуры, освобождая место для формы. body.keyboard-open
    ставится глобальным visualViewport-детектом в _applyViewportHeight(). */
 body.keyboard-open .bottom-nav { opacity: 0; transform: translateX(-50%) translateY(120%); pointer-events: none; }
+/* Chat composer fix: applyRoleNav() used to hardcode display via inline style
+   (element.style.display), which always wins over any stylesheet rule
+   regardless of specificity -- that permanently defeated
+   body.chat-dialog-open .bottom-nav's display:none further down this file,
+   because the inline style was already set before that rule could ever have
+   a chance to apply. Role switching now only toggles this data attribute;
+   the chat-dialog-open rule (see below) can correctly override it since both
+   are now plain stylesheet rules, ordered normally by source position. */
+.bottom-nav[data-role-active="hidden"] { display: none; }
 
 .nav-item {
   flex: 1;
@@ -5555,7 +5564,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
   </div>
 </div>
 
-<div class="bottom-nav" id="bottom-nav-worker" style="display:none;">
+<div class="bottom-nav" id="bottom-nav-worker" data-role-active="hidden">
   <div class="nav-item" data-view="feed">
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 10h10M4 14h12M4 18h8" stroke-linecap="round"/></svg>
     <span class="nav-label">Лента</span>
@@ -5797,13 +5806,30 @@ function applyRoleNav() {
   const workerNav = document.getElementById('bottom-nav-worker');
   const checkinFab = document.getElementById('nav-checkin-btn');
   if (!ownerNav || !workerNav) return;
+  // Chat composer fix (P0, second pass -- live device diagnosis found the
+  // REAL cause after the earlier viewport-height race-condition fix): this
+  // function unconditionally hardcodes display:flex/none as an INLINE style
+  // on whichever nav is "active" for the current role. Inline styles always
+  // win over stylesheet rules regardless of specificity -- so
+  // `body.chat-dialog-open .bottom-nav { display: none; }` (meant to hide
+  // the nav while a chat thread is open, so the composer isn't covered) was
+  // permanently dead for the owner's nav specifically, because this
+  // function had already baked display:flex directly into its style
+  // attribute at role-init time. Confirmed live: getComputedStyle showed
+  // display:flex, offsetHeight:97, offsetWidth:351 -- the nav pill was
+  // genuinely rendered on top of the composer at the exact same screen
+  // coordinates, not a viewport-measurement bug this time.
+  // Fix: never write display directly here -- toggle a data-role-active
+  // attribute and let CSS (.bottom-nav[data-role-active="hidden"] {
+  // display: none; }) handle it, so body.chat-dialog-open's rule can still
+  // apply on top without an inline-style deadlock.
   if (currentRole === 'worker') {
-    ownerNav.style.display = 'none';
-    workerNav.style.display = 'flex';
+    ownerNav.dataset.roleActive = 'hidden';
+    workerNav.dataset.roleActive = 'shown';
     if (checkinFab) checkinFab.style.display = '';
   } else {
-    ownerNav.style.display = 'flex';
-    workerNav.style.display = 'none';
+    ownerNav.dataset.roleActive = 'shown';
+    workerNav.dataset.roleActive = 'hidden';
     if (checkinFab) checkinFab.style.display = 'none';
   }
   // 28.07: owner request -- Документы не нужны воркеру в меню "Ещё" (не его рабочий
