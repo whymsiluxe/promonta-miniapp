@@ -49,7 +49,6 @@ function _renderOwnerSelfProfile(slot) {
     <div class="profile-tabs" id="profile-tabs">
       <div class="profile-tab active" data-tab="me">Профиль</div>
       <div class="profile-tab" data-tab="team">Доступ</div>
-      <div class="profile-tab" data-tab="settings">Настройки</div>
     </div>
 
     <div class="profile-tab-panel" data-panel="me">
@@ -64,6 +63,11 @@ function _renderOwnerSelfProfile(slot) {
             Изменить фото
           </button>
         </div>
+        <div id="profile-name-edit-inline" style="display:none;margin-top:0.75rem;">
+          <input type="text" id="profile-name-input" class="mangel-select" placeholder="Например: Иван" maxlength="100">
+          <button class="submit-btn profile-inline-btn" id="profile-name-save-btn" type="button" style="margin-top:0.5rem">Сохранить имя</button>
+          <div id="profile-name-status" style="font-size:0.8rem;color:var(--accent);margin-top:0.4rem"></div>
+        </div>
       </div>
       <div class="card">
         <div class="home-section-header" style="padding:0 0 0.5rem;">
@@ -73,36 +77,13 @@ function _renderOwnerSelfProfile(slot) {
           <div class="profile-app-status-row"><span>Версия</span><span id="profile-app-version">—</span></div>
           <div class="profile-app-status-row"><span>AI-ассистент</span><span>GLM-режим</span></div>
         </div>
+        <button class="submit-btn profile-inline-btn" id="profile-system-status-btn" type="button" style="margin-top:0.75rem">Статус системы →</button>
       </div>
     </div>
 
     <div class="profile-tab-panel" data-panel="team" style="display:none">
       <div class="accordion-section" style="display:block">
         <div id="profile-team-list" style="font-size:0.85rem;color:var(--text-light);padding:0.75rem 0">Загрузка…</div>
-      </div>
-    </div>
-
-    <div class="profile-tab-panel" data-panel="settings" style="display:none">
-      <div class="card">
-        <div class="home-section-header" style="padding:0 0 0.5rem;">
-          <span class="home-section-title">Имя</span>
-        </div>
-        <input type="text" id="profile-name-input" class="mangel-select" placeholder="Например: Иван" maxlength="100">
-        <button class="submit-btn profile-inline-btn" id="profile-name-save-btn" type="button" style="margin-top:0.5rem">Сохранить имя</button>
-        <div id="profile-name-status" style="font-size:0.8rem;color:var(--accent);margin-top:0.4rem"></div>
-      </div>
-      <div class="card">
-        <div class="home-section-header" style="padding:0 0 0.5rem;">
-          <span class="home-section-title">Фото профиля</span>
-        </div>
-        <button class="submit-btn profile-inline-btn" id="profile-settings-photo-btn" type="button">Изменить фото</button>
-      </div>
-      <div class="card">
-        <div class="home-section-header" style="padding:0 0 0.5rem;">
-          <span class="home-section-title">Система</span>
-        </div>
-        <div id="profile-settings-sysinfo" class="profile-app-status"></div>
-        <button class="submit-btn profile-inline-btn" id="profile-system-status-btn" type="button" style="margin-top:0.75rem">Статус системы →</button>
       </div>
     </div>
   `;
@@ -119,15 +100,19 @@ function _bindOwnerSelfHandlers() {
   const triggerPhoto = () => input && input.click();
   wrap?.addEventListener('click', triggerPhoto);
   document.getElementById('profile-owner-edit-photo')?.addEventListener('click', triggerPhoto);
-  document.getElementById('profile-settings-photo-btn')?.addEventListener('click', triggerPhoto);
   document.getElementById('profile-system-status-btn')?.addEventListener('click', () => {
     if (typeof switchView === 'function') switchView('diagnostics');
   });
   document.getElementById('profile-owner-edit-name')?.addEventListener('click', () => {
-    // переключить на вкладку Настройки, где поле имени
-    const settingsTab = document.querySelector('#profile-tabs .profile-tab[data-tab="settings"]');
-    settingsTab?.click();
-    setTimeout(() => document.getElementById('profile-name-input')?.focus(), 60);
+    // Item 4 fix: name editing used to jump to a separate Настройки tab that
+    // duplicated the same input/button already visible on this tab -- now
+    // toggles an inline field in-place instead of removing that duplication
+    // rather than hiding it behind a tab switch.
+    const wrap = document.getElementById('profile-name-edit-inline');
+    if (!wrap) return;
+    const opening = wrap.style.display === 'none';
+    wrap.style.display = opening ? 'block' : 'none';
+    if (opening) setTimeout(() => document.getElementById('profile-name-input')?.focus(), 60);
   });
   input?.addEventListener('change', async () => {
     if (!input.files || !input.files[0]) return;
@@ -178,10 +163,6 @@ async function _loadOwnerSelfProfile() {
     const label = [ver, commit].filter(Boolean).join(' · ') || '—';
     const vEl = document.getElementById('profile-app-version');
     if (vEl) vEl.textContent = label;
-    const sys = document.getElementById('profile-settings-sysinfo');
-    if (sys) sys.innerHTML = `
-      <div class="profile-app-status-row"><span>Версия</span><span>${esc(ver || '—')}</span></div>
-      <div class="profile-app-status-row"><span>Commit</span><span>${esc(commit || '—')}</span></div>`;
   } catch (e) {}
 }
 
