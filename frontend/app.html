@@ -2337,6 +2337,21 @@ body.view-locked {
   transform: translate3d(0, calc(-1 * var(--chat-keyboard-inset, 0px)), 0);
   will-change: transform;
 }
+/* 09.09 v11d: короткий transition ТОЛЬКО во время предсказанного открытия --
+   без него composer прыгал МГНОВЕННО на focusin, а нативная клавиатура въезжает
+   плавно за ~200-250ms -- видимый зазор "composer уже вверху, клавиатуры ещё
+   нет физически" (owner прислал два скрина подряд с разницей в кадре именно с
+   этим). Этот transition длится примерно как нативная анимация клавиатуры,
+   класс снимается сразу после того как реальный visualViewport подтвердит
+   финальное состояние (_chatKeyboardReconcile) -- обычные keyboard-open/closed
+   переходы вне этого окна остаются мгновенными (transform и так compositor-only,
+   лишний transition на "прочие" reconcile-обновления не нужен и не добавлен). */
+body.chat-keyboard-transitioning .chat-input-bar,
+body.chat-keyboard-transitioning .ai-input-bar,
+body.chat-keyboard-transitioning .chat-reply-bar,
+body.chat-keyboard-transitioning #chat-voice-recording-bar {
+  transition: transform 220ms ease-out;
+}
 /* 09.09 v9: safe-area-inset-bottom уже физически "внутри" клавиатуры, когда она
    открыта (home indicator area перекрыт клавиатурой) -- держать этот отступ поверх
    реального keyboard-inset добавляет лишние ~34px пустого места под полем ввода,
@@ -6118,6 +6133,7 @@ function _isChatComposerField(el) {
 function _chatKeyboardOpen() {
   _chatKeyboardState = 'opening';
   document.body.classList.add('chat-composer-focused');
+  document.body.classList.add('chat-keyboard-transitioning');
   const cached = _chatKeyboardCachedInset();
   const predicted = cached > 0
     ? cached
@@ -6136,6 +6152,7 @@ function _chatKeyboardOpen() {
 function _chatKeyboardClose() {
   _chatKeyboardState = 'closing';
   document.body.classList.remove('chat-composer-focused');
+  document.body.classList.add('chat-keyboard-transitioning');
   _applyChatKeyboardInset(0);
 }
 
@@ -6153,6 +6170,10 @@ function _chatKeyboardReconcile(actualInset) {
     _chatKeyboardState = 'open';
     _chatKeyboardCacheStore(actualInset);
     _applyChatKeyboardInset(actualInset);
+    // Реальная клавиатура подтвердилась -- предсказанная анимация выполнила
+    // свою роль (композер уже двигался ПРИМЕРНО синхронно с ней), снимаем
+    // transition, дальнейшие мелкие уточнения инсета (если будут) снова мгновенны.
+    document.body.classList.remove('chat-keyboard-transitioning');
   } else if (_chatKeyboardState === 'open') {
     if (!keyboardOpen) return; // do not accept a transient zero while still focused
     _chatKeyboardCacheStore(actualInset);
@@ -6161,6 +6182,7 @@ function _chatKeyboardReconcile(actualInset) {
     if (keyboardOpen) return; // stale reading from the keyboard that's already closing
     _chatKeyboardState = 'closed';
     _applyChatKeyboardInset(0);
+    document.body.classList.remove('chat-keyboard-transitioning');
   }
   // 'closed': nothing to reconcile, stays at 0.
 }
