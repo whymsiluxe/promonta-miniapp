@@ -2626,11 +2626,25 @@ body.keyboard-open .chat-input-bar, body.keyboard-open .ai-input-bar {
 @keyframes chatBubbleHighlight { 0%, 100% { background: none; } 30% { background: var(--chat-surface-active); } }
 .chat-bubble-highlight { animation: chatBubbleHighlight 1.2s ease; border-radius: var(--radius-md, 10px); }
 
-/* Reply bar над input -- появляется/скрывается через display в chat.js (_renderChatReplyBar). */
+/* Reply bar над input -- появляется/скрывается через display в chat.js (_renderChatReplyBar).
+   09.09 fix: .chat-input-bar стал position:absolute в 74b9e6f и вышел из flow --
+   reply-bar оставался в flow и оказывался на одном уровне (bottom:0) с input-bar,
+   который перекрывал его (z-index:2). Теперь reply-bar тоже absolute, сидит
+   прямо над input-bar через bottom: var(--chat-composer-height). */
 .chat-reply-bar {
+  position: absolute; left: 0; right: 0;
+  bottom: var(--chat-composer-height, 64px);
+  z-index: 3;
+  transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0);
+  will-change: transform;
   align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem;
-  background: var(--chat-surface); border-top: 1px solid var(--chat-border);
+  background: var(--chat-surface, var(--bg-white)); border-top: 1px solid var(--chat-border);
   border-left: 3px solid var(--chat-forest, var(--c-accent, var(--primary)));
+}
+/* When reply-bar is visible, messages need extra bottom padding so the last message
+   isn't hidden behind reply-bar + input-bar stack (~48px for reply-bar height). */
+body.chat-reply-active .chat-messages {
+  padding-bottom: calc(var(--chat-composer-height, 64px) + 48px + var(--keyboard-inset, 0px) + 0.75rem);
 }
 .chat-reply-bar-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .chat-reply-bar-name { font-size: 0.78rem; font-weight: 600; color: var(--chat-forest-light, var(--c-accent)); }

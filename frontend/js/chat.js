@@ -491,9 +491,11 @@ function _renderChatReplyBar() {
   if (!_chatReplyTarget) {
     bar.style.display = 'none';
     bar.innerHTML = '';
+    document.body.classList.remove('chat-reply-active');
     return;
   }
   bar.style.display = 'flex';
+  document.body.classList.add('chat-reply-active');
   bar.innerHTML = `
     <div class="chat-reply-bar-content">
       <span class="chat-reply-bar-name">${_escChat(_chatReplyTarget.name)}</span>
