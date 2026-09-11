@@ -2295,19 +2295,20 @@ body.tg-native-back #chat-thread-back-btn { display: none; }
 }
 
 .chat-messages, .ai-messages {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
-  padding: 0.75rem 1rem;
-  /* 09.09 v11b: keyboard-aware padding ВОЗВРАЩЁН, но через --chat-keyboard-inset
-     (chat-specific state machine, см. _chatKeyboardOpen/_chatKeyboardReconcile),
-     НЕ через старый глобальный --keyboard-inset (тот обновлялся напрямую от
-     visualViewport.resize с задержкой ~500ms -- v10 убрал его отсюда именно
-     по этой причине, но перестарался: клавиатура теперь ПРАВИЛЬНО остаётся
-     открытой после Send (стандартный UX мессенджеров), просто без keyboard-aware
-     отступа новое сообщение уезжало под неё, физически невидимое. Composer и
-     список сообщений используют ОДНУ и ту же переменную -- не могут разъехаться
-     между собой, в отличие от v9 где они читали общий, поздний --keyboard-inset. */
-  padding-bottom: calc(var(--chat-composer-height, 64px) + var(--chat-keyboard-inset, 0px) + 0.75rem);
+  padding: 0.75rem 1rem 0;
+  /* 11.09 v11e: WebKit flex-column + overflow:auto regression -- bottom
+     padding-bottom on a scrollable flex column is not reliably included in
+     scrollHeight on iOS Safari/WKWebView (known WebKit bug class). v11b/c/d
+     all relied on padding-bottom for keyboard reserve and physically could
+     not scroll far enough to reveal the last message -- not a timing bug,
+     a missing scrollable extent. Fix: keyboard reserve is now a real flex
+     child (::after spacer below) instead of padding, since a pseudo-element
+     flex item IS counted in scrollHeight. Do not revert to padding-bottom
+     for this. min-height:0 added defensively (parent already has it, but a
+     flex child without it is a common source of the same class of bug). */
   scroll-padding-bottom: calc(var(--chat-composer-height, 64px) + var(--chat-keyboard-inset, 0px) + 0.75rem);
   display: flex;
   flex-direction: column;
@@ -2315,6 +2316,14 @@ body.tg-native-back #chat-thread-back-btn { display: none; }
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   touch-action: pan-y;
+}
+
+.chat-messages::after, .ai-messages::after {
+  content: '';
+  display: block;
+  flex: 0 0 calc(var(--chat-composer-height, 64px) + var(--chat-keyboard-inset, 0px) + 0.75rem);
+  min-height: calc(var(--chat-composer-height, 64px) + var(--chat-keyboard-inset, 0px) + 0.75rem);
+  pointer-events: none;
 }
 
 body.view-locked {

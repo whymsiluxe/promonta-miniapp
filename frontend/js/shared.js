@@ -500,6 +500,23 @@ function fmtDateRangeHuman(isoFrom, isoTo) {
 //   focus/keyboard exactly as they are (no blur, no close, no refocus --
 //   there is nothing to fix here since focus was never lost in the first
 //   place once touchstart's preventDefault does its job), calls sendFn().
+// 11.09 v11e: double-rAF scroll-to-bottom for chat/AI message lists. Single
+// rAF (v11b) samples scrollHeight one frame too early when a message lands
+// alongside a textarea resize / reply-bar clear / ResizeObserver update in
+// the same tick -- second rAF guarantees the final post-layout geometry is
+// what gets measured. Does not by itself fix insufficient scrollable extent
+// (see .chat-messages::after spacer in app.html for that) -- this only fixes
+// scroll TIMING, the spacer fixes scroll RANGE. Both were needed.
+function _scrollChatToBottom(containerId) {
+  const c = document.getElementById(containerId);
+  if (!c) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      c.scrollTop = c.scrollHeight;
+    });
+  });
+}
+
 function _bindTouchSafeSend(sendBtn, inputEl, sendFn) {
   let touchHandled = false;
   sendBtn.addEventListener('touchstart', (e) => {

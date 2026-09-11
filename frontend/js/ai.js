@@ -57,7 +57,7 @@ function _renderAiMessages() {
     return `<div class="ai-bubble ai-bubble-${msg.role}">${bodyHtml}</div>`;
   }).join('');
 
-  container.scrollTop = container.scrollHeight;
+  _scrollChatToBottom(container.id);
 }
 
 async function _handleAiFileSelect(e) {
@@ -143,7 +143,7 @@ async function _sendAiMessage() {
   container.insertAdjacentHTML('beforeend',
     `<div id="${typingId}" class="ai-bubble ai-bubble-assistant ai-typing">●●●</div>`
   );
-  container.scrollTop = container.scrollHeight;
+  _scrollChatToBottom(container.id);
 
   try {
     const data = await api('/api/ai-chat', {
@@ -161,7 +161,7 @@ async function _sendAiMessage() {
     errDiv.className = 'ai-bubble ai-bubble-error';
     errDiv.textContent = '⚠️ ' + e.message;
     container.appendChild(errDiv);
-    container.scrollTop = container.scrollHeight;
+    _scrollChatToBottom(container.id);
     // Remove failed user message so user can retry
     _aiMessages.pop();
   } finally {

@@ -219,7 +219,7 @@ function _renderChatMessages(messages) {
     const lastAppended = appended[appended.length - 1];
     const forceScroll = wasAtBottom || (lastAppended && lastAppended.user_id === _chatMyId);
     if (forceScroll) {
-      requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
+      _scrollChatToBottom(container.id);
     }
     // Bind handlers/auth-media only on the newly appended bubbles, not the
     // whole container -- avoids re-attaching duplicate listeners on untouched
@@ -283,7 +283,7 @@ function _renderChatMessages(messages) {
   if (wasAtBottom || messages.length === 1) {
     // 09.09 v11b: rAF -- same reasoning as the append-only path above (browser
     // must apply keyboard-aware padding before scrollHeight is measured).
-    requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
+    _scrollChatToBottom(container.id);
   }
 
   _attachChatBubbleHandlers(container);
@@ -720,7 +720,7 @@ async function _loadChatMessages(forceScroll, signal) {
     _renderChatMessages(data.messages || []);
     if (forceScroll) {
       const c = document.getElementById('chat-messages');
-      if (c) c.scrollTop = c.scrollHeight;
+      if (c) _scrollChatToBottom(c.id);
     }
   } catch (e) {
     if (e.name === 'AbortError') return;
