@@ -20,7 +20,18 @@ let _asState = null; // текущее состояние открытого she
  *   Ровно один из двух режимов должен быть передан.
  */
 async function openAssignmentSheet(opts = {}) {
-  if (_asState) return; // уже открыт
+  // Item 1 fix (owner report: "Команда и смены -> Добавить" does nothing):
+  // this guard blocked re-opening whenever _asState was truthy -- but if a
+  // prior open never fully closed (e.g. an exception during _asBindStepHandlers
+  // left the DOM overlay gone while _asState stayed set, or _asClose() was
+  // never reached on some code path), every SUBSEQUENT tap silently no-op'd
+  // forever with no visible error. Now treats a stale state (no matching DOM
+  // overlay) as recoverable instead of a permanent lock.
+  if (_asState) {
+    if (document.getElementById('assignment-sheet-overlay')) return; // genuinely already open
+    console.error('openAssignmentSheet: stale _asState with no overlay in DOM -- resetting');
+    _asState = null;
+  }
   _asState = {
     mode: opts.objectId ? 'from_object' : 'from_worker',
     objectId: opts.objectId || '',
