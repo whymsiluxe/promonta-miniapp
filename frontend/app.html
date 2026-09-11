@@ -528,6 +528,14 @@ header h1 {
 .my-task-decline-btn { background: var(--bg-app); border: 1px solid var(--border-color); color: var(--text-main); }
 .my-task-accept-btn:disabled, .my-task-decline-btn:disabled { opacity: 0.6; }
 .mangel-card-photo { width: 100%; height: 90px; border-radius: var(--radius-sm); background-size: cover; background-position: center; margin-bottom: 0.4rem; }
+/* Item 3 fix: visible error state when the authenticated photo fetch fails,
+   instead of an indistinguishable black box (owner screenshot). */
+.mangel-card-photo.auth-bg-error, .mangel-modal-photo.auth-bg-error {
+  background: var(--bg-card); display: flex; align-items: center; justify-content: center;
+}
+.mangel-card-photo.auth-bg-error::after, .mangel-modal-photo.auth-bg-error::after {
+  content: '⚠ Фото не загрузилось'; font-size: 0.78rem; color: var(--text-light); text-align: center; padding: 0 0.5rem;
+}
 .mangel-card-desc { font-size: 1rem; font-weight: 600; margin-bottom: 0.3rem; }
 .mangel-card-meta { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-light); }
 /* 21.07: реальный drag-and-drop между Kanban-колонками (было tap-to-cycle only) */

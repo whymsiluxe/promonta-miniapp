@@ -243,7 +243,17 @@ async function authBgImage(el, path) {
     _revokeIfBlobUrl(el.dataset.blobUrl);
     el.style.backgroundImage = `url(${newUrl})`;
     el.dataset.blobUrl = newUrl;
-  } catch (e) {}
+    el.classList.remove('auth-bg-error');
+  } catch (e) {
+    // Item 3 fix (owner report: black rectangle instead of defect photo): this
+    // used to swallow every fetch failure silently -- the element kept its
+    // default (transparent/none) background, which against this app's dark
+    // card backgrounds renders as an indistinguishable black box, not a
+    // visible error. Never accept that as "success" -- mark it so CSS can
+    // show an actual broken-image indicator instead.
+    el.classList.add('auth-bg-error');
+    console.error('authBgImage failed for', path, e);
+  }
 }
 
 // Открытие внешней ссылки — единая точка (переиспользуется новостями и адресами объектов).
