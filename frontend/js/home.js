@@ -176,7 +176,14 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise, teamPlanT
       teamPlanTomorrowPromise || api('/api/dashboard/team-plan?date=' + tomorrowStr),
     ]);
     const entries = absData.entries || [];
-    const workers = (wrkData.workers || []).filter(w => w.role !== 'owner');
+    // 09.09: было `w.role !== 'owner'` -- profile-only пользователь без реального
+    // доступа теперь возвращается backend'ом с role:null (см. roster/access invariant
+    // fix), а null !== 'owner' тоже true -- такой "призрак" всё ещё проходил бы этот
+    // фильтр и показывался в активном расписании с кнопками профиль/назначение, хотя
+    // Worker Card для него не откроется (нет доступа). Явная проверка role==='worker'
+    // (не access_granted напрямую -- role уже строго производится из access_granted
+    // на backend, см. list_workers) исключает и null, и любую будущую третью роль.
+    const workers = (wrkData.workers || []).filter(w => w.role === 'worker');
 
     function absenceFor(workerName, dateStr) {
       return entries.find(e => e.name === workerName && e.date_from <= dateStr && (!e.date_to || e.date_to >= dateStr));
@@ -250,8 +257,16 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise, teamPlanT
 
     const summaryEl = document.getElementById('hcw-summary');
     if (summaryEl && workers.length > 0) {
+      // 09.09: было `freeCount = workers.length - absentCount` -- считало ЛЮБОГО не
+      // отсутствующего работника свободным, включая тех кто реально назначен на
+      // объект завтра. "Свободен" в самих строках списка (renderList выше) уже
+      // правильно проверяет и absence, И assignedTomorrow -- сводка ниже эту же
+      // логику не переиспользовала, отдельно и неверно пересчитывала.
       const absentCount = workers.filter(w => absenceFor(w.name, tomorrowStr)).length;
-      const freeCount = workers.length - absentCount;
+      const assignedCount = workers.filter(w =>
+        !absenceFor(w.name, tomorrowStr) && assignedTomorrow[String(w.user_id)]
+      ).length;
+      const freeCount = workers.length - absentCount - assignedCount;
       summaryEl.textContent = `${freeCount} свободно · ${absentCount} отсутствует`;
     }
   } catch (e) {

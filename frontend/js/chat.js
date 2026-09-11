@@ -789,7 +789,15 @@ async function markChatRead(threadUserId, threadKey) {
 async function _loadChatWorkers() {
   try {
     const res = await api('/api/workers');
-    _chatWorkers = (res.workers || []).filter(w => String(w.user_id) !== String(_chatMyId));
+    // 09.09: было только "не я сам" -- profile-only пользователь без реального
+    // доступа (role:null, access_granted:false, см. roster/access invariant fix)
+    // всё ещё проходил бы этот фильтр и мог появиться в списке личных контактов
+    // чата. access_granted===true (не role==='worker') -- owner тоже должен
+    // остаться доступным контактом для DM worker->owner, просто у него
+    // access_granted тоже true (реальная роль есть в roles.json).
+    _chatWorkers = (res.workers || []).filter(w =>
+      String(w.user_id) !== String(_chatMyId) && w.access_granted === true
+    );
   } catch (e) {
     _chatWorkers = [];
   }

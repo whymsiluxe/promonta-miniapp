@@ -231,7 +231,13 @@ async function _renderObjTeamAndShifts(objectId) {
       api(`/api/checkin?object_id=${encodeURIComponent(objectId)}`),
     ]);
     const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(objectId));
-    const team = obj?.assigned_users || [];
+    // 09.09: assigned_users_detail, не assigned_users -- assigned_users теперь
+    // deduped by user_id на backend (fix для дублирующихся аватарок на карточке
+    // объекта при multi-work-type назначении, см. list_objects) -- эта секция
+    // ("Команда и смены") наоборот должна показывать КАЖДЫЙ вид работ отдельной
+    // строкой (у неё есть ⋯ меню на КОНКРЕТНОЕ назначение -- изменить/удалить один
+    // вид работы, не всего человека), assigned_users_detail сохраняет это 1:1.
+    const team = obj?.assigned_users_detail || [];
 
     // 01.08 (доп.раунд П7, реальный найденный баг): toISOString() -- UTC-дата, не
     // Berlin -- "сегодняшняя смена" вечером/ночью по местному времени считалась

@@ -2025,7 +2025,52 @@ def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get
         oid = str(obj.get('ID объекта', ''))
         obj_assignments = assignments.get(oid, [])
         if role == 'owner':
-            obj['assigned_users'] = [_user_info(a['user_id'], a) for a in obj_assignments]
+            # 09.09: dedupe by user_id -- this list feeds the object CARD's avatar
+            # stack (a "who's on the team" summary, one dot per person), not the
+            # per-assignment detail view. Before this fix it mapped every raw
+            # assignment record 1:1 -- harmless while one worker had at most one
+            # assignment per object, but the multi-work-type feature (961a3b9, same
+            # session) made one worker having 2+ assignment records on the SAME
+            # object (one per selected work type) a normal, common case. Owner
+            # confirmed live: the same worker's avatar appeared multiple times on
+            # one object's card. First assignment record per user_id wins (order
+            # from obj_assignments, i.e. creation order) -- the per-work-type detail
+            # is still fully available via /api/objects/{id}/info-items's team
+            # section, which correctly shows one row per assignment.
+            #
+            # Also filters to assignments relevant TODAY, not every historical/
+            # future/declined record ever created for this object -- the card
+            # visually implies "this is the current team," and before this fix it
+            # showed declined/past/future assignments as if they were active right
+            # now. status != declined, and (date_from <= today <= date_to) OR the
+            # assignment is legacy/undated (no dates recorded at all -- treated as
+            # indefinite/always-current everywhere else in this codebase, e.g.
+            # _assignment_periods_overlap() above and _assignment_status()).
+            today_str = business_today_str()
+            seen_uids = set()
+            deduped_users = []
+            detail_users = []
+            for a in obj_assignments:
+                if _assignment_status(a) == 'declined':
+                    continue
+                a_from, a_to = a.get('date_from', ''), a.get('date_to', '')
+                is_dated = bool(a_from and a_to)
+                if is_dated and not (a_from <= today_str <= a_to):
+                    continue
+                uid = str(a['user_id'])
+                # assigned_users_detail: ONE ENTRY PER ASSIGNMENT (still filtered to
+                # active-today/non-declined above) -- Object Info's "Команда и смены"
+                # needs to show every work type a worker has on this object, grouped
+                # under that worker, not collapsed to one row. Kept separate from
+                # assigned_users below (which IS deduped, for the card avatar stack
+                # and any consumer that just wants "who's on this team" as a set).
+                detail_users.append(_user_info(uid, a))
+                if uid in seen_uids:
+                    continue
+                seen_uids.add(uid)
+                deduped_users.append(_user_info(uid, a))
+            obj['assigned_users'] = deduped_users
+            obj['assigned_users_detail'] = detail_users
             obj['photo_count'] = len(images.get(oid) or [])
             obj['stage_summary'] = _stage_summary(oid)
         else:
@@ -2139,6 +2184,30 @@ def _dates_overlap(a_from: str, a_to: str, b_from: str, b_to: str) -> bool:
     return a_from <= b_to and b_from <= a_to
 
 
+def _assignment_periods_overlap(a: dict, b: dict) -> bool:
+    """09.09 (P0 assignment integrity fix): _dates_overlap() above returns False
+    whenever EITHER period is missing a date -- correct for its other callers
+    (absence checks, plain date-range comparisons where an empty range simply
+    means "no data"), but WRONG for cross-object assignment conflict checks:
+    a legacy assignment created before date_from/date_to existed as fields has
+    both empty, and every other part of this system (Worker Home, shift display,
+    _assignment_status()) already treats an undated assignment as open-ended/
+    indefinite, not as "no period at all". Using plain _dates_overlap() here let
+    a worker with an old undated assignment on object A get a NEW, perfectly
+    valid dated assignment on object B with zero conflict detected -- the
+    exact hole owner's live data exposed (worker legitimately assigned OBJ-001
+    9/11 + OBJ-003 9/12, no real overlap there, but the underlying dedup-only
+    fix wouldn't have caught a REAL overlap involving an undated legacy record
+    either). This helper: a period missing either date is treated as
+    overlapping with everything (indefinite), matching how the rest of the
+    system already reads that shape."""
+    a_from, a_to = a.get('date_from', ''), a.get('date_to', '')
+    b_from, b_to = b.get('date_from', ''), b.get('date_to', '')
+    if not (a_from and a_to) or not (b_from and b_to):
+        return True  # legacy/undated period -- indefinite, always a potential conflict
+    return a_from <= b_to and b_from <= a_to
+
+
 @app.post("/api/objects/{object_id}/assign")
 def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     key = str(object_id)
@@ -2181,11 +2250,17 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
             for a in other_list:
                 if a['user_id'] != str(body.user_id) or _assignment_status(a) == 'declined':
                     continue
-                if _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', '')):
+                # 09.09: _assignment_periods_overlap() -- не голый _dates_overlap(),
+                # который возвращал False (т.е. "не пересекается") для legacy-записей
+                # без date_from/date_to, пропуская их через эту проверку. См. helper's
+                # docstring для полного контекста.
+                if _assignment_periods_overlap(
+                    {'date_from': body.date_from, 'date_to': body.date_to}, a
+                ):
                     raise HTTPException(
                         409,
                         f"Этот работник уже назначен на объект {other_oid} "
-                        f"на период {a.get('date_from')} — {a.get('date_to')}"
+                        f"на период {a.get('date_from') or '(без даты)'} — {a.get('date_to') or '(без даты)'}"
                     )
         assignments[key].append({
             # 29.07 (аудит): уникальный assignment_id -- respond-endpoint раньше искал
@@ -2340,13 +2415,25 @@ def update_assignment(object_id: str, assignment_id: str, body: AssignmentUpdate
                     continue  # исключаем текущее назначение из проверки на самого себя
                 if str(a.get('user_id')) != uid or _assignment_status(a) == 'declined':
                     continue
-                if _dates_overlap(merged_date_from, merged_date_to, a.get('date_from', ''), a.get('date_to', '')):
+                # 09.09: same-object пересечение с другим work_type_id этого же
+                # работника разрешено (multi-work-type -- один человек, несколько
+                # видов работ на одном объекте в те же даты, см. 961a3b9) -- не
+                # конфликт, только межобъектное пересечение реально означает "работник
+                # физически не может быть в двух местах одновременно".
+                if other_oid == key:
+                    continue
+                # _assignment_periods_overlap(), не голый _dates_overlap() -- legacy
+                # запись без date_from/date_to трактуется как бессрочная/занятая, не
+                # молча пропускается через проверку (см. helper's docstring).
+                if _assignment_periods_overlap(
+                    {'date_from': merged_date_from, 'date_to': merged_date_to}, a
+                ):
                     overlap = True
                     break
             if overlap:
                 break
         if overlap:
-            result_holder['error'] = "Пересекается с другим назначением этого работника"
+            result_holder['error'] = "Пересекается с другим назначением этого работника на другом объекте"
             return
 
         result_holder['ok'] = True
@@ -2584,12 +2671,16 @@ def batch_assign(object_id: str, body: BatchAssignBody,
                 if absence_hit:
                     skipped.append({"user_id": uid, "work_type_id": wtid, "reason": "absence"})
                     continue
+                # 09.09: _assignment_periods_overlap(), не голый _dates_overlap() --
+                # legacy назначение без date_from/date_to трактовалось как "не
+                # пересекается" и молча пропускало эту проверку, позволяя создать
+                # новое назначение на другом объекте поверх бессрочного legacy.
                 cross_object_hit = False
                 for other_oid, other_list in assignments.items():
                     if other_oid == key:
                         continue
                     if any(a['user_id'] == uid and _assignment_status(a) != 'declined'
-                           and _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', ''))
+                           and _assignment_periods_overlap({'date_from': body.date_from, 'date_to': body.date_to}, a)
                            for a in other_list):
                         cross_object_hit = True
                         break

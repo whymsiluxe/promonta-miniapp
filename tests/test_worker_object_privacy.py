@@ -26,7 +26,16 @@ OBJ_HEADER = ['ID объекта', 'Объект', 'Адрес', 'Статус']
 OBJ_ROW = ['OBJ-1', 'Дом на Гауптштрассе', 'Hauptstr. 1', 'В работе']
 
 
-def _assignment(uid, status='accepted', date_from='2026-08-01', date_to='2026-08-31', **extra):
+def _assignment(uid, status='accepted', date_from=None, date_to=None, **extra):
+    # 09.09: default date range is a wide window AROUND today (not a fixed past
+    # month) -- list_objects() now filters the owner's assigned_users to
+    # assignments active today (P0 assignment integrity fix, see main.py), a
+    # hardcoded 2026-08 range went stale and got silently excluded once "today"
+    # moved past it, breaking privacy tests that have nothing to do with dates.
+    if date_from is None:
+        date_from = (backend.business_today() - __import__('datetime').timedelta(days=15)).isoformat()
+    if date_to is None:
+        date_to = (backend.business_today() + __import__('datetime').timedelta(days=15)).isoformat()
     a = {
         'id': f'assign-{uid}', 'user_id': str(uid), 'status': status,
         'date_from': date_from, 'date_to': date_to,
