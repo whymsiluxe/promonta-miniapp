@@ -1339,7 +1339,15 @@ header h1 {
 /* 28.07: fade+slide-in stagger при первой отрисовке списка (owner request "красивые анимации") */
 .obj-stage-node-enter { animation: objStageEnter 320ms cubic-bezier(.22,1,.36,1) both; }
 @keyframes objStageEnter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-.obj-stage-line { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; width: 20px; }
+/* 09.09: переименовано из .obj-stage-line -- та же class-name коллизия с
+   .obj-stage-line ниже (карточка объекта, текст "Следующий:"/"Сейчас:"/"Далее:")
+   ломала верстку карточки: width:20px из ЭТОГО правила (задумано для узкой
+   колонки с точкой-timeline в Object Info roadmap) применялось и к текстовому
+   блоку на карточке объекта, обрезая его до считанных букв ("Сле", "Фас" --
+   owner report). Оба места назывались .obj-stage-line одинаково, хотя это
+   два совершенно разных, не связанных компонента -- переименован именно
+   roadmap-коннектор (в object-info.js), карточка (objects.js) не тронута. */
+.obj-stage-roadmap-connector { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; width: 20px; }
 .obj-stage-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--bg-card-raised); border: 2px solid var(--border-color); flex-shrink: 0; margin-top: 0.9rem; transition: background 200ms, border-color 200ms, box-shadow 200ms; }
 .obj-stage-dot.active { background: var(--c-accent, var(--green)); border-color: var(--c-accent, var(--green)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent, var(--green)) 25%, transparent); animation: objStageDotPulse 1.8s ease-in-out infinite; }
 @keyframes objStageDotPulse { 0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent, var(--green)) 25%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c-accent, var(--green)) 12%, transparent); } }

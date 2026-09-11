@@ -1281,7 +1281,7 @@ function _renderStageRoadmapNode(s, idx, total, isCurrent) {
   return `
   <div class="obj-stage-node" data-row="${s['_row']}" data-num="${s['№ этапа']}" draggable="false">
     <div class="obj-stage-drag-handle" title="Перетащить для смены порядка">⠿</div>
-    <div class="obj-stage-line">
+    <div class="obj-stage-roadmap-connector">
       <div class="obj-stage-dot ${dotClass}"></div>
       ${idx < total - 1 ? '<div class="obj-stage-connector"></div>' : ''}
     </div>
