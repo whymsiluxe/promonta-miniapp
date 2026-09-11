@@ -295,14 +295,26 @@ async function openManageModal(toolId) {
     </div>`;
   document.body.appendChild(overlay);
 
+  // Back-navigation audit fix: this modal only ever closed via the Cancel
+  // button/backdrop tap -- no NavigationManager.registerOverlay(), same bug
+  // class already fixed for the document viewer and defect modal this round.
+  let unregisterOverlay = null;
+  const closeModal = () => {
+    if (unregisterOverlay) { unregisterOverlay(); unregisterOverlay = null; }
+    overlay.remove();
+  };
+  if (typeof NavigationManager !== 'undefined') {
+    unregisterOverlay = NavigationManager.registerOverlay(() => overlay.remove());
+  }
+
   const holderModeSelect = overlay.querySelector('#modal-holder-mode');
   const holderOtherInput = overlay.querySelector('#modal-holder-other');
   holderModeSelect.addEventListener('change', () => {
     holderOtherInput.style.display = holderModeSelect.value === 'other' ? '' : 'none';
   });
 
-  overlay.querySelector('#modal-cancel').addEventListener('click', () => overlay.remove());
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#modal-cancel').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
 
   overlay.querySelector('#modal-save').addEventListener('click', async () => {
     const status = overlay.querySelector('#modal-status').value;
@@ -333,7 +345,7 @@ async function openManageModal(toolId) {
         method: 'PATCH',
         body: JSON.stringify({ status, holder, object_name: objectName, holder_id: holderId }),
       });
-      overlay.remove();
+      closeModal();
       hapticImpact('medium');
       showToast('Сохранено', 'success');
       await loadTools();
@@ -362,8 +374,19 @@ function openNewToolModal() {
     </div>`;
   document.body.appendChild(overlay);
 
-  overlay.querySelector('#modal-cancel').addEventListener('click', () => overlay.remove());
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  // Back-navigation audit fix: same missing-registerOverlay bug as
+  // openManageModal above.
+  let unregisterOverlay = null;
+  const closeModal = () => {
+    if (unregisterOverlay) { unregisterOverlay(); unregisterOverlay = null; }
+    overlay.remove();
+  };
+  if (typeof NavigationManager !== 'undefined') {
+    unregisterOverlay = NavigationManager.registerOverlay(() => overlay.remove());
+  }
+
+  overlay.querySelector('#modal-cancel').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
 
   overlay.querySelector('#modal-save').addEventListener('click', async () => {
     const name = overlay.querySelector('#new-name').value.trim();
@@ -379,7 +402,7 @@ function openNewToolModal() {
     saveBtn.textContent = 'Добавление...';
     try {
       await api('/api/tools', { method: 'POST', body: JSON.stringify({ name, category }) });
-      overlay.remove();
+      closeModal();
       await loadTools();
     } catch (e) {
       showToast('Ошибка: ' + e.message, 'error');

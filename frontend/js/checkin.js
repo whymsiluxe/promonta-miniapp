@@ -327,17 +327,37 @@ function _openCheckinPreviewModal() {
     _updateCheckinSurveyPauseDisplay();
   }
   modal.style.display = 'flex';
+  // Back-navigation audit fix: this modal only ever closed via explicit
+  // in-app buttons -- no NavigationManager.registerOverlay(), same bug class
+  // already fixed for the document viewer/defect modal/tools modals this
+  // round. Guard against double-registration if this function runs again
+  // while the modal is already open (same convention as Object Detail).
+  if (typeof NavigationManager !== 'undefined' && !_checkinPreviewOverlayUnregister) {
+    _checkinPreviewOverlayUnregister = NavigationManager.registerOverlay(() => _closeCheckinPreviewModalInternal());
+  }
 }
 
-function _closeCheckinPreviewModal() {
+let _checkinPreviewOverlayUnregister = null;
+
+// Called from NavigationManager (Telegram Back/hardware-back/swipe) -- overlay
+// already popped, do not call the unregister function again.
+function _closeCheckinPreviewModalInternal() {
   document.getElementById('checkin-preview-modal').style.display = 'none';
   _checkinPreviewFiles = [];
   _checkinPendingAction = null;
   _checkinIdempotencyKey = null;
+  _checkinPreviewOverlayUnregister = null;
   document.getElementById('checkin-survey-done').value = '';
   document.getElementById('checkin-survey-extra').value = '';
   document.getElementById('checkin-survey-next').value = '';
   document.getElementById('checkin-survey-pause').value = '30';
+}
+
+// Called from the in-app close/cancel buttons -- overlay still in
+// NavigationManager's stack, must explicitly unregister.
+function _closeCheckinPreviewModal() {
+  if (_checkinPreviewOverlayUnregister) { _checkinPreviewOverlayUnregister(); _checkinPreviewOverlayUnregister = null; }
+  _closeCheckinPreviewModalInternal();
 }
 
 function _renderCheckinPreview() {
