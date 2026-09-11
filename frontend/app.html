@@ -1141,7 +1141,21 @@ header h1 {
   opacity: 0;
   transition: opacity 220ms ease;
 }
-.bottom-sheet-overlay.open { opacity: 1; }
+/* 09.09: display:flex ДОБАВЛЕН сюда -- ни один из 4 мест, создающих .bottom-sheet-overlay
+   динамически через createElement (assignment-sheet.js:73, object-info.js:446,505,
+   profile.js:605) никогда не трогает el.style.display, только className = '... open'.
+   Для двух ДРУГИХ потребителей этого класса (#new-object-sheet, #abw-reason-sheet --
+   статичная разметка в app.html с inline style="display:none") их открывающие функции
+   явно ставят .style.display='flex' перед добавлением .open -- но 4 динамических
+   overlay'а из списка выше на это никогда не рассчитывали, у них нет своего inline
+   display вообще, только CSS-правило. Итог -- .open добавлялся, opacity корректно
+   становилась 1, но display оставался 'none' от базового правила, элемент существовал
+   в DOM с opacity:1 и нулевым getBoundingClientRect (найдено живой диагностикой:
+   "Команда и смены -> Добавить" создавал #assignment-sheet-overlay в DOM без единой
+   ошибки, но display:none навсегда). Правило .open теперь возвращает display -- это
+   не ломает два инлайн-managed случая (их JS ставит те же display:flex сам, дубль
+   безвреден), но чинит все 4 динамических. */
+.bottom-sheet-overlay.open { display: flex; opacity: 1; }
 .bottom-sheet-panel {
   width: 100%; max-height: 86vh; overflow-y: auto;
   background: var(--bg-card);
@@ -2128,22 +2142,14 @@ header h1 {
   height: 100vh;
   height: 100dvh;
   height: var(--tg-vp-height, 100dvh);
-  /* 09.09 v6: transition:height ВОЗВРАЩЁН, но не по той причине что убирали в v5.
-     v5 предполагал, что visualViewport шлёт resize ПОЧТИ КАЖДЫЙ КАДР во время нативной
-     анимации клавиатуры iOS -- это предположение оказалось неверным именно для Telegram
-     WebView в fullscreen-режиме: живое измерение на устройстве owner'а (rAF-сэмплинг,
-     тап по полю ввода -> pointerdown/focus в t=480-565ms, но vv.height остаётся 812
-     ВПЛОТЬ до единственного vv-resize в t=1044ms, где сразу падает до финальных 477 --
-     ни одного промежуточного тика между ними). Т.е. WKWebView шлёт ОДНО дискретное
-     событие ПОСЛЕ того как клавиатура уже полностью доехала, а не поток событий по ходу
-     анимации. С transition:none это и давало эффект "полсекунды композер стоит под
-     клавиатурой, потом мгновенно прыгает" -- ровно то, на что жаловался owner. Раз
-     событие одно и дискретное, а не непрерывный поток (который и ломал v3/v4/v5),
-     гоняться transition'у не за чем -- он просто сглаживает единственный snap 812->477
-     в плавное движение. Если баг v5 (дёрганье по кадрам) когда-нибудь вернётся на другом
-     устройстве/iOS-версии с иным паттерном событий -- сначала переизмерить на реальном
-     устройстве, не полагаться на старое предположение вслепую. */
-  transition: height 0.25s ease-out;
+  /* 09.09 v8: height остаётся МГНОВЕННЫМ snap (v5-поведение) -- CSS transition на
+     height валится в layout thrash всего поддерева чата (v6/v7 -- owner видел "весь
+     экран дёргается / съезжает вниз как свайпом"). Плавность теперь делает JS через
+     FLIP-паттерн (см. _applyViewportHeightNow): перед тем как high меняется, читаем
+     СТАРЫЙ bottom этого контейнера, сразу применяем новую height (snap), затем ставим
+     translateY на разницу и одним rAF анимируем его в 0 через transition:transform --
+     то есть визуально то же плавное движение, но каждый кадр анимации трогает только
+     compositor (transform), layout считается ОДИН раз, не 15 раз за 0.25s. */
   overflow: hidden;
   background: var(--bg-card); /* 23.07: было bg-light(теперь тёмный) — .chat-thread-name и другой текст
      внутри не задают свой color, наследуют text-main(тёмный) от body → были бы нечитаемы */
@@ -5924,9 +5930,31 @@ function _applyViewportHeightNow() {
   // что уже приходит через CSS-переменную (специфичность инлайн-стиля выигрывала у var()
   // всегда с одинаковым результатом, так что дубль был просто мёртвым кодом). Один источник
   // истины проще поддерживать и убирает риск рассинхронизации между ними.
+  // 09.09 v8: FLIP -- захватываем старый bottom ДО смены height (снимок текущего layout),
+  // применяем новую height мгновенно, потом одним translateY компенсируем скачок и
+  // анимируем его в 0 через transform (compositor-only, не трогает layout повторно).
+  // Один reflow на снимок "до", один на снимок "после" -- не 15 за время transition,
+  // как было с transition:height (v6/v7, откученные owner'ом как "весь экран дёргается").
+  const flipTargets = ['view-chat', 'view-ai'].map(id => document.getElementById(id)).filter(el => el && el.classList.contains('active'));
+  const flipBefore = flipTargets.map(el => el.getBoundingClientRect().bottom);
+
   const vv = window.visualViewport;
   const h = vv ? vv.height : (window.Telegram?.WebApp?.viewportHeight || window.innerHeight);
   document.documentElement.style.setProperty('--tg-vp-height', h + 'px');
+
+  flipTargets.forEach((el, i) => {
+    const afterBottom = el.getBoundingClientRect().bottom;
+    const delta = flipBefore[i] - afterBottom;
+    if (Math.abs(delta) < 1) return;
+    el.style.transition = 'none';
+    el.style.transform = `translateY(${delta}px)`;
+    requestAnimationFrame(() => {
+      el.style.transition = 'transform 0.25s ease-out';
+      el.style.transform = '';
+      const clear = () => { el.style.transition = ''; el.removeEventListener('transitionend', clear); };
+      el.addEventListener('transitionend', clear);
+    });
+  });
 
   // 24.07: универсальный keyboard-open детект (не только chat/ai) — bottom-nav прятался
   // только в чате/ИИ через отдельный view-locked механизм; на остальных экранах (например
