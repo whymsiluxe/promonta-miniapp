@@ -149,13 +149,6 @@ async function renderObjectInfoTab(objectId) {
   const teamAddBtn = document.getElementById('obj-team-add-btn');
   if (teamAddBtn) {
     teamAddBtn.addEventListener('click', async () => {
-      // Item 1 fix: this was the only one of three openAssignmentSheet() call
-      // sites with no guard/catch (cf. objects.js's .obj-add-worker-btn handler,
-      // profile.js's worker-card handler) -- an unhandled rejection here (a
-      // failing /api/objects fetch, or the sheet's own render throwing) looked
-      // exactly like "nothing happens" from the owner's side. Also disable the
-      // button during the /api/objects round-trip so a slow response doesn't
-      // read as a dead button either.
       if (typeof openAssignmentSheet !== 'function') {
         showToast('Форма назначения недоступна', 'error');
         console.error('openAssignmentSheet is not loaded');
@@ -163,11 +156,12 @@ async function renderObjectInfoTab(objectId) {
       }
       if (teamAddBtn.disabled) return;
       teamAddBtn.disabled = true;
-      let objectName = objectId;
+      // _objDetailCurrentName is set in objects.js when this object detail page was
+      // opened — no need to re-fetch /api/objects just for a display label.
+      const objectName = (typeof _objDetailCurrentName !== 'undefined' && _objDetailCurrentName)
+        ? _objDetailCurrentName
+        : objectId;
       try {
-        const objData = await api('/api/objects');
-        const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(objectId));
-        objectName = obj?.['Объект'] || obj?.name || objectId;
         await openAssignmentSheet({ objectId, objectName });
       } catch (e) {
         showToast('Не удалось открыть форму назначения: ' + e.message, 'error');
