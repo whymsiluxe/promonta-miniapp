@@ -2141,15 +2141,20 @@ header h1 {
   margin: 0 auto;
   height: 100vh;
   height: 100dvh;
-  height: var(--tg-vp-height, 100dvh);
-  /* 09.09 v8: height остаётся МГНОВЕННЫМ snap (v5-поведение) -- CSS transition на
-     height валится в layout thrash всего поддерева чата (v6/v7 -- owner видел "весь
-     экран дёргается / съезжает вниз как свайпом"). Плавность теперь делает JS через
-     FLIP-паттерн (см. _applyViewportHeightNow): перед тем как high меняется, читаем
-     СТАРЫЙ bottom этого контейнера, сразу применяем новую height (snap), затем ставим
-     translateY на разницу и одним rAF анимируем его в 0 через transition:transform --
-     то есть визуально то же плавное движение, но каждый кадр анимации трогает только
-     compositor (transform), layout считается ОДИН раз, не 15 раз за 0.25s. */
+  height: var(--tg-fullscreen-height, 100dvh);
+  /* 09.09 v9 (архитектура по рекомендации внешнего разбора после v5-v8 всех
+     провалившихся попыток сгладить смену height этого контейнера): контейнер
+     БОЛЬШЕ НИКОГДА не меняет высоту при открытии/закрытии клавиатуры -- всегда
+     полная fullscreen-высота (--tg-fullscreen-height, обновляется JS только когда
+     клавиатуры точно нет, см. _applyViewportHeightNow). Раньше (v5-v8) высота
+     реагировала на --tg-vp-height (живой visualViewport.height, сжатый клавиатурой),
+     что заставляло пересчитывать layout ВСЕГО дерева чата (header+messages+composer)
+     на каждое изменение -- отсюда все прошлые попытки (мгновенный snap v5, CSS
+     transition v6/v7, JS FLIP v8) либо дёргались, либо просто выглядели резко:
+     сам механизм "сжимать весь контейнер" был неисправим гладко, независимо от
+     способа анимации поверх него. Теперь клавиатура двигает ТОЛЬКО .chat-input-bar
+     (position:absolute + transform, см. ниже) и добавляет padding-bottom в
+     .chat-messages -- macro-layout контейнера остаётся стабильным. */
   overflow: hidden;
   background: var(--bg-card); /* 23.07: было bg-light(теперь тёмный) — .chat-thread-name и другой текст
      внутри не задают свой color, наследуют text-main(тёмный) от body → были бы нечитаемы */
@@ -2279,6 +2284,11 @@ body.tg-native-back #chat-thread-back-btn { display: none; }
   flex: 1;
   overflow-y: auto;
   padding: 0.75rem 1rem;
+  /* 09.09 v9: composer -- теперь position:absolute (см. .chat-input-bar) -- больше
+     не занимает место в потоке flex-колонки, поэтому нижний край списка сообщений
+     нужно компенсировать вручную: высота composer'а + текущий keyboard-inset, иначе
+     последние сообщения были бы перекрыты composer'ом/клавиатурой. */
+  padding-bottom: calc(var(--chat-composer-height, 64px) + var(--keyboard-inset, 0px) + 0.75rem);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -2295,7 +2305,6 @@ body.view-locked {
 }
 
 .chat-input-bar, .ai-input-bar {
-  flex-shrink: 0;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
@@ -2305,8 +2314,23 @@ body.view-locked {
   padding: 0.5rem 0.6rem calc(0.4rem + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border-color);
   background: var(--bg-white);
-  position: relative;
+  /* 09.09 v9: position:absolute (было relative+flex-shrink:0, обычный поток колонки)
+     -- composer больше не зависит от родительского height/reflow, двигается только
+     через transform, независимо от того что происходит с остальным деревом чата.
+     will-change постоянно (не только в момент клавиатуры) -- WebKit готовит
+     compositor layer заранее, не в момент фокуса (микро-джанк на первый кадр иначе). */
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
   z-index: 2;
+  transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0);
+  will-change: transform;
+}
+/* 09.09 v9: safe-area-inset-bottom уже физически "внутри" клавиатуры, когда она
+   открыта (home indicator area перекрыт клавиатурой) -- держать этот отступ поверх
+   реального keyboard-inset добавляет лишние ~34px пустого места под полем ввода,
+   ещё один мелкий визуальный "прыжок выше необходимого". */
+body.keyboard-open .chat-input-bar, body.keyboard-open .ai-input-bar {
+  padding-bottom: 0.4rem;
 }
 
 .chat-input, .ai-input {
@@ -4377,7 +4401,14 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .chat-attach-file { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.4rem 0.6rem; font-size: 0.82rem; color: var(--text-main); text-decoration: none; margin-bottom: 0.3rem; }
 
 /* ── Voice messages (10.37) ── */
-#chat-voice-recording-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem; background: var(--bg-white); border-top: 1px solid var(--border-color); }
+/* 09.09: position:absolute добавлен -- .chat-input-bar (тот же слот, тот же родитель)
+   стал position:absolute в рамках composer-фикса (v9), но эту voice-recording замену
+   (chat.js _startVoiceRecording/_stopVoiceRecording, toggle display:none/flex между
+   этими двумя элементами) забыли синхронизировать -- без этого voice-bar остался бы
+   обычным flex-потомком и рендерился НЕ у низа экрана, а там где попадёт в document
+   flow колонки после переключения (визуальный регресс, не было протестировано
+   вживую до правки .chat-input-bar). */
+#chat-voice-recording-bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom)); background: var(--bg-white); border-top: 1px solid var(--border-color); transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0); }
 .chat-voice-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); animation: chatVoicePulse 1s ease-in-out infinite; }
 @keyframes chatVoicePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 .chat-voice-rec-hint { flex: 1; color: var(--text-light); font-size: 0.85rem; }
@@ -5926,62 +5957,100 @@ function _applyViewportHeight() {
   requestAnimationFrame(() => { _vvRafPending = false; _applyViewportHeightNow(); });
 }
 
+// 09.09 v9: --tg-vp-height (живая visualViewport.height, сжатая клавиатурой) убран
+// как источник высоты чат-контейнера -- v5 через v8 все анимировали/сглаживали смену
+// height САМОГО #view-chat.active, и все проваливались на реальном устройстве (снимки
+// living device: pointerdown/focus в t=480-565ms, но реальное keyboard-инфо приходит
+// ОДНИМ дискретным visualViewport.resize только в t=1044ms -- любая анимация ПОСЛЕ
+// этого момента лишь добавляет второе, лишнее движение поверх уже случившегося скачка).
+// Новая архитектура: #view-chat.active держит ПОСТОЯННУЮ --tg-fullscreen-height
+// (обновляется только когда клавиатуры точно нет), а клавиатура двигает ТОЛЬКО
+// --keyboard-inset, который читает исключительно .chat-input-bar (position:absolute +
+// transform, см. CSS) -- macro-layout всего дерева чата стабилен, дёргаться нечему.
 function _applyViewportHeightNow() {
-  // 100dvh не пересчитывается надёжно в Telegram fullscreen при появлении клавиатуры —
-  // клавиатура перекрывает fixed-контейнер вместо того чтобы сжимать его. Ставим фактическую
-  // высоту через CSS-переменную --tg-vp-height, которую читает правило #view-chat.active/
-  // #view-ai.active (height: var(--tg-vp-height, 100dvh)) -- так flex-дети (input bar)
-  // гарантированно остаются в пределах видимой области.
-  // 24.07 v5: отдельный activeFull.style.height ИНЛАЙН убран -- он дублировал то же значение,
-  // что уже приходит через CSS-переменную (специфичность инлайн-стиля выигрывала у var()
-  // всегда с одинаковым результатом, так что дубль был просто мёртвым кодом). Один источник
-  // истины проще поддерживать и убирает риск рассинхронизации между ними.
-  // 09.09 v8: FLIP -- захватываем старый bottom ДО смены height (снимок текущего layout),
-  // применяем новую height мгновенно, потом одним translateY компенсируем скачок и
-  // анимируем его в 0 через transform (compositor-only, не трогает layout повторно).
-  // Один reflow на снимок "до", один на снимок "после" -- не 15 за время transition,
-  // как было с transition:height (v6/v7, откученные owner'ом как "весь экран дёргается").
-  const flipTargets = ['view-chat', 'view-ai'].map(id => document.getElementById(id)).filter(el => el && el.classList.contains('active'));
-  const flipBefore = flipTargets.map(el => el.getBoundingClientRect().bottom);
-
   const vv = window.visualViewport;
   const h = vv ? vv.height : (window.Telegram?.WebApp?.viewportHeight || window.innerHeight);
+  // 09.09 v9: --tg-vp-height (живая, keyboard-сжатая высота) остаётся -- убран только
+  // из #view-chat/#view-ai (см. выше), но .obj-stage-add-sheet, .photo-comments-modal
+  // и #bubble-panel всё ещё легитимно на неё полагаются для СВОЕГО keyboard-avoidance
+  // (небольшие формы/модалки, не тянут за собой reflow всего дерева сообщений чата --
+  // тот большой DOM chat-list и был причиной джанка, не сам факт использования этой
+  // переменной). Убирать её отовсюду было ошибкой -- сломало bottom-sheet формы
+  // (owner report: "что должен сделать работник" textarea тоже виснет под клавиатурой).
   document.documentElement.style.setProperty('--tg-vp-height', h + 'px');
 
-  flipTargets.forEach((el, i) => {
-    const afterBottom = el.getBoundingClientRect().bottom;
-    const delta = flipBefore[i] - afterBottom;
-    if (Math.abs(delta) < 1) return;
-    el.style.transition = 'none';
-    el.style.transform = `translateY(${delta}px)`;
-    requestAnimationFrame(() => {
-      el.style.transition = 'transform 0.25s ease-out';
-      el.style.transform = '';
-      const clear = () => { el.style.transition = ''; el.removeEventListener('transitionend', clear); };
-      el.addEventListener('transitionend', clear);
-    });
-  });
-
-  // 24.07: универсальный keyboard-open детект (не только chat/ai) — bottom-nav прятался
-  // только в чате/ИИ через отдельный view-locked механизм; на остальных экранах (например
-  // Профиль → Настройки → форма ввода имени) клавиатура открывалась, а nav-панель оставалась
-  // видимой поверх/рядом с ней, поле ввода терялось за клавиатурой. keyboard-open класс —
-  // общий сигнал для любого экрана, не завязан на конкретный view.
   if (vv) {
-    // Если текущая высота >= зафиксированного baseline — клавиатуры точно нет,
-    // обновляем baseline (ловит поворот экрана, изменение системного UI и т.п.).
     if (vv.height >= _fullViewportHeight) {
       _fullViewportHeight = vv.height;
     }
     const keyboardLikelyOpen = (_fullViewportHeight - vv.height) > 120;
     const keyboardStateChanged = document.body.classList.contains('keyboard-open') !== keyboardLikelyOpen;
     document.body.classList.toggle('keyboard-open', keyboardLikelyOpen);
-    // 28.07: FAB visibility учитывает keyboard-open (см. refreshObjectsFabVisibility) --
-    // без этого вызова здесь FAB не скрывался бы, если клавиатура открылась на экране
-    // Объекты без прохождения через switchView (единственное другое место, что дёргает эту функцию).
     if (keyboardStateChanged && typeof refreshObjectsFabVisibility === 'function') refreshObjectsFabVisibility();
+
+    // --tg-fullscreen-height обновляется ТОЛЬКО когда клавиатуры точно нет -- если
+    // писать сюда живой h всегда, контейнер снова начал бы сжиматься при клавиатуре
+    // (та же проблема что убираем).
+    if (!keyboardLikelyOpen) {
+      document.documentElement.style.setProperty('--tg-fullscreen-height', _fullViewportHeight + 'px');
+    }
+
+    // Реальный keyboard inset. Мгновенный reconcile, БЕЗ анимации на этом шаге --
+    // событие приходит уже постфактум (клавиатура физически домонтировалась раньше),
+    // анимировать нечего, только зафиксировать финальное значение. Плавность даёт
+    // ПРЕДСКАЗАННОЕ движение на focus (см. _predictKeyboardOpen), которое стартует
+    // ДО этого события, не после.
+    const actualInset = keyboardLikelyOpen ? Math.max(0, _fullViewportHeight - vv.height) : 0;
+    document.documentElement.style.setProperty('--keyboard-inset', actualInset + 'px');
+    _chatComposerPredicting = false; // реальные данные пришли -- предсказание больше не нужно
+
+    if (actualInset > 120) {
+      _lastKeyboardInset = actualInset;
+      try { sessionStorage.setItem('keyboardInsetPortrait', String(actualInset)); } catch (e) {}
+    }
+  } else {
+    document.documentElement.style.setProperty('--tg-fullscreen-height', h + 'px');
   }
 }
+
+// 09.09 v9: predictive keyboard animation -- живые замеры на устройстве owner'а
+// показали focus срабатывает ~480-560ms РАНЬШЕ настоящего visualViewport.resize
+// (который приходит уже когда клавиатура физически полностью открылась). Ждать
+// этого события и потом анимировать -- всегда анимация ВДОГОНКУ уже случившемуся
+// скачку (это и провалилось в v8/FLIP). Вместо этого: используем последнее известное
+// значение высоты клавиатуры (сохранённое в _applyViewportHeightNow при реальном
+// resize) и начинаем анимацию СРАЗУ на focus -- одновременно с нативной анимацией
+// клавиатуры, не после неё. Первое открытие клавиатуры в сессии предсказывать не
+// от чего (нет ещё сохранённого значения) -- там остаётся обычный мгновенный snap.
+let _lastKeyboardInset = 0;
+try {
+  const cached = Number(sessionStorage.getItem('keyboardInsetPortrait'));
+  if (cached > 120) _lastKeyboardInset = cached;
+} catch (e) {}
+let _chatComposerPredicting = false;
+
+function _predictKeyboardOpen() {
+  if (!_lastKeyboardInset) return; // нет сохранённого значения -- ждём обычный snap
+  _chatComposerPredicting = true;
+  document.documentElement.style.setProperty('--keyboard-inset', _lastKeyboardInset + 'px');
+}
+
+document.addEventListener('focusin', (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return;
+  if (el.closest('.chat-input-bar, .ai-input-bar')) _predictKeyboardOpen();
+}, true);
+// Клавиатура закрывается (blur на composer-поле) -- тот же принцип: не ждать
+// финального resize, снять предсказанный inset сразу, реальный reconcile (0px)
+// прилетит из visualViewport чуть позже и просто подтвердит то же самое значение.
+document.addEventListener('focusout', (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return;
+  if (!el.closest('.chat-input-bar, .ai-input-bar')) return;
+  if (document.activeElement && (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement)) return; // фокус ушёл на другое поле того же бара
+  _chatComposerPredicting = true;
+  document.documentElement.style.setProperty('--keyboard-inset', '0px');
+}, true);
 
 // Любой input/textarea в фокусе — прокручиваем в видимую часть экрана (над клавиатурой),
 // не полагаясь только на нативное поведение WebView (на iOS scrollIntoView сам по себе
