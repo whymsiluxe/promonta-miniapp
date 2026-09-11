@@ -801,14 +801,24 @@ def list_roles(user: dict = Depends(get_current_user), _: None = Depends(require
     roles = _load_roles()
     notified = _load_notified_users()
     profiles = _load_worker_profiles()
-    pending = sorted(set(notified.keys()) - set(roles.keys()))
+    # 09.09: pending раньше строился ТОЛЬКО из notified_users - roles -- пользователь,
+    # который прошёл онбординг (появился в worker_profiles.json) но никогда не попадал
+    # в notified_users (например если процесс уведомления сбоил, или профиль создан
+    # каким-то другим путём), был невидим здесь целиком: не в roles (нет доступа), не
+    # в pending (не в notified) -- "призрак", которого Access-вкладка не показывала
+    # вообще, хотя /api/workers считал его активным работником (тот же баг, см.
+    # комментарий там). Теперь pending = любой профиль без активной роли, не
+    # пересечение с notified -- notified_users используется только чтобы ПОМЕТИТЬ
+    # (was_notified), не как обязательное условие попадания в список.
+    pending_ids = sorted(set(profiles.keys()) - set(roles.keys()))
     return {
         "roles": [{"user_id": uid, "role": r,
                    "name": _sanitize_display_name(profiles.get(uid, {}).get('name'), uid)}
                   for uid, r in roles.items()],
         "pending": [{"user_id": uid,
-                     "name": _sanitize_display_name(profiles.get(uid, {}).get('name'), uid)}
-                    for uid in pending],
+                     "name": _sanitize_display_name(profiles.get(uid, {}).get('name'), uid),
+                     "was_notified": uid in notified}
+                    for uid in pending_ids],
     }
 
 
@@ -1046,19 +1056,33 @@ def create_session(x_telegram_init_data: str = Header(...)) -> dict:
 def list_workers(user: dict = Depends(get_current_user)):
     roles = _load_roles()
     profiles = _load_worker_profiles()
-    # объединяем ключи из roles.json (явные роли) и worker_profiles.json (кто уже
-    # проходил онбординг-квиз, но мог не попасть в roles.json явно) — иначе воркеры,
-    # заполнившие анкету, но не добавленные владельцем в roles.json, не видны в списке
+    # 09.09: roster/access invariant fix (owner report -- worker "Иван" appeared in
+    # team/dashboard, had no avatar, Worker Card 404'd, and was missing from the
+    # Доступ tab). Root cause: this endpoint unioned roles.json + worker_profiles.json
+    # keys, then did `roles.get(uid, 'worker')` -- a DEFAULT of 'worker' for ANY uid
+    # not in roles.json at all, not just those explicitly granted that role. The same
+    # exact bug was already found and fixed in get_assignment_candidates() (01.08,
+    # comment above worker_ids there) but never applied here -- this endpoint kept
+    # presenting profile-only users (filled onboarding, never granted or since revoked
+    # access) as if they were active workers with real access. Every one of this
+    # endpoint's 6 frontend consumers already filters on `w.role === 'worker'`
+    # (mangel.js, tools.js, home.js, abwesenheit.js, today-plan.js) -- fixing the
+    # default here makes those filters correct automatically, no frontend change
+    # needed for the worker-picker call sites. `access_granted` is new, additive --
+    # existing consumers reading only `role`/`name` are unaffected.
     all_ids = set(roles.keys()) | set(profiles.keys())
     workers = []
     for uid in all_ids:
         p = profiles.get(uid, {})
         last_seen = _last_seen.get(uid)
+        role = roles.get(uid)  # None if not in roles.json -- no more silent 'worker' default
         workers.append({
             'user_id': uid,
-            'role': roles.get(uid, 'worker'),
+            'role': role,
+            'access_granted': role is not None,
             'name': _sanitize_display_name(p.get('name'), uid),
             'skills': p.get('skills', []),
+            'has_avatar': bool(p.get('avatar')),
             'quiz_completed': p.get('quiz_completed', False),
             'online': bool(last_seen and (time.time() - last_seen) < ONLINE_THRESHOLD_SECONDS),
         })
