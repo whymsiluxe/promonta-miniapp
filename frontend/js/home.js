@@ -269,19 +269,29 @@ async function _loadHomeAbwesenheitSummary(absDataPromise) {
 async function _loadHomeChatSummary() {
   const sub = document.getElementById('home-chat-quick-sub');
   if (!sub) return;
-  try {
-    const data = await api('/api/chat/my_threads');
-    const threads = data.threads || [];
-    if (threads.length === 0) {
+  // Fetch thread preview and unread count in parallel
+  const [threadsData, unreadData] = await Promise.allSettled([
+    api('/api/chat/my_threads'),
+    api('/api/chat/unread_count'),
+  ]);
+  if (threadsData.status === 'fulfilled') {
+    const threads = (threadsData.value && threadsData.value.threads) || [];
+    if (threads.length > 0) {
+      const last = threads[0];
+      const title = last.title ? `${last.title}: ` : '';
+      const preview = (last.last_preview || '').slice(0, 40);
+      sub.textContent = preview ? `${title}${preview}` : 'Командный чат';
+    } else {
       sub.textContent = 'Командный чат';
-      return;
     }
-    const last = threads[0]; // already sorted by last_ts desc (backend)
-    const title = last.title ? `${last.title}: ` : '';
-    const preview = (last.last_preview || '').slice(0, 40);
-    sub.textContent = preview ? `${title}${preview}` : 'Командный чат';
-  } catch (e) {
+  } else {
     sub.textContent = 'Командный чат';
+  }
+  const badge = document.getElementById('home-chat-badge');
+  if (badge && unreadData.status === 'fulfilled') {
+    const count = (unreadData.value && unreadData.value.unread) || 0;
+    badge.textContent = count;
+    badge.style.display = count > 0 ? 'flex' : 'none';
   }
 }
 
