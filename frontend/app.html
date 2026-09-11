@@ -6044,8 +6044,26 @@ async function initApp() {
   } catch (e) {}
 
   _applyViewportHeight();
+  // Belt-and-braces fallback, same pattern as setTimeout(_applyTelegramSafeArea, 300)
+  // above: re-measure once more shortly after startup in case fullscreenChanged
+  // (or any visualViewport event) doesn't fire reliably on this device/OS version.
+  setTimeout(_applyViewportHeight, 300);
   try {
     window.Telegram?.WebApp?.onEvent?.('viewportChanged', _applyViewportHeight);
+    // Chat composer fix (owner report: input missing on first chat open):
+    // requestFullscreen() above is async -- the ONE viewport-height measurement
+    // at startup can capture the pre-fullscreen (larger, e.g. 812px) height
+    // before Telegram actually finishes the fullscreen transition. --tg-vp-height
+    // then stays stuck at that stale value until SOME LATER visualViewport
+    // resize/scroll event happens to fire (keyboard open, rotation, or simply
+    // reopening the screen) -- until then, flex children sized to the correct
+    // final height (chat-input-bar included) end up positioned using the old,
+    // too-tall container, rendering far below the actually-visible viewport.
+    // fullscreenChanged already re-runs _applyTelegramSafeArea above; it must
+    // also re-run this measurement, since fullscreen entry/exit is exactly the
+    // kind of viewport-height change visualViewport's own listeners may not
+    // reliably catch on this transition.
+    window.Telegram?.WebApp?.onEvent?.('fullscreenChanged', _applyViewportHeight);
   } catch (e) {}
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', _applyViewportHeight);
