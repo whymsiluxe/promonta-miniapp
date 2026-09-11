@@ -1637,7 +1637,11 @@ header h1 {
    сюда не попадала. Тот же 3-колоночный grid-фикс, теперь и здесь. */
 .form-header {
   display: grid;
-  grid-template-columns: minmax(44px, auto) 1fr minmax(44px, auto);
+  /* 11.09: raised 44px -> 64px to match the general <header> rule (see comment
+     there, 28.07 external audit) -- Telegram doesn't expose exact Close/Menu
+     button widths, only the raw safe-area inset, so both header patterns need
+     the same conservative reserve, not two different guesses. */
+  grid-template-columns: minmax(64px, auto) 1fr minmax(64px, auto);
   align-items: center;
   /* 28.07: top-padding был 1.25rem (в разы больше, чем 0.35rem у общего <header>) --
      title сидел заметно НИЖЕ уровня Telegram Close/back-btn вместо одной строки с
@@ -1837,7 +1841,8 @@ header h1 {
   background: var(--bg-card);
 }
 .photo-comments-modal .pc-header {
-  flex-shrink: 0; display: grid; grid-template-columns: minmax(44px, auto) 1fr minmax(44px, auto); align-items: center; gap: 0.5rem;
+  /* 11.09: raised 44px -> 64px, same fix as the general <header> pattern. */
+  flex-shrink: 0; display: grid; grid-template-columns: minmax(64px, auto) 1fr minmax(64px, auto); align-items: center; gap: 0.5rem;
   padding: calc(0.35rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 0.75rem calc(1rem + var(--tg-safe-left, 0px)); border-bottom: 1px solid var(--border-color);
 }
 .pc-header .chat-back-btn { grid-column: 1; }
@@ -3380,7 +3385,10 @@ body.view-locked {
   display: flex; flex-direction: column;
 }
 .bubble-panel-header {
-  display: grid; grid-template-columns: 1fr minmax(44px, auto); align-items: start; gap: 0.5rem;
+  /* 11.09: raised 44px -> 64px on the Telegram-controls side, same fix as
+     the general <header> pattern -- this header is intentionally asymmetric
+     (title left-aligned, not centered), only the right reserve matters here. */
+  display: grid; grid-template-columns: 1fr minmax(64px, auto); align-items: start; gap: 0.5rem;
   padding: calc(0.6rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(0.75rem + var(--tg-safe-right, 0px)) 0.5rem calc(0.75rem + var(--tg-safe-left, 0px));
   flex-shrink: 0;
 }
@@ -4466,7 +4474,8 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
    .fw-close-btn (справа), не по центру полосы. */
 .fw-header {
   display: grid;
-  grid-template-columns: minmax(44px, auto) 1fr minmax(44px, auto);
+  /* 11.09: raised 44px -> 64px, same fix as .form-header/general <header>. */
+  grid-template-columns: minmax(64px, auto) 1fr minmax(64px, auto);
   align-items: center;
   gap: 0.5rem;
   padding: calc(0.35rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) calc(1rem + var(--tg-safe-right, 0px)) 0.5rem calc(1rem + var(--tg-safe-left, 0px));
