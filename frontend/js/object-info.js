@@ -36,9 +36,13 @@ async function renderObjectInfoTab(objectId) {
         <button type="button" class="obj-info-team-add-btn" id="obj-team-add-btn">+ Добавить</button>
       </div>
       <div id="obj-info-team-summary" class="obj-info-team-summary"></div>
-      <div id="obj-info-team"></div>
+      <div id="obj-info-team"><div class="js-skeleton-line" style="width:70%"></div><div class="js-skeleton-line" style="width:45%"></div></div>
       <div id="obj-info-shifts-today"></div>
     </div>` : '';
+  // 09.09: skeleton-заглушка выше -- _renderObjTeamAndShifts грузит /api/objects +
+  // /api/checkin параллельно (см. ниже), пока оба не ответят блок был пустым, потом
+  // резко заполнялся -- owner описал это как "визуальный блик". Тот же .js-skeleton-line
+  // паттерн, что уже используется в 11 других местах (23.07), не изобретаем новый.
 
   panel.innerHTML = `
     ${photoUploadHtml}
