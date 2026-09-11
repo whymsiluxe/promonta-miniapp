@@ -25,6 +25,10 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
+# Backend artifact manifest (single source of truth for what gets deployed/backed up/rolled back)
+# shellcheck source=manifest.sh
+source "$REPO_DIR/scripts/manifest.sh"
+
 # Production paths -- НЕ угадано, сверено с реальным systemd unit
 # (/etc/systemd/system/promonta-miniapp.service, WorkingDirectory=/home/promonta/agent,
 # ExecStart=uvicorn miniapp.main:app) и реальной раздачей frontend через Caddy
@@ -90,7 +94,7 @@ fi
 echo "OK: working tree чист"
 
 echo "== 4/14 Python syntax-check =="
-python3 -m py_compile backend/*.py
+python3 -m py_compile backend/*.py backend/core/*.py
 echo "OK"
 
 echo "== 5/14 node --check (frontend/js/*.js + backend PDF-скрипты) =="
@@ -150,42 +154,27 @@ mkdir -p "$BACKUP_DIR"
 if [[ -f "${BACKEND_SERVING_DIR}/main.py" ]]; then
   cp "${BACKEND_SERVING_DIR}/main.py" "${BACKUP_DIR}/main.py"
 fi
-if [[ -f "${BACKEND_SERVING_DIR}/tools_lib.py" ]]; then
-  cp "${BACKEND_SERVING_DIR}/tools_lib.py" "${BACKUP_DIR}/tools_lib.py"
-fi
-if [[ -f "${BACKEND_SERVING_DIR}/mangel_lib.py" ]]; then
-  cp "${BACKEND_SERVING_DIR}/mangel_lib.py" "${BACKUP_DIR}/mangel_lib.py"
-fi
-if [[ -f "${BACKEND_SERVING_DIR}/objekte_lib.py" ]]; then
-  cp "${BACKEND_SERVING_DIR}/objekte_lib.py" "${BACKUP_DIR}/objekte_lib.py"
-fi
-if [[ -f "${BACKEND_SERVING_DIR}/roadmap_lib.py" ]]; then
-  cp "${BACKEND_SERVING_DIR}/roadmap_lib.py" "${BACKUP_DIR}/roadmap_lib.py"
-fi
-# 01.08 (доп.раунд П1): work_types.py/profile_skills.py/assignment_matching.py --
-# первый деплой этой фичи, файлов раньше в BACKEND_SERVING_DIR не было. ABSENT-marker
-# на каждый по отдельности (не .VERSION_ABSENT -- тот один общий для VERSION),
-# rollback.sh должен удалить файл при откате, если маркер есть, см. симметрию там.
-if [[ -f "${BACKEND_SERVING_DIR}/work_types.py" ]]; then
-  cp "${BACKEND_SERVING_DIR}/work_types.py" "${BACKUP_DIR}/work_types.py"
+# 11.09 (Phase 1): manifest-driven backup loop -- replaces per-file if/cp blocks.
+# All BACKEND_PY_LIBS get ABSENT markers (handles files that didn't exist before
+# a given deploy -- rollback.sh uses the marker to know to delete the file).
+for _f in "${BACKEND_PY_LIBS[@]}"; do
+  if [[ -f "${BACKEND_SERVING_DIR}/${_f}" ]]; then
+    cp "${BACKEND_SERVING_DIR}/${_f}" "${BACKUP_DIR}/${_f}"
+  else
+    touch "${BACKUP_DIR}/.${_f}.ABSENT"
+  fi
+done
+for _f in "${BACKEND_JS_FILES[@]}"; do
+  if [[ -f "${BACKEND_SERVING_DIR}/${_f}" ]]; then
+    cp "${BACKEND_SERVING_DIR}/${_f}" "${BACKUP_DIR}/${_f}"
+  fi
+done
+# Backup core/ subpackage (11.09: previously missing from backup -- rollback left
+# stale core/ behind when a core/ update needed reverting).
+if [[ -d "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}" ]]; then
+  cp -r "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}" "${BACKUP_DIR}/${BACKEND_CORE_DIR}"
 else
-  touch "${BACKUP_DIR}/.work_types.py.ABSENT"
-fi
-if [[ -f "${BACKEND_SERVING_DIR}/profile_skills.py" ]]; then
-  cp "${BACKEND_SERVING_DIR}/profile_skills.py" "${BACKUP_DIR}/profile_skills.py"
-else
-  touch "${BACKUP_DIR}/.profile_skills.py.ABSENT"
-fi
-if [[ -f "${BACKEND_SERVING_DIR}/assignment_matching.py" ]]; then
-  cp "${BACKEND_SERVING_DIR}/assignment_matching.py" "${BACKUP_DIR}/assignment_matching.py"
-else
-  touch "${BACKUP_DIR}/.assignment_matching.py.ABSENT"
-fi
-if [[ -f "${BACKEND_SERVING_DIR}/angebot_free.js" ]]; then
-  cp "${BACKEND_SERVING_DIR}/angebot_free.js" "${BACKUP_DIR}/angebot_free.js"
-fi
-if [[ -f "${BACKEND_SERVING_DIR}/rechnung.js" ]]; then
-  cp "${BACKEND_SERVING_DIR}/rechnung.js" "${BACKUP_DIR}/rechnung.js"
+  touch "${BACKUP_DIR}/.${BACKEND_CORE_DIR}.ABSENT"
 fi
 if [[ -f "${BACKEND_SERVING_DIR}/VERSION" ]]; then
   cp "${BACKEND_SERVING_DIR}/VERSION" "${BACKUP_DIR}/VERSION"
@@ -215,15 +204,13 @@ echo "== 10/14 Копирование backend в serving-путь =="
 # import ...) должны резолвиться однозначно, без namespace-package edge cases.
 cp "$REPO_DIR/backend/__init__.py" "${BACKEND_SERVING_DIR}/__init__.py"
 cp "$REPO_DIR/backend/main.py" "${BACKEND_SERVING_DIR}/main.py"
-cp "$REPO_DIR/backend/tools_lib.py" "${BACKEND_SERVING_DIR}/tools_lib.py"
-cp "$REPO_DIR/backend/mangel_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py"
-cp "$REPO_DIR/backend/objekte_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py"
-cp "$REPO_DIR/backend/roadmap_lib.py" "${BACKEND_SERVING_DIR}/roadmap_lib.py"
-cp "$REPO_DIR/backend/work_types.py" "${BACKEND_SERVING_DIR}/work_types.py"
-cp "$REPO_DIR/backend/profile_skills.py" "${BACKEND_SERVING_DIR}/profile_skills.py"
-cp "$REPO_DIR/backend/assignment_matching.py" "${BACKEND_SERVING_DIR}/assignment_matching.py"
-cp "$REPO_DIR/backend/angebot_free.js" "${BACKEND_SERVING_DIR}/angebot_free.js"
-cp "$REPO_DIR/backend/rechnung.js" "${BACKEND_SERVING_DIR}/rechnung.js"
+# 11.09 (Phase 1): manifest-driven copy loop -- single source of truth in manifest.sh
+for _f in "${BACKEND_PY_LIBS[@]}"; do
+  cp "$REPO_DIR/backend/${_f}" "${BACKEND_SERVING_DIR}/${_f}"
+done
+for _f in "${BACKEND_JS_FILES[@]}"; do
+  cp "$REPO_DIR/backend/${_f}" "${BACKEND_SERVING_DIR}/${_f}"
+done
 # 10.09 (Phase A fix): backend/core/ subpackage must travel with main.py --
 # `from .core.time import ...` / `from core.time import ...` in main.py resolve
 # to nothing without it. This was missed when Phase A step 1 landed and only
@@ -233,13 +220,11 @@ cp "$REPO_DIR/backend/rechnung.js" "${BACKEND_SERVING_DIR}/rechnung.js"
 # picked up new subdirectories automatically.
 rm -rf "${BACKEND_SERVING_DIR}/core"
 cp -r "$REPO_DIR/backend/core" "${BACKEND_SERVING_DIR}/core"
-python3 -m py_compile "${BACKEND_SERVING_DIR}/main.py" "${BACKEND_SERVING_DIR}/tools_lib.py" \
-  "${BACKEND_SERVING_DIR}/mangel_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py" \
-  "${BACKEND_SERVING_DIR}/roadmap_lib.py" "${BACKEND_SERVING_DIR}/work_types.py" \
-  "${BACKEND_SERVING_DIR}/profile_skills.py" "${BACKEND_SERVING_DIR}/assignment_matching.py" \
-  "${BACKEND_SERVING_DIR}/core/time.py"
-node --check "${BACKEND_SERVING_DIR}/angebot_free.js"
-node --check "${BACKEND_SERVING_DIR}/rechnung.js"
+_py_check=("${BACKEND_SERVING_DIR}/main.py")
+for _f in "${BACKEND_PY_LIBS[@]}"; do _py_check+=("${BACKEND_SERVING_DIR}/${_f}"); done
+for _f in "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}"/*.py; do _py_check+=("${_f}"); done
+python3 -m py_compile "${_py_check[@]}"
+for _f in "${BACKEND_JS_FILES[@]}"; do node --check "${BACKEND_SERVING_DIR}/${_f}"; done
 # Version-файл для /api/health -- version/commit видны в ответе без git subprocess
 # на каждый запрос (main.py читает VERSION рядом с собой, см. APP_VERSION_FILE).
 cat > "${BACKEND_SERVING_DIR}/VERSION" <<EOF

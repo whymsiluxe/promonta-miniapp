@@ -713,18 +713,29 @@ class DeployRollbackNewModulesTests(unittest.TestCase):
         return os.path.join(os.path.dirname(__file__), '..', 'scripts', name)
 
     def test_deploy_sh_covers_all_three_new_modules(self):
+        # 11.09 (Phase 1): individual per-file cp lines replaced with manifest-driven
+        # loop. Verify via manifest.sh (single source of truth) + that deploy.sh sources it.
+        with open(self._script_path('manifest.sh'), encoding='utf-8') as f:
+            manifest = f.read()
         with open(self._script_path('deploy.sh'), encoding='utf-8') as f:
-            content = f.read()
+            deploy = f.read()
         for mod in ('work_types.py', 'profile_skills.py', 'assignment_matching.py'):
-            self.assertIn(mod, content, f"{mod} не упомянут в deploy.sh")
-            self.assertIn(f'.{mod}.ABSENT', content, f"{mod} ABSENT-marker отсутствует в deploy.sh")
+            self.assertIn(mod, manifest, f"{mod} not in manifest.sh")
+        self.assertIn('manifest.sh', deploy, "deploy.sh must source manifest.sh")
+        self.assertIn('BACKEND_PY_LIBS', deploy, "deploy.sh must use BACKEND_PY_LIBS loop")
+        self.assertIn('.ABSENT', deploy, "deploy.sh must still use ABSENT-marker pattern")
 
     def test_rollback_sh_covers_all_three_new_modules(self):
+        # 11.09 (Phase 1): individual restore blocks replaced with manifest-driven loop.
+        with open(self._script_path('manifest.sh'), encoding='utf-8') as f:
+            manifest = f.read()
         with open(self._script_path('rollback.sh'), encoding='utf-8') as f:
-            content = f.read()
+            rollback = f.read()
         for mod in ('work_types.py', 'profile_skills.py', 'assignment_matching.py'):
-            self.assertIn(mod, content, f"{mod} не упомянут в rollback.sh")
-            self.assertIn(f'.{mod}.ABSENT', content, f"{mod} ABSENT-marker обработка отсутствует в rollback.sh")
+            self.assertIn(mod, manifest, f"{mod} not in manifest.sh")
+        self.assertIn('manifest.sh', rollback, "rollback.sh must source manifest.sh")
+        self.assertIn('BACKEND_PY_LIBS', rollback, "rollback.sh must use BACKEND_PY_LIBS loop")
+        self.assertIn('.ABSENT', rollback, "rollback.sh must still use ABSENT-marker pattern")
 
     def test_health_ready_checks_new_modules(self):
         with patch.object(backend, 'os') as mock_os:

@@ -12,6 +12,11 @@ FRONTEND_SERVING_DIR="/var/www/miniapp"
 SERVICE_NAME="promonta-miniapp.service"
 HEALTH_URL="https://app.promonta.fun/api/health"
 
+# 11.09 (Phase 1): source manifest for BACKEND_PY_LIBS / BACKEND_JS_FILES / BACKEND_CORE_DIR
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=manifest.sh
+source "$REPO_DIR/scripts/manifest.sh"
+
 BACKUP_DIR="${1:-}"
 if [[ -z "$BACKUP_DIR" ]]; then
   echo "Использование: $0 <путь-к-backup-директории>" >&2
@@ -38,73 +43,39 @@ find "$BACKUP_DIR" -type f | sed 's/^/  /'
 
 echo "== 2/6 Syntax-check backup перед восстановлением =="
 python3 -m py_compile "$BACKUP_DIR/main.py"
-if [[ -f "$BACKUP_DIR/tools_lib.py" ]]; then
-  python3 -m py_compile "$BACKUP_DIR/tools_lib.py"
+for _f in "${BACKEND_PY_LIBS[@]}"; do
+  if [[ -f "$BACKUP_DIR/${_f}" ]]; then python3 -m py_compile "$BACKUP_DIR/${_f}"; fi
+done
+if [[ -d "$BACKUP_DIR/${BACKEND_CORE_DIR}" ]]; then
+  python3 -m py_compile "$BACKUP_DIR/${BACKEND_CORE_DIR}"/*.py
 fi
-if [[ -f "$BACKUP_DIR/mangel_lib.py" ]]; then
-  python3 -m py_compile "$BACKUP_DIR/mangel_lib.py"
-fi
-if [[ -f "$BACKUP_DIR/objekte_lib.py" ]]; then
-  python3 -m py_compile "$BACKUP_DIR/objekte_lib.py"
-fi
-if [[ -f "$BACKUP_DIR/roadmap_lib.py" ]]; then
-  python3 -m py_compile "$BACKUP_DIR/roadmap_lib.py"
-fi
-if [[ -f "$BACKUP_DIR/work_types.py" ]]; then
-  python3 -m py_compile "$BACKUP_DIR/work_types.py"
-fi
-if [[ -f "$BACKUP_DIR/profile_skills.py" ]]; then
-  python3 -m py_compile "$BACKUP_DIR/profile_skills.py"
-fi
-if [[ -f "$BACKUP_DIR/assignment_matching.py" ]]; then
-  python3 -m py_compile "$BACKUP_DIR/assignment_matching.py"
-fi
-if [[ -f "$BACKUP_DIR/angebot_free.js" ]]; then
-  node --check "$BACKUP_DIR/angebot_free.js"
-fi
-if [[ -f "$BACKUP_DIR/rechnung.js" ]]; then
-  node --check "$BACKUP_DIR/rechnung.js"
-fi
+for _f in "${BACKEND_JS_FILES[@]}"; do
+  if [[ -f "$BACKUP_DIR/${_f}" ]]; then node --check "$BACKUP_DIR/${_f}"; fi
+done
 echo "OK"
 
 echo "== 3/6 Восстановление backend =="
 cp "$BACKUP_DIR/main.py" "${BACKEND_SERVING_DIR}/main.py"
-if [[ -f "$BACKUP_DIR/tools_lib.py" ]]; then
-  cp "$BACKUP_DIR/tools_lib.py" "${BACKEND_SERVING_DIR}/tools_lib.py"
-fi
-if [[ -f "$BACKUP_DIR/mangel_lib.py" ]]; then
-  cp "$BACKUP_DIR/mangel_lib.py" "${BACKEND_SERVING_DIR}/mangel_lib.py"
-fi
-if [[ -f "$BACKUP_DIR/objekte_lib.py" ]]; then
-  cp "$BACKUP_DIR/objekte_lib.py" "${BACKEND_SERVING_DIR}/objekte_lib.py"
-fi
-if [[ -f "$BACKUP_DIR/roadmap_lib.py" ]]; then
-  cp "$BACKUP_DIR/roadmap_lib.py" "${BACKEND_SERVING_DIR}/roadmap_lib.py"
-fi
-# 01.08 (доп.раунд П1): work_types.py/profile_skills.py/assignment_matching.py --
-# симметрично VERSION: backup содержит файл (восстановить) либо .ABSENT-marker
-# (файла не было до деплоя -- удалить то, что деплой создал, чтобы откат реально
-# вернул систему в состояние ДО этой фичи, не оставил частично новый backend).
-if [[ -f "$BACKUP_DIR/work_types.py" ]]; then
-  cp "$BACKUP_DIR/work_types.py" "${BACKEND_SERVING_DIR}/work_types.py"
-elif [[ -f "$BACKUP_DIR/.work_types.py.ABSENT" ]]; then
-  rm -f "${BACKEND_SERVING_DIR}/work_types.py"
-fi
-if [[ -f "$BACKUP_DIR/profile_skills.py" ]]; then
-  cp "$BACKUP_DIR/profile_skills.py" "${BACKEND_SERVING_DIR}/profile_skills.py"
-elif [[ -f "$BACKUP_DIR/.profile_skills.py.ABSENT" ]]; then
-  rm -f "${BACKEND_SERVING_DIR}/profile_skills.py"
-fi
-if [[ -f "$BACKUP_DIR/assignment_matching.py" ]]; then
-  cp "$BACKUP_DIR/assignment_matching.py" "${BACKEND_SERVING_DIR}/assignment_matching.py"
-elif [[ -f "$BACKUP_DIR/.assignment_matching.py.ABSENT" ]]; then
-  rm -f "${BACKEND_SERVING_DIR}/assignment_matching.py"
-fi
-if [[ -f "$BACKUP_DIR/angebot_free.js" ]]; then
-  cp "$BACKUP_DIR/angebot_free.js" "${BACKEND_SERVING_DIR}/angebot_free.js"
-fi
-if [[ -f "$BACKUP_DIR/rechnung.js" ]]; then
-  cp "$BACKUP_DIR/rechnung.js" "${BACKEND_SERVING_DIR}/rechnung.js"
+# 11.09 (Phase 1): manifest-driven restore loop -- all BACKEND_PY_LIBS with ABSENT-marker
+# support (backup contains file -> restore; backup has .ABSENT -> delete from serving dir).
+for _f in "${BACKEND_PY_LIBS[@]}"; do
+  if [[ -f "$BACKUP_DIR/${_f}" ]]; then
+    cp "$BACKUP_DIR/${_f}" "${BACKEND_SERVING_DIR}/${_f}"
+  elif [[ -f "$BACKUP_DIR/.${_f}.ABSENT" ]]; then
+    rm -f "${BACKEND_SERVING_DIR}/${_f}"
+  fi
+done
+for _f in "${BACKEND_JS_FILES[@]}"; do
+  if [[ -f "$BACKUP_DIR/${_f}" ]]; then
+    cp "$BACKUP_DIR/${_f}" "${BACKEND_SERVING_DIR}/${_f}"
+  fi
+done
+# Restore core/ subpackage (11.09: previously not restored on rollback).
+if [[ -d "$BACKUP_DIR/${BACKEND_CORE_DIR}" ]]; then
+  rm -rf "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}"
+  cp -r "$BACKUP_DIR/${BACKEND_CORE_DIR}" "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}"
+elif [[ -f "$BACKUP_DIR/.${BACKEND_CORE_DIR}.ABSENT" ]]; then
+  rm -rf "${BACKEND_SERVING_DIR}/${BACKEND_CORE_DIR}"
 fi
 # VERSION -- симметрично deploy.sh: backup либо содержит старый VERSION (сценарий A,
 # восстановить), либо маркер .VERSION_ABSENT (сценарий B, файла до deploy не было --
