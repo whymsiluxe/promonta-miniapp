@@ -216,10 +216,10 @@ function initAiView() {
   const input = document.getElementById('ai-input');
   const fileInput = document.getElementById('ai-file-input');
 
-  // 09.09: тот же фикс что chat.js -- preventDefault на pointerdown сохраняет фокус
-  // на textarea при тапе по кнопке отправки, клавиатура не закрывается на пол-пути.
-  sendBtn.addEventListener('pointerdown', e => e.preventDefault());
-  sendBtn.addEventListener('click', _sendAiMessage);
+  // 09.09 v10: touch-safe send (см. shared.js _bindTouchSafeSend) -- pointerdown
+  // preventDefault один не спасал на реальном Telegram iOS WKWebView, замена тем же
+  // подходом что chat.js.
+  _bindTouchSafeSend(sendBtn, input, _sendAiMessage);
   clearBtn.addEventListener('click', _clearAiChat);
   if (fileInput) {
     fileInput.addEventListener('change', _handleAiFileSelect);

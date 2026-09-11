@@ -2290,11 +2290,20 @@ body.tg-native-back #chat-thread-back-btn { display: none; }
   flex: 1;
   overflow-y: auto;
   padding: 0.75rem 1rem;
-  /* 09.09 v9: composer -- теперь position:absolute (см. .chat-input-bar) -- больше
-     не занимает место в потоке flex-колонки, поэтому нижний край списка сообщений
-     нужно компенсировать вручную: высота composer'а + текущий keyboard-inset, иначе
-     последние сообщения были бы перекрыты composer'ом/клавиатурой. */
-  padding-bottom: calc(var(--chat-composer-height, 64px) + var(--keyboard-inset, 0px) + 0.75rem);
+  /* 09.09 v10 (P0 chat keyboard final fix): keyboard-inset УБРАН из этого padding --
+     это и была вторая, поздняя стадия дёргания. Живые замеры (эта же сессия)
+     показали: --keyboard-inset обновляется через visualViewport.resize с задержкой
+     ~500ms ПОСЛЕ того как клавиатура физически уже закрылась/открылась -- значит
+     v9's design (composer position:absolute + этот padding, ОБА завязаны на один
+     --keyboard-inset) гарантировал ДВЕ раздельные стадии: клавиатура исчезает
+     сразу, а padding списка сообщений (и, соответственно, видимая нижняя граница
+     последних сообщений) менялся только через полсекунды следом -- ровно то, что
+     owner описал как "сначала клавиатура пропадает, потом уже опускается диалог".
+     Список сообщений теперь имеет ПОСТОЯННЫЙ отступ снизу (высота composer'а +
+     небольшой зазор) -- геометрия клавиатуры вообще не трогает этот список.
+     Двигается только сам composer (через --chat-keyboard-inset, см. ниже) поверх
+     этого постоянного пустого пространства. */
+  padding-bottom: calc(var(--chat-composer-height, 64px) + 0.75rem);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -2328,14 +2337,18 @@ body.view-locked {
   position: absolute;
   left: 0; right: 0; bottom: 0;
   z-index: 2;
-  transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0);
+  transform: translate3d(0, calc(-1 * var(--chat-keyboard-inset, 0px)), 0);
   will-change: transform;
 }
 /* 09.09 v9: safe-area-inset-bottom уже физически "внутри" клавиатуры, когда она
    открыта (home indicator area перекрыт клавиатурой) -- держать этот отступ поверх
    реального keyboard-inset добавляет лишние ~34px пустого места под полем ввода,
-   ещё один мелкий визуальный "прыжок выше необходимого". */
-body.keyboard-open .chat-input-bar, body.keyboard-open .ai-input-bar {
+   ещё один мелкий визуальный "прыжок выше необходимого".
+   09.09 v10: body.keyboard-open -- ГЛОБАЛЬНЫЙ класс, переключается поздним
+   visualViewport.resize (~500ms после реального события клавиатуры, см. живые
+   замеры этой сессии). Composer теперь реагирует на body.chat-composer-focused
+   (мгновенный focusin/focusout сигнал) вместо этого -- см. ниже. */
+body.chat-composer-focused .chat-input-bar, body.chat-composer-focused .ai-input-bar {
   padding-bottom: 0.4rem;
 }
 
@@ -2641,16 +2654,17 @@ body.keyboard-open .chat-input-bar, body.keyboard-open .ai-input-bar {
   position: absolute; left: 0; right: 0;
   bottom: var(--chat-composer-height, 64px);
   z-index: 3;
-  transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0);
+  transform: translate3d(0, calc(-1 * var(--chat-keyboard-inset, 0px)), 0);
   will-change: transform;
   align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem;
   background: var(--chat-surface, var(--bg-white)); border-top: 1px solid var(--chat-border);
   border-left: 3px solid var(--chat-forest, var(--c-accent, var(--primary)));
 }
-/* When reply-bar is visible, messages need extra bottom padding so the last message
-   isn't hidden behind reply-bar + input-bar stack (~48px for reply-bar height). */
+/* 09.09 v10: keyboard-inset убран и отсюда -- тот же принцип что для .chat-messages
+   выше: постоянный отступ, клавиатура не трогает layout списка сообщений вообще,
+   только сам composer/reply-bar/voice-bar двигаются поверх через transform. */
 body.chat-reply-active .chat-messages {
-  padding-bottom: calc(var(--chat-composer-height, 64px) + 48px + var(--keyboard-inset, 0px) + 0.75rem);
+  padding-bottom: calc(var(--chat-composer-height, 64px) + 48px + 0.75rem);
 }
 .chat-reply-bar-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .chat-reply-bar-name { font-size: 0.78rem; font-weight: 600; color: var(--chat-forest-light, var(--c-accent)); }
@@ -4437,7 +4451,7 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
    обычным flex-потомком и рендерился НЕ у низа экрана, а там где попадёт в document
    flow колонки после переключения (визуальный регресс, не было протестировано
    вживую до правки .chat-input-bar). */
-#chat-voice-recording-bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom)); background: var(--bg-white); border-top: 1px solid var(--border-color); transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0); }
+#chat-voice-recording-bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom)); background: var(--bg-white); border-top: 1px solid var(--border-color); transform: translate3d(0, calc(-1 * var(--chat-keyboard-inset, 0px)), 0); }
 .chat-voice-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); animation: chatVoicePulse 1s ease-in-out infinite; }
 @keyframes chatVoicePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 .chat-voice-rec-hint { flex: 1; color: var(--text-light); font-size: 0.85rem; }
@@ -6040,10 +6054,71 @@ function _applyViewportHeightNow() {
     // самой архитектуре.
     const actualInset = keyboardLikelyOpen ? Math.max(0, _fullViewportHeight - vv.height) : 0;
     document.documentElement.style.setProperty('--keyboard-inset', actualInset + 'px');
+    // 09.09 v10: --chat-keyboard-inset -- визуально та же величина, но эта запись
+    // приходит с той же ~500ms задержкой что и --keyboard-inset (оба читают один
+    // visualViewport.resize). Для chat/AI composer это уже не единственный источник
+    // истины -- focusin/focusout (см. ниже) двигают composer МГНОВЕННО на реальном
+    // взаимодействии юзера, эта запись здесь только ПОДТВЕРЖДАЕТ то же значение чуть
+    // позже (visualViewport как financial reconciliation, не как командующий анимацией).
+    document.documentElement.style.setProperty('--chat-keyboard-inset', actualInset + 'px');
+    // Кэшируем реальный inset для СЛЕДУЮЩЕГО focus (в этой сессии и после
+    // переоткрытия Mini App -- localStorage, не sessionStorage, т.к. Telegram
+    // перезагружает страницу при закрытии/переоткрытии, sessionStorage не переживает
+    // это). _chatKeyboardInsetCache обновляем сразу же -- следующий focusin в этой
+    // же сессии не должен ждать перечитывания localStorage.
+    if (actualInset > 120) {
+      _chatKeyboardInsetCache = actualInset;
+      try { localStorage.setItem('keyboardInsetPortrait', String(actualInset)); } catch (e) {}
+    }
   } else {
     document.documentElement.style.setProperty('--tg-fullscreen-height', h + 'px');
   }
 }
+
+// 09.09 v10 (P0 chat keyboard final fix, root cause 3+4): composer больше не ждёт
+// --keyboard-inset/body.keyboard-open (оба обновляются поздно, через
+// visualViewport.resize). focusin на composer-textarea -- РАННИЙ, мгновенный сигнал,
+// приходит ДО того как клавиатура вообще начинает анимацию. Ставим
+// --chat-keyboard-inset сразу на закешированное с прошлого раза значение (если
+// есть -- то же значение, что уже подтвердит visualViewport чуть позже, никакого
+// "второго движения", просто early paint той же самой цифры); если кэша ещё нет
+// (первый focus в этой browser-сессии), оставляем 0 -- реальный reconcile придёт
+// через vv.resize и просто первый раз проставит правильное значение без анимации.
+//
+// Критично: раньше (v8/v9) predictive-логика ставила ПРЕДСКАЗАННОЕ значение на
+// КАЖДЫЙ focusin/focusout, включая случаи когда клавиатура должна была остаться
+// открытой (Send). Это ломалось, потому что Send снимал фокус с поля (input.disabled,
+// уже убрано отдельным коммитом этой сессии) -- теперь Send гарантированно НЕ снимает
+// фокус (см. touch-safe send ниже), поэтому genuine blur однозначно означает
+// "юзер реально закрывает клавиатуру", а не побочный эффект отправки сообщения.
+let _chatKeyboardInsetCache = 0;
+try {
+  const cached = Number(localStorage.getItem('keyboardInsetPortrait'));
+  if (cached > 120) _chatKeyboardInsetCache = cached;
+} catch (e) {}
+let _chatSendTouchActive = false; // guard: игнорировать transient blur во время touch-отправки
+
+function _isChatComposerField(el) {
+  return el instanceof HTMLElement && !!el.closest('.chat-input-bar, .ai-input-bar');
+}
+
+document.addEventListener('focusin', (e) => {
+  if (!_isChatComposerField(e.target)) return;
+  document.body.classList.add('chat-composer-focused');
+  if (_chatKeyboardInsetCache > 0) {
+    document.documentElement.style.setProperty('--chat-keyboard-inset', _chatKeyboardInsetCache + 'px');
+  }
+}, true);
+
+document.addEventListener('focusout', (e) => {
+  if (!_isChatComposerField(e.target)) return;
+  // Фокус перешёл на другое поле того же composer-бара (edge case) -- не считаем
+  // это реальным закрытием клавиатуры.
+  if (document.activeElement && _isChatComposerField(document.activeElement)) return;
+  if (_chatSendTouchActive) return; // touch-send сам управляет фокусом, см. ниже
+  document.body.classList.remove('chat-composer-focused');
+  document.documentElement.style.setProperty('--chat-keyboard-inset', '0px');
+}, true);
 
 // Любой input/textarea в фокусе — прокручиваем в видимую часть экрана (над клавиатурой),
 // не полагаясь только на нативное поведение WebView (на iOS scrollIntoView сам по себе

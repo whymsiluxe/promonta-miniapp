@@ -483,3 +483,50 @@ function fmtDateRangeHuman(isoFrom, isoTo) {
   }
   return `${fmtDateHuman(isoFrom)} — ${fmtDateHuman(isoTo)}`;
 }
+
+// 09.09 v10 (P0 chat keyboard final fix, root cause 2): tapping Send must NEVER
+// close the keyboard. pointerdown.preventDefault() alone was NOT sufficient on
+// owner's real Telegram iOS WKWebView (live device testing confirmed the keyboard
+// still closed/reopened on some sends). Dedicated touchstart/touchend binding
+// takes over the whole gesture on touch devices; click remains the fallback path
+// for mouse/desktop (no touch events fire there).
+//
+// Design, per the standard chat UX every real messenger uses (Telegram/WhatsApp):
+// tap Send -> message sends -> textarea stays focused -> keyboard stays open.
+//
+// touchstart: preventDefault (passive:false is required for this to work) --
+//   stops the browser from shifting focus off the textarea at the START of the
+//   gesture, before the send even happens. Marks a module-level "send touch
+//   active" flag so a transient blur during this gesture (if the WebView still
+//   fires one despite preventDefault) is ignored by the focusin/focusout chat
+//   composer handlers in app.html, instead of being treated as a genuine
+//   keyboard-close signal.
+// touchend: preventDefault (suppresses the synthetic click that would otherwise
+//   follow and double-send), synchronously re-focuses the textarea if it
+//   somehow lost focus (before any await/network work -- must happen in the
+//   same synchronous tick as the user gesture or iOS won't honor the refocus),
+//   then calls the actual send function.
+function _bindTouchSafeSend(sendBtn, inputEl, sendFn) {
+  let touchHandled = false;
+  sendBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    touchHandled = true;
+    _chatSendTouchActive = true;
+  }, { passive: false });
+  sendBtn.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    if (document.activeElement !== inputEl) {
+      inputEl.focus({ preventScroll: true });
+    }
+    sendFn();
+    _chatSendTouchActive = false;
+    // touchend on a button is normally followed by a synthetic click ~300ms
+    // later (or sooner) on some WebViews -- suppress exactly one, so mouse
+    // users elsewhere aren't affected and a genuine second tap still works.
+    setTimeout(() => { touchHandled = false; }, 400);
+  }, { passive: false });
+  sendBtn.addEventListener('click', () => {
+    if (touchHandled) return; // this click is the synthetic follow-up to touchend above
+    sendFn();
+  });
+}

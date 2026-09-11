@@ -94,6 +94,48 @@ function _fmtChatDayLabel(ts) {
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
 }
 
+// 09.09 v10 (P0 chat keyboard final fix, root cause 5): renderMessageHtml
+// extracted so the full-rebuild path and the append-only fast path share
+// EXACTLY the same markup -- no separate implementation to keep in sync.
+function _renderOneChatBubbleHtml(msg, isGrouped, dayDividerHtml, isLastMessage) {
+  const isOwn = msg.user_id === _chatMyId;
+  const avatarHue = _chatAvatarHue(msg.user_id);
+  const avatarInitial = (msg.name || '?')[0].toUpperCase();
+  const avatarHtml = `<span class="chat-msg-avatar" style="background:hsl(${avatarHue} 45% 42%)" ${!isOwn ? `onclick="openUserCard('${msg.user_id}')"` : ''}>${avatarInitial}</span>`;
+  const nameHtml = isOwn
+    ? `<span class="chat-name">Вы</span>`
+    : `<span class="chat-name" onclick="openUserCard('${msg.user_id}')">${_escChat(msg.name)}</span>`;
+  // 28.07: owner request -- статус прочтения в личном чате. read_by_recipient
+  // приходит с бэкенда только для DM (with_ query), только на своих сообщениях --
+  // показываем галочку только на ПОСЛЕДНЕМ своём сообщении в списке (тот же паттерн,
+  // что WhatsApp/Telegram используют, не дублируем статус на каждом сообщении).
+  const readReceiptHtml = (isOwn && isLastMessage && typeof msg.read_by_recipient === 'boolean')
+    ? `<span class="chat-read-receipt ${msg.read_by_recipient ? 'chat-read-receipt-read' : 'chat-read-receipt-sent'}" title="${msg.read_by_recipient ? 'Прочитано' : 'Отправлено'}">${msg.read_by_recipient ? '✓✓' : '✓'}</span>`
+    : '';
+  const replyHtml = msg.reply_to
+    ? `<div class="chat-reply-quote" data-goto-msg-id="${msg.reply_to.id}"><span class="chat-reply-quote-name">${_escChat(msg.reply_to.name)}</span><span class="chat-reply-quote-preview">${_escChat(msg.reply_to.preview)}</span></div>`
+    : '';
+  const forwardedHtml = msg.forwarded_from
+    ? `<div class="chat-forwarded-label">↪ Переслано от ${_escChat(msg.forwarded_from)}</div>`
+    : '';
+  return `${dayDividerHtml || ''}
+    <div class="chat-bubble ${isOwn ? 'chat-bubble-own' : 'chat-bubble-other'}${isGrouped ? ' chat-bubble-grouped' : ''}" data-msg-id="${msg.id}" data-uid="${msg.user_id}">
+      <div class="chat-msg-header">${avatarHtml}${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span></div>
+      <button type="button" class="chat-msg-menu-btn" data-menu-btn="${msg.id}" aria-label="Действия с сообщением">⋯</button>
+      ${forwardedHtml}
+      ${replyHtml}
+      ${msg.attachment ? _renderChatAttachment(msg) : ''}
+      ${msg.text ? `<div class="chat-text">${_escChat(msg.text)}</div>` : ''}
+      <div class="chat-reactions-slot">${_renderChatReactions(msg)}</div>
+      ${readReceiptHtml}
+    </div>`;
+}
+
+
+// 09.09 v10: последнее полностью отрендеренное состояние -- нужно и для сигнатуры
+// (уже было), и для append-only decision (что именно изменилось с прошлого раза).
+let _chatLastRenderedIds = [];
+
 function _renderChatMessages(messages) {
   const container = document.getElementById('chat-messages');
   if (!container) return;
@@ -101,6 +143,7 @@ function _renderChatMessages(messages) {
   if (!messages || messages.length === 0) {
     container.innerHTML = '<div class="chat-empty">Сообщений пока нет. Напишите первым!</div>';
     _chatLastRenderSig = null;
+    _chatLastRenderedIds = [];
     return;
   }
 
@@ -111,7 +154,85 @@ function _renderChatMessages(messages) {
   if (sig === _chatLastRenderSig) return;
 
   const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
+
+  // 09.09 v10 (P0 chat keyboard final fix, root cause 5): append-only fast path.
+  // container.innerHTML rebuild on EVERY poll tick/send destroyed and recreated
+  // every bubble in the thread -- on a long thread over Telegram's iOS WKWebView
+  // this produced a visible blink even after the keyboard-inset double-movement
+  // was fixed separately. When the new message list is exactly the previously
+  // rendered list plus new messages appended at the tail (the overwhelmingly
+  // common case: send a message, or poll picks up someone else's new message),
+  // append ONLY the new bubbles instead of rebuilding the whole container.
+  // Anything else (delete, reorder, reaction-only change on an old message,
+  // first render) falls through to the full rebuild below -- correctness over
+  // cleverness for the rare/structural cases.
+  const newIds = messages.map(m => m.id);
+  const prevIds = _chatLastRenderedIds;
+  const isPureAppend = prevIds.length > 0 && newIds.length > prevIds.length &&
+    prevIds.every((id, i) => id === newIds[i]);
+
+  if (isPureAppend) {
+    const appended = messages.slice(prevIds.length);
+    const prevLastMsg = messages[prevIds.length - 1];
+    // Read-receipt/last-message state on the PREVIOUS last bubble is now stale
+    // (it's no longer the last message) -- strip it without touching anything
+    // else about that bubble, instead of re-rendering it.
+    if (prevLastMsg) {
+      const prevLastEl = container.querySelector(`[data-msg-id="${prevLastMsg.id}"] .chat-read-receipt`);
+      if (prevLastEl) prevLastEl.remove();
+    }
+    const GROUP_WINDOW_SECONDS = 120;
+    let lastDayKey = new Date(prevLastMsg.ts * 1000).toDateString();
+    let lastUid = prevLastMsg.user_id;
+    let lastTs = prevLastMsg.ts;
+    let html = '';
+    appended.forEach((msg, i) => {
+      _chatMessagesById[msg.id] = msg;
+      const dayKey = new Date(msg.ts * 1000).toDateString();
+      let dividerHtml = '';
+      if (dayKey !== lastDayKey) {
+        dividerHtml = `<div class="chat-day-divider">${_fmtChatDayLabel(msg.ts)}</div>`;
+        lastDayKey = dayKey;
+        lastUid = null;
+      }
+      const isGrouped = !dividerHtml && msg.user_id === lastUid && lastTs !== null && (msg.ts - lastTs) < GROUP_WINDOW_SECONDS;
+      lastUid = msg.user_id;
+      lastTs = msg.ts;
+      const isLastMessage = i === appended.length - 1;
+      html += _renderOneChatBubbleHtml(msg, isGrouped, dividerHtml, isLastMessage);
+    });
+    container.insertAdjacentHTML('beforeend', html);
+    _chatLastRenderSig = sig;
+    _chatLastRenderedIds = newIds;
+    if (wasAtBottom) container.scrollTop = container.scrollHeight;
+    // Bind handlers/auth-media only on the newly appended bubbles, not the
+    // whole container -- avoids re-attaching duplicate listeners on untouched
+    // existing bubbles.
+    const appendedIds = new Set(appended.map(m => m.id));
+    const appendedEls = Array.from(container.children).filter(el =>
+      el.dataset && appendedIds.has(el.dataset.msgId)
+    );
+    _attachChatBubbleHandlers(container, appendedEls);
+    appendedEls.forEach(el => {
+      el.querySelectorAll('[data-auth-src] img.chat-attach-img').forEach(img => {
+        const wrap = img.closest('[data-auth-src]');
+        if (wrap) authImg(img, wrap.dataset.authSrc);
+      });
+      el.querySelectorAll('audio[data-auth-audio]').forEach(async audio => {
+        try {
+          const newUrl = await authImageUrl(audio.dataset.authAudio);
+          audio.src = newUrl;
+        } catch (e) {}
+      });
+      el.querySelectorAll('[data-extract-transcript]').forEach(btn => {
+        btn.addEventListener('click', () => _extractTaskFromTranscript(btn.dataset.extractTranscript, btn));
+      });
+    });
+    return;
+  }
+
   _chatLastRenderSig = sig;
+  _chatLastRenderedIds = newIds;
 
   // 24.07: группировка последовательных сообщений одного отправителя (Connecteam-стиль) —
   // второе+ сообщение подряд от того же юзера в пределах 120 сек не повторяет имя, садится
@@ -127,54 +248,20 @@ function _renderChatMessages(messages) {
   container.querySelectorAll('img.chat-attach-img[src^="blob:"], audio[src^="blob:"]').forEach(el => {
     try { URL.revokeObjectURL(el.src); } catch (e) {}
   });
-  container.innerHTML = messages.map(msg => {
+  container.innerHTML = messages.map((msg, idx) => {
     _chatMessagesById[msg.id] = msg;
-    const isOwn = msg.user_id === _chatMyId;
     const dayKey = new Date(msg.ts * 1000).toDateString();
-    let divider = '';
+    let dividerHtml = '';
     if (dayKey !== lastDayKey) {
-      divider = `<div class="chat-day-divider">${_fmtChatDayLabel(msg.ts)}</div>`;
+      dividerHtml = `<div class="chat-day-divider">${_fmtChatDayLabel(msg.ts)}</div>`;
       lastDayKey = dayKey;
       lastUid = null; // новый день — не группировать через границу дня
     }
-    const isGrouped = !divider && msg.user_id === lastUid && lastTs !== null && (msg.ts - lastTs) < GROUP_WINDOW_SECONDS;
+    const isGrouped = !dividerHtml && msg.user_id === lastUid && lastTs !== null && (msg.ts - lastTs) < GROUP_WINDOW_SECONDS;
     lastUid = msg.user_id;
     lastTs = msg.ts;
-    // 25.07: имя+время в одну строку над сообщением (референс Connecteam), для ОБОИХ
-    // own/other -- раньше имя показывалось только у чужих сообщений, время отдельной
-    // строкой снизу у всех. Header скрыт целиком через CSS на сгруппированных сообщениях
-    // (.chat-bubble-grouped .chat-msg-header{display:none}), не дублируем условие тут.
-    const avatarHue = _chatAvatarHue(msg.user_id);
-    const avatarInitial = (msg.name || '?')[0].toUpperCase();
-    const avatarHtml = `<span class="chat-msg-avatar" style="background:hsl(${avatarHue} 45% 42%)" ${!isOwn ? `onclick="openUserCard('${msg.user_id}')"` : ''}>${avatarInitial}</span>`;
-    const nameHtml = isOwn
-      ? `<span class="chat-name">Вы</span>`
-      : `<span class="chat-name" onclick="openUserCard('${msg.user_id}')">${_escChat(msg.name)}</span>`;
-    // 28.07: owner request -- статус прочтения в личном чате. read_by_recipient
-    // приходит с бэкенда только для DM (with_ query), только на своих сообщениях --
-    // показываем галочку только на ПОСЛЕДНЕМ своём сообщении в списке (тот же паттерн,
-    // что WhatsApp/Telegram используют, не дублируем статус на каждом сообщении).
-    const isLastMessage = msg === messages[messages.length - 1];
-    const readReceiptHtml = (isOwn && isLastMessage && typeof msg.read_by_recipient === 'boolean')
-      ? `<span class="chat-read-receipt ${msg.read_by_recipient ? 'chat-read-receipt-read' : 'chat-read-receipt-sent'}" title="${msg.read_by_recipient ? 'Прочитано' : 'Отправлено'}">${msg.read_by_recipient ? '✓✓' : '✓'}</span>`
-      : '';
-    const replyHtml = msg.reply_to
-      ? `<div class="chat-reply-quote" data-goto-msg-id="${msg.reply_to.id}"><span class="chat-reply-quote-name">${_escChat(msg.reply_to.name)}</span><span class="chat-reply-quote-preview">${_escChat(msg.reply_to.preview)}</span></div>`
-      : '';
-    const forwardedHtml = msg.forwarded_from
-      ? `<div class="chat-forwarded-label">↪ Переслано от ${_escChat(msg.forwarded_from)}</div>`
-      : '';
-    return `${divider}
-    <div class="chat-bubble ${isOwn ? 'chat-bubble-own' : 'chat-bubble-other'}${isGrouped ? ' chat-bubble-grouped' : ''}" data-msg-id="${msg.id}" data-uid="${msg.user_id}">
-      <div class="chat-msg-header">${avatarHtml}${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span></div>
-      <button type="button" class="chat-msg-menu-btn" data-menu-btn="${msg.id}" aria-label="Действия с сообщением">⋯</button>
-      ${forwardedHtml}
-      ${replyHtml}
-      ${msg.attachment ? _renderChatAttachment(msg) : ''}
-      ${msg.text ? `<div class="chat-text">${_escChat(msg.text)}</div>` : ''}
-      <div class="chat-reactions-slot">${_renderChatReactions(msg)}</div>
-      ${readReceiptHtml}
-    </div>`;
+    const isLastMessage = idx === messages.length - 1;
+    return _renderOneChatBubbleHtml(msg, isGrouped, dividerHtml, isLastMessage);
   }).join('');
 
   if (wasAtBottom || messages.length === 1) {
@@ -233,8 +320,28 @@ let _chatLongPressTimer = null;
 // 28.07 (Phase 06): один long-press-меню на реакции + удаление (раньше long-press
 // сразу открывал confirm() на удаление, только для своих/owner сообщений; реакции
 // нужны на ЛЮБОМ сообщении, поэтому меню теперь общее, delete-пункт в нём — опционален).
-function _attachChatBubbleHandlers(container) {
-  container.querySelectorAll('.chat-bubble').forEach(bubble => {
+// 09.09 v10: scope param -- append-only render (see _renderChatMessages) must
+// bind handlers ONLY on the newly appended bubbles, not re-scan the whole
+// container -- doing the latter would attach a second, duplicate set of
+// listeners (long-press, menu, reactions, reply-quote) onto every already-
+// bound existing bubble on every single new message, compounding with each
+// poll tick. Defaults to the whole container for the full-rebuild path,
+// where every bubble really is new DOM.
+function _attachChatBubbleHandlers(container, scopeEls) {
+  const bubbles = scopeEls
+    ? scopeEls.filter(el => el.classList && el.classList.contains('chat-bubble'))
+    : Array.from(container.querySelectorAll('.chat-bubble'));
+  const menuBtns = scopeEls
+    ? scopeEls.flatMap(el => Array.from(el.querySelectorAll('.chat-msg-menu-btn')))
+    : Array.from(container.querySelectorAll('.chat-msg-menu-btn'));
+  const reactionChips = scopeEls
+    ? scopeEls.flatMap(el => Array.from(el.querySelectorAll('.chat-reaction-chip')))
+    : Array.from(container.querySelectorAll('.chat-reaction-chip'));
+  const replyQuotes = scopeEls
+    ? scopeEls.flatMap(el => Array.from(el.querySelectorAll('.chat-reply-quote[data-goto-msg-id]')))
+    : Array.from(container.querySelectorAll('.chat-reply-quote[data-goto-msg-id]'));
+
+  bubbles.forEach(bubble => {
     const msgId = bubble.dataset.msgId;
     const canDelete = _chatIsOwner || Number(bubble.dataset.uid) === _chatMyId;
 
@@ -256,7 +363,7 @@ function _attachChatBubbleHandlers(container) {
     });
   });
 
-  container.querySelectorAll('.chat-msg-menu-btn').forEach(btn => {
+  menuBtns.forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const bubble = btn.closest('.chat-bubble');
@@ -266,14 +373,14 @@ function _attachChatBubbleHandlers(container) {
     });
   });
 
-  container.querySelectorAll('.chat-reaction-chip').forEach(chip => {
+  reactionChips.forEach(chip => {
     chip.addEventListener('click', e => {
       e.stopPropagation();
       _toggleChatReaction(chip.dataset.msgId, chip.dataset.reaction);
     });
   });
 
-  container.querySelectorAll('.chat-reply-quote[data-goto-msg-id]').forEach(quote => {
+  replyQuotes.forEach(quote => {
     quote.addEventListener('click', () => _scrollToChatMessage(quote.dataset.gotoMsgId));
   });
 }
@@ -1179,6 +1286,10 @@ function openChatThread(threadUserId, title) {
   document.body.classList.add('chat-dialog-open'); // единственный источник для body.chat-dialog-open .bottom-nav{display:none}
   _registerChatThreadOverlay(); // 03.08 v2: диалог — отдельный уровень Back, не смешан с message-popup
   _chatLastRenderSig = null;
+  // 09.09 v10: сбрасываем и на переключении треда -- append-only fast path
+  // (_renderChatMessages) иначе мог бы теоретически спутать ID из другого,
+  // только что закрытого треда со "старым состоянием" нового.
+  _chatLastRenderedIds = [];
   _loadChatMessages(true);
   _refreshChatThreadCloseState();
   markChatRead(threadUserId); // per-thread — сбрасываем badge только этого треда (10.29)
@@ -1197,6 +1308,7 @@ function openObjectOrMangelChat(threadKey, title, returnToView) {
   _registerChatThreadOverlay(); // 03.08 v2
   document.getElementById('chat-close-thread-btn').style.display = 'none'; // закрытие тредов не поддержано для obj:/mangel:
   _chatLastRenderSig = null;
+  _chatLastRenderedIds = []; // 09.09 v10: см. openChatThread
   _loadChatMessages(true);
   markChatRead(null, threadKey); // 25.07: obj:/mangel:/task: треды раньше никогда не отмечались прочитанными
 }
@@ -1403,8 +1515,13 @@ async function initChatView() {
   // попадает уже мимо (кнопка физически сдвинулась под пальцем). preventDefault на
   // pointerdown у кнопки-НЕ-input сохраняет фокус на textarea, click всё равно
   // срабатывает нормально следом.
-  sendBtn.addEventListener('pointerdown', e => e.preventDefault());
-  sendBtn.addEventListener('click', _sendChatMessage);
+  // 09.09 v10 (P0 chat keyboard final fix, root cause 2): pointerdown.preventDefault()
+  // alone was NOT enough on owner's real Telegram iOS WKWebView -- live testing showed
+  // Send still sometimes closed/reopened the keyboard. Dedicated touchstart/touchend
+  // binding (passive:false so preventDefault actually works) takes over the whole
+  // gesture for touch devices; click stays as the fallback for mouse/desktop.
+  // _bindTouchSafeSend in shared.js implements the shared logic (also used by ai.js).
+  _bindTouchSafeSend(sendBtn, input, _sendChatMessage);
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
