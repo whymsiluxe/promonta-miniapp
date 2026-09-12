@@ -1924,42 +1924,125 @@ header h1 {
 .feed-photo-grid {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
-  padding: 0 0.75rem;
+  gap: 0.85rem;
+  padding: 0 0.75rem calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 18px);
 }
-.feed-photo-item {
-  border-radius: var(--radius-lg, 16px);
+.feed-photo-post {
+  border-radius: 8px;
   overflow: hidden;
   background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--c-shadow-card, var(--shadow-sm));
   cursor: pointer;
 }
-.feed-photo-item .feed-photo-img-wrap {
+.feed-photo-post-header {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.7rem 0.75rem;
+}
+.feed-photo-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.78rem;
+}
+.feed-photo-post-author { min-width: 0; flex: 1; }
+.feed-photo-author-name {
+  color: var(--text-main);
+  font-weight: 800;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-photo-post-subtitle {
+  color: var(--text-light);
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-photo-time {
+  color: var(--text-light);
+  font-size: 0.74rem;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.feed-photo-post .feed-photo-img-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 4/3;
-  background: var(--bg-light);
+  aspect-ratio: 4 / 5;
+  background: #090909;
   display: flex;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
-.feed-photo-item .feed-photo-img-wrap::-webkit-scrollbar { display: none; }
+.feed-photo-post .feed-photo-img-wrap::-webkit-scrollbar { display: none; }
 .feed-photo-count-badge { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.65); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 999px; z-index: 2; pointer-events: none; }
-.feed-photo-item img { width: 100%; height: 100%; object-fit: cover; display: block; flex-shrink: 0; scroll-snap-align: start; }
+.feed-photo-post img { width: 100%; height: 100%; object-fit: cover; display: block; flex-shrink: 0; scroll-snap-align: start; }
 .feed-photo-item-dots { position: absolute; bottom: 8px; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; z-index: 2; pointer-events: none; }
 .feed-photo-item-dots span { width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,0.5); }
 .feed-photo-item-dots span.active { background: #fff; }
-.feed-photo-item .feed-photo-meta {
-  padding: 0.55rem 0.75rem 0.7rem;
-  font-size: 0.82rem;
+.feed-photo-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.65rem 0.75rem 0.25rem;
+}
+.feed-photo-comment-action {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0;
+  border: none;
+  background: transparent;
   color: var(--text-main);
+  font-weight: 800;
+  cursor: pointer;
 }
-.feed-photo-item .feed-photo-meta .feed-photo-time { color: var(--text-light); font-size: 0.72rem; }
-.feed-photo-item .feed-photo-actions {
-  display: flex; align-items: center; gap: 1rem;
-  padding: 0.6rem 0.75rem 0; font-size: 0.9rem; color: var(--text-light);
+.feed-photo-comment-action svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
-.feed-photo-comment-count { display: flex; align-items: center; gap: 0.3rem; }
+.feed-photo-object-pill {
+  min-width: 0;
+  max-width: 62%;
+  border-radius: 999px;
+  padding: 0.22rem 0.55rem;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-photo-caption {
+  padding: 0.1rem 0.75rem 0.8rem;
+  color: var(--text-main);
+  font-size: 0.88rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.feed-photo-caption b { font-weight: 850; }
 
 .photo-comments-modal {
   /* 23.07: было z-index 500 — ниже #radio-fab (1200), та же bubble-over-modal проблема.
@@ -3769,12 +3852,14 @@ body.chat-reply-active .chat-messages {
 .wc-prod-rate-val { font-size: 0.95rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
 .wc-prod-rate-meta { font-size: 0.72rem; color: var(--text-light); white-space: nowrap; }
 /* Round 4: Контроль дня view */
-.kd-kpi-strip { display: flex; gap: 0.4rem; padding: 0 0.75rem 0.75rem; overflow-x: auto; }
+.kd-kpi-strip { display: flex; gap: 0.4rem; padding: 0 0.75rem 0.75rem; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; touch-action: pan-x; }
+.kd-kpi-strip::-webkit-scrollbar { display: none; }
 .kd-kpi-chip { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; background: var(--bg-card); border-radius: var(--radius-md); padding: 0.5rem 0.7rem; min-width: 64px; cursor: pointer; }
 .kd-kpi-chip.active { background: color-mix(in srgb, var(--accent) 15%, var(--bg-card)); border: 1px solid var(--accent); }
 .kd-kpi-num { font-family: var(--font-heading); font-size: 1.25rem; font-weight: 700; color: var(--accent); }
 .kd-kpi-label { font-size: 0.65rem; color: var(--text-light); text-align: center; white-space: nowrap; margin-top: 0.1rem; }
-.kd-filters { display: flex; gap: 0.4rem; padding: 0 0.75rem 0.6rem; overflow-x: auto; }
+.kd-filters { display: flex; gap: 0.4rem; padding: 0 0.75rem 0.6rem; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; touch-action: pan-x; }
+.kd-filters::-webkit-scrollbar { display: none; }
 .kd-filter-chip { flex-shrink: 0; padding: 0.3rem 0.7rem; border-radius: 999px; background: var(--bg-card); font-size: 0.78rem; font-weight: 600; color: var(--text-light); cursor: pointer; white-space: nowrap; border: 1px solid transparent; }
 .kd-filter-chip.active { background: var(--accent); color: #fff; }
 .kd-row { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.65rem 0.75rem; margin: 0 0.75rem 0.5rem; cursor: pointer; }
@@ -4480,7 +4565,7 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .tool-detail-history { font-size: 0.85rem; color: var(--text-light); max-height: 200px; overflow-y: auto; }
 
 .news-card { background: var(--bg-card) !important; border: 1px solid var(--border-color); }
-.feed-photo-item { background: var(--bg-card) !important; border: 1px solid var(--border-color); }
+.feed-photo-post { background: var(--bg-card) !important; border: 1px solid var(--border-color); }
 .feed-card { background: var(--bg-card) !important; border: 1px solid var(--border-color) !important; box-shadow: var(--shadow-md) !important; }
 .feed-card-title { color: #fff !important; }
 .feed-risk { background: rgba(245,158,11,0.15) !important; color: #fbbf24 !important; }
@@ -5255,8 +5340,8 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1 id="kd-header-title">Контроль дня</h1>
   </header>
-  <div id="kd-kpi-strip" class="kd-kpi-strip"></div>
-  <div id="kd-filters" class="kd-filters">
+  <div id="kd-kpi-strip" class="kd-kpi-strip" data-no-swipe></div>
+  <div id="kd-filters" class="kd-filters" data-no-swipe>
     <div class="kd-filter-chip active" data-kd-filter="all">Все</div>
     <div class="kd-filter-chip" data-kd-filter="not_accepted">Не приняли</div>
     <div class="kd-filter-chip" data-kd-filter="working">Работают</div>
@@ -6725,13 +6810,17 @@ async function initKontrolDayView() {
   document.getElementById('kd-rows-list').innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-light)">Загрузка…</div>';
 
   // Filter chips
-  document.getElementById('kd-filters').addEventListener('click', e => {
-    const chip = e.target.closest('.kd-filter-chip');
-    if (!chip) return;
-    _kdFilter = chip.dataset.kdFilter;
-    document.querySelectorAll('.kd-filter-chip').forEach(c => c.classList.toggle('active', c === chip));
-    _renderKdRows();
-  }, { once: true });
+  const filtersEl = document.getElementById('kd-filters');
+  if (filtersEl && !filtersEl.dataset.wired) {
+    filtersEl.dataset.wired = '1';
+    filtersEl.addEventListener('click', e => {
+      const chip = e.target.closest('.kd-filter-chip');
+      if (!chip) return;
+      _kdFilter = chip.dataset.kdFilter;
+      document.querySelectorAll('.kd-filter-chip').forEach(c => c.classList.toggle('active', c === chip));
+      _renderKdRows();
+    });
+  }
 
   // Detail close
   document.getElementById('kd-detail-close').onclick = () => {

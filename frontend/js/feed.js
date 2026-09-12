@@ -369,10 +369,16 @@ function fmtPhotoTime(ts) {
   return pad(d.getDate()) + '.' + pad(d.getMonth() + 1);
 }
 
+function _feedPhotoInitials(name) {
+  const clean = String(name || '').trim();
+  if (!clean) return 'P';
+  return clean.split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+}
+
 function renderPhotoItem(p) {
-  const caption = p.object_id || p.caption
-    ? `${esc(p.object_id) || ''}${p.object_id && p.caption ? ' — ' : ''}${esc(p.caption) || ''}`
-    : esc(p.name);
+  const author = p.name || 'Сотрудник';
+  const objectLabel = p.object_id || '';
+  const caption = (p.caption || '').trim();
   const fileCount = (p.files || []).length;
   // 24.07: мультифото — свайп прямо в карточке ленты (как в Инсте), не только в модалке.
   // img-wrap — горизонтальный scroll-snap контейнер со всеми фото поста; badge/dots
@@ -385,15 +391,31 @@ function renderPhotoItem(p) {
     ? `<div class="feed-photo-item-dots">${Array.from({ length: fileCount }, (_, i) => `<span class="${i === 0 ? 'active' : ''}"></span>`).join('')}</div>`
     : '';
   return `
-  <div class="feed-photo-item" data-photo-id="${p.id}" onclick="openPhotoComments('${p.id}', ${fileCount})">
+  <article class="feed-photo-post" data-photo-id="${p.id}" onclick="openPhotoComments('${p.id}', ${fileCount})">
+    <div class="feed-photo-post-header">
+      <div class="feed-photo-avatar">${esc(_feedPhotoInitials(author))}</div>
+      <div class="feed-photo-post-author">
+        <div class="feed-photo-author-name">${esc(author)}</div>
+        <div class="feed-photo-post-subtitle">${objectLabel ? esc(objectLabel) : 'Фотоотчёт'}</div>
+      </div>
+      <time class="feed-photo-time">${fmtPhotoTime(p.ts)}</time>
+    </div>
     <div class="feed-photo-img-wrap" data-file-count="${fileCount}">
       ${imgs}
       ${fileCount > 1 ? `<span class="feed-photo-count-badge">1/${fileCount}</span>` : ''}
       ${dots}
     </div>
-    <div class="feed-photo-meta">${caption}<div class="feed-photo-time">${fmtPhotoTime(p.ts)}</div></div>
-    <div class="feed-photo-actions"><span class="feed-photo-comment-count">💬 ${p.comment_count || 0}</span></div>
-  </div>`;
+    <div class="feed-photo-action-row">
+      <button class="feed-photo-comment-action" type="button" onclick="event.stopPropagation(); openPhotoComments('${p.id}', ${fileCount})" aria-label="Комментарии">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 8.7 8.7 0 0 1-3.8-.9L3 21l1.9-5.7A8.4 8.4 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.5 8.5 0 0 1 21 11.5Z"/></svg>
+        <span>${p.comment_count || 0}</span>
+      </button>
+      ${objectLabel ? `<span class="feed-photo-object-pill">${esc(objectLabel)}</span>` : ''}
+    </div>
+    <div class="feed-photo-caption">
+      <b>${esc(author)}</b>${caption ? ` ${esc(caption)}` : (objectLabel ? ` Фото по объекту ${esc(objectLabel)}` : ' Добавил фото')}
+    </div>
+  </article>`;
 }
 
 function _initFeedPhotoSwipeDots(grid) {
