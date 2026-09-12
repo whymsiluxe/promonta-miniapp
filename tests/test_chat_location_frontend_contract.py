@@ -34,3 +34,24 @@ def test_chat_location_loading_style_exists():
 
     assert ".chat-attach-btn-loading" in src
     assert "@keyframes chatSpin" in src
+
+
+def test_chat_voice_recording_has_fail_soft_guards():
+    src = _source(CHAT_JS)
+
+    assert "Запись уже идёт" in src
+    assert "navigator.mediaDevices?.getUserMedia" in src
+    assert "!window.MediaRecorder" in src
+    assert "Голосовая запись временно недоступна" in src
+    assert "const inputBar = document.getElementById('chat-input-bar')" in src
+    assert "if (inputBar) inputBar.style.display = 'flex'" in src
+
+
+def test_chat_voice_buttons_are_wired_only_when_dom_is_complete():
+    src = _source(CHAT_JS)
+
+    assert "const voiceCancelBtn = document.getElementById('chat-voice-cancel-btn')" in src
+    assert "const voiceStopBtn = document.getElementById('chat-voice-stop-btn')" in src
+    assert "if (voiceBtn && voiceCancelBtn && voiceStopBtn && !voiceBtn.dataset.wired)" in src
+    assert "voiceCancelBtn.addEventListener('click', () => _stopVoiceRecording(false))" in src
+    assert "voiceStopBtn.addEventListener('click', () => _stopVoiceRecording(true))" in src

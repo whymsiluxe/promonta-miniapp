@@ -1715,11 +1715,13 @@ async function initChatView() {
   }
 
   const voiceBtn = document.getElementById('chat-voice-btn');
-  if (voiceBtn && !voiceBtn.dataset.wired) {
+  const voiceCancelBtn = document.getElementById('chat-voice-cancel-btn');
+  const voiceStopBtn = document.getElementById('chat-voice-stop-btn');
+  if (voiceBtn && voiceCancelBtn && voiceStopBtn && !voiceBtn.dataset.wired) {
     voiceBtn.dataset.wired = '1';
     voiceBtn.addEventListener('click', _startVoiceRecording);
-    document.getElementById('chat-voice-cancel-btn').addEventListener('click', () => _stopVoiceRecording(false));
-    document.getElementById('chat-voice-stop-btn').addEventListener('click', () => _stopVoiceRecording(true));
+    voiceCancelBtn.addEventListener('click', () => _stopVoiceRecording(false));
+    voiceStopBtn.addEventListener('click', () => _stopVoiceRecording(true));
   }
 
   const locationBtn = document.getElementById('chat-location-btn');
@@ -1761,6 +1763,21 @@ function _pickVoiceMimeType() {
 }
 
 async function _startVoiceRecording() {
+  if (_voiceRecorder) {
+    showToast('Запись уже идёт', 'error');
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    showToast('Запись голоса не поддерживается на этом устройстве', 'error');
+    return;
+  }
+  const inputBar = document.getElementById('chat-input-bar');
+  const recordingBar = document.getElementById('chat-voice-recording-bar');
+  const timerEl = document.getElementById('chat-voice-rec-timer');
+  if (!inputBar || !recordingBar || !timerEl) {
+    showToast('Голосовая запись временно недоступна', 'error');
+    return;
+  }
   _voiceRecordingThreadKey = _chatActiveThreadKey;
   _voiceRecordingThread = _chatActiveThread;
   try {
@@ -1772,11 +1789,11 @@ async function _startVoiceRecording() {
     _voiceRecorder.ondataavailable = e => { if (e.data.size > 0) _voiceChunks.push(e.data); };
     _voiceRecorder.start();
     _voiceStartTs = Date.now();
-    document.getElementById('chat-input-bar').style.display = 'none';
-    document.getElementById('chat-voice-recording-bar').style.display = 'flex';
+    inputBar.style.display = 'none';
+    recordingBar.style.display = 'flex';
     _voiceTimerInterval = setInterval(() => {
       const sec = Math.floor((Date.now() - _voiceStartTs) / 1000);
-      document.getElementById('chat-voice-rec-timer').textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+      timerEl.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
     }, 200);
     hapticImpact('light');
   } catch (e) {
@@ -1787,8 +1804,10 @@ async function _startVoiceRecording() {
 function _stopVoiceRecording(send) {
   if (!_voiceRecorder) return;
   clearInterval(_voiceTimerInterval);
-  document.getElementById('chat-input-bar').style.display = 'flex';
-  document.getElementById('chat-voice-recording-bar').style.display = 'none';
+  const inputBar = document.getElementById('chat-input-bar');
+  const recordingBar = document.getElementById('chat-voice-recording-bar');
+  if (inputBar) inputBar.style.display = 'flex';
+  if (recordingBar) recordingBar.style.display = 'none';
 
   const recorder = _voiceRecorder;
   _voiceRecorder = null;
