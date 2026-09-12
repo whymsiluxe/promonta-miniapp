@@ -39,12 +39,24 @@ async function renderObjectInfoTab(objectId) {
       <div id="obj-info-team"><div class="js-skeleton-line" style="width:70%"></div><div class="js-skeleton-line" style="width:45%"></div></div>
       <div id="obj-info-shifts-today"></div>
     </div>` : '';
+  const ownerControlCenterHtml = currentRole === 'owner' ? `
+    <div class="obj-info-section obj-control-section">
+      <div class="obj-info-section-title-row">
+        <span class="obj-info-section-title" style="margin-bottom:0;">Центр управления</span>
+        <button type="button" class="obj-control-refresh-btn" id="obj-control-refresh-btn">Обновить</button>
+      </div>
+      <div id="obj-control-center" class="obj-control-center" aria-live="polite">
+        <div class="js-skeleton-line" style="width:72%"></div>
+        <div class="js-skeleton-line" style="width:48%"></div>
+      </div>
+    </div>` : '';
   // 09.09: skeleton-заглушка выше -- _renderObjTeamAndShifts грузит /api/objects +
   // /api/checkin параллельно (см. ниже), пока оба не ответят блок был пустым, потом
   // резко заполнялся -- owner описал это как "визуальный блик". Тот же .js-skeleton-line
   // паттерн, что уже используется в 11 других местах (23.07), не изобретаем новый.
 
   panel.innerHTML = `
+    ${ownerControlCenterHtml}
     ${photoUploadHtml}
     ${statusEditorHtml}
     ${teamShiftsHtml}
@@ -211,8 +223,176 @@ async function renderObjectInfoTab(objectId) {
     _renderObjDocsSummary(objectId),
     _loadObjNeeds(objectId),
   ];
-  if (currentRole === 'owner') promises.push(_renderObjTeamAndShifts(objectId));
+  if (currentRole === 'owner') {
+    promises.push(_renderObjControlCenter(objectId), _renderObjTeamAndShifts(objectId));
+  }
   await Promise.all(promises);
+}
+
+function _objInfoTaskStageLocal(status) {
+  if (typeof taskStage === 'function') return taskStage(status);
+  if (status === 'закрыто' || status === 'выдано' || status === 'отклонено') return 'done';
+  if (status === 'в работе' || status === 'принято' || status === 'заказано') return 'accepted';
+  return 'new';
+}
+
+function _objInfoTaskDueLabelLocal(dueAt) {
+  if (!dueAt) return '';
+  if (typeof _taskDueLabel === 'function') return _taskDueLabel(dueAt);
+  const date = new Date(Number(dueAt) * 1000);
+  return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function _objInfoStageStatusLocal(stage) {
+  const raw = stage?.['Статус'] || 'предстоит';
+  if (typeof _normalizeStageStatus === 'function') return _normalizeStageStatus(raw);
+  if (raw === 'готово' || raw === 'done' || raw === 'completed') return 'готово';
+  if (raw === 'в процессе' || raw === 'in_progress' || raw === 'blocked') return 'в процессе';
+  return 'предстоит';
+}
+
+function _objControlScrollTo(target) {
+  const idByTarget = {
+    team: 'obj-info-team-summary',
+    defects: 'obj-info-defects-summary',
+    docs: 'obj-info-docs-summary',
+    needs: 'obj-needs-list',
+  };
+  const el = document.getElementById(idByTarget[target] || target);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function _objControlOpenPlanTab() {
+  if (typeof _objDetailTabClick === 'function') {
+    _objDetailTabClick('stages');
+    return;
+  }
+  document.querySelector('#obj-detail-tabs [data-obj-tab="stages"]')?.click();
+}
+
+function _objControlTileHtml(tile) {
+  const attrs = [
+    tile.scroll ? `data-control-scroll="${esc(tile.scroll)}"` : '',
+    tile.tab ? `data-control-tab="${esc(tile.tab)}"` : '',
+  ].filter(Boolean).join(' ');
+  return `
+    <button type="button" class="obj-control-tile obj-control-tile-${esc(tile.tone || 'neutral')}" ${attrs}>
+      <span class="obj-control-tile-value">${esc(String(tile.value))}</span>
+      <span class="obj-control-tile-label">${esc(tile.label)}</span>
+      ${tile.sub ? `<span class="obj-control-tile-sub">${esc(tile.sub)}</span>` : ''}
+    </button>`;
+}
+
+async function _renderObjControlCenter(objectId) {
+  const wrap = document.getElementById('obj-control-center');
+  const refreshBtn = document.getElementById('obj-control-refresh-btn');
+  if (!wrap) return;
+  if (refreshBtn && !refreshBtn.dataset.bound) {
+    refreshBtn.dataset.bound = '1';
+    refreshBtn.addEventListener('click', () => _renderObjControlCenter(objectId));
+  }
+
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = 'Обновление…';
+  }
+  try {
+    const [shiftsData, tasksData, defectsData, docsData, stagesData] = await Promise.all([
+      api('/api/dashboard/shifts-today').catch(e => ({ _error: e.message || 'Ошибка смен' })),
+      api(`/api/tasks?object_id=${encodeURIComponent(objectId)}`).catch(e => ({ _error: e.message || 'Ошибка потребностей' })),
+      api(`/api/mangel?object_id=${encodeURIComponent(objectId)}`).catch(e => ({ _error: e.message || 'Ошибка дефектов' })),
+      api(`/api/objects/${objectId}/documents`).catch(e => ({ _error: e.message || 'Ошибка документов' })),
+      api(`/api/objects/${objectId}/stages`).catch(e => ({ _error: e.message || 'Ошибка плана' })),
+    ]);
+
+    const oid = String(objectId);
+    const forObject = item => String(item?.object_id || '') === oid;
+    const workingNow = (shiftsData.working_now || []).filter(forObject);
+    const notStarted = (shiftsData.not_started || []).filter(forObject);
+    const awaiting = (shiftsData.awaiting_response || []).filter(forObject);
+    const tasks = tasksData.tasks || [];
+    const activeNeeds = tasks.filter(t => _objInfoTaskStageLocal(t.status) !== 'done');
+    const overdueNeeds = activeNeeds.filter(t => t.due_at && Number(t.due_at) < Math.floor(Date.now() / 1000));
+    const defects = defectsData.tickets || [];
+    const openDefects = defects.filter(t => t.status !== 'behoben' && t.status !== 'rejected');
+    const docs = docsData.documents || [];
+    const stages = stagesData.stages || [];
+    const doneStages = stages.filter(s => _objInfoStageStatusLocal(s) === 'готово').length;
+    const currentStage = stages.find(s => _objInfoStageStatusLocal(s) === 'в процессе')
+      || stages.find(s => _objInfoStageStatusLocal(s) !== 'готово');
+    const planValue = stages.length ? `${doneStages}/${stages.length}` : '0';
+    const planSub = currentStage ? (currentStage['Название этапа'] || '') : (stages.length ? 'готово' : 'нет плана');
+
+    const errorNotes = [shiftsData, tasksData, defectsData, docsData, stagesData]
+      .filter(d => d && d._error)
+      .map(d => d._error);
+    const tiles = [
+      { value: workingNow.length, label: 'На смене', sub: workingNow[0]?.worker_name || '', tone: workingNow.length ? 'ok' : 'muted', scroll: 'team' },
+      { value: notStarted.length, label: 'Не начали', sub: awaiting.length ? `ждут ответа: ${awaiting.length}` : '', tone: notStarted.length ? 'warn' : 'muted', scroll: 'team' },
+      { value: overdueNeeds.length, label: 'Просрочено', sub: activeNeeds.length ? `активно: ${activeNeeds.length}` : '', tone: overdueNeeds.length ? 'danger' : 'muted', scroll: 'needs' },
+      { value: openDefects.length, label: 'Дефекты', sub: defects.length ? `всего: ${defects.length}` : '', tone: openDefects.length ? 'danger' : 'muted', scroll: 'defects' },
+      { value: docs.length, label: 'Документы', sub: docs.length ? 'прикреплены' : 'пусто', tone: docs.length ? 'ok' : 'muted', scroll: 'docs' },
+      { value: planValue, label: 'План', sub: planSub, tone: stages.length && doneStages < stages.length ? 'accent' : 'muted', tab: 'stages' },
+    ];
+
+    const rows = [];
+    if (overdueNeeds.length) {
+      overdueNeeds.slice(0, 2).forEach(t => rows.push(`
+        <button type="button" class="obj-control-alert-row obj-control-alert-danger" data-control-scroll="needs">
+          <span class="obj-control-alert-title">${esc(t.title || 'Потребность')}</span>
+          <span class="obj-control-alert-meta">Просрочено: ${esc(_objInfoTaskDueLabelLocal(t.due_at))}</span>
+        </button>`));
+    }
+    if (notStarted.length) {
+      rows.push(`
+        <button type="button" class="obj-control-alert-row obj-control-alert-warn" data-control-scroll="team">
+          <span class="obj-control-alert-title">Не начали смену</span>
+          <span class="obj-control-alert-meta">${esc(notStarted.slice(0, 3).map(w => w.worker_name).join(', '))}${notStarted.length > 3 ? ` +${notStarted.length - 3}` : ''}</span>
+        </button>`);
+    }
+    if (awaiting.length) {
+      rows.push(`
+        <button type="button" class="obj-control-alert-row obj-control-alert-warn" data-control-scroll="team">
+          <span class="obj-control-alert-title">Ждут подтверждения</span>
+          <span class="obj-control-alert-meta">${esc(awaiting.slice(0, 3).map(w => w.worker_name).join(', '))}${awaiting.length > 3 ? ` +${awaiting.length - 3}` : ''}</span>
+        </button>`);
+    }
+    if (openDefects.length) {
+      rows.push(`
+        <button type="button" class="obj-control-alert-row obj-control-alert-danger" data-control-scroll="defects">
+          <span class="obj-control-alert-title">Открытые дефекты</span>
+          <span class="obj-control-alert-meta">${esc(openDefects.slice(0, 2).map(t => t.description || 'Дефект').join(' · '))}${openDefects.length > 2 ? ` +${openDefects.length - 2}` : ''}</span>
+        </button>`);
+    }
+
+    wrap.innerHTML = `
+      <div class="obj-control-grid">${tiles.map(_objControlTileHtml).join('')}</div>
+      <div class="obj-control-alert-list">
+        ${rows.length ? rows.join('') : '<div class="obj-control-ok-row">Критичных сигналов по объекту нет</div>'}
+      </div>
+      ${errorNotes.length ? `<div class="obj-control-partial-error">Часть данных не загрузилась: ${esc(errorNotes.join(', '))}</div>` : ''}
+    `;
+
+    wrap.querySelectorAll('[data-control-scroll]').forEach(el => {
+      el.addEventListener('click', () => _objControlScrollTo(el.dataset.controlScroll));
+    });
+    wrap.querySelectorAll('[data-control-tab="stages"]').forEach(el => {
+      el.addEventListener('click', _objControlOpenPlanTab);
+    });
+  } catch (e) {
+    wrap.innerHTML = `<div class="obj-info-empty-row"><span>Ошибка: ${esc(e.message)}</span></div>`;
+  } finally {
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = 'Обновить';
+    }
+  }
+}
+
+function _refreshObjControlCenterIfVisible() {
+  if (currentRole === 'owner' && typeof _objDetailCurrentId !== 'undefined' && _objDetailCurrentId && document.getElementById('obj-control-center')) {
+    _renderObjControlCenter(_objDetailCurrentId);
+  }
 }
 
 // ── Команда и смены (owner-only, B6, 27.07; переработано 01.08 под единый каталог
@@ -893,6 +1073,7 @@ function _refreshObjInfoDefects() {
   if (typeof _objDetailCurrentId !== 'undefined' && _objDetailCurrentId &&
       document.getElementById('obj-info-defects-summary')) {
     _renderObjDefectsSummary(_objDetailCurrentId);
+    _refreshObjControlCenterIfVisible();
   }
 }
 
@@ -995,6 +1176,7 @@ async function _uploadObjInfoDoc(objectId, file) {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
     hapticImpact('light');
     await _loadObjInfoDocs(objectId);
+    _refreshObjControlCenterIfVisible();
   } catch (e) {
     showToast('Ошибка загрузки: ' + e.message, 'error');
   } finally {
@@ -1148,6 +1330,7 @@ async function _loadObjNeeds(objectId) {
           await api(`/api/tasks/${btn.dataset.needAdvance}`, { method: 'PATCH', body: JSON.stringify({ status: btn.dataset.nextStatus }) });
           hapticImpact('light');
           await _loadObjNeeds(objectId);
+          _refreshObjControlCenterIfVisible();
         } catch (e) {
           showToast('Ошибка: ' + e.message, 'error');
           btn.disabled = false;
@@ -1172,6 +1355,7 @@ async function _loadObjNeeds(objectId) {
 function _refreshObjInfoNeeds() {
   if (typeof _objDetailCurrentId !== 'undefined' && _objDetailCurrentId && document.getElementById('obj-needs-list')) {
     _loadObjNeeds(_objDetailCurrentId);
+    _refreshObjControlCenterIfVisible();
   }
 }
 

@@ -1303,6 +1303,91 @@ header h1 {
 .obj-info-actions-row .obj-info-empty-action { flex: 1; text-align: center; background: var(--bg-card); border-radius: var(--radius-sm); padding: 0.55rem; }
 .obj-info-section-title-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem; }
 .obj-info-count-badge { font-size: 0.8rem; color: var(--text-light); font-weight: 500; }
+.obj-control-section { padding-top: 0.2rem; }
+.obj-control-center { display: flex; flex-direction: column; gap: 0.55rem; }
+.obj-control-refresh-btn {
+  border: none;
+  background: none;
+  color: var(--c-accent, var(--accent));
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.25rem 0.35rem;
+}
+.obj-control-refresh-btn:disabled { opacity: 0.55; cursor: default; }
+.obj-control-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.obj-control-tile {
+  min-width: 0;
+  min-height: 74px;
+  padding: 0.55rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.12rem;
+}
+.obj-control-tile:active { background: var(--bg-card-raised); }
+.obj-control-tile-value { font-size: 1.2rem; line-height: 1; font-weight: 750; color: var(--text-main); }
+.obj-control-tile-label { font-size: 0.76rem; line-height: 1.15; color: var(--text-main); font-weight: 650; }
+.obj-control-tile-sub {
+  min-height: 0.9rem;
+  font-size: 0.68rem;
+  line-height: 1.15;
+  color: var(--text-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.obj-control-tile-danger { border-color: color-mix(in srgb, var(--red, #c0392b) 38%, var(--border-color)); background: color-mix(in srgb, var(--red, #c0392b) 7%, var(--bg-card)); }
+.obj-control-tile-danger .obj-control-tile-value { color: var(--red, #c0392b); }
+.obj-control-tile-warn { border-color: color-mix(in srgb, var(--accent-gold, var(--accent)) 42%, var(--border-color)); background: color-mix(in srgb, var(--accent-gold, var(--accent)) 9%, var(--bg-card)); }
+.obj-control-tile-warn .obj-control-tile-value { color: var(--accent-gold, var(--accent)); }
+.obj-control-tile-ok { border-color: color-mix(in srgb, var(--green, #2f8f5b) 34%, var(--border-color)); }
+.obj-control-tile-ok .obj-control-tile-value { color: var(--green, #2f8f5b); }
+.obj-control-tile-accent .obj-control-tile-value { color: var(--c-accent, var(--accent)); }
+.obj-control-tile-muted .obj-control-tile-value { color: var(--text-light); }
+.obj-control-alert-list { display: flex; flex-direction: column; gap: 0.35rem; }
+.obj-control-alert-row {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-main);
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  cursor: pointer;
+}
+.obj-control-alert-row:active { background: var(--bg-card-raised); }
+.obj-control-alert-danger { border-color: color-mix(in srgb, var(--red, #c0392b) 34%, var(--border-color)); }
+.obj-control-alert-warn { border-color: color-mix(in srgb, var(--accent-gold, var(--accent)) 38%, var(--border-color)); }
+.obj-control-alert-title { font-size: 0.86rem; font-weight: 650; line-height: 1.2; }
+.obj-control-alert-meta { font-size: 0.76rem; color: var(--text-light); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obj-control-ok-row,
+.obj-control-partial-error {
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-light);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+.obj-control-partial-error { color: var(--red, #c0392b); }
+@media (max-width: 390px) {
+  .obj-control-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .obj-info-team-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
 .obj-info-team-chip { width: 36px; height: 36px; border-radius: 50%; background: var(--bg-card-raised); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; color: var(--text-main); position: relative; }
 .obj-info-team-chip-pending { opacity: 0.75; border: 1.5px dashed color-mix(in srgb, var(--accent-gold, var(--primary)) 50%, transparent); }
