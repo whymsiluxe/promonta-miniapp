@@ -404,6 +404,7 @@ function renderPhotoItem(p) {
       ${imgs}
       ${fileCount > 1 ? `<span class="feed-photo-count-badge">1/${fileCount}</span>` : ''}
       ${dots}
+      <div class="feed-photo-img-error" aria-hidden="true">Фото недоступно</div>
     </div>
     <div class="feed-photo-action-row">
       <button class="feed-photo-comment-action" type="button" onclick="event.stopPropagation(); openPhotoComments('${p.id}', ${fileCount})" aria-label="Комментарии">

@@ -4035,6 +4035,12 @@ def list_feed_photos(user: dict = Depends(get_current_user)):
         # старые JSON-записи на диске (не нужно, чтение уже покрывает оба случая).
         if 'files' not in p:
             p['files'] = [p['file']] if p.get('file') else []
+        # 12.09: старые/stale записи могли ссылаться на уже отсутствующие файлы
+        # (например после ручной чистки storage). Не показываем пользователю битой
+        # карточки и не провоцируем каскад 404 /api/feed/photos/{id}/file.
+        p['files'] = [fname for fname in p.get('files', []) if os.path.exists(os.path.join(PHOTO_DIR, fname))]
+        if not p['files']:
+            continue
         photos.append(p)
     return {"photos": photos}
 

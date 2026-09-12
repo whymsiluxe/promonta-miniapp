@@ -233,7 +233,12 @@ async function authImg(imgEl, path) {
     const newUrl = await authImageUrl(path);
     _revokeIfBlobUrl(imgEl.src);
     imgEl.src = newUrl;
-  } catch (e) {}
+    imgEl.classList.remove('auth-img-error');
+    imgEl.closest?.('.feed-photo-img-wrap')?.classList.remove('feed-photo-img-wrap-error');
+  } catch (e) {
+    imgEl.classList.add('auth-img-error');
+    imgEl.closest?.('.feed-photo-img-wrap')?.classList.add('feed-photo-img-wrap-error');
+  }
 }
 
 async function authBgImage(el, path) {

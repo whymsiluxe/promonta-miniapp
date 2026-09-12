@@ -1991,6 +1991,20 @@ header h1 {
 .feed-photo-post .feed-photo-img-wrap::-webkit-scrollbar { display: none; }
 .feed-photo-count-badge { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.65); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 999px; z-index: 2; pointer-events: none; }
 .feed-photo-post img { width: 100%; height: 100%; object-fit: cover; display: block; flex-shrink: 0; scroll-snap-align: start; }
+.feed-photo-img-error {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-card) 82%, #000);
+  color: var(--text-light);
+  font-size: 0.86rem;
+  font-weight: 700;
+  z-index: 1;
+}
+.feed-photo-img-wrap-error .feed-photo-img-error { display: flex; }
+.feed-photo-img-wrap-error img.auth-img-error { opacity: 0; }
 .feed-photo-item-dots { position: absolute; bottom: 8px; left: 0; right: 0; display: flex; justify-content: center; gap: 4px; z-index: 2; pointer-events: none; }
 .feed-photo-item-dots span { width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,0.5); }
 .feed-photo-item-dots span.active { background: #fff; }
