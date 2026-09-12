@@ -793,13 +793,31 @@ async function _sendChatAttachment(file) {
   }
 }
 
-async function _sendCurrentLocationMessage() {
+function _setChatLocationSending(isSending) {
   const btn = document.getElementById('chat-location-btn');
+  if (!btn) return;
+  btn.disabled = isSending;
+  btn.classList.toggle('chat-attach-btn-loading', isSending);
+  btn.setAttribute('aria-busy', isSending ? 'true' : 'false');
+  btn.setAttribute('aria-label', isSending ? 'Получаю геолокацию' : 'Отправить геолокацию');
+  btn.title = isSending ? 'Получаю геолокацию' : 'Отправить геолокацию';
+}
+
+function _chatLocationErrorMessage(err) {
+  if (err && typeof err.code === 'number') {
+    if (err.code === 1) return 'разреши доступ к геолокации';
+    if (err.code === 2) return 'не удалось определить координаты';
+    if (err.code === 3) return 'геолокация не ответила за 10 секунд';
+  }
+  return err && err.message ? err.message : 'не удалось получить координаты';
+}
+
+async function _sendCurrentLocationMessage() {
   if (!navigator.geolocation) {
     showToast('Геолокация не поддерживается', 'error');
     return;
   }
-  if (btn) btn.disabled = true;
+  _setChatLocationSending(true);
   try {
     const pos = await new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
@@ -825,10 +843,9 @@ async function _sendCurrentLocationMessage() {
     _loadMyChatThreads();
     hapticImpact('light');
   } catch (e) {
-    const msg = e && e.message ? e.message : 'не удалось получить координаты';
-    showToast('Геолокация не отправлена: ' + msg, 'error');
+    showToast('Геолокация не отправлена: ' + _chatLocationErrorMessage(e), 'error');
   } finally {
-    if (btn) btn.disabled = false;
+    _setChatLocationSending(false);
   }
 }
 

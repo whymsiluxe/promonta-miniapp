@@ -4538,6 +4538,13 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
   background: var(--bg-light); border: 1px solid var(--border-color);
   font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;
 }
+.chat-attach-btn-loading { position: relative; color: var(--accent); }
+.chat-attach-btn-loading svg { opacity: 0.18; }
+.chat-attach-btn-loading::after {
+  content: ""; position: absolute; width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid currentColor; border-top-color: transparent; animation: chatSpin 0.75s linear infinite;
+}
+@keyframes chatSpin { to { transform: rotate(360deg); } }
 /* ── Toast (10.39) — заменяет alert() для некритичных ошибок/уведомлений ── */
 #app-toast { position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%) translateY(20px); width: 92%; max-width: 420px; padding: 1rem 1.25rem; border-radius: var(--radius-lg); background: rgba(20,20,20,0.97); color: #fff; font-size: 1.05rem; line-height: 1.4; text-align: center; z-index: 99999; opacity: 0; pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
 #app-toast.app-toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
