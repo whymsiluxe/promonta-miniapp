@@ -10,8 +10,15 @@ function _checkinSessionKey(objectId) {
 }
 
 function _getActiveCheckinSession(objectId) {
-  const raw = localStorage.getItem(_checkinSessionKey(objectId));
-  return raw ? JSON.parse(raw) : null;
+  const key = _checkinSessionKey(objectId);
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    localStorage.removeItem(key);
+    return null;
+  }
 }
 
 function _setActiveCheckinSession(objectId, session) {
