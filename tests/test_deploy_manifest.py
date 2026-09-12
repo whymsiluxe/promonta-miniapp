@@ -49,6 +49,10 @@ class ManifestCompletenessTests(unittest.TestCase):
                       "daily_plan_lib.py missing from BACKEND_PY_LIBS in manifest.sh "
                       "(P0 finding: main.py imports it but it was not being deployed)")
 
+    def test_system_status_in_manifest(self):
+        self.assertIn('system_status.py', self.py_libs,
+                      "system_status.py is imported by main.py and must be deployed with backend runtime")
+
     def test_all_manifest_py_libs_exist(self):
         for f in self.py_libs:
             path = os.path.join(BACKEND_DIR, f)

@@ -20,6 +20,7 @@ BACKEND_PY_LIBS=(
     "profile_skills.py"
     "assignment_matching.py"
     "daily_plan_lib.py"
+    "system_status.py"
 )
 BACKEND_JS_FILES=(
     "angebot_free.js"

@@ -128,11 +128,13 @@ try:
     from . import profile_skills as pskills
     from . import assignment_matching as amatch
     from . import daily_plan_lib as dpl
+    from . import system_status
 except ImportError:
     import work_types as wt  # noqa: E402
     import profile_skills as pskills  # noqa: E402
     import assignment_matching as amatch  # noqa: E402
     import daily_plan_lib as dpl  # noqa: E402
+    import system_status  # noqa: E402
 
 
 BOT_TOKEN = os.environ['BOT_TOKEN']
@@ -868,14 +870,7 @@ def revoke_role(target_user_id: str, user: dict = Depends(get_current_user), _: 
 
 
 def _read_app_version() -> dict:
-    if not os.path.isfile(APP_VERSION_FILE):
-        return {"version": "unknown", "commit": "unknown"}
-    try:
-        with open(APP_VERSION_FILE, encoding='utf-8') as f:
-            data = json.load(f)
-        return {"version": data.get('version', 'unknown'), "commit": data.get('commit', 'unknown')}
-    except (json.JSONDecodeError, OSError):
-        return {"version": "unknown", "commit": "unknown"}
+    return system_status.read_app_version(APP_VERSION_FILE)
 
 
 @app.get("/api/health")
@@ -884,14 +879,7 @@ def health():
     (кроме чтения маленького локального VERSION-файла) -- безопасно дёргать часто
     из мониторинга. Никаких токенов/секретов/путей к credentials/персональных
     данных в ответе (30.07, Release-аудит Этап 6)."""
-    version_info = _read_app_version()
-    return {
-        "status": "ok",
-        "service": "promonta-miniapp",
-        "version": version_info["version"],
-        "commit": version_info["commit"],
-        "time": datetime.utcnow().isoformat() + 'Z',
-    }
+    return system_status.health_response(APP_VERSION_FILE)
 
 
 @app.get("/api/health/ready")
@@ -901,53 +889,14 @@ def health_ready(user: dict = Depends(get_current_user), _: None = Depends(requi
     "процесс жив". Каждая проверка дешёвая (stat/os.access), НЕ дорогой сетевой
     запрос к Google Sheets на каждый вызов -- иначе readiness сам стал бы точкой
     перегрузки при частом опросе мониторингом."""
-    checks = {}
-
-    # storage: базовые директории для загрузок существуют и доступны для записи.
-    storage_dirs = [
-        ('object_photos', OBJECT_PHOTO_DIR),
-        ('chat_attachments', CHAT_ATTACH_DIR),
-    ]
-    storage_ok = True
-    for name, path in storage_dirs:
-        if not (os.path.isdir(path) and os.access(path, os.W_OK)):
-            storage_ok = False
-            break
-    checks['storage'] = 'ok' if storage_ok else 'error'
-
-    # uploads: реальная проверка записи -- временный файл создаётся и сразу удаляется
-    # (не просто os.access, который может соврать про эффективные права на некоторых ФС).
-    try:
-        probe_path = os.path.join(OBJECT_PHOTO_DIR, f'.health-probe-{os.getpid()}')
-        with open(probe_path, 'wb') as f:
-            f.write(b'ok')
-        os.remove(probe_path)
-        checks['uploads'] = 'ok'
-    except OSError:
-        checks['uploads'] = 'error'
-
-    # tools_lib.py -- наличие рядом с main.py (Release-аудит: изолированный
-    # importlib-loader должен находить файл по TOOLS_LIB_PATH).
-    checks['tools_lib'] = 'ok' if os.path.isfile(TOOLS_LIB_PATH) else 'missing'
-    checks['mangel_lib'] = 'ok' if os.path.isfile(MANGEL_LIB_PATH) else 'missing'
-    # 01.08 (доп.раунд П1): work_types.py/profile_skills.py/assignment_matching.py --
-    # если import упал в проде (см. try/except в шапке файла), main.py вообще не
-    # стартует и этот эндпоинт недостижим -- но если файлы отсутствуют РЯДОМ с
-    # main.py (deploy.sh забыл их скопировать), это ловится тут же, до того как
-    # реальный запрос на /api/work-types упадёт 500-кой.
-    checks['work_types'] = 'ok' if os.path.isfile(os.path.join(BACKEND_DIR, 'work_types.py')) else 'missing'
-    checks['profile_skills'] = 'ok' if os.path.isfile(os.path.join(BACKEND_DIR, 'profile_skills.py')) else 'missing'
-    checks['assignment_matching'] = 'ok' if os.path.isfile(os.path.join(BACKEND_DIR, 'assignment_matching.py')) else 'missing'
-
-    # runtime JSON -- ROLES_FILE обязателен для работы whitelist-авторизации,
-    # его отсутствие -- реальный readiness-блокер (не просто "пусто").
-    checks['roles_file'] = 'ok' if os.path.isfile(ROLES_FILE) else 'missing'
-
-    overall_ok = all(v == 'ok' for v in checks.values())
-    return {
-        "status": "ready" if overall_ok else "degraded",
-        "checks": checks,
-    }
+    return system_status.readiness_response(
+        object_photo_dir=OBJECT_PHOTO_DIR,
+        chat_attach_dir=CHAT_ATTACH_DIR,
+        tools_lib_path=TOOLS_LIB_PATH,
+        mangel_lib_path=MANGEL_LIB_PATH,
+        backend_dir=BACKEND_DIR,
+        roles_file=ROLES_FILE,
+    )
 
 
 @app.get("/api/diagnostics")
@@ -955,83 +904,21 @@ def diagnostics(_: None = Depends(require_owner)):
     """Owner-only system status snapshot — all checks are cheap (file I/O + in-memory cache
     inspection only, no live Sheets or Drive API calls). Designed so a "данные не грузятся"
     report can be diagnosed in under a minute without touching prod data."""
-    now = time.time()
-    result = {}
-
-    # ── Backend ──────────────────────────────────────────────────────────────
-    data_root_ok = os.path.isdir(DATA_ROOT) and os.access(DATA_ROOT, os.R_OK)
-    roles_ok = os.path.isfile(ROLES_FILE)
-    result['backend'] = 'ok' if (data_root_ok and roles_ok) else 'degraded'
-
-    # ── Sheets ────────────────────────────────────────────────────────────────
-    # Report based on the in-memory cache, not a live API call (fast, cheap).
-    # _sheets_cache maps tab_name → (timestamp, rows); the freshest entry tells us
-    # when Sheets was last successfully read since this process started.
-    sheets_entries = [(ts, tab) for tab, (ts, _) in _sheets_cache.items()]
-    if sheets_entries:
-        last_ts, _ = max(sheets_entries, key=lambda x: x[0])
-        age = int(now - last_ts)
-        result['sheets'] = 'ok' if age < SHEETS_CACHE_TTL * 4 else 'stale'
-        result['sheets_last_read_s'] = age
-    else:
-        result['sheets'] = 'not_loaded'
-        result['sheets_last_read_s'] = None
-
-    # ── Objects ───────────────────────────────────────────────────────────────
-    obj_cache = _sheets_cache.get('Объекты')
-    if obj_cache:
-        _, rows = obj_cache
-        obj_count = max(0, len(rows) - 1)  # subtract header row
-        result['objects'] = f'{obj_count} objects'
-    else:
-        result['objects'] = 'not_loaded'
-
-    # ── Feed ──────────────────────────────────────────────────────────────────
-    feed_ok = os.path.isfile(os.path.join(DATA_ROOT, 'activity_alerts.json'))
-    news_ok = os.path.isfile(NEWS_FEED_FILE)
-    result['feed'] = ('ok' if feed_ok else 'missing_alerts') + ('' if news_ok else '+news_missing')
-    if result['feed'] == 'ok':
-        result['feed'] = 'ok'
-
-    # ── Chat ──────────────────────────────────────────────────────────────────
-    result['chat'] = 'ok' if os.path.isfile(CHAT_FILE) else 'missing'
-
-    # ── DailyPlan-sync ────────────────────────────────────────────────────────
-    sync_state = _safe_load_json(PLAN_SYNC_STATE_FILE, {})
-    if sync_state.get('last_sync_at'):
-        sync_age = int(now - sync_state['last_sync_at'])
-        result['dailyplan_sync'] = 'ok' if sync_age < 3600 else 'stale'
-        result['dailyplan_sync_age_s'] = sync_age
-    elif os.path.isfile(PLAN_SYNC_STATE_FILE):
-        result['dailyplan_sync'] = 'file_exists_no_sync'
-        result['dailyplan_sync_age_s'] = None
-    else:
-        result['dailyplan_sync'] = 'not_configured'
-        result['dailyplan_sync_age_s'] = None
-
-    # ── Finish outbox (DailyPlan execution projection) ──────────────────────────
-    _dead_letter_count = _outbox_dead_letter_count()
-    result['finish_outbox'] = 'red' if _dead_letter_count > 0 else 'ok'
-    result['finish_outbox_dead_letter_count'] = _dead_letter_count
-
-    # ── Drive / Contracts ─────────────────────────────────────────────────────
-    result['drive_contracts'] = 'configured' if CONTRACTS_DRIVE_FOLDER_ID else 'not_configured'
-    result['contracts_ingested'] = len(
-        _safe_load_json(CONTRACT_INGEST_STATE_FILE, {}).get('contracts', {}) if os.path.isfile(CONTRACT_INGEST_STATE_FILE) else {}
+    return system_status.diagnostics_response(
+        data_root=DATA_ROOT,
+        roles_file=ROLES_FILE,
+        sheets_cache=_sheets_cache,
+        sheets_cache_ttl=SHEETS_CACHE_TTL,
+        activity_alerts_file=ACTIVITY_ALERTS_FILE,
+        news_feed_file=NEWS_FEED_FILE,
+        chat_file=CHAT_FILE,
+        plan_sync_state_file=PLAN_SYNC_STATE_FILE,
+        contract_ingest_state_file=CONTRACT_INGEST_STATE_FILE,
+        contracts_drive_folder_id=CONTRACTS_DRIVE_FOLDER_ID,
+        app_version_file=APP_VERSION_FILE,
+        safe_load_json=_safe_load_json,
+        outbox_dead_letter_count=_outbox_dead_letter_count,
     )
-
-    # ── Build SHA ─────────────────────────────────────────────────────────────
-    version_info = _read_app_version()
-    result['build_sha'] = version_info['commit']
-    result['build_version'] = version_info['version']
-
-    overall = 'ok' if all(
-        v in ('ok', 'configured', 'not_configured')
-        for k, v in result.items()
-        if k in ('backend', 'sheets', 'chat')
-    ) else 'degraded'
-    result['overall'] = overall
-    return result
 
 
 @app.get("/api/me")
