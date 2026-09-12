@@ -10,12 +10,14 @@ let _fwStep = 1;
 let _fwSessionId = null;
 let _fwObjectId = null;
 let _fwPhotos = []; // File[]
+let _fwPhotoUrls = new WeakMap();
 let _fwWorkSummary = '';
 let _fwExtraWorks = []; // [{description, zone, time_estimate, needs_approval}]
 let _fwNeeds = []; // [{category, description}]
 let _fwDefects = []; // [{description}]
 let _fwPauseMinutes = 30;
 let _fwFinishGeo = null; // {lat, lon}
+let _fwOverlayUnregister = null;
 // 03.08 (ТЗ Задача 1): персистентный на весь wizard-flow idempotency key -- раньше
 // генерировался заново на КАЖДЫЙ вызов _fwSubmitFinish(), так что retry после сетевой
 // ошибки/таймаута слал НОВЫЙ ключ и backend не мог распознать повтор того же запроса.
@@ -28,6 +30,7 @@ let _fwDailyPlanItems = []; // plan.items from window._todayPlanState
 let _fwItemResults = []; // [{item_id, status, actual_quantity, unit, reason_code, comment}]
 let _fwTomorrowIssues = []; // selected issue keys
 let _fwTomorrowComment = '';
+let _fwExtraDraftOpen = false;
 
 const FW_NEED_CATEGORIES = [
   { key: 'materials', label: 'Материалы' },
@@ -66,7 +69,30 @@ function _fwNavBack() { _fwGoToStep(_fwStep - 1); }
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────────
 
+function _fwGetPhotoUrl(file) {
+  let url = _fwPhotoUrls.get(file);
+  if (!url) {
+    url = URL.createObjectURL(file);
+    _fwPhotoUrls.set(file, url);
+  }
+  return url;
+}
+
+function _fwRevokePhoto(file) {
+  const url = _fwPhotoUrls.get(file);
+  if (!url) return;
+  URL.revokeObjectURL(url);
+  _fwPhotoUrls.delete(file);
+}
+
+function _fwClearPhotoUrls() {
+  _fwPhotos.forEach(_fwRevokePhoto);
+  _fwPhotoUrls = new WeakMap();
+}
+
 function openFinishShiftWizard(sessionId, objectId) {
+  _fwStopVoiceRecording();
+  _fwClearPhotoUrls();
   _fwStep = 1;
   _fwSessionId = sessionId;
   _fwObjectId = objectId;
@@ -89,6 +115,7 @@ function openFinishShiftWizard(sessionId, objectId) {
   _fwItemResults = [];
   _fwTomorrowIssues = [];
   _fwTomorrowComment = '';
+  _fwExtraDraftOpen = false;
   const planState = window._todayPlanState;
   if (planState?.has_plan && planState.acceptance && planState.plan?.items?.length) {
     _fwDailyPlanItems = planState.plan.items;
@@ -97,12 +124,36 @@ function openFinishShiftWizard(sessionId, objectId) {
   }
 
   document.getElementById('finish-wizard-modal').style.display = 'flex';
+  if (typeof NavigationManager !== 'undefined' && !_fwOverlayUnregister) {
+    _fwOverlayUnregister = NavigationManager.registerOverlay(() => _fwCloseWizardInternal());
+  }
   _fwRenderStep();
+}
+
+function _fwCloseWizardInternal() {
+  _fwStopVoiceRecording();
+  _fwClearPhotoUrls();
+  document.getElementById('finish-wizard-modal').style.display = 'none';
+  _fwOverlayUnregister = null;
 }
 
 function _fwCloseWizard() {
   if (_fwStep > 1 && !confirm('Прервать завершение смены? Введённые данные будут потеряны.')) return;
-  document.getElementById('finish-wizard-modal').style.display = 'none';
+  if (_fwOverlayUnregister) {
+    const unregister = _fwOverlayUnregister;
+    _fwOverlayUnregister = null;
+    unregister();
+  }
+  _fwCloseWizardInternal();
+}
+
+function _fwCloseWizardAfterSuccess() {
+  if (_fwOverlayUnregister) {
+    const unregister = _fwOverlayUnregister;
+    _fwOverlayUnregister = null;
+    unregister();
+  }
+  _fwCloseWizardInternal();
 }
 
 function _fwGoToStep(n) {
@@ -148,30 +199,49 @@ function _fwRenderStep() {
 function _fwRenderStep1() {
   const thumbs = _fwPhotos.map((f, i) => `
     <div class="fw-photo-thumb">
-      <img src="${URL.createObjectURL(f)}" alt="фото ${i + 1}">
+      <img src="${_fwGetPhotoUrl(f)}" alt="фото ${i + 1}">
       <button class="fw-photo-remove" data-idx="${i}" type="button">✕</button>
     </div>`).join('');
   const enough = _fwPhotos.length >= 2;
+  const remaining = Math.max(0, 2 - _fwPhotos.length);
   return `
     <div class="fw-hint">Сделай минимум 2 фото с разных ракурсов. Лучше 3-5 фото.</div>
+    <div class="fw-photo-requirement${enough ? ' fw-photo-requirement-ok' : ''}">
+      ${enough ? 'Минимум выполнен' : `Нужно ещё ${remaining} фото`}
+    </div>
     <div class="fw-photo-grid">${thumbs}</div>
-    <button class="fw-add-photo-btn" id="fw-add-photo-btn" type="button">+ Добавить фото</button>
-    <input type="file" id="fw-photo-input" accept="image/*" capture="environment" multiple style="display:none;">
-    <button class="submit-btn fw-next-btn" id="fw-next-1" type="button" ${enough ? '' : 'disabled'}>Далее (${_fwPhotos.length}/2 фото минимум)</button>
+    <div class="fw-photo-actions">
+      <button class="fw-add-photo-btn" id="fw-camera-btn" type="button">Снять фото</button>
+      <button class="fw-add-photo-btn" id="fw-gallery-btn" type="button">Из галереи</button>
+    </div>
+    <input type="file" id="fw-camera-input" accept="image/*" capture="environment" style="display:none;">
+    <input type="file" id="fw-gallery-input" accept="image/*" multiple style="display:none;">
+    <button class="submit-btn fw-next-btn" id="fw-next-1" type="button" ${enough ? '' : 'disabled'}>${enough ? 'Далее' : `Нужно ещё ${remaining} фото`}</button>
   `;
 }
 
 function _fwWireStep1() {
-  document.getElementById('fw-add-photo-btn')?.addEventListener('click', () => {
-    document.getElementById('fw-photo-input')?.click();
-  });
-  document.getElementById('fw-photo-input')?.addEventListener('change', e => {
-    _fwPhotos = _fwPhotos.concat(Array.from(e.target.files)).slice(0, 6);
+  const appendPhotos = files => {
+    if (!files.length) return;
+    _fwPhotos = _fwPhotos.concat(Array.from(files)).slice(0, 6);
     _fwRenderStep();
+  };
+  document.getElementById('fw-camera-btn')?.addEventListener('click', () => {
+    document.getElementById('fw-camera-input')?.click();
+  });
+  document.getElementById('fw-gallery-btn')?.addEventListener('click', () => {
+    document.getElementById('fw-gallery-input')?.click();
+  });
+  document.getElementById('fw-camera-input')?.addEventListener('change', e => {
+    appendPhotos(e.target.files);
+  });
+  document.getElementById('fw-gallery-input')?.addEventListener('change', e => {
+    appendPhotos(e.target.files);
   });
   document.querySelectorAll('.fw-photo-remove').forEach(btn => {
     btn.addEventListener('click', () => {
-      _fwPhotos.splice(Number(btn.dataset.idx), 1);
+      const [removed] = _fwPhotos.splice(Number(btn.dataset.idx), 1);
+      if (removed) _fwRevokePhoto(removed);
       _fwRenderStep();
     });
   });
@@ -183,28 +253,44 @@ function _fwWireStep1() {
 
 // ---------- Step 2: Что сделано (voice) ----------
 function _fwRenderStep2() {
+  const canContinue = !!_fwWorkSummary.trim();
   return `
-    <div class="fw-hint">Опиши, что сделано за смену. Текстом или голосом.</div>
+    <div class="fw-hint">Опиши, что сделано за смену. Можно надиктовать голосом и поправить текст.</div>
     <textarea id="fw-work-summary" class="mangel-textarea" rows="4" placeholder="Например: оштукатурили стену в комнате 2, установили 3 окна">${esc(_fwWorkSummary)}</textarea>
     ${_fwVoiceButtonHtml('fw-voice-summary')}
+    <div class="fw-field-error" id="fw-summary-error" style="display:none;">Заполни короткий отчёт по смене</div>
     <div class="fw-nav-row">
       <button class="fw-back-btn" id="fw-back-2" type="button">← Назад</button>
-      <button class="submit-btn fw-next-btn" id="fw-next-2" type="button">Далее</button>
+      <button class="submit-btn fw-next-btn" id="fw-next-2" type="button" ${canContinue ? '' : 'disabled'}>Далее</button>
     </div>
   `;
 }
 
 function _fwWireStep2() {
   const textarea = document.getElementById('fw-work-summary');
-  textarea?.addEventListener('input', () => { _fwWorkSummary = textarea.value; });
+  const nextBtn = document.getElementById('fw-next-2');
+  const errorEl = document.getElementById('fw-summary-error');
+  const syncSummary = () => {
+    _fwWorkSummary = textarea.value;
+    const ok = !!_fwWorkSummary.trim();
+    if (nextBtn) nextBtn.disabled = !ok;
+    if (errorEl && ok) errorEl.style.display = 'none';
+  };
+  textarea?.addEventListener('input', syncSummary);
   _fwWireVoiceButton('fw-voice-summary', (text, fileId) => {
     textarea.value = (textarea.value ? textarea.value + ' ' : '') + text;
-    _fwWorkSummary = textarea.value;
+    syncSummary();
     if (fileId) _fwVoiceNoteFileId = fileId;
   });
   document.getElementById('fw-back-2')?.addEventListener('click', () => _fwNavBack());
   document.getElementById('fw-next-2')?.addEventListener('click', () => {
     _fwWorkSummary = textarea.value.trim();
+    if (!_fwWorkSummary) {
+      if (errorEl) errorEl.style.display = 'block';
+      showToast('Заполни, что сделано за смену', 'error');
+      textarea.focus();
+      return;
+    }
     _fwNavNext();
   });
 }
@@ -293,6 +379,14 @@ function _fwWireStepPlanFact() {
       const result = _fwItemResults.find(r => r.item_id === ta.dataset.item);
       if (result) result.comment = ta.value.trim();
     });
+    const missing = _fwDailyPlanItems.filter(item => {
+      const result = _fwItemResults.find(r => r.item_id === item.id);
+      return !result?.status;
+    });
+    if (missing.length) {
+      showToast('Отметь выполнение каждого пункта плана', 'error');
+      return;
+    }
     _fwNavNext();
   });
 }
@@ -308,7 +402,7 @@ function _fwRenderStep3() {
   return `
     <div class="fw-hint">Были ли доп. работы вне плана?</div>
     <div class="fw-list">${itemsHtml || '<div class="fw-empty">Пока не добавлено</div>'}</div>
-    <div id="fw-extra-work-form" style="display:none;">
+    <div id="fw-extra-work-form" style="display:${_fwExtraDraftOpen ? 'block' : 'none'};">
       <textarea id="fw-extra-desc" class="mangel-textarea" rows="2" placeholder="Описание работы"></textarea>
       ${_fwVoiceButtonHtml('fw-voice-extra')}
       <input type="text" id="fw-extra-zone" class="mangel-select" placeholder="Зона/комната (опционально)" style="margin-top:0.5rem;">
@@ -326,21 +420,28 @@ function _fwRenderStep3() {
 
 function _fwWireStep3() {
   document.getElementById('fw-add-extra-btn')?.addEventListener('click', () => {
+    _fwExtraDraftOpen = true;
     document.getElementById('fw-extra-work-form').style.display = 'block';
+    document.getElementById('fw-extra-desc')?.focus();
   });
   _fwWireVoiceButton('fw-voice-extra', text => {
     const ta = document.getElementById('fw-extra-desc');
     ta.value = (ta.value ? ta.value + ' ' : '') + text;
   });
-  document.getElementById('fw-extra-save')?.addEventListener('click', () => {
+  const saveExtraDraft = () => {
     const desc = document.getElementById('fw-extra-desc').value.trim();
-    if (!desc) return;
+    if (!desc) return false;
     _fwExtraWorks.push({
       description: desc,
       zone: document.getElementById('fw-extra-zone').value.trim(),
       time_estimate: document.getElementById('fw-extra-time').value.trim(),
       needs_approval: document.getElementById('fw-extra-approval').checked,
     });
+    _fwExtraDraftOpen = false;
+    return true;
+  };
+  document.getElementById('fw-extra-save')?.addEventListener('click', () => {
+    if (!saveExtraDraft()) return;
     _fwRenderStep();
   });
   document.querySelectorAll('.fw-list-item-remove').forEach(btn => {
@@ -350,7 +451,10 @@ function _fwWireStep3() {
     });
   });
   document.getElementById('fw-back-3')?.addEventListener('click', () => _fwNavBack());
-  document.getElementById('fw-next-3')?.addEventListener('click', () => _fwNavNext());
+  document.getElementById('fw-next-3')?.addEventListener('click', () => {
+    saveExtraDraft();
+    _fwNavNext();
+  });
 }
 
 // ---------- Step 4: Потребности/проблемы (structured, categorized) ----------
@@ -434,7 +538,16 @@ function _fwWireStep4() {
   });
 
   document.getElementById('fw-back-4')?.addEventListener('click', () => _fwNavBack());
-  document.getElementById('fw-next-4')?.addEventListener('click', () => _fwNavNext());
+  document.getElementById('fw-next-4')?.addEventListener('click', () => {
+    const needText = document.getElementById('fw-need-desc')?.value.trim() || '';
+    if (needText && _fwPendingNeedCategory) {
+      _fwNeeds.push({ category: _fwPendingNeedCategory, description: needText });
+      _fwPendingNeedCategory = null;
+    }
+    const defectText = document.getElementById('fw-defect-desc')?.value.trim() || '';
+    if (defectText) _fwDefects.push({ description: defectText });
+    _fwNavNext();
+  });
 }
 
 // ---------- Step tomorrow-prep: Готовность на завтра (Round 3) ----------
@@ -547,7 +660,7 @@ function _fwRenderStep6() {
 
   return `
     <div class="fw-summary-section"><b>Фото:</b> ${_fwPhotos.length} шт.</div>
-    <div class="fw-summary-section"><b>Что сделано:</b> ${esc(_fwWorkSummary) || '<span class="fw-empty-li">не указано</span>'}</div>
+    <div class="fw-summary-section"><b>Что сделано:</b> ${esc(_fwWorkSummary)}</div>
     ${planHtml ? `<div class="fw-summary-section"><b>По плану:</b><ul>${planHtml}</ul></div>` : ''}
     <div class="fw-summary-section"><b>Доп. работы:</b><ul>${extraWorksHtml}</ul></div>
     <div class="fw-summary-section"><b>Потребности:</b><ul>${needsHtml}</ul></div>
@@ -570,6 +683,21 @@ function _fwWireStep6() {
 async function _fwSubmitFinish() {
   const btn = document.getElementById('fw-submit-finish');
   const statusEl = document.getElementById('fw-submit-status');
+  if (_fwPhotos.length < 2) {
+    showToast('Для финиша нужны минимум 2 фото', 'error');
+    _fwGoToStep(1);
+    return;
+  }
+  if (!_fwWorkSummary.trim()) {
+    showToast('Заполни, что сделано за смену', 'error');
+    _fwGoToStep(2);
+    return;
+  }
+  if (!_fwFinishGeo?.lat || !_fwFinishGeo?.lon) {
+    showToast('Нужна геолокация финиша', 'error');
+    _fwGoToStep(_fwStepSequence().indexOf('geo') + 1);
+    return;
+  }
   btn.disabled = true;
   btn.textContent = 'Отправка…';
   statusEl.textContent = '';
@@ -631,7 +759,7 @@ async function _fwSubmitFinish() {
 
     hapticImpact('medium');
     _setActiveCheckinSession(_fwObjectId, { id: _fwSessionId, finished: true });
-    document.getElementById('finish-wizard-modal').style.display = 'none';
+    _fwCloseWizardAfterSuccess();
     showToast('Смена завершена', 'success');
     if (typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
     // 28.07: owner report -- завершил смену через finish-wizard, но Home-карточка
@@ -654,17 +782,44 @@ async function _fwSubmitFinish() {
 
 // ---------- Voice input (общий для шагов 2-4) ----------
 function _fwVoiceButtonHtml(id) {
-  return `<button class="fw-voice-btn" id="${id}" type="button" data-state="idle">🎤 Голосом</button>`;
+  return `<div class="fw-voice-wrap">
+    <button class="fw-voice-btn" id="${id}" type="button" data-state="idle">Голосом</button>
+    <div class="fw-voice-status" id="${id}-status"></div>
+  </div>`;
 }
 
 let _fwActiveRecorder = null;
+let _fwActiveVoiceStream = null;
+
+function _fwPickVoiceMimeType() {
+  return ['audio/webm', 'audio/mp4', 'audio/ogg'].find(t =>
+    window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+}
+
+function _fwStopVoiceRecording() {
+  if (_fwActiveRecorder && _fwActiveRecorder.state === 'recording') {
+    _fwActiveRecorder.stop();
+    return;
+  }
+  if (_fwActiveVoiceStream) {
+    _fwActiveVoiceStream.getTracks().forEach(t => t.stop());
+    _fwActiveVoiceStream = null;
+  }
+  _fwActiveRecorder = null;
+}
 
 function _fwWireVoiceButton(btnId, onTranscript) {
   const btn = document.getElementById(btnId);
   if (!btn) return;
+  const statusEl = document.getElementById(`${btnId}-status`);
+  const setStatus = text => { if (statusEl) statusEl.textContent = text || ''; };
   btn.addEventListener('click', async () => {
     if (btn.dataset.state === 'recording') {
       _fwActiveRecorder?.stop();
+      return;
+    }
+    if (_fwActiveRecorder) {
+      showToast('Сначала останови текущую запись', 'error');
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -673,15 +828,28 @@ function _fwWireVoiceButton(btnId, onTranscript) {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      _fwActiveVoiceStream = stream;
       const chunks = [];
-      const recorder = new MediaRecorder(stream);
+      const mimeType = _fwPickVoiceMimeType();
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const usedMime = recorder.mimeType || mimeType || 'audio/webm';
       _fwActiveRecorder = recorder;
-      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
       recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
+        _fwActiveVoiceStream = null;
+        _fwActiveRecorder = null;
         btn.dataset.state = 'transcribing';
-        btn.textContent = 'Распознаю…';
-        const blob = new Blob(chunks, { type: 'audio/webm' });
+        btn.textContent = 'Распознаю...';
+        setStatus('Можно продолжать после вставки текста');
+        const blob = new Blob(chunks, { type: usedMime });
+        if (blob.size < 500) {
+          btn.dataset.state = 'idle';
+          btn.textContent = 'Голосом';
+          setStatus('');
+          showToast('Запись слишком короткая', 'error');
+          return;
+        }
         try {
           const fd = new FormData();
           fd.append('file', blob, 'voice.webm');
@@ -692,17 +860,22 @@ function _fwWireVoiceButton(btnId, onTranscript) {
           });
           if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
           const data = await res.json();
-          onTranscript(data.raw_transcript || '', data.file_id || '');
+          const transcript = (data.raw_transcript || data.transcript || '').trim();
+          if (!transcript) throw new Error('Пустая транскрипция');
+          onTranscript(transcript, data.file_id || '');
+          setStatus('Текст вставлен, можно поправить');
         } catch (e) {
           showToast('Не удалось распознать голос: ' + e.message, 'error');
+          setStatus('');
         } finally {
           btn.dataset.state = 'idle';
-          btn.textContent = '🎤 Голосом';
+          btn.textContent = 'Голосом';
         }
       };
       recorder.start();
       btn.dataset.state = 'recording';
-      btn.textContent = '⏹ Остановить запись';
+      btn.textContent = 'Остановить запись';
+      setStatus('Идёт запись');
     } catch (e) {
       showToast('Нет доступа к микрофону', 'error');
     }

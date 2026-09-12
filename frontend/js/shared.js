@@ -441,7 +441,7 @@ function attachVoiceInputButton(buttonEl, onTranscript) {
           });
           if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
           const data = await res.json();
-          onTranscript(data.transcript || '');
+          onTranscript(data.raw_transcript || data.transcript || '');
         } catch (e) {
           showToast('Не удалось распознать речь: ' + e.message, 'error');
         } finally {
