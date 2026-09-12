@@ -87,12 +87,23 @@ class CheckinFinishRequirementsTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn('геолокац', ctx.exception.detail.lower())
 
+    def test_missing_done_summary_rejected(self):
+        with self.assertRaises(HTTPException) as ctx:
+            run(backend.checkin_finish(
+                session_id='nonexistent-session-id', lat='1.0', lon='1.0', done_summary='',
+                extra_work='', extra_works='', needs='', defects='', next_day_needs='',
+                pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[],
+                user={'id': 999999}, role='worker', idempotency_key='',
+            ))
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn('что сделано', ctx.exception.detail.lower())
+
     def test_nonexistent_session_rejected(self):
         # geo present so we get past that check and hit the real session lookup --
         # confirms finish doesn't silently succeed against a session that isn't there.
         with self.assertRaises(HTTPException) as ctx:
             run(backend.checkin_finish(
-                session_id='definitely-does-not-exist', lat='1.0', lon='1.0', done_summary='',
+                session_id='definitely-does-not-exist', lat='1.0', lon='1.0', done_summary='Работы выполнены',
                 extra_work='', extra_works='', needs='', defects='', next_day_needs='',
                 pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[],
                 user={'id': 999999}, role='worker', idempotency_key='',

@@ -105,7 +105,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
              patch.object(backend, '_idempotency_save'):
             fake_file = unittest.mock.MagicMock()
             result = await backend.checkin_finish(
-                session_id='s1', lat='52.5', lon='13.4', done_summary='',
+                session_id='s1', lat='52.5', lon='13.4', done_summary='Работы выполнены',
                 extra_work='', extra_works='', needs='', defects='', next_day_needs='',
                 pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                 user=WORKER_A, role='worker', idempotency_key='',
@@ -123,7 +123,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
             fake_file = unittest.mock.MagicMock()
             with self.assertRaises(HTTPException) as ctx:
                 await backend.checkin_finish(
-                    session_id='s1', lat='52.5', lon='13.4', done_summary='',
+                    session_id='s1', lat='52.5', lon='13.4', done_summary='Работы выполнены',
                     extra_work='', extra_works='', needs='', defects='', next_day_needs='',
                     pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                     user=WORKER_A, role='worker', idempotency_key='',
@@ -143,7 +143,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
             fake_file = unittest.mock.MagicMock()
             with self.assertRaises(HTTPException) as ctx:
                 await backend.checkin_finish(
-                    session_id='s1', lat='52.5', lon='13.4', done_summary='',
+                    session_id='s1', lat='52.5', lon='13.4', done_summary='Работы выполнены',
                     extra_work='', extra_works='', needs='', defects='', next_day_needs='',
                     pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                     user=WORKER_A, role='worker', idempotency_key='',
@@ -164,7 +164,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
             fake_file = unittest.mock.MagicMock()
             with self.assertRaises(HTTPException):
                 await backend.checkin_finish(
-                    session_id='s1', lat='52.5', lon='13.4', done_summary='',
+                    session_id='s1', lat='52.5', lon='13.4', done_summary='Работы выполнены',
                     extra_work='', extra_works='', needs='', defects='', next_day_needs='',
                     pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                     user=WORKER_A, role='worker', idempotency_key='',
@@ -181,7 +181,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
             fake_file = unittest.mock.MagicMock()
             with self.assertRaises(HTTPException):
                 await backend.checkin_finish(
-                    session_id='s1', lat='52.5', lon='13.4', done_summary='',
+                    session_id='s1', lat='52.5', lon='13.4', done_summary='Работы выполнены',
                     extra_work='', extra_works='', needs='', defects='', next_day_needs='',
                     pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                     user=WORKER_A, role='worker', idempotency_key='',
@@ -200,7 +200,7 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
             fake_file = unittest.mock.MagicMock()
             with self.assertRaises(HTTPException):
                 await backend.checkin_finish(
-                    session_id='s1', lat='52.5', lon='13.4', done_summary='',
+                    session_id='s1', lat='52.5', lon='13.4', done_summary='Работы выполнены',
                     extra_work='', extra_works='', needs='', defects='', next_day_needs='',
                     pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
                     user=WORKER_A, role='worker', idempotency_key='',

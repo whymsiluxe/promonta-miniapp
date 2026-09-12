@@ -7342,6 +7342,8 @@ async def checkin_finish(
 
     if not lat.strip() or not lon.strip():
         raise HTTPException(400, "Включи геолокацию, чтобы завершить смену")
+    if not done_summary.strip():
+        raise HTTPException(400, "Заполни короткий отчёт: что сделано за смену")
 
     with _checkin_lock:
         items = _load_checkin_meta()
@@ -7385,8 +7387,8 @@ async def checkin_finish(
         session['finish_lat'] = lat
         session['finish_lon'] = lon
         session['finish_gps_suspect'] = _gps_suspect(lat, lon)
-        # 10.31: опрос конца дня — всё опционально, worker не обязан заполнять,
-        # если для следующего дня ничего готовить не нужно.
+        # 12.09: короткий отчёт по смене обязателен и на frontend, и на backend.
+        # Остальные блоки опциональны: доп-работы, потребности, дефекты, завтра.
         session['done_summary'] = done_summary.strip()[:1000] or None
         session['extra_work'] = extra_work.strip()[:1000] or None
         session['extra_works'] = extra_works_list or None
