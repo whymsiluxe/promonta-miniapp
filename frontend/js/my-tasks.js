@@ -9,6 +9,7 @@ const MY_TASK_CHAT_ICON = `<svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 
 
 async function initMyTasksView() {
   const list = document.getElementById('my-tasks-list');
+  if (!list) return;
   list.innerHTML = '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>';
   try {
     const data = await api('/api/my-assignments');
@@ -141,6 +142,16 @@ function _openDeclineAssignmentSheet(objectId, assignmentId, triggerEl, ctx = {}
   const errorEl = document.getElementById('my-task-decline-error');
   const networkErrorEl = document.getElementById('my-task-decline-network-error');
   const okBtn = document.getElementById('my-task-decline-ok-btn');
+  const cancelBtn = document.getElementById('my-task-decline-cancel-btn');
+  const closeBtn = document.getElementById('my-task-decline-close-btn');
+  const retryBtn = document.getElementById('my-task-decline-retry-btn');
+  const backdrop = sheet.querySelector('.obj-stage-add-sheet-backdrop');
+
+  if (!textarea || !errorEl || !networkErrorEl || !okBtn || !cancelBtn || !closeBtn || !retryBtn || !backdrop) {
+    sheet.remove();
+    showToast('Форма отказа временно недоступна', 'error');
+    return;
+  }
 
   textarea.addEventListener('input', () => {
     if (textarea.value.trim()) errorEl.style.display = 'none';
@@ -165,9 +176,9 @@ function _openDeclineAssignmentSheet(objectId, assignmentId, triggerEl, ctx = {}
     _declineSheetUnregisterOverlay = NavigationManager.registerOverlay(close);
   }
 
-  sheet.querySelector('.obj-stage-add-sheet-backdrop').addEventListener('click', close);
-  document.getElementById('my-task-decline-cancel-btn').addEventListener('click', close);
-  document.getElementById('my-task-decline-close-btn').addEventListener('click', close);
+  backdrop.addEventListener('click', close);
+  cancelBtn.addEventListener('click', close);
+  closeBtn.addEventListener('click', close);
 
   const submit = async () => {
     const reason = textarea.value.trim();
@@ -193,5 +204,5 @@ function _openDeclineAssignmentSheet(objectId, assignmentId, triggerEl, ctx = {}
     }
   };
   okBtn.addEventListener('click', submit);
-  document.getElementById('my-task-decline-retry-btn').addEventListener('click', submit);
+  retryBtn.addEventListener('click', submit);
 }
