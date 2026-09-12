@@ -6,6 +6,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 FINISH_WIZARD = ROOT / "frontend" / "js" / "finish-wizard.js"
+CHECKIN = ROOT / "frontend" / "js" / "checkin.js"
+APP_HTML = ROOT / "frontend" / "app.html"
 SHARED = ROOT / "frontend" / "js" / "shared.js"
 
 
@@ -43,3 +45,22 @@ def test_shared_voice_input_reads_transcribe_raw_transcript():
     src = _source(SHARED)
 
     assert "data.raw_transcript || data.transcript" in src
+
+
+def test_legacy_finish_survey_removed_from_start_preview_flow():
+    checkin_src = _source(CHECKIN)
+    html_src = _source(APP_HTML)
+
+    assert "checkin-finish-survey" not in html_src
+    assert "checkin-survey-" not in html_src
+    assert "_checkinSurveyPause" not in checkin_src
+    assert "/finish" not in checkin_src
+
+
+def test_start_photo_preview_reuses_and_revokes_object_urls():
+    src = _source(CHECKIN)
+
+    assert "function _getCheckinPreviewPhotoUrl(file)" in src
+    assert "URL.revokeObjectURL(url)" in src
+    assert "function _clearCheckinPreviewPhotoUrls()" in src
+    assert "const [removed] = _checkinPreviewFiles.splice" in src

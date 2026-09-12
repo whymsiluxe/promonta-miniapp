@@ -3,7 +3,6 @@
 
 let _checkinPauseMinutes = 0;
 let _checkinSelectedStageName = null; // выбранный этап при старте смены (опционально, см. stage picker)
-let _checkinSurveyPauseMinutes = 30; // единый Zeiterfassung-язык форм (batch 12) — тот же stepper что в ручном вводе
 let _checkinPendingAction = null; // 'start' | 'finish' — какое действие ждёт выбора фото
 
 function _checkinSessionKey(objectId) {
@@ -301,10 +300,34 @@ async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey) {
 // на каждом + кнопкой "Добавить фото"), реальный upload — только по "Подтвердить".
 let _checkinPreviewFiles = [];
 let _checkinIdempotencyKey = null;
+let _checkinPreviewPhotoUrls = new WeakMap();
+
+function _getCheckinPreviewPhotoUrl(file) {
+  let url = _checkinPreviewPhotoUrls.get(file);
+  if (!url) {
+    url = URL.createObjectURL(file);
+    _checkinPreviewPhotoUrls.set(file, url);
+  }
+  return url;
+}
+
+function _revokeCheckinPreviewPhotoUrl(file) {
+  const url = _checkinPreviewPhotoUrls.get(file);
+  if (!url) return;
+  URL.revokeObjectURL(url);
+  _checkinPreviewPhotoUrls.delete(file);
+}
+
+function _clearCheckinPreviewPhotoUrls() {
+  _checkinPreviewFiles.forEach(_revokeCheckinPreviewPhotoUrl);
+  _checkinPreviewPhotoUrls = new WeakMap();
+}
 
 function _handleCheckinPhotoSelected(files) {
   if (!files.length) return;
-  _checkinPreviewFiles = _checkinPreviewFiles.concat(Array.from(files)).slice(0, 4);
+  const combined = _checkinPreviewFiles.concat(Array.from(files));
+  _checkinPreviewFiles = combined.slice(0, 4);
+  combined.slice(4).forEach(_revokeCheckinPreviewPhotoUrl);
   _renderCheckinPreview();
   _openCheckinPreviewModal();
 }
@@ -312,20 +335,9 @@ function _handleCheckinPhotoSelected(files) {
 function _openCheckinPreviewModal() {
   const modal = document.getElementById('checkin-preview-modal');
   const title = document.getElementById('checkin-preview-title');
-  const survey = document.getElementById('checkin-finish-survey');
-  const isFinish = _checkinPendingAction === 'finish';
-  title.textContent = 'Фото'; // 28.07: owner request -- длинный заголовок теснился с Close/back, детали теперь только в hint ниже
+  title.textContent = 'Фото начала смены';
   const hint = document.getElementById('checkin-preview-hint');
-  if (hint) hint.textContent = isFinish ? 'Фото окончания смены — минимум 2, с разных углов' : 'Фото начала смены — сделай 2-4 фото объекта с разных углов';
-  survey.style.display = isFinish ? 'block' : 'none';
-  if (isFinish) {
-    // 24.07: default теперь реально накопленное время паузы (кнопка Пауза/Продолжить
-    // во время смены), не хардкод 30 — юзер может доправить вручную если что-то не учтено.
-    const session = _getActiveCheckinSession(_stagesCurrentObjectId);
-    const accumulatedSeconds = session?.pauseAccumulatedSeconds || 0;
-    _checkinSurveyPauseMinutes = Math.round(accumulatedSeconds / 60);
-    _updateCheckinSurveyPauseDisplay();
-  }
+  if (hint) hint.textContent = 'Фото начала смены — сделай 2-4 фото объекта с разных углов';
   modal.style.display = 'flex';
   // Back-navigation audit fix: this modal only ever closed via explicit
   // in-app buttons -- no NavigationManager.registerOverlay(), same bug class
@@ -343,14 +355,11 @@ let _checkinPreviewOverlayUnregister = null;
 // already popped, do not call the unregister function again.
 function _closeCheckinPreviewModalInternal() {
   document.getElementById('checkin-preview-modal').style.display = 'none';
+  _clearCheckinPreviewPhotoUrls();
   _checkinPreviewFiles = [];
   _checkinPendingAction = null;
   _checkinIdempotencyKey = null;
   _checkinPreviewOverlayUnregister = null;
-  document.getElementById('checkin-survey-done').value = '';
-  document.getElementById('checkin-survey-extra').value = '';
-  document.getElementById('checkin-survey-next').value = '';
-  document.getElementById('checkin-survey-pause').value = '30';
 }
 
 // Called from the in-app close/cancel buttons -- overlay still in
@@ -364,20 +373,19 @@ function _renderCheckinPreview() {
   const grid = document.getElementById('checkin-preview-grid');
   const confirmBtn = document.getElementById('checkin-preview-confirm-btn');
   grid.innerHTML = _checkinPreviewFiles.map((f, i) => {
-    const url = URL.createObjectURL(f);
     return `<div class="checkin-preview-item">
-      <img src="${url}" alt="фото ${i + 1}" loading="lazy">
+      <img src="${_getCheckinPreviewPhotoUrl(f)}" alt="фото ${i + 1}" loading="lazy">
       <button class="checkin-preview-remove" data-idx="${i}" type="button">✕</button>
     </div>`;
   }).join('');
   grid.querySelectorAll('.checkin-preview-remove').forEach(btn => {
     btn.addEventListener('click', () => {
-      _checkinPreviewFiles.splice(Number(btn.dataset.idx), 1);
+      const [removed] = _checkinPreviewFiles.splice(Number(btn.dataset.idx), 1);
+      if (removed) _revokeCheckinPreviewPhotoUrl(removed);
       _renderCheckinPreview();
     });
   });
-  const minRequired = _checkinPendingAction === 'finish' ? 2 : 1;
-  confirmBtn.disabled = _checkinPreviewFiles.length < minRequired;
+  confirmBtn.disabled = _checkinPreviewFiles.length < 1;
   confirmBtn.textContent = _checkinPreviewFiles.length
     ? `Подтвердить (${_checkinPreviewFiles.length} фото)` : 'Подтвердить';
 }
@@ -403,23 +411,9 @@ function _setCheckinSyncStatus(text, isError) {
 
 async function _confirmCheckinPreview() {
   if (!_checkinPreviewFiles.length) return;
-
-  // 24.07: "Что сделано за день" и "Что нужно подготовить на завтра" обязательны
-  // при финише — owner должен всегда получать эти данные, не полагаться на то что
-  // worker вспомнит заполнить. HTML required без <form> не валидирует сам, проверяем
-  // явно перед отправкой.
-  if (_checkinPendingAction === 'finish') {
-    const doneEl = document.getElementById('checkin-survey-done');
-    const nextEl = document.getElementById('checkin-survey-next');
-    if (!doneEl.value.trim() || !nextEl.value.trim()) {
-      showToast('Заполни "Что сделано за день" и "Что нужно подготовить на завтра" — обязательные поля', 'error');
-      (!doneEl.value.trim() ? doneEl : nextEl).focus();
-      return;
-    }
-    if (_checkinPreviewFiles.length < 2) {
-      showToast('Прикрепи минимум 2 фото выполненной работы', 'error');
-      return;
-    }
+  if (_checkinPendingAction !== 'start') {
+    showToast('Финиш смены теперь выполняется через пошаговый отчёт', 'error');
+    return;
   }
 
   const confirmBtn = document.getElementById('checkin-preview-confirm-btn');
@@ -435,31 +429,18 @@ async function _confirmCheckinPreview() {
   _setCheckinSyncStatus('Отправка…');
   if (!_checkinIdempotencyKey) _checkinIdempotencyKey = crypto.randomUUID();
   try {
-    if (_checkinPendingAction === 'start') {
-      const startFields = {};
-      if (_checkinSelectedStageName) startFields.stage_name = _checkinSelectedStageName;
-      // DailyPlan link — set by today-plan.js after acceptance, consumed once
-      if (window._dailyPlanCheckinFields) {
-        Object.assign(startFields, window._dailyPlanCheckinFields);
-        window._dailyPlanCheckinFields = null;
-      }
-      const session = await _uploadCheckinPhotos('/api/checkin/start', _checkinPreviewFiles,
-        Object.keys(startFields).length ? startFields : null, _checkinIdempotencyKey);
-      _setActiveCheckinSession(_stagesCurrentObjectId, { id: session.id, finished: false });
-      _checkinSelectedStageName = null;
-      hapticImpact('light');
-    } else if (_checkinPendingAction === 'finish') {
-      const session = _getActiveCheckinSession(_stagesCurrentObjectId);
-      const surveyFields = {
-        done_summary: document.getElementById('checkin-survey-done').value,
-        extra_work: document.getElementById('checkin-survey-extra').value,
-        next_day_needs: document.getElementById('checkin-survey-next').value,
-        pause_minutes: document.getElementById('checkin-survey-pause').value || '0',
-      };
-      await _uploadCheckinPhotos(`/api/checkin/${session.id}/finish`, _checkinPreviewFiles, surveyFields, _checkinIdempotencyKey);
-      _setActiveCheckinSession(_stagesCurrentObjectId, { id: session.id, finished: true });
-      hapticImpact('medium');
+    const startFields = {};
+    if (_checkinSelectedStageName) startFields.stage_name = _checkinSelectedStageName;
+    // DailyPlan link — set by today-plan.js after acceptance, consumed once
+    if (window._dailyPlanCheckinFields) {
+      Object.assign(startFields, window._dailyPlanCheckinFields);
+      window._dailyPlanCheckinFields = null;
     }
+    const session = await _uploadCheckinPhotos('/api/checkin/start', _checkinPreviewFiles,
+      Object.keys(startFields).length ? startFields : null, _checkinIdempotencyKey);
+    _setActiveCheckinSession(_stagesCurrentObjectId, { id: session.id, finished: false });
+    _checkinSelectedStageName = null;
+    hapticImpact('light');
     _setCheckinSyncStatus('');
     refreshCheckinButtons();
     // 24.07: после старта/финиша через FAB (не заходя в объект) карточка "Смена
@@ -494,11 +475,6 @@ function _closeCheckinManualForm() {
 
 function _updateCheckinPauseDisplay() {
   document.getElementById('checkin-pause-value').textContent = `${_checkinPauseMinutes} мин.`;
-}
-
-function _updateCheckinSurveyPauseDisplay() {
-  document.getElementById('checkin-survey-pause-value').textContent = `${_checkinSurveyPauseMinutes} мин.`;
-  document.getElementById('checkin-survey-pause').value = _checkinSurveyPauseMinutes;
 }
 
 async function _submitCheckinManual() {
@@ -603,13 +579,5 @@ function initCheckinControls() {
   document.getElementById('checkin-pause-plus').addEventListener('click', () => {
     _checkinPauseMinutes += 15;
     _updateCheckinPauseDisplay();
-  });
-  document.getElementById('checkin-survey-pause-minus').addEventListener('click', () => {
-    _checkinSurveyPauseMinutes = Math.max(0, _checkinSurveyPauseMinutes - 5);
-    _updateCheckinSurveyPauseDisplay();
-  });
-  document.getElementById('checkin-survey-pause-plus').addEventListener('click', () => {
-    _checkinSurveyPauseMinutes += 5;
-    _updateCheckinSurveyPauseDisplay();
   });
 }

@@ -4766,11 +4766,6 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .checkin-preview-remove { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(0,0,0,0.7); color: #fff; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .checkin-preview-add-btn { background: var(--bg-card-raised); color: var(--text-main); border: 1px dashed var(--border-color); border-radius: var(--radius-md); padding: 1rem; font-size: 1.05rem; font-weight: 600; cursor: pointer; margin-bottom: 0.8rem; }
 #checkin-preview-confirm-btn:disabled { opacity: 0.5; }
-.checkin-survey-field { margin-bottom: 1rem; }
-.checkin-survey-label { display: block; font-size: 1.02rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.4rem; }
-.checkin-survey-optional { font-weight: 400; color: var(--text-light); font-size: 0.88rem; }
-.checkin-survey-required { color: var(--red); }
-#checkin-finish-survey .mangel-textarea { font-size: 1.02rem; padding: 0.75rem; }
 
 /* ── Round 2: Today Plan screen + persistent bar ─────────────────────────── */
 #today-plan-screen {
@@ -5462,30 +5457,6 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     <div class="checkin-preview-hint" id="checkin-preview-hint">Сделай 2-4 фото объекта с разных углов</div>
     <div class="checkin-preview-grid" id="checkin-preview-grid"></div>
     <button class="checkin-preview-add-btn" id="checkin-preview-add-btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="2"/></svg> Добавить фото</button>
-
-    <div id="checkin-finish-survey" class="mangel-form" style="display:none;">
-      <div class="checkin-survey-field">
-        <label class="checkin-survey-label">Что сделано за день? <span class="checkin-survey-required">*</span></label>
-        <textarea id="checkin-survey-done" class="mangel-textarea" rows="2" placeholder="Например: оштукатурили стену в комнате 2, установили 3 окна" required></textarea>
-      </div>
-      <div class="checkin-survey-field">
-        <label class="checkin-survey-label">Доп. работы (если были, вне плана)</label>
-        <textarea id="checkin-survey-extra" class="mangel-textarea" rows="2" placeholder="Например: пришлось докупить крепёж, заделали трещину, которую заметили"></textarea>
-      </div>
-      <div class="checkin-survey-field">
-        <label class="checkin-survey-label">Что нужно подготовить на завтра? <span class="checkin-survey-required">*</span></label>
-        <textarea id="checkin-survey-next" class="mangel-textarea" rows="2" placeholder="Например: докупить краску (2 банки), взять перфоратор с базы" required></textarea>
-      </div>
-      <div class="checkin-survey-field">
-        <label class="checkin-survey-label">Сколько было пауз, минут?</label>
-        <div class="checkin-pause-row">
-          <button type="button" id="checkin-survey-pause-minus" class="checkin-pause-btn">−</button>
-          <span id="checkin-survey-pause-value">30 мин.</span>
-          <button type="button" id="checkin-survey-pause-plus" class="checkin-pause-btn">+</button>
-          <input type="hidden" id="checkin-survey-pause" value="30">
-        </div>
-      </div>
-    </div>
 
     <button class="submit-btn" id="checkin-preview-confirm-btn" type="button" disabled>Подтвердить</button>
   </div>
