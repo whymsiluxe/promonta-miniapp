@@ -114,6 +114,18 @@ class ManifestCompletenessTests(unittest.TestCase):
         self.assertIn('BACKEND_PY_LIBS', runtime_content,
                       "runtime_manifest.sh must derive runtime entries from BACKEND_PY_LIBS")
 
+    def test_frontend_deploy_deletes_excluded_artifacts(self):
+        """Excluded backup/git artifacts must be removed from production, not just skipped."""
+        deploy_path = os.path.join(REPO_ROOT, 'scripts', 'deploy.sh')
+        with open(deploy_path, encoding='utf-8') as f:
+            content = f.read()
+        self.assertIn('--delete-excluded', content,
+                      "rsync --delete alone protects excluded destination files; use --delete-excluded")
+        self.assertIn("STALE_FRONTEND_ARTIFACT", content,
+                      "deploy.sh must verify no stale frontend backup/git artifacts survived")
+        for pattern in ("--exclude='.git*'", "--exclude='*.bak-*'", "--exclude='*.bak'"):
+            self.assertIn(pattern, content)
+
 
 class DeployRollbackRoundTripTests(unittest.TestCase):
     """Simulate backup → mutate → rollback and verify hashes match original."""

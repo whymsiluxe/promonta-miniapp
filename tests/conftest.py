@@ -10,9 +10,16 @@ secondary / belt-and-suspenders (they cannot change DATA_ROOT once main is
 imported, but they document intent and protect standalone test runs).
 """
 import os
+import sys
 import tempfile
+from pathlib import Path
 
 import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+BACKEND_DIR = ROOT / "backend"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 # ── PRIMARY GUARD: set env at module level, before any test module is imported ──
 _TEST_DATA_ROOT = tempfile.mkdtemp(prefix="promonta-pytest-")

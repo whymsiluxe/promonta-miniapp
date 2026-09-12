@@ -185,14 +185,22 @@ echo "OK"
 
 echo "== 11/14 Копирование frontend (без .git, без тестов, без backup-файлов) =="
 mkdir -p "$FRONTEND_SERVING_DIR"
-# 31.07 (Release-аудит П9): расширенный exclude -- .bak/ (каталог) и .archived-legacy/
-# ранее не были explicit excluded директориями (--exclude='*.bak-*' ловит только файлы
-# с этим именем, не поддиректорию .bak/). Существующий .bak/ на проде НЕ трогаем (см.
-# отчёт -- ручное действие), но новые деплои больше никогда не заносят такой каталог.
-rsync -av --delete \
+# 12.09: excluded frontend artifacts are deleted from production too. Plain
+# `--delete` protects excluded files on destination, so old app.html.bak-* and
+# even legacy .git/.bak directories stayed publicly reachable in /var/www/miniapp.
+rsync -av --delete --delete-excluded \
   --exclude='.git*' --exclude='.archived-legacy' --exclude='.archived-legacy/' \
-  --exclude='.bak/' --exclude='*.bak-*' --exclude='*.corrupt-*' \
+  --exclude='.bak' --exclude='.bak/' --exclude='*.bak' --exclude='*.bak-*' \
+  --exclude='*.corrupt-*' --exclude='*.old' --exclude='*~' \
   "$REPO_DIR/frontend/" "$FRONTEND_SERVING_DIR/"
+STALE_FRONTEND_ARTIFACT="$(find "$FRONTEND_SERVING_DIR" -maxdepth 4 \
+  \( -name '.git' -o -name '.git*' -o -name '.archived-legacy' -o -name '.bak' \
+     -o -name '*.bak' -o -name '*.bak-*' -o -name '*.corrupt-*' -o -name '*.old' -o -name '*~' \) \
+  -print -quit)"
+if [[ -n "$STALE_FRONTEND_ARTIFACT" ]]; then
+  echo "ОШИБКА: stale frontend artifact survived deploy: $STALE_FRONTEND_ARTIFACT" >&2
+  exit 1
+fi
 # 31.07 (Release-аудит П9, cache-busting): app.html ссылается на js/css относительными
 # путями без версии (src="js/chat.js", href="css/tokens.css") -- Caddy теперь кеширует
 # /js/* и /css/* на год (immutable), поэтому КАЖДЫЙ деплой обязан менять URL, иначе
