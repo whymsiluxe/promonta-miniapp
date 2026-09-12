@@ -608,6 +608,8 @@ header h1 {
 .task-urgent { flex-shrink: 0; font-size: 0.72rem; font-weight: 700; color: var(--red, #c0392b); text-transform: uppercase; letter-spacing: 0.03em; }
 .task-card-meta { font-size: 0.82rem; color: var(--text-light); margin-top: 0.2rem; }
 .task-card-sub { font-size: 0.78rem; color: var(--text-light); margin-top: 0.1rem; }
+.task-card-sub.task-overdue { color: var(--red); font-weight: 700; }
+.task-due-label { display: block; margin: 0.5rem 0 0.25rem; font-size: 0.78rem; color: var(--text-light); }
 .task-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; }
 .task-status-pill { font-size: 0.72rem; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--bg-card-raised); }
 .task-pill-new { color: var(--red, #c0392b); }
@@ -4487,6 +4489,10 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .chat-voice-player audio { flex: 1; height: 32px; }
 .chat-voice-transcript { font-size: 0.78rem; color: var(--text-light); font-style: italic; margin-top: 0.2rem; max-width: 240px; }
 .chat-extract-task-btn { display: block; margin-top: 0.3rem; background: none; border: 1px solid var(--accent); color: var(--accent); border-radius: var(--radius-sm); padding: 0.25rem 0.6rem; font-size: 0.75rem; cursor: pointer; }
+.chat-location-card { display: inline-flex; flex-direction: column; gap: 0.35rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.6rem 0.7rem; margin-bottom: 0.3rem; max-width: 240px; text-decoration: none; color: var(--text-main); }
+.chat-location-title { display: flex; align-items: center; gap: 0.35rem; font-weight: 700; font-size: 0.9rem; }
+.chat-location-meta { color: var(--text-light); font-size: 0.78rem; }
+.chat-location-link { color: var(--accent); font-size: 0.82rem; font-weight: 600; }
 
 /* ── Alerts list: clickable abwesenheit items → переход в календарь (Фаза 10.28) ── */
 .alert-item-clickable { cursor: pointer; }
@@ -5211,6 +5217,8 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
       <textarea id="tasks-title-input" class="mangel-textarea" placeholder="Что нужно? (например: перфоратор, 2 мешка цемента, каска)" rows="4"></textarea>
       <button type="button" id="tasks-voice-btn" class="fw-voice-btn">🎤 Голосом</button>
       <select id="tasks-object-select" class="mangel-select"><option value="">Выбери объект…</option></select>
+      <label for="tasks-due-input" class="task-due-label">Срок, если важно</label>
+      <input type="datetime-local" id="tasks-due-input" class="mangel-select" aria-label="Срок потребности">
       <div class="fw-cat-row" id="tasks-category-row" style="margin:0.5rem 0;">
         <button type="button" class="fw-cat-btn active" data-category="materials">Материалы</button>
         <button type="button" class="fw-cat-btn" data-category="tool">Инструмент</button>
@@ -5604,6 +5612,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     <div class="chat-input-bar" id="chat-input-bar">
       <button id="chat-attach-btn" class="chat-attach-btn" aria-label="Прикрепить файл" type="button"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a1.5 1.5 0 0 1-2.12-2.12l8.49-8.48"/></svg></button>
       <button id="chat-voice-btn" class="chat-attach-btn" aria-label="Голосовое сообщение" type="button"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg></button>
+      <button id="chat-location-btn" class="chat-attach-btn" aria-label="Отправить геолокацию" type="button"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-5.1 7-11a7 7 0 1 0-14 0c0 5.9 7 11 7 11z"/><circle cx="12" cy="10" r="2.5" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
       <textarea id="chat-input" class="chat-input" placeholder="Сообщение…" rows="1"></textarea>
       <button id="chat-send" class="chat-send-btn" aria-label="Отправить"><svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>
     </div>

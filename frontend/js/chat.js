@@ -130,6 +130,7 @@ function _renderOneChatBubbleHtml(msg, isGrouped, dayDividerHtml, isLastMessage)
       ${forwardedHtml}
       ${replyHtml}
       ${msg.attachment ? _renderChatAttachment(msg) : ''}
+      ${msg.location ? _renderChatLocation(msg.location) : ''}
       ${msg.text ? `<div class="chat-text">${_escChat(msg.text)}</div>` : ''}
       <div class="chat-reactions-slot">${_renderChatReactions(msg)}</div>
       ${readReceiptHtml}
@@ -598,7 +599,7 @@ function _setChatReplyTarget(msgId) {
   _chatReplyTarget = {
     id: msg.id,
     name: msg.user_id === _chatMyId ? 'Вы' : msg.name,
-    preview: msg.text || (msg.attachment ? ((msg.attachment.content_type || '').startsWith('audio') ? '🎤 Голосовое' : '📎 Файл') : ''),
+    preview: msg.text || (msg.location ? '📍 Геолокация' : (msg.attachment ? ((msg.attachment.content_type || '').startsWith('audio') ? '🎤 Голосовое' : '📎 Файл') : '')),
   };
   _renderChatReplyBar();
   const input = document.getElementById('chat-input');
@@ -747,6 +748,22 @@ function _renderChatAttachment(msg) {
   return `<a class="chat-attach-file" href="${API_BASE}/api/chat/attachments/${att.file}" target="_blank" rel="noopener">📎 ${_escChat(att.name)}</a>`;
 }
 
+function _renderChatLocation(location) {
+  const lat = Number(location.lat);
+  const lon = Number(location.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return '';
+  const url = `https://www.google.com/maps?q=${encodeURIComponent(lat + ',' + lon)}`;
+  const accuracy = Number(location.accuracy);
+  const accuracyHtml = Number.isFinite(accuracy) ? `<div class="chat-location-meta">Точность около ${Math.round(accuracy)} м</div>` : '';
+  const label = location.label || 'Текущая геолокация';
+  return `<a class="chat-location-card" href="${url}" target="_blank" rel="noopener">
+    <div class="chat-location-title">📍 ${_escChat(label)}</div>
+    <div class="chat-location-meta">${lat.toFixed(5)}, ${lon.toFixed(5)}</div>
+    ${accuracyHtml}
+    <div class="chat-location-link">Открыть карту</div>
+  </a>`;
+}
+
 async function _sendChatAttachment(file) {
   const btn = document.getElementById('chat-attach-btn');
   if (btn) btn.disabled = true;
@@ -771,6 +788,45 @@ async function _sendChatAttachment(file) {
       errEl.style.display = 'block';
       setTimeout(() => { errEl.style.display = 'none'; }, 4000);
     }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function _sendCurrentLocationMessage() {
+  const btn = document.getElementById('chat-location-btn');
+  if (!navigator.geolocation) {
+    showToast('Геолокация не поддерживается', 'error');
+    return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    const pos = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
+    });
+    await api('/api/chat/messages', {
+      method: 'POST',
+      body: JSON.stringify({
+        text: '',
+        to_user_id: _chatActiveThread,
+        thread_key: _chatActiveThreadKey,
+        reply_to_id: _chatReplyTarget ? _chatReplyTarget.id : null,
+        location: {
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          label: 'Текущая геолокация',
+        },
+      }),
+    });
+    _clearChatReplyTarget();
+    _chatLastRenderSig = null;
+    await _loadChatMessages(true);
+    _loadMyChatThreads();
+    hapticImpact('light');
+  } catch (e) {
+    const msg = e && e.message ? e.message : 'не удалось получить координаты';
+    showToast('Геолокация не отправлена: ' + msg, 'error');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -1647,6 +1703,12 @@ async function initChatView() {
     voiceBtn.addEventListener('click', _startVoiceRecording);
     document.getElementById('chat-voice-cancel-btn').addEventListener('click', () => _stopVoiceRecording(false));
     document.getElementById('chat-voice-stop-btn').addEventListener('click', () => _stopVoiceRecording(true));
+  }
+
+  const locationBtn = document.getElementById('chat-location-btn');
+  if (locationBtn && !locationBtn.dataset.wired) {
+    locationBtn.dataset.wired = '1';
+    locationBtn.addEventListener('click', _sendCurrentLocationMessage);
   }
 
   const closeBtn = document.getElementById('chat-close-thread-btn');

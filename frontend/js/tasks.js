@@ -35,6 +35,29 @@ function _taskWhen(created_at) {
   return `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}, ${hhmm}`;
 }
 
+function _taskDueLabel(due_at) {
+  if (!due_at) return '';
+  const d = new Date(due_at * 1000);
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const hhmm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === now.toDateString()) return `сегодня, ${hhmm}`;
+  if (d.toDateString() === tomorrow.toDateString()) return `завтра, ${hhmm}`;
+  return `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}, ${hhmm}`;
+}
+
+function _taskDueHtml(task) {
+  if (!task.due_at) return '';
+  const overdue = taskStage(task.status) !== 'done' && Number(task.due_at) < Math.floor(Date.now() / 1000);
+  return `<div class="task-card-sub${overdue ? ' task-overdue' : ''}">${overdue ? 'Просрочено' : 'Срок'}: ${esc(_taskDueLabel(task.due_at))}</div>`;
+}
+
+function _datetimeLocalValue(date) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function _taskObjectName(objectId) {
   return _tasksObjectNames[objectId] || objectId || '';
 }
@@ -61,6 +84,7 @@ function renderTaskCard(task) {
     </div>
     <div class="task-card-meta">${esc(taskCategoryLabel(task.category))} · ${esc(_taskObjectName(task.object_id))}</div>
     <div class="task-card-sub">Запросил: ${esc(task.from_name || task.from_user_id || '—')} · ${esc(_taskWhen(task.created_at))}</div>
+    ${_taskDueHtml(task)}
     <div class="task-card-actions">
       <span class="task-status-pill ${pillClass}">${esc(taskStatusLabel(task.status))}</span>
       <div class="task-card-btns">
@@ -245,6 +269,7 @@ function _closeTasksForm() {
   document.getElementById('tasks-form').style.display = 'none';
   document.getElementById('tasks-title-input').value = '';
   document.getElementById('tasks-object-select').value = '';
+  document.getElementById('tasks-due-input').value = '';
   _taskPriority = 'обычная';
   _taskCategory = 'materials';
   document.querySelectorAll('#tasks-form .doc-type-opt').forEach(btn => {
@@ -262,9 +287,17 @@ async function submitTask() {
   if (!title) { showToast('Укажите, что нужно'); return; }
   const objectId = document.getElementById('tasks-object-select').value;
   if (!objectId) { showToast('Выберите объект'); return; }
+  const dueRaw = document.getElementById('tasks-due-input').value;
+  let dueAt = null;
+  if (dueRaw) {
+    const dueDate = new Date(dueRaw);
+    dueAt = Math.floor(dueDate.getTime() / 1000);
+    if (!Number.isFinite(dueAt)) { showToast('Проверьте срок'); return; }
+    if (dueAt < Math.floor(Date.now() / 1000) - 60) { showToast('Срок не может быть в прошлом'); return; }
+  }
   const orig = btn.textContent; btn.disabled = true; btn.textContent = 'Отправка…';
   try {
-    await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title, object_id: objectId, priority: _taskPriority, category: _taskCategory }) });
+    await api('/api/tasks', { method: 'POST', body: JSON.stringify({ title, object_id: objectId, priority: _taskPriority, category: _taskCategory, due_at: dueAt }) });
     hapticImpact('light');
     _closeTasksForm();
     await loadTasks();
@@ -285,6 +318,8 @@ function initTasksView() {
   if (currentRole !== 'owner') {
     _populateTasksObjectSelect();
     document.getElementById('tasks-new-btn').addEventListener('click', () => {
+      const dueInput = document.getElementById('tasks-due-input');
+      if (dueInput) dueInput.min = _datetimeLocalValue(new Date());
       document.getElementById('tasks-form').style.display = 'block';
       hapticImpact('light');
     });

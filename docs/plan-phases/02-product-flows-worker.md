@@ -43,7 +43,7 @@ Frontend: новый `frontend/js/finish-wizard.js` (отдельно от check
 
 Сделано: `GET /api/dashboard/shifts-today` (owner-only) — working_now/not_started/finished_today, computed из `checkin_meta.json` + `object_assignments.json` (date_from/date_to охват сегодняшней даты). Frontend: `#home-shifts-today-section` на owner Home — worker/объект/duration/чат-кнопка для работающих, worker/объект/"напомнить" для не начавших, весь блок скрыт если оба списка пусты, каждая строка кликабельна (открывает object stages), чат-кнопка открывает direct thread.
 
-**Не сделано, честно задокументированный data-gap**: "просроченные задачи → alerts" — проверил `tasks.json` (Needs) schema, **due_date поля не существует вообще**, только опциональный `priority`. Overdue невозможно вычислить без даты дедлайна — не стал показывать фейковый/выдуманный indicator. Если due_date когда-нибудь добавят в Needs — этот endpoint нужно расширить `overdue_needs` списком.
+**Обновлено 2026-09-12**: "просроченные задачи → alerts" закрыто без фейкового indicator. У `Потребностей` добавлен настоящий optional `due_at`; worker может указать срок при создании, активные просроченные потребности попадают в owner `/api/alerts` как red-alert.
 
 ### B6. Object card для owner — центр управления
 Статус: **Частично FIXED (commit 4720ba5, 2026-07-27), остальное уже было или намеренно отложено.** Чтение `renderObjectInfoTab()` показало: 6 из ~10 разделов плана уже были собраны в предыдущих сессиях (статус editor, описание, работы Объёмы|Задачи, этапы, дефекты summary, документы summary) + Чат/Потребности как отдельные top-level табы (3-tab restructure). Реально не хватало: команда (workers) и смены — добавлено, owner-only секция "Команда и смены" (avatar-chips команды, сегодняшние сессии со статусом идёт/завершена).
@@ -55,4 +55,3 @@ Frontend: новый `frontend/js/finish-wizard.js` (отдельно от check
 - **История действий (audit log)** — проверено: единственная существующая инфраструктура (`audit_log_middleware`) пишет технический per-request лог (method/path/status/user_id), НЕ человекочитаемую object-scoped ленту действий ("owner изменил статус на Пауза"). Построение этого — отдельный инфраструктурный проект, не UI-добавка к существующей панели — задокументировал как gap, не сфабриковал raw log lines как "историю".
 
 Worker урезанная версия — уже была реализована ранее (Info tab условно рендерит owner-only секции через `currentRole === 'owner'` проверки, включая новую Team-секцию).
-

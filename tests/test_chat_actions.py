@@ -23,11 +23,11 @@ WORKER_A = {'id': 10, 'first_name': 'Ivan'}
 WORKER_B = {'id': 20, 'first_name': 'Petr'}
 
 
-def _msg(id_, user_id, text='hi', thread_key=None, to_user_id=None, attachment=None):
+def _msg(id_, user_id, text='hi', thread_key=None, to_user_id=None, attachment=None, location=None):
     return {
         'id': id_, 'ts': 1000, 'user_id': user_id, 'name': f'user{user_id}',
         'text': text, 'to_user_id': to_user_id, 'thread_key': thread_key,
-        'attachment': attachment,
+        'attachment': attachment, 'location': location,
     }
 
 
@@ -100,6 +100,48 @@ class ForwardTests(unittest.TestCase):
             body = backend.ChatMessageBody(text='', thread_key='obj:OBJ-2')
             result = backend.forward_chat_message('m1', body, user=WORKER_A, role='worker')
         self.assertEqual(result['message']['attachment']['file'], 'abc123.jpg')
+
+    def test_forward_location_preserves_coordinates(self):
+        loc = {'lat': 52.52, 'lon': 13.405, 'accuracy': 12.4}
+        source = _msg('m1', 10, text='', thread_key='obj:OBJ-1', location=loc)
+        with patch.object(backend, '_load_chat', return_value=[source]), \
+             patch.object(backend, '_save_chat'), \
+             patch.object(backend, '_check_message_access'), \
+             patch.object(backend, '_check_thread_access'):
+            body = backend.ChatMessageBody(text='', thread_key='obj:OBJ-2')
+            result = backend.forward_chat_message('m1', body, user=WORKER_A, role='worker')
+        self.assertEqual(result['message']['location'], loc)
+
+
+class LocationMessageTests(unittest.TestCase):
+    def test_location_message_stored_without_text(self):
+        saved = {}
+
+        def fake_save_chat(items):
+            saved['messages'] = items
+
+        with patch.object(backend, '_load_chat', return_value=[]), \
+             patch.object(backend, '_save_chat', side_effect=fake_save_chat), \
+             patch.object(backend, '_check_thread_access'):
+            body = backend.ChatMessageBody(
+                text='', thread_key='obj:OBJ-1',
+                location={'lat': 52.520008, 'lon': 13.404954, 'accuracy': 8.6},
+            )
+            result = backend.post_chat_message(body, user=WORKER_A, role='worker')
+
+        self.assertEqual(result['message']['text'], '')
+        self.assertEqual(result['message']['location']['lat'], 52.520008)
+        self.assertEqual(result['message']['location']['lon'], 13.404954)
+        self.assertEqual(result['message']['location']['accuracy'], 8.6)
+        self.assertEqual(saved['messages'][0]['location'], result['message']['location'])
+        self.assertEqual(backend._message_preview(result['message']), '📍 Геолокация')
+
+    def test_invalid_location_rejected(self):
+        with patch.object(backend, '_check_thread_access'):
+            body = backend.ChatMessageBody(text='', thread_key='obj:OBJ-1', location={'lat': 123, 'lon': 13.4})
+            with self.assertRaises(HTTPException) as ctx:
+                backend.post_chat_message(body, user=WORKER_A, role='worker')
+        self.assertEqual(ctx.exception.status_code, 400)
 
 
 class DeleteAccessTests(unittest.TestCase):

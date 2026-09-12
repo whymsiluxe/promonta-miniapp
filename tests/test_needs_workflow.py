@@ -8,6 +8,7 @@ Run:
 """
 import os
 import sys
+import time
 import unittest
 from unittest.mock import patch
 
@@ -71,6 +72,37 @@ class NeedsWorkflowTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as ctx:
                 backend.update_task_status('nope', backend.TaskStatusBody(status='в работе'), user=OWNER, _=None)
         self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_overdue_open_task_is_owner_alert(self):
+        now = int(time.time())
+        tasks = [{
+            'id': 'T1', 'status': 'открыто', 'title': 'Нужен цемент',
+            'object_id': 'OBJ-1', 'from_name': 'Ivan', 'due_at': now - 10,
+            'priority': 'срочно', 'created_at': now - 3600,
+        }]
+        with patch.object(backend, '_load_tasks', return_value=tasks), \
+             patch.object(backend, '_cached_get_used_range', return_value=None), \
+             patch.object(backend, '_load_repo_tools_lib', side_effect=RuntimeError('no tools')), \
+             patch.object(backend, '_load_abwesenheit', return_value=[]), \
+             patch.object(backend, '_load_critical_alerts', return_value=[]), \
+             patch.object(backend, '_load_activity_alerts', return_value=[]), \
+             patch.object(backend, '_load_alert_dismissals', return_value={}):
+            alerts = backend.get_alerts(user=OWNER, role='owner')['alerts']
+
+        overdue = [a for a in alerts if a.get('task_overdue')]
+        self.assertEqual(len(overdue), 1)
+        self.assertEqual(overdue[0]['id'], 'task-overdue-T1')
+        self.assertEqual(overdue[0]['type'], 'red')
+
+    def test_future_or_closed_task_is_not_overdue_alert(self):
+        now = int(time.time())
+        tasks = [
+            {'id': 'future', 'status': 'открыто', 'title': 'Позже', 'due_at': now + 3600},
+            {'id': 'closed', 'status': 'закрыто', 'title': 'Готово', 'due_at': now - 10},
+        ]
+        with patch.object(backend, '_load_tasks', return_value=tasks):
+            alerts = backend._overdue_task_alerts(now=now)
+        self.assertEqual(alerts, [])
 
 
 if __name__ == '__main__':

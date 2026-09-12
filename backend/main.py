@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import importlib.util
 import json
+import math
 import os
 import re
 import sys
@@ -3039,6 +3040,8 @@ def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_r
                     'at': e.get('created_at')
                 })
 
+        alerts.extend(_overdue_task_alerts())
+
     # Persisted critical alerts (Фаза 10.16 — global critical alert popup)
     for ca in _load_critical_alerts():
         if ca.get('target_user_id') != str(user['id']):
@@ -4675,7 +4678,7 @@ def get_my_chat_threads(user: dict = Depends(get_current_user), role: str = Depe
             "thread_key": key,
             "title": _thread_title(key),
             "last_ts": last['ts'] if last else 0,
-            "last_preview": (last.get('text') or ('🎤 Голосовое' if last.get('attachment', {}).get('content_type', '').startswith('audio') else '📎 Файл') if last else ''),
+            "last_preview": _message_preview(last),
         })
     result.sort(key=lambda t: t['last_ts'], reverse=True)
     return {"threads": result}
@@ -4686,6 +4689,8 @@ def _message_preview(msg: dict | None) -> str:
         return ''
     if msg.get('text'):
         return msg['text']
+    if msg.get('location'):
+        return '📍 Геолокация'
     att = msg.get('attachment') or {}
     if (att.get('content_type') or '').startswith('audio'):
         return '🎤 Голосовое'
@@ -5208,10 +5213,37 @@ def get_chat_attachment(fname: str, user: dict = Depends(get_current_user), role
 
 
 class ChatMessageBody(BaseModel):
-    text: str
+    text: str = ''
     to_user_id: str | None = None
     thread_key: str | None = None
     reply_to_id: str | None = None
+    location: dict | None = None
+
+
+def _normalize_chat_location(raw: dict | None) -> dict | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise HTTPException(400, "Некорректная геолокация")
+    try:
+        lat = float(raw.get('lat'))
+        lon = float(raw.get('lon'))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Некорректная геолокация")
+    if not math.isfinite(lat) or not math.isfinite(lon) or not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        raise HTTPException(400, "Некорректная геолокация")
+    normalized = {"lat": round(lat, 6), "lon": round(lon, 6)}
+    if raw.get('accuracy') is not None:
+        try:
+            accuracy = float(raw.get('accuracy'))
+        except (TypeError, ValueError):
+            accuracy = None
+        if accuracy is not None and math.isfinite(accuracy) and accuracy >= 0:
+            normalized["accuracy"] = round(accuracy, 1)
+    label = str(raw.get('label') or '').strip()
+    if label:
+        normalized["label"] = label[:80]
+    return normalized
 
 
 def _reply_snapshot(msg: dict) -> dict:
@@ -5228,7 +5260,8 @@ def _reply_snapshot(msg: dict) -> dict:
 @app.post("/api/chat/messages")
 def post_chat_message(body: ChatMessageBody, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     text = body.text.strip()
-    if not text:
+    location = _normalize_chat_location(body.location)
+    if not text and not location:
         raise HTTPException(400, "Пустое сообщение")
     if len(text) > 1000:
         raise HTTPException(400, "Сообщение слишком длинное (макс. 1000 символов)")
@@ -5269,6 +5302,7 @@ def post_chat_message(body: ChatMessageBody, user: dict = Depends(get_current_us
         "text": text,
         "to_user_id": body.to_user_id,
         "thread_key": body.thread_key,
+        "location": location,
         "reply_to": reply_snapshot,
     }
     with _chat_lock:
@@ -5303,7 +5337,7 @@ def forward_chat_message(msg_id: str, body: ChatMessageBody, user: dict = Depend
         if thread_meta.get(thread_id, {}).get('closed') and role != 'owner':
             raise HTTPException(403, "Чат закрыт руководством")
 
-    if not source.get('text') and not source.get('attachment'):
+    if not source.get('text') and not source.get('attachment') and not source.get('location'):
         raise HTTPException(400, "Нечего пересылать")
 
     msg = {
@@ -5315,6 +5349,7 @@ def forward_chat_message(msg_id: str, body: ChatMessageBody, user: dict = Depend
         "to_user_id": body.to_user_id,
         "thread_key": body.thread_key,
         "attachment": source.get('attachment'),
+        "location": source.get('location'),
         "voice_transcript": source.get('voice_transcript'),
         "forwarded_from": source.get('name', ''),
     }
@@ -6404,6 +6439,7 @@ class TaskCreateBody(BaseModel):
     object_id: str = ''
     priority: str = 'обычная'
     category: str = 'other'
+    due_at: int | None = None
 
 
 class TaskStatusBody(BaseModel):
@@ -6415,6 +6451,65 @@ class TaskStatusBody(BaseModel):
 # сохранены как есть для обратной совместимости с уже существующими записями в tasks.json,
 # новые статусы добавлены поверх, не переименовывая старые.
 # moved to core/constants.py -- TASK_STATUSES
+
+
+def _task_is_open(task: dict) -> bool:
+    return task.get('status') not in ('закрыто', 'выдано', 'отклонено', 'cancelled')
+
+
+def _normalize_task_due_at(raw_due_at) -> int | None:
+    if raw_due_at in (None, ''):
+        return None
+    try:
+        due_at = int(raw_due_at)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Некорректный срок задачи")
+    if due_at <= 0:
+        raise HTTPException(400, "Некорректный срок задачи")
+    if due_at < int(time.time()) - 60:
+        raise HTTPException(400, "Срок задачи не может быть в прошлом")
+    return due_at
+
+
+def _format_due_at(due_at: int) -> str:
+    try:
+        return datetime.fromtimestamp(int(due_at), business_now().tzinfo).strftime('%d.%m %H:%M')
+    except Exception:
+        return ''
+
+
+def _overdue_task_alerts(now: int | None = None) -> list:
+    now = int(time.time()) if now is None else int(now)
+    result = []
+    for task in _load_tasks():
+        if not _task_is_open(task):
+            continue
+        try:
+            due_at = int(task.get('due_at') or 0)
+        except (TypeError, ValueError):
+            continue
+        if due_at <= 0 or due_at > now:
+            continue
+        title = (task.get('title') or 'Потребность')[:80]
+        parts = []
+        if task.get('object_id'):
+            parts.append(str(task.get('object_id')))
+        due_label = _format_due_at(due_at)
+        if due_label:
+            parts.append(f'срок {due_label}')
+        if task.get('from_name') or task.get('from_user_id'):
+            parts.append(f"запросил {task.get('from_name') or task.get('from_user_id')}")
+        result.append({
+            'id': f'task-overdue-{task.get("id", "")}',
+            'type': 'red',
+            'role_filter': 'owner',
+            'title': f'Просрочена потребность: {title}',
+            'subtitle': ' · '.join(parts),
+            'at': due_at,
+            'task_id': task.get('id', ''),
+            'task_overdue': True,
+        })
+    return result
 
 
 @app.get("/api/tasks")
@@ -6460,6 +6555,7 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
     category = body.category.strip() or 'other'
     if category not in TASK_CATEGORIES:
         raise HTTPException(400, "Недопустимая категория")
+    due_at = _normalize_task_due_at(body.due_at)
     roles = _load_roles()
     owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
     profile = _get_worker_profile(user['id'])
@@ -6476,6 +6572,7 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
         'category': category,
         'status': 'открыто',
         'created_at': int(time.time()),
+        'due_at': due_at,
         'closed_at': None,
     }
     with _lock_for(TASKS_FILE):
