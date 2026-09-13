@@ -926,6 +926,7 @@ function _renderDiscussingSection() {
 let _ncCurrentPostId = null;
 let _ncOverlayUnregister = null;
 let _ncReplyTo = null; // Раунд 6 §5.1: "Ответить" в меню комментария (news поддерживает reply_to)
+let _ncLoadSeq = 0;
 
 function _commentInitials(name) {
   const clean = String(name || '').trim();
@@ -974,7 +975,7 @@ function _setFeedCommentReply(kind, comment) {
   }
   if (input) {
     input.placeholder = `Ответ ${comment.name || 'сотруднику'}…`;
-    input.focus();
+    input.focus({ preventScroll: true });
   }
 }
 
@@ -1046,6 +1047,7 @@ function _bindFeedCommentBackdropClose(modalId, closeFn) {
   modal.dataset.backdropCloseWired = '1';
 
   let tapStart = null;
+  let lastPointerCloseAt = 0;
   modal.addEventListener('pointerdown', (e) => {
     const target = e.target instanceof Element ? e.target : null;
     if (!target || target.closest('.pc-sheet, .pc-photo-nav')) {
@@ -1060,6 +1062,14 @@ function _bindFeedCommentBackdropClose(modalId, closeFn) {
     tapStart = null;
     if (moved > 12) return;
     e.preventDefault();
+    lastPointerCloseAt = Date.now();
+    closeFn();
+  });
+  modal.addEventListener('click', (e) => {
+    if (Date.now() - lastPointerCloseAt < 350) return;
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target || target.closest('.pc-sheet, .pc-photo-nav')) return;
+    e.preventDefault();
     closeFn();
   });
   modal.addEventListener('pointercancel', () => { tapStart = null; });
@@ -1073,20 +1083,22 @@ function _scrollFeedCommentsToBottom(listId) {
   requestAnimationFrame(() => requestAnimationFrame(scroll));
   setTimeout(scroll, 140);
   setTimeout(scroll, 320);
+  setTimeout(scroll, 700);
 }
 
-async function _renderNewsCommentsList() {
-  const list = document.getElementById('nc-list');
-  const data = await api(`/api/feed/news/${_ncCurrentPostId}/comments`);
+function _renderFeedCommentList(kind, comments) {
+  const list = document.getElementById(kind === 'news' ? 'nc-list' : 'pc-list');
+  if (!list) return;
   const byId = {};
-  (data.comments || []).forEach(c => { byId[c.id] = c; });
-  (data.comments || []).forEach(c => { if (c.reply_to && byId[c.reply_to]) c.reply_to_name = byId[c.reply_to].name; });
-  list.innerHTML = (data.comments || []).map(c => _renderUnifiedFeedComment(c, byId)).join('') ||
-    '<div style="color:var(--text-light);font-size:0.95rem;padding:1rem 0">Пока нет комментариев. Будьте первым.</div>';
+  (comments || []).forEach(c => { byId[c.id] = c; });
+  (comments || []).forEach(c => { if (c.reply_to && byId[c.reply_to]) c.reply_to_name = byId[c.reply_to].name; });
+  const emptyColor = kind === 'news' ? 'var(--text-light)' : 'rgba(255,255,255,0.58)';
+  list.innerHTML = (comments || []).map(c => _renderUnifiedFeedComment(c, byId)).join('') ||
+    `<div style="color:${emptyColor};font-size:0.95rem;padding:1rem 0">Пока нет комментариев. Будьте первым.</div>`;
   list.querySelectorAll('[data-reply-comment]').forEach(btn => {
     btn.addEventListener('click', () => {
       const c = byId[btn.dataset.replyComment];
-      if (c) _setFeedCommentReply('news', c);
+      if (c) _setFeedCommentReply(kind, c);
     });
   });
   list.querySelectorAll('[data-menu-comment]').forEach(btn => {
@@ -1094,48 +1106,62 @@ async function _renderNewsCommentsList() {
       const c = byId[btn.dataset.menuComment];
       if (!c) return;
       _openCommentActions({
-        sourceType: 'news', sourceId: _ncCurrentPostId, comment: c,
+        sourceType: kind, sourceId: kind === 'news' ? _ncCurrentPostId : _pcCurrentPhotoId, comment: c,
         canDelete: String(c.user_id) === String(_feedMyId) || currentRole === 'owner',
-        onDelete: () => _deleteNewsComment(c.id),
-        onReply: () => _setFeedCommentReply('news', c),
-        inputId: 'nc-comment-input',
+        onDelete: () => kind === 'news' ? _deleteNewsComment(c.id) : _deletePhotoComment(c.id),
+        onReply: () => _setFeedCommentReply(kind, c),
+        inputId: kind === 'news' ? 'nc-comment-input' : 'pc-comment-input',
       });
     });
   });
 }
 
+async function _renderNewsCommentsList(expectedPostId = _ncCurrentPostId, expectedSeq = _ncLoadSeq) {
+  const data = await api(`/api/feed/news/${expectedPostId}/comments`);
+  if (expectedSeq !== _ncLoadSeq || _ncCurrentPostId !== expectedPostId) return;
+  _renderFeedCommentList('news', data.comments || []);
+}
+
 async function _deleteNewsComment(commentId) {
   if (!_ncCurrentPostId) return;
+  const postId = _ncCurrentPostId;
+  const seq = _ncLoadSeq;
   try {
-    await api(`/api/feed/news/${_ncCurrentPostId}/comments/${commentId}`, { method: 'DELETE' });
+    await api(`/api/feed/news/${postId}/comments/${commentId}`, { method: 'DELETE' });
     hapticImpact('light');
-    await _renderNewsCommentsList();
+    await _renderNewsCommentsList(postId, seq);
   } catch (e) {
     showToast('Ошибка удаления: ' + e.message, 'error');
   }
 }
 
 async function openNewsComments(postId) {
+  const seq = ++_ncLoadSeq;
   _ncCurrentPostId = postId;
   _clearFeedCommentReply('news');
   _markCommentActivityRead('news_comment', postId); // §5.2/§5.3: открытие обсуждения = прочитано
-  const modal = _openFeedCommentModal('news-comments-modal');
   const post = _newsItems.find(n => n.id === postId);
   document.getElementById('nc-title').textContent = post ? post.title : 'Обсуждение';
+  const list = document.getElementById('nc-list');
+  list.innerHTML = '<div style="padding:1rem;color:var(--text-light);text-align:center">Загрузка...</div>';
+  const input = document.getElementById('nc-comment-input');
+  if (input) input.value = '';
+  const modal = _openFeedCommentModal('news-comments-modal');
   if (typeof NavigationManager !== 'undefined' && !_ncOverlayUnregister) {
     _ncOverlayUnregister = NavigationManager.registerOverlay(() => _closeNewsCommentsInternal());
   }
-  const list = document.getElementById('nc-list');
-  list.innerHTML = '<div style="padding:1rem;color:var(--text-light);text-align:center">Загрузка...</div>';
   try {
     await _ensureFeedMyId();
-    await _renderNewsCommentsList();
+    if (seq !== _ncLoadSeq || _ncCurrentPostId !== postId) return;
+    await _renderNewsCommentsList(postId, seq);
   } catch (e) {
+    if (seq !== _ncLoadSeq || _ncCurrentPostId !== postId) return;
     list.innerHTML = `<div style="color:var(--red)">Ошибка: ${esc(e.message)}</div>`;
   }
 }
 
 function _closeNewsCommentsInternal() {
+  _ncLoadSeq++;
   _hideFeedCommentModal('news-comments-modal');
   _ncCurrentPostId = null;
   _clearFeedCommentReply('news');
@@ -1143,6 +1169,7 @@ function _closeNewsCommentsInternal() {
 }
 
 function closeNewsComments() {
+  _ncLoadSeq++;
   if (_ncOverlayUnregister) { _ncOverlayUnregister(); _ncOverlayUnregister = null; }
   _hideFeedCommentModal('news-comments-modal');
   _ncCurrentPostId = null;
@@ -1154,16 +1181,19 @@ async function _sendNewsComment() {
   const btn = document.getElementById('nc-comment-send-btn');
   const text = input.value.trim();
   if (!text || !_ncCurrentPostId || (btn && btn.disabled)) return;
+  const postId = _ncCurrentPostId;
+  const seq = _ncLoadSeq;
   if (btn) btn.disabled = true;
   try {
-    await api(`/api/feed/news/${_ncCurrentPostId}/comments`, { method: 'POST', body: JSON.stringify({ text, reply_to: _ncReplyTo || undefined }) });
+    const data = await api(`/api/feed/news/${postId}/comments`, { method: 'POST', body: JSON.stringify({ text, reply_to: _ncReplyTo || undefined }) });
+    if (seq !== _ncLoadSeq || _ncCurrentPostId !== postId) return;
     input.value = '';
     _clearFeedCommentReply('news');
     hapticImpact('light');
-    await _renderNewsCommentsList();
+    _renderFeedCommentList('news', data.comments || []);
     _scrollFeedCommentsToBottom('nc-list');
     // обновить счётчик на карточке + «обсуждают» без перезагрузки всей ленты
-    const post = _newsItems.find(n => n.id === _ncCurrentPostId);
+    const post = _newsItems.find(n => n.id === postId);
     if (post) { post.comment_count = (post.comment_count || 0) + 1; post.last_comment_at = Math.floor(Date.now() / 1000); }
   } catch (e) {
     showToast('Ошибка отправки: ' + e.message, 'error');
@@ -1306,6 +1336,7 @@ async function _loadFeedTabBadges() {
 // через <img src> напрямую) и esc() (защита от XSS на свободном тексте комментария).
 let _pcCurrentPhotoId = null;
 let _pcReplyTo = null;
+let _pcLoadSeq = 0;
 
 function _fmtPhotoCommentTime(iso) {
   if (!iso) return '';
@@ -1327,43 +1358,22 @@ async function _ensureFeedMyId() {
 
 async function _deletePhotoComment(commentId) {
   if (!_pcCurrentPhotoId) return;
+  const photoId = _pcCurrentPhotoId;
+  const seq = _pcLoadSeq;
   try {
-    await api(`/api/feed/photos/${_pcCurrentPhotoId}/comments/${commentId}`, { method: 'DELETE' });
+    await api(`/api/feed/photos/${photoId}/comments/${commentId}`, { method: 'DELETE' });
     hapticImpact('light');
-    await _renderPhotoCommentsList();
+    await _renderPhotoCommentsList(photoId, seq);
     loadFeedPhotos();
   } catch (e) {
     showToast('Ошибка удаления: ' + e.message, 'error');
   }
 }
 
-async function _renderPhotoCommentsList() {
-  const list = document.getElementById('pc-list');
-  const data = await api(`/api/feed/photos/${_pcCurrentPhotoId}/comments`);
-  const byId = {};
-  (data.comments || []).forEach(c => { byId[c.id] = c; });
-  (data.comments || []).forEach(c => { if (c.reply_to && byId[c.reply_to]) c.reply_to_name = byId[c.reply_to].name; });
-  list.innerHTML = (data.comments || []).map(c => _renderUnifiedFeedComment(c, byId)).join('') ||
-    '<div style="color:rgba(255,255,255,0.58);font-size:0.95rem;padding:1rem 0">Пока нет комментариев. Будьте первым.</div>';
-  list.querySelectorAll('[data-reply-comment]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const c = byId[btn.dataset.replyComment];
-      if (c) _setFeedCommentReply('photo', c);
-    });
-  });
-  list.querySelectorAll('[data-menu-comment]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const c = byId[btn.dataset.menuComment];
-      if (!c) return;
-      _openCommentActions({
-        sourceType: 'photo', sourceId: _pcCurrentPhotoId, comment: c,
-        canDelete: String(c.user_id) === String(_feedMyId) || currentRole === 'owner',
-        onDelete: () => _deletePhotoComment(c.id),
-        onReply: () => _setFeedCommentReply('photo', c),
-        inputId: 'pc-comment-input',
-      });
-    });
-  });
+async function _renderPhotoCommentsList(expectedPhotoId = _pcCurrentPhotoId, expectedSeq = _pcLoadSeq) {
+  const data = await api(`/api/feed/photos/${expectedPhotoId}/comments`);
+  if (expectedSeq !== _pcLoadSeq || _pcCurrentPhotoId !== expectedPhotoId) return;
+  _renderFeedCommentList('photo', data.comments || []);
 }
 
 let _pcFileCount = 1;
@@ -1399,12 +1409,20 @@ function _pcRenderPhotoAt(index) {
 let _pcOverlayUnregister = null;
 
 async function openPhotoComments(photoId, fileCount) {
+  const seq = ++_pcLoadSeq;
   // 24.07: мультифото — fileCount передаётся с карточки ленты (renderPhotoItem уже
   // знает p.files.length); если вызвано без него (старый путь), считаем 1 фото.
   _pcCurrentPhotoId = photoId;
   _pcFileCount = fileCount || 1;
   _clearFeedCommentReply('photo');
   _markCommentActivityRead('photo_comment', photoId); // §5.2/§5.3
+  const photo = document.getElementById('pc-photo');
+  if (photo) photo.removeAttribute('src');
+  const list = document.getElementById('pc-list');
+  list.innerHTML = '<div style="padding:1rem;color:rgba(255,255,255,0.58);text-align:center">Загрузка...</div>';
+  const input = document.getElementById('pc-comment-input');
+  if (input) input.value = '';
+  _pcRenderPhotoAt(0);
   const modal = _openFeedCommentModal('photo-comments-modal');
   // 25.07: модалка теперь зарегистрирована в NavigationManager.overlayStack -- раньше
   // Telegram BackButton её не видел (display-toggle вне навигации), при нажатии "назад"
@@ -1413,13 +1431,12 @@ async function openPhotoComments(photoId, fileCount) {
   if (typeof NavigationManager !== 'undefined' && !_pcOverlayUnregister) {
     _pcOverlayUnregister = NavigationManager.registerOverlay(() => _closePhotoCommentsInternal());
   }
-  _pcRenderPhotoAt(0);
-  const list = document.getElementById('pc-list');
-  list.innerHTML = '<div style="padding:1rem;color:var(--text-light);text-align:center">Загрузка...</div>';
   try {
     await _ensureFeedMyId();
-    await _renderPhotoCommentsList();
+    if (seq !== _pcLoadSeq || _pcCurrentPhotoId !== photoId) return;
+    await _renderPhotoCommentsList(photoId, seq);
   } catch (e) {
+    if (seq !== _pcLoadSeq || _pcCurrentPhotoId !== photoId) return;
     list.innerHTML = `<div style="color:var(--red)">Ошибка: ${esc(e.message)}</div>`;
   }
 }
@@ -1427,6 +1444,7 @@ async function openPhotoComments(photoId, fileCount) {
 // Вызывается ТОЛЬКО из NavigationManager (top.close()) — модалка уже popped из
 // overlayStack на этот момент, повторный unregister тут не нужен и не должен вызываться.
 function _closePhotoCommentsInternal() {
+  _pcLoadSeq++;
   _hideFeedCommentModal('photo-comments-modal');
   _pcCurrentPhotoId = null;
   _clearFeedCommentReply('photo');
@@ -1436,6 +1454,7 @@ function _closePhotoCommentsInternal() {
 // Вызывается при ручном закрытии (крестик/клик-вне) — модалка ещё в overlayStack,
 // нужно явно её оттуда снять, иначе следующий Back попытается закрыть уже закрытую модалку.
 function closePhotoComments() {
+  _pcLoadSeq++;
   if (_pcOverlayUnregister) { _pcOverlayUnregister(); _pcOverlayUnregister = null; }
   _hideFeedCommentModal('photo-comments-modal');
   _pcCurrentPhotoId = null;
@@ -1449,13 +1468,16 @@ async function _sendPhotoComment() {
   // 31.07 (UX-аудит): btn.disabled guard -- быстрый двойной тап отправлял 2
   // одинаковых комментария до возврата первого ответа.
   if (!text || !_pcCurrentPhotoId || (btn && btn.disabled)) return;
+  const photoId = _pcCurrentPhotoId;
+  const seq = _pcLoadSeq;
   if (btn) btn.disabled = true;
   try {
-    await api(`/api/feed/photos/${_pcCurrentPhotoId}/comments`, { method: 'POST', body: JSON.stringify({ text, reply_to: _pcReplyTo || undefined }) });
+    const data = await api(`/api/feed/photos/${photoId}/comments`, { method: 'POST', body: JSON.stringify({ text, reply_to: _pcReplyTo || undefined }) });
+    if (seq !== _pcLoadSeq || _pcCurrentPhotoId !== photoId) return;
     input.value = '';
     _clearFeedCommentReply('photo');
     hapticImpact('light');
-    await _renderPhotoCommentsList();
+    _renderFeedCommentList('photo', data.comments || []);
     _scrollFeedCommentsToBottom('pc-list');
     loadFeedPhotos().catch(() => {}); // обновить счётчик комментариев в ленте
   } catch (e) {

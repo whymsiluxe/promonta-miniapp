@@ -77,9 +77,11 @@ def test_comment_modal_is_bottom_sheet_not_route_page():
     assert "_scrollFeedCommentsToBottom('nc-list')" in feed_src
     assert "pointerdown" in feed_src
     assert "preventDefault()" in feed_src
-    assert "_setFeedCommentReply('photo'" in feed_src
-    assert "_setFeedCommentReply('news'" in feed_src
-    assert feed_src.count("canDelete: String(c.user_id) === String(_feedMyId) || currentRole === 'owner'") == 2
+    assert "_renderFeedCommentList(kind, comments)" in feed_src
+    assert "_setFeedCommentReply(kind, c)" in feed_src
+    assert "_ncLoadSeq" in feed_src
+    assert "_pcLoadSeq" in feed_src
+    assert feed_src.count("canDelete: String(c.user_id) === String(_feedMyId) || currentRole === 'owner'") == 1
 
 
 def test_feed_uses_unified_instagram_style_icons():
