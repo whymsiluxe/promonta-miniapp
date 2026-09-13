@@ -871,6 +871,22 @@ async function _loadHomeAlerts() {
 
 // Alerts view/modal — открывается из Home
 let _alertsViewOpen = false;
+const HOME_ALERT_ICONS = {
+  title: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M12 3a6 6 0 0 0-6 6v3.8L4.5 16h15L18 12.8V9a6 6 0 0 0-6-6Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.5 19a2.5 2.5 0 0 0 5 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  red: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M12 3 2.8 20h18.4L12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v5M12 17h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  yellow: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2"/><path d="M12 7.5v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  green: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  activity: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v7A2.5 2.5 0 0 1 17.5 15H9l-5 5V5.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+  close: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="m9 18 6-6-6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
+
+function _homeAlertIcon(alert) {
+  if (alert.activity_kind) return HOME_ALERT_ICONS.activity;
+  if (alert.type === 'red') return HOME_ALERT_ICONS.red;
+  if (alert.type === 'yellow') return HOME_ALERT_ICONS.yellow;
+  return HOME_ALERT_ICONS.green;
+}
 
 async function openAlertsView() {
   if (_alertsViewOpen) return;
@@ -881,13 +897,13 @@ async function openAlertsView() {
   modal.innerHTML = `
     <div class="alerts-modal-inner">
       <div class="alerts-modal-header">
-        <span class="alerts-modal-title">🔔 Алерты</span>
-        <button class="alerts-modal-close" onclick="_closeAlertsView()">✕</button>
+        <span class="alerts-modal-title"><span class="alerts-title-icon">${HOME_ALERT_ICONS.title}</span><span>Алерты</span></span>
+        <button class="alerts-modal-close" onclick="_closeAlertsView()" type="button" aria-label="Закрыть">${HOME_ALERT_ICONS.close}</button>
       </div>
       <div class="alerts-filter-tabs">
-        <div class="alerts-tab active" data-filter="all" onclick="_filterAlerts(this,'all')">Все</div>
-        <div class="alerts-tab" data-filter="red" onclick="_filterAlerts(this,'red')">Важное</div>
-        <div class="alerts-tab" data-filter="yellow" onclick="_filterAlerts(this,'yellow')">Задачи</div>
+        <button type="button" class="alerts-tab active" data-filter="all" onclick="_filterAlerts(this,'all')">Все</button>
+        <button type="button" class="alerts-tab" data-filter="red" onclick="_filterAlerts(this,'red')">Важное</button>
+        <button type="button" class="alerts-tab" data-filter="yellow" onclick="_filterAlerts(this,'yellow')">Задачи</button>
       </div>
       <div id="alerts-list" class="alerts-list">
         <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка...</div>
@@ -948,15 +964,15 @@ function _renderAlerts(alerts) {
     return `
       <div class="alert-item${clickable ? ' alert-item-clickable' : ''}" ${dataAttrs}>
         <div class="alert-item-border" style="background:${color}"></div>
-        <div class="alert-item-icon" style="background:${color}22;color:${color}">
-          ${a.type === 'red' ? '🔴' : a.type === 'yellow' ? '🟡' : isActivity ? '💬' : '🟢'}
+        <div class="alert-item-icon alert-item-icon-${esc(a.type || 'green')}" style="background:${color}18;color:${color}">
+          ${_homeAlertIcon(a)}
         </div>
         <div class="alert-item-body">
           <div class="alert-item-title">${esc(a.title)}</div>
           <div class="alert-item-sub">${esc(a.subtitle || '')}</div>
         </div>
         ${timeStr ? `<div class="alert-item-time">${timeStr}</div>` : ''}
-        ${clickable ? `<span class="alert-item-arrow">›</span>` : ''}
+        ${clickable ? `<span class="alert-item-arrow" aria-hidden="true">${HOME_ALERT_ICONS.chevron}</span>` : ''}
       </div>`;
   }).join('');
 

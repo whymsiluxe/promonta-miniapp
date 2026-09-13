@@ -1,5 +1,34 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-14 Alerts iOS sheet polish handoff
+
+Current autonomous slice: Stage 1 Alerts sheet premium UI polish from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `frontend/js/home.js`: added a local `HOME_ALERT_ICONS` SVG set for the Alerts
+  title, severity states, activity comments, close action, and chevron.
+- `frontend/js/home.js`: converted Alerts filter tabs to real buttons, replaced
+  emoji severity/activity markers with semantic SVG icons, and kept alert
+  deep-link and dismissal behavior unchanged.
+- `frontend/app.html`: added scoped iOS bottom-sheet, segmented filter, grouped
+  list, alert row, and safe-area action styling for `#alerts-modal`.
+- `tests/test_alerts_ios_frontend_contract.py`: new static contract for the
+  Alerts icon set, button tabs, iOS CSS bridge, semantic icon classes, and
+  no-emoji severity rendering.
+
+Verification:
+- `node --check frontend/js/home.js`.
+- `git diff --check`.
+- Focused Alerts/Home/Needs checks: `13 passed`.
+- Adjacent premium frontend contracts: `39 passed`.
+- Full suite: `770 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended Stage 1 slice:
+- Continue the premium UI pass with Team/Control surfaces, then decide whether
+  to finish Splash/Feed/Objects polish or move into Stage 2 evidence/offline
+  work.
+
 ## 2026-09-14 Needs iOS summary/list polish handoff
 
 Current autonomous slice: Stage 1 `Потребности` premium UI polish from

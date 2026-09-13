@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-14 (Alerts iOS sheet polish)
+
+Tests: 770 passed, 1 skipped.
+
+### Frontend
+- Restyled the Home Alerts bottom sheet with the shared iOS surface, segmented
+  filter, grouped list, native close control, muted backdrop, and safe-area
+  bottom action spacing.
+- Replaced the emoji title, severity dots, activity marker, and clickable arrow
+  with local inline SVG icons while keeping alert colors semantic.
+- Converted Alerts filters to button semantics without changing the existing
+  all/red/yellow filtering, deep-link, dismissal, or close behavior.
+
+### Tests
+- Added `tests/test_alerts_ios_frontend_contract.py` to lock the Alerts SVG
+  icon set, button tabs, iOS sheet CSS bridge, semantic icon classes, and
+  no-emoji severity rendering.
+- Verified `node --check frontend/js/home.js`, `git diff --check`, focused
+  Alerts/Home/Needs tests, adjacent premium frontend contracts, and the full
+  suite.
+
 ## 2026-09-14 (Needs iOS summary/list polish)
 
 Tests: 767 passed, 1 skipped.
