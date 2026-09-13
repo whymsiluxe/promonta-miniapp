@@ -5772,6 +5772,180 @@ body {
   line-height: 1.45;
 }
 
+#view-tools {
+  background: var(--ios-page-bg, var(--bg-app));
+}
+#view-tools header h1 {
+  color: var(--ios-text, var(--text-main));
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+#view-tools .tools-add-btn {
+  position: static;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 999px;
+  background: var(--ios-accent, var(--accent));
+  color: white;
+  border: none;
+  box-shadow: none;
+  font-size: 0;
+}
+#view-tools .tools-add-btn svg {
+  display: block;
+}
+#view-tools .tools-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  margin: 0 0.75rem 0.65rem;
+  padding: 3px;
+  background: var(--ios-grouped-surface, var(--bg-card));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-control, 11px);
+}
+#view-tools .tools-summary-tile {
+  min-width: 0;
+  min-height: 50px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.18rem;
+  padding: 0.35rem 0.25rem;
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: calc(var(--ios-radius-control, 11px) - 3px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--ios-muted, var(--text-light));
+  font-family: var(--font-family-body);
+  text-align: center;
+  transform: none;
+}
+#view-tools .tools-summary-tile:active {
+  transform: none;
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 9%, transparent);
+}
+#view-tools .tools-summary-tile.active {
+  background: var(--ios-surface, var(--bg-card-raised));
+  border-color: transparent;
+  box-shadow: 0 1px 3px rgba(33, 30, 23, 0.12);
+}
+#view-tools .tools-summary-tile.active .tools-summary-num {
+  color: var(--ios-text, var(--text-main));
+}
+#view-tools .tools-summary-tile.active .tools-summary-label {
+  color: var(--ios-muted, var(--text-light));
+}
+#view-tools .tools-summary-num {
+  color: var(--ios-text, var(--text-main));
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1;
+}
+#view-tools .tools-summary-label {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.1;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+#view-tools .tools-search-wrap {
+  position: relative;
+  padding: 0 0.75rem 0.75rem;
+}
+#view-tools .tools-search-icon {
+  position: absolute;
+  left: 1.45rem;
+  top: 22px;
+  transform: translateY(-50%);
+  display: flex;
+  color: var(--ios-muted, var(--text-light));
+  pointer-events: none;
+}
+#view-tools .tools-search-wrap input {
+  height: 44px;
+  padding: 0 0.9rem 0 2.45rem;
+  border-color: var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-text, var(--text-main));
+  font-size: 16px;
+  text-overflow: ellipsis;
+  box-shadow: none;
+}
+#view-tools .tools-search-wrap input::placeholder {
+  color: var(--ios-muted, var(--text-light));
+}
+#view-tools .cards {
+  gap: 0.65rem;
+  padding: 0 0.75rem calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+}
+#view-tools .card.tool-card {
+  overflow: hidden;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+  transform: none;
+}
+#view-tools .card.tool-card:hover {
+  transform: none;
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-tools .tool-card .obj-card-hero {
+  height: 150px;
+}
+#view-tools .tool-card .obj-card-body {
+  padding: 0.75rem 0.82rem 0.35rem;
+  text-align: left;
+}
+#view-tools .tool-card .obj-card-title {
+  color: var(--ios-text, var(--text-main));
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+#view-tools .tool-card .obj-card-address,
+#view-tools .tool-card .tool-card-meta {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 14px;
+  line-height: 1.25;
+}
+#view-tools .tool-card .obj-card-address {
+  justify-content: flex-start;
+}
+#view-tools .tool-card .tool-card-action-btn {
+  width: calc(100% - 1.64rem);
+  min-height: 40px;
+  margin: 0.35rem 0.82rem 0.82rem;
+  border: none;
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-accent, var(--accent));
+  color: white;
+  font-size: 16px;
+  font-weight: 650;
+  box-shadow: none;
+}
+#view-tools .empty-state {
+  margin: 0;
+  padding: 1.2rem 1rem;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+@media (max-width: 380px) {
+  #view-tools .tools-summary-label {
+    font-size: 11px;
+  }
+}
+
 #view-profile {
   background: var(--ios-page-bg, var(--bg-app));
 }
@@ -6474,20 +6648,25 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 </div>
 
 <!-- ═══════════ ИНСТРУМЕНТ ═══════════ -->
-<div class="view" id="view-tools">
+<div class="view ios-page" id="view-tools">
   <header>
     <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>Инструмент</h1>
-    <button class="fab" id="add-tool" style="display:none">+</button>
+    <button class="fab tools-add-btn ios-icon-button" id="add-tool" style="display:none" type="button" aria-label="Добавить инструмент" title="Добавить инструмент">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    </button>
   </header>
   <div class="tools-summary-bar" id="tools-summary-bar">
-    <div class="tools-summary-tile active" data-filter="all"><span class="tools-summary-num" id="tools-summary-all">0</span><span class="tools-summary-label">Всего</span></div>
-    <div class="tools-summary-tile" data-filter="free"><span class="tools-summary-num" id="tools-summary-free">0</span><span class="tools-summary-label">Свободны</span></div>
-    <div class="tools-summary-tile" data-filter="in-use"><span class="tools-summary-num" id="tools-summary-in-use">0</span><span class="tools-summary-label">Выданы</span></div>
-    <div class="tools-summary-tile" data-filter="repair"><span class="tools-summary-num" id="tools-summary-repair">0</span><span class="tools-summary-label">В ремонте</span></div>
+    <button class="tools-summary-tile active" data-filter="all" type="button" aria-pressed="true"><span class="tools-summary-num" id="tools-summary-all">0</span><span class="tools-summary-label">Всего</span></button>
+    <button class="tools-summary-tile" data-filter="free" type="button" aria-pressed="false"><span class="tools-summary-num" id="tools-summary-free">0</span><span class="tools-summary-label">Свободны</span></button>
+    <button class="tools-summary-tile" data-filter="in-use" type="button" aria-pressed="false"><span class="tools-summary-num" id="tools-summary-in-use">0</span><span class="tools-summary-label">Выданы</span></button>
+    <button class="tools-summary-tile" data-filter="repair" type="button" aria-pressed="false"><span class="tools-summary-num" id="tools-summary-repair">0</span><span class="tools-summary-label">В ремонте</span></button>
   </div>
-  <div class="search-bar">
-    <input type="text" id="tools-search" placeholder="Поиск по названию, номеру, объекту или сотруднику">
+  <div class="search-bar tools-search-wrap">
+    <span class="tools-search-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="m21 21-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+    <input type="text" id="tools-search" placeholder="Название, №, объект, сотрудник" aria-label="Поиск инструментов" autocomplete="off">
   </div>
   <div class="cards" id="tools-cards"></div>
 </div>

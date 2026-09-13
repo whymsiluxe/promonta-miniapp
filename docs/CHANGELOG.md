@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-14 (Tools iOS search/list polish)
+
+Tests: 759 passed, 1 skipped.
+
+### Frontend
+- Restyled the Tools screen as a premium iOS-like operational list: lighter
+  segmented summary filters, compact grouped search, restrained tool cards, and
+  bottom-nav-safe list spacing.
+- Replaced the generic owner `+` control with an explicit icon-only add action
+  using shared `ios-icon-button` language and accessible labels.
+- Shortened the Tools search placeholder and added a search icon, `aria-label`,
+  and `autocomplete="off"` so the field stays usable on narrow iPhone widths.
+- Made Tools view initialization idempotent so returning to the screen does not
+  stack duplicate add/search/filter event listeners; filter buttons now update
+  `aria-pressed` with the active state.
+
+### Tests
+- Added `tests/test_tools_ios_frontend_contract.py` to lock the Tools iOS
+  markup, CSS bridge, non-clipped search field, owner add icon, and one-shot
+  listener wiring.
+- Verified `node --check frontend/js/tools.js`, focused Tools backend/frontend
+  tests, adjacent premium frontend contracts, and the full suite.
+
 ## 2026-09-14 (Profile iOS Settings polish)
 
 Tests: 756 passed, 1 skipped.

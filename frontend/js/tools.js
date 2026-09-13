@@ -493,22 +493,40 @@ async function loadToolsObjects() {
 }
 
 function initToolsView() {
-  document.getElementById('add-tool').style.display = currentRole === 'owner' ? 'flex' : 'none';
-  document.getElementById('add-tool').addEventListener('click', () => {
-    if (currentRole !== 'owner') return;
-    openNewToolModal();
-  });
+  const addBtn = document.getElementById('add-tool');
+  if (addBtn) {
+    addBtn.style.display = currentRole === 'owner' ? 'flex' : 'none';
+    if (!addBtn.dataset.wired) {
+      addBtn.dataset.wired = '1';
+      addBtn.addEventListener('click', () => {
+        if (currentRole !== 'owner') return;
+        openNewToolModal();
+      });
+    }
+  }
 
-  document.getElementById('tools-search').addEventListener('input', applyToolsFilters);
+  const searchInput = document.getElementById('tools-search');
+  if (searchInput && !searchInput.dataset.wired) {
+    searchInput.dataset.wired = '1';
+    searchInput.addEventListener('input', applyToolsFilters);
+  }
 
-  document.getElementById('tools-summary-bar').addEventListener('click', (e) => {
-    const tile = e.target.closest('.tools-summary-tile');
-    if (!tile) return;
-    document.querySelectorAll('#tools-summary-bar .tools-summary-tile').forEach(t => t.classList.remove('active'));
-    tile.classList.add('active');
-    toolsActiveFilter = tile.dataset.filter;
-    applyToolsFilters();
-  });
+  const summaryBar = document.getElementById('tools-summary-bar');
+  if (summaryBar && !summaryBar.dataset.wired) {
+    summaryBar.dataset.wired = '1';
+    summaryBar.addEventListener('click', (e) => {
+      const tile = e.target.closest('.tools-summary-tile');
+      if (!tile) return;
+      document.querySelectorAll('#tools-summary-bar .tools-summary-tile').forEach(t => {
+        t.classList.remove('active');
+        t.setAttribute('aria-pressed', 'false');
+      });
+      tile.classList.add('active');
+      tile.setAttribute('aria-pressed', 'true');
+      toolsActiveFilter = tile.dataset.filter;
+      applyToolsFilters();
+    });
+  }
 
   loadToolsObjects();
   loadTools();
