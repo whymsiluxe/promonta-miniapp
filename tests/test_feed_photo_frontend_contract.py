@@ -127,6 +127,11 @@ def test_ios_input_zoom_and_ai_composer_visibility_contracts():
     assert ".obj-search-input" in src and "font-size: 16px" in src
     assert "body:has(#view-ai.active) .bottom-nav" in src
     assert "display: none" in src
+    assert 'id="ai-input" class="ai-input"' in src
+    assert 'autocomplete="off" autocorrect="off" spellcheck="false"' in src
+    assert "#view-ai .ai-input-bar" in src
+    assert "#view-ai .ai-attach-preview" in src
+    assert "ai-send-btn svg" in src
     assert "'SF Pro Text'" in tokens
 
 

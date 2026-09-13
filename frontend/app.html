@@ -2708,7 +2708,14 @@ body:has(#view-ai.active) .bottom-nav {
 #view-ai.active {
   padding-bottom: 0;
   transition: padding-bottom 0.15s ease;
+  background: #0f1115;
+  color: #f7f7f8;
 }
+#view-ai.active header {
+  background: rgba(15,17,21,0.96);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+#view-ai.active header h1 { color: #f7f7f8; }
 /* 24.07 v3: открытый диалог (тред) — референс Connecteam не показывает bottom-nav
    вообще, композер сидит у самого низа экрана. body.chat-dialog-open ставится JS
    при открытии/закрытии треда (openChatThread/openObjectOrMangelChat/closeChatThread),
@@ -2930,18 +2937,20 @@ body.chat-composer-focused .chat-input-bar, body.chat-composer-focused .ai-input
 
 .ai-attach-btn {
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
-  background: var(--bg-light);
-  border: 1px solid var(--border-color);
-  font-size: 1.1rem;
+  background: rgba(255,255,255,0.08);
+  border: none;
+  color: rgba(255,255,255,0.72);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
 }
+.ai-attach-btn svg, .ai-send-btn svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.ai-attach-btn:active { background: rgba(255,255,255,0.14); transform: scale(0.94); }
 
 .ai-attach-preview {
   display: flex;
@@ -3037,6 +3046,57 @@ body.chat-composer-focused .chat-input-bar, body.chat-composer-focused .ai-input
   border: 1px solid var(--border-color);
   font-size: 0.78rem;
 }
+#view-ai .ai-model-row {
+  background: #0f1115;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+#view-ai .ai-model-select {
+  background: rgba(255,255,255,0.08);
+  color: #f7f7f8;
+  border-color: rgba(255,255,255,0.1);
+}
+#view-ai .ai-messages {
+  background: #0f1115;
+}
+#view-ai .ai-empty {
+  color: rgba(255,255,255,0.64);
+}
+#view-ai .ai-suggestion-chip {
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(255,255,255,0.09);
+  color: rgba(255,255,255,0.9);
+}
+#view-ai .ai-input-bar {
+  background: rgba(17,20,24,0.98);
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+#view-ai .ai-input {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.1);
+  color: #f7f7f8;
+}
+#view-ai .ai-input::placeholder { color: rgba(255,255,255,0.46); }
+#view-ai .ai-send-btn { background: #1f513e; color: #fff; }
+#view-ai .ai-send-btn:disabled { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.42); }
+#view-ai .ai-clear-btn {
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.72);
+  border-color: rgba(255,255,255,0.1);
+}
+#view-ai .ai-attach-preview {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: calc(var(--chat-composer-height, 64px) + var(--chat-keyboard-inset, 0px) + 0.5rem);
+  z-index: 3;
+  margin: 0;
+  background: rgba(31,35,41,0.98);
+  border-color: rgba(255,255,255,0.1);
+  color: #f7f7f8;
+}
+#view-ai .ai-attach-name { color: #f7f7f8; }
+#view-ai .ai-attach-loading { color: rgba(255,255,255,0.68); }
+#view-ai .ai-attach-icon, #view-ai .ai-attach-remove { background: rgba(255,255,255,0.1); color: #f7f7f8; }
 
 /* 25.07: рестайл под референс Connecteam -- плоский текст без bubble-фона, имя+время
    в одну строку над текстом (было: имя отдельной строкой сверху, время отдельной снизу,
@@ -6347,9 +6407,9 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
   <div id="ai-attach-preview" class="ai-attach-preview" style="display:none"></div>
   <div class="ai-input-bar">
     <input type="file" id="ai-file-input" accept="image/*,.pdf,.txt,.md,.csv" style="display:none">
-    <button id="ai-attach" class="ai-attach-btn" aria-label="Прикрепить файл" type="button" onclick="document.getElementById('ai-file-input').click()">📎</button>
-    <textarea id="ai-input" class="ai-input" placeholder="Вопрос ассистенту..." rows="1"></textarea>
-    <button id="ai-send" class="ai-send-btn" aria-label="Отправить">➤</button>
+    <button id="ai-attach" class="ai-attach-btn" aria-label="Прикрепить файл" type="button" onclick="document.getElementById('ai-file-input').click()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9.8-9.8a4 4 0 0 1 5.7 5.7l-9.9 9.9a2 2 0 0 1-2.8-2.8l8.8-8.8"/></svg></button>
+    <textarea id="ai-input" class="ai-input" placeholder="Вопрос ассистенту..." rows="1" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+    <button id="ai-send" class="ai-send-btn" aria-label="Отправить"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
   </div>
 </div>
 

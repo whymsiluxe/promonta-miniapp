@@ -36,7 +36,7 @@ function _renderAiMessages() {
     container.querySelectorAll('[data-ai-suggest]').forEach(chip => {
       chip.addEventListener('click', () => {
         const input = document.getElementById('ai-input');
-        if (input) { input.value = chip.dataset.aiSuggest; input.focus(); }
+        if (input) { input.value = chip.dataset.aiSuggest; input.focus({ preventScroll: true }); }
       });
     });
     return;
@@ -108,7 +108,7 @@ async function _sendAiMessage() {
   const input = document.getElementById('ai-input');
   const btn = document.getElementById('ai-send');
   const text = input.value.trim();
-  if (!text && !_aiPendingFile) return;
+  if ((!text && !_aiPendingFile) || (btn && btn.disabled)) return;
 
   let content;
   if (_aiPendingFile) {
@@ -166,6 +166,7 @@ async function _sendAiMessage() {
     _aiMessages.pop();
   } finally {
     btn.disabled = false;
+    input.focus({ preventScroll: true });
   }
 }
 
