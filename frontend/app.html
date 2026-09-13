@@ -5590,6 +5590,188 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
   white-space: nowrap; cursor: pointer; min-height: 34px;
 }
 
+/* 13.09 Stage 1: premium iOS aliases over the legacy component mix.
+   The canonical primitives live in css/tokens.css as .ios-* classes; this
+   bridge makes existing feed/object/profile/team/date controls read as one
+   component family while larger screen rewrites continue incrementally. */
+body {
+  background: var(--ios-page-bg, var(--bg-light));
+  color: var(--ios-text, var(--text-main));
+}
+
+.bottom-nav {
+  background: color-mix(in srgb, var(--ios-surface, #fff) 94%, transparent);
+  border: 1px solid var(--ios-border, var(--border-color));
+  padding: 8px;
+  box-shadow: 0 10px 28px -22px rgba(33, 30, 23, 0.45);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.nav-item { color: var(--ios-muted, var(--text-light)); }
+.nav-item.active { color: var(--ios-accent, var(--accent)); }
+.nav-icon-svg {
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  stroke-width: 2;
+}
+.nav-item.active .nav-icon-svg {
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 12%, var(--ios-surface, #fff));
+  color: var(--ios-accent, var(--accent));
+  box-shadow: none;
+}
+.nav-label {
+  color: currentColor;
+  font-size: 10.5px;
+  letter-spacing: 0;
+  font-weight: 650;
+}
+
+.doc-type-switch,
+.feed-saved-switch,
+.tasks-filters,
+.kd-filters,
+.profile-tabs,
+.profile-period-pills,
+.chat-category-tabs,
+.wx-city-tabs,
+.wx-object-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: var(--ios-control-height, 36px);
+  padding: 3px;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-grouped-surface, var(--bg-card));
+  box-shadow: none;
+  scrollbar-width: none;
+}
+.doc-type-switch::-webkit-scrollbar,
+.feed-saved-switch::-webkit-scrollbar,
+.tasks-filters::-webkit-scrollbar,
+.kd-filters::-webkit-scrollbar,
+.profile-tabs::-webkit-scrollbar,
+.profile-period-pills::-webkit-scrollbar,
+.chat-category-tabs::-webkit-scrollbar,
+.wx-city-tabs::-webkit-scrollbar,
+.wx-object-tabs::-webkit-scrollbar { display: none; }
+
+.doc-type-opt,
+.feed-saved-opt,
+.filter-chip,
+.tasks-filter-chip,
+.kd-filter-chip,
+.profile-period-pill,
+.wx-city-tab,
+.wx-object-tab {
+  min-height: calc(var(--ios-control-height, 36px) - 6px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0 0.75rem;
+  border: 1px solid transparent;
+  border-radius: calc(var(--ios-radius-control, 11px) - 3px);
+  background: transparent;
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-meta, 14px);
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.15;
+  white-space: nowrap;
+  box-shadow: none;
+}
+.doc-type-opt.active,
+.feed-saved-opt.active,
+.filter-chip.active,
+.tasks-filter-chip.active,
+.kd-filter-chip.active,
+.profile-period-pill.active,
+.wx-city-tab.active,
+.wx-object-tab.active,
+#view-chat .chat-category-tabs .doc-type-opt.active {
+  background: var(--ios-surface, var(--bg-card-raised));
+  border-color: transparent;
+  color: var(--ios-text, var(--text-main));
+  box-shadow: 0 1px 3px rgba(33, 30, 23, 0.12);
+}
+#view-chat .chat-category-tabs .doc-type-opt {
+  background: transparent;
+  color: var(--ios-muted, var(--text-light));
+}
+.feed-tab-badge,
+.feed-saved-count,
+.nav-badge,
+.tp-bar-chip {
+  letter-spacing: 0;
+  box-shadow: none;
+}
+
+.home-shifts-section,
+.home-team-section,
+.home-rings-section,
+.home-calendar-widget,
+.active-shift-panel,
+.task-card,
+.my-task-card,
+.mangel-column,
+.obj-stage-body,
+.obj-control-tile,
+.abw-metric-chip,
+.tools-summary-tile,
+.weather-card,
+.profile-skill-chip-v2 {
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+.home-section-title,
+.obj-info-section-title,
+.home-team-block-title,
+.obj-roadmap-category-title {
+  letter-spacing: 0;
+  text-transform: none;
+}
+.home-shift-row,
+.home-team-hours-row,
+.obj-info-item-row,
+.obj-info-doc-row,
+.obj-info-team-list-row,
+.more-menu-item {
+  min-height: var(--ios-touch-target, 44px);
+  border-color: var(--ios-separator, var(--border-color));
+}
+
+.bottom-sheet-panel,
+.mangel-modal-content,
+.checkin-status-inner,
+.fw-inner,
+.kd-detail-sheet,
+.obj-stage-add-sheet-inner {
+  background: var(--ios-surface, var(--bg-card));
+  border-radius: var(--ios-radius-sheet, 22px) var(--ios-radius-sheet, 22px) 0 0;
+  box-shadow: 0 -12px 34px rgba(33, 30, 23, 0.18);
+}
+.bottom-sheet-handle,
+.pc-sheet-handle,
+.obj-stage-add-sheet-handle {
+  background: var(--ios-border, var(--border-color));
+}
+
+.empty-state,
+.obj-info-empty,
+.obj-stages-empty,
+.history-empty,
+.chat-empty,
+.ai-empty,
+.obj-roadmap-empty {
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-secondary, 15px);
+  line-height: 1.45;
+}
+
 /* Extra bottom padding for views when bar is visible */
 body.today-plan-bar-visible .view { padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 42px); }
 body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 42px); }

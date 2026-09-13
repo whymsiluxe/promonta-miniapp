@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-13 (Premium iOS UI foundation)
+
+Tests: 751 passed, 1 skipped.
+
+### Frontend
+- Added shared premium iOS component primitives in `frontend/css/tokens.css`:
+  `.ios-page`, `.ios-section`, `.ios-card`, `.ios-list`, `.ios-list-row`,
+  `.ios-segmented`, `.ios-chip`, `.ios-action-button`, `.ios-icon-button`,
+  `.ios-bottom-sheet`, `.ios-empty-state`, `.ios-status-pill`, and
+  `.ios-stat-tile`.
+- Added a late CSS bridge in `frontend/app.html` so existing feed tabs, object
+  tabs, profile tabs, team tabs, saved filters, date filters, list rows, cards,
+  stat tiles, bottom sheets, and the floating bottom nav share the same
+  iPhone-style surfaces, radii, typography, muted colors, and active states.
+- Lightened the floating bottom nav from the previous heavy dark pill toward a
+  native translucent light surface with a cleaner green active state.
+
+### Tests
+- Added `tests/test_premium_ios_design_contract.py` to lock the shared
+  `.ios-*` primitives and the legacy selector alias layer.
+- Verified the full suite with `python3 -m pytest -q`.
+
 ## 2026-09-13 (Feed UX — unified popup comments, reactions, iPhone polish)
 
 Tests: 737 passed, 1 skipped.
