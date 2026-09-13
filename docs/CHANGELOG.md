@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-09-13 (Feed UX — unified popup comments, reactions, iPhone polish)
+
+Tests: 737 passed, 1 skipped.
+
+### Backend
+- Added persistent photo reactions via `feed_photo_reactions.json` and
+  `POST /api/feed/photos/{photo_id}/react`; `/api/feed/photos` now returns
+  `likes` and `liked_by_me` for photo posts.
+- Photo comments now accept and store `reply_to`, matching the existing news
+  comments reply model.
+
+### Frontend
+- Photo and news comments now share one Instagram-like bottom-sheet pattern:
+  dark overlay, handle, unified comment rows, reply bar, quick reactions,
+  input row, and higher `comment-action-sheet` z-index so the `⋯` menu works
+  above the popup.
+- Feed actions were unified around one SVG icon set (`IG_ICONS`): photo,
+  news, and weather actions now use heart/comment/share/bookmark-style icons
+  instead of mixed emoji/legacy buttons.
+- Photo feed likes now persist through the backend instead of being decorative.
+- AI screen hides the floating bottom nav while active so the assistant input
+  stays visible.
+- Object/new-object inputs and filters use 16px text to avoid iOS auto-zoom
+  when the keyboard opens; app font tokens now prefer Apple/SF system fonts.
+- Object add FAB sits higher above nav and has a subtle motion/shadow state.
+
+### Tests
+- Added/updated photo feed integrity and frontend contract tests for photo
+  reactions, comment replies, popup comment UI, shared icons, iOS input sizing,
+  and AI composer visibility.
+- Updated production-layout route-count contract from 176 to 177 for the new
+  photo reaction endpoint.
+
 ## 2026-09-08 (Phase 2 — Production Control re-verification: multi-worker completion, blocker idempotency)
 
 Tests: 563 passed, 1 skipped.

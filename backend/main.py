@@ -178,6 +178,7 @@ try:
         WORKER_AI_RATE_FILE,
         FINISH_OUTBOX_FILE,
         PHOTO_META_FILE,
+        PHOTO_REACTIONS_FILE,
         NEWS_REACTIONS_FILE,
         ROLES_FILE,
         AUDIT_FILE,
@@ -227,6 +228,7 @@ except ImportError:
         WORKER_AI_RATE_FILE,
         FINISH_OUTBOX_FILE,
         PHOTO_META_FILE,
+        PHOTO_REACTIONS_FILE,
         NEWS_REACTIONS_FILE,
         ROLES_FILE,
         AUDIT_FILE,
@@ -3961,6 +3963,14 @@ def _save_photo_meta(items: list):
         json.dump(items, f, ensure_ascii=False)
 
 
+def _load_photo_reactions() -> dict:
+    return _safe_load_json(PHOTO_REACTIONS_FILE, {})
+
+
+def _save_photo_reactions(data: dict):
+    _atomic_write_json(PHOTO_REACTIONS_FILE, data)
+
+
 def _copy_checkin_photos_to_feed(rel_paths: list, prefix: str) -> list:
     """Копирует check-in фото (уже сохранены под CHECKIN_PHOTO_BASE) в PHOTO_DIR под
     новыми именами, возвращает список имён файлов для feed_photos.json. 24.07: фото
@@ -4026,9 +4036,14 @@ def _upsert_checkin_feed_post(session: dict, kind: str, object_name: str, user_i
 def list_feed_photos(user: dict = Depends(get_current_user)):
     with _photo_lock:
         items = _load_photo_meta()
+    reactions = _load_photo_reactions()
+    uid = str(user['id'])
     photos = []
     for p in reversed(items):
         p = dict(p)
+        photo_reactions = reactions.get(p.get('id'), {})
+        p['likes'] = len(photo_reactions)
+        p['liked_by_me'] = uid in photo_reactions
         p['comment_count'] = len(p.pop('comments', []))
         # 24.07: мультифото — старые записи (до этой правки) хранили один 'file',
         # новые хранят 'files' (список). Нормализуем на чтение, не трогаем сами
@@ -4102,11 +4117,12 @@ async def upload_feed_photo(
 
 class PhotoCommentBody(BaseModel):
     text: str
+    reply_to: str = None
 
 
 @app.post("/api/feed/photos/{photo_id}/comments")
 def add_feed_photo_comment(photo_id: str, body: PhotoCommentBody, user: dict = Depends(get_current_user)):
-    text = body.text.strip()[:500]
+    text = (body.text or '').strip()[:500]
     if not text:
         raise HTTPException(400, "Комментарий не может быть пустым")
     with _photo_lock:
@@ -4114,16 +4130,18 @@ def add_feed_photo_comment(photo_id: str, body: PhotoCommentBody, user: dict = D
         entry = next((p for p in items if p['id'] == photo_id), None)
         if not entry:
             raise HTTPException(404, "Фото не найдено")
-        prior_ids = {c.get('user_id') for c in entry.get('comments', [])}
+        comments = entry.setdefault('comments', [])
+        prior_ids = {c.get('user_id') for c in comments}
         photo_author = entry.get('user_id')
         photo_object_id = entry.get('object_id', '')
         actor_name = _sanitize_display_name(user.get('first_name'), str(user['id']))
         new_id = uuid.uuid4().hex
-        entry.setdefault('comments', []).append({
+        comments.append({
             'id': new_id,
             'user_id': str(user['id']),
             'name': actor_name,
             'text': text,
+            'reply_to': (body.reply_to or None),
             'at': datetime.utcnow().isoformat(),
         })
         _save_photo_meta(items)
@@ -4138,6 +4156,27 @@ def add_feed_photo_comment(photo_id: str, body: PhotoCommentBody, user: dict = D
     except Exception:
         pass
     return {"comments": entry['comments']}
+
+
+class PhotoReactionBody(BaseModel):
+    liked: bool
+
+
+@app.post("/api/feed/photos/{photo_id}/react")
+def react_feed_photo(photo_id: str, body: PhotoReactionBody, user: dict = Depends(get_current_user)):
+    with _photo_lock:
+        items = _load_photo_meta()
+        if not any(p.get('id') == photo_id for p in items):
+            raise HTTPException(404, "Фото не найдено")
+        reactions = _load_photo_reactions()
+        photo_reactions = reactions.setdefault(photo_id, {})
+        uid = str(user['id'])
+        if body.liked:
+            photo_reactions[uid] = True
+        else:
+            photo_reactions.pop(uid, None)
+        _save_photo_reactions(reactions)
+    return {"likes": len(photo_reactions), "liked_by_me": bool(body.liked)}
 
 
 @app.get("/api/feed/photos/{photo_id}/comments")

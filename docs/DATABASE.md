@@ -23,7 +23,7 @@ Every JSON store is written through `_atomic_write_json(path, data)` (write to t
 | `chat_thread_meta.json` | thread open/closed state (owner-set, global); since 2026-07-28 also `user_prefs: {user_id: {muted,pinned,archived}}` per thread, per-user (Phase 06 data layer, no frontend UI yet) | — |
 | `chat_reactions.json` (2026-07-28) | flat list `[{message_id,user_id,reaction,created_at}]`, fixed reaction set `👍✅👀❗`, uniqueness per (message_id,user_id,reaction) | Telegram user IDs |
 | `feed_photos.json` | news/photo feed posts | Photos |
-| `news_reactions.json` / `news_reads.json` | feed engagement | Telegram user IDs |
+| `feed_photo_reactions.json` / `news_reactions.json` / `news_reads.json` | feed engagement | Telegram user IDs |
 | `notified_users.json` | `{user_id: notified_at_ts}`, 7-day TTL | Telegram user IDs |
 | `birthday_alerts.json` | birthday reminder dedup state | — |
 | `ai_model.json` / `ai_chat_rate.json` | AI feature config + rate limiting | — |

@@ -83,6 +83,15 @@ const WX_SEVERITY_SECTIONS = [
   { level: 'info', label: 'Информация' },
 ];
 
+const IG_ICONS = {
+  heart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6c-1.7-1.7-4.4-1.7-6.1 0L12 7.3 9.3 4.6C7.6 2.9 4.9 2.9 3.2 4.6s-1.7 4.4 0 6.1L12 19.5l8.8-8.8c1.7-1.7 1.7-4.4 0-6.1Z"/></svg>',
+  comment: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 8.7 8.7 0 0 1-3.8-.9L3 21l1.9-5.7A8.4 8.4 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.5 8.5 0 0 1 21 11.5Z"/></svg>',
+  share: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>',
+  bookmark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z"/></svg>',
+  thumbsUp: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>',
+  thumbsDown: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>',
+};
+
 // Основная подпись поста: при жаре -- температурная, иначе первый risk или label типа.
 function _wxPrimaryLabel(entry) {
   const type = _dominantWxType(entry);
@@ -148,7 +157,6 @@ async function toggleWxLike(btn, idx) {
     });
     entry.liked_by_me = res.liked_by_me;
     entry.likes = res.likes;
-    btn.querySelector('.wx-heart').textContent = res.liked_by_me ? '\u2764\uFE0F' : '\uD83E\uDD0D';
     btn.classList.toggle('liked', res.liked_by_me);
     const countEl = btn.querySelector('.wx-like-count');
     if (countEl) countEl.textContent = res.likes > 0 ? res.likes : '';
@@ -227,11 +235,11 @@ function renderFeedCard(entry, idx, isActive) {
     <div class="wx-post-actions">
       <button class="wx-act ${liked ? 'liked' : ''}" type="button"
         onclick="toggleWxLike(this, ${idx})">
-        <span class="wx-heart">${liked ? '\u2764\uFE0F' : '\uD83E\uDD0D'}</span>
+        <span class="wx-heart">${IG_ICONS.heart}</span>
         <span class="wx-like-count">${entry.likes > 0 ? entry.likes : ''}</span>
       </button>
-      <button class="wx-act" type="button" onclick="switchView('chat')">\uD83D\uDCAC</button>
-      <button class="wx-act" type="button" onclick="shareWxPost(_wxEntries[${idx}])">\uD83D\uDCE4</button>
+      <button class="wx-act" type="button" onclick="switchView('chat')" aria-label="Комментарии">${IG_ICONS.comment}</button>
+      <button class="wx-act" type="button" onclick="shareWxPost(_wxEntries[${idx}])" aria-label="Поделиться">${IG_ICONS.share}</button>
     </div>
     <div class="wx-post-caption">${caption}</div>
   </div>`;
@@ -380,6 +388,7 @@ function renderPhotoItem(p) {
   const objectLabel = p.object_id || '';
   const caption = (p.caption || '').trim();
   const fileCount = (p.files || []).length;
+  const liked = !!p.liked_by_me;
   // 24.07: мультифото — свайп прямо в карточке ленты (как в Инсте), не только в модалке.
   // img-wrap — горизонтальный scroll-snap контейнер со всеми фото поста; badge/dots
   // обновляются по scroll-позиции (см. _initFeedPhotoSwipeDots). Тап на карточку всё
@@ -391,7 +400,7 @@ function renderPhotoItem(p) {
     ? `<div class="feed-photo-item-dots">${Array.from({ length: fileCount }, (_, i) => `<span class="${i === 0 ? 'active' : ''}"></span>`).join('')}</div>`
     : '';
   return `
-  <article class="feed-photo-post" data-photo-id="${p.id}" onclick="openPhotoComments('${p.id}', ${fileCount})">
+  <article class="feed-photo-post" data-photo-id="${p.id}">
     <div class="feed-photo-post-header">
       <div class="feed-photo-avatar">${esc(_feedPhotoInitials(author))}</div>
       <div class="feed-photo-post-author">
@@ -407,16 +416,60 @@ function renderPhotoItem(p) {
       <div class="feed-photo-img-error" aria-hidden="true">Фото недоступно</div>
     </div>
     <div class="feed-photo-action-row">
-      <button class="feed-photo-comment-action" type="button" onclick="event.stopPropagation(); openPhotoComments('${p.id}', ${fileCount})" aria-label="Комментарии">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 8.7 8.7 0 0 1-3.8-.9L3 21l1.9-5.7A8.4 8.4 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.5 8.5 0 0 1 21 11.5Z"/></svg>
-        <span>${p.comment_count || 0}</span>
+      <div class="feed-photo-action-left">
+        <button class="feed-photo-icon-action feed-photo-like-action ${liked ? 'liked' : ''}" type="button" onclick="event.stopPropagation(); togglePhotoLike(this, '${p.id}')" aria-label="Нравится">
+          ${IG_ICONS.heart}
+          <span class="feed-photo-like-count">${p.likes > 0 ? p.likes : ''}</span>
+        </button>
+        <button class="feed-photo-icon-action feed-photo-comment-action" type="button" onclick="event.stopPropagation(); openPhotoComments('${p.id}', ${fileCount})" aria-label="Комментарии">
+          ${IG_ICONS.comment}
+          <span>${p.comment_count || 0}</span>
+        </button>
+        <button class="feed-photo-icon-action" type="button" onclick="event.stopPropagation(); sharePhotoPost('${p.id}')" aria-label="Поделиться">
+          ${IG_ICONS.share}
+        </button>
+      </div>
+      <button class="feed-photo-icon-action feed-photo-save-action" type="button" onclick="event.stopPropagation(); hapticImpact('light')" aria-label="Сохранить">
+        ${IG_ICONS.bookmark}
       </button>
-      ${objectLabel ? `<span class="feed-photo-object-pill">${esc(objectLabel)}</span>` : ''}
     </div>
     <div class="feed-photo-caption">
       <b>${esc(author)}</b>${caption ? ` ${esc(caption)}` : (objectLabel ? ` Фото по объекту ${esc(objectLabel)}` : ' Добавил фото')}
     </div>
   </article>`;
+}
+
+async function togglePhotoLike(btn, photoId) {
+  const post = _feedPhotosCache.find(p => p.id === photoId);
+  if (!post || btn.disabled) return;
+  const nextLiked = !post.liked_by_me;
+  btn.disabled = true;
+  try {
+    const res = await api(`/api/feed/photos/${encodeURIComponent(photoId)}/react`, {
+      method: 'POST',
+      body: JSON.stringify({ liked: nextLiked }),
+    });
+    post.liked_by_me = res.liked_by_me;
+    post.likes = res.likes;
+    btn.classList.toggle('liked', res.liked_by_me);
+    const count = btn.querySelector('.feed-photo-like-count');
+    if (count) count.textContent = res.likes > 0 ? res.likes : '';
+    hapticImpact('light');
+  } catch (e) {
+    showToast('Ошибка: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function sharePhotoPost(photoId) {
+  const post = _feedPhotosCache.find(p => p.id === photoId);
+  if (!post) return;
+  const text = `${post.name || 'Promonta'}: ${post.caption || (post.object_id ? `Фото по объекту ${post.object_id}` : 'Фотоотчёт')}`;
+  try {
+    if (navigator.share) { navigator.share({ text }); return; }
+  } catch (e) {}
+  try { navigator.clipboard.writeText(text); showToast('Скопировано', 'success'); } catch (e) {}
 }
 
 function _initFeedPhotoSwipeDots(grid) {
@@ -603,10 +656,10 @@ function _newsCardHtml(n, i) {
       <div class="news-foot">${esc(n.published_at) || ''}${n.url ? ' · Читать источник\u2197' : ''}</div>
     </div>
     <div class="news-actions">
-      <button class="news-react-btn news-comment-btn" onclick="event.stopPropagation();openNewsComments('${n.id}')"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> <span>${cc}</span></button>
-      <button class="news-react-btn ${likeActive}" onclick="event.stopPropagation();reactNews('${n.id}','like',this)"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg> <span>${n.likes || 0}</span></button>
-      <button class="news-react-btn ${dislikeActive}" onclick="event.stopPropagation();reactNews('${n.id}','dislike',this)"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg> <span>${n.dislikes || 0}</span></button>
-      ${n.url ? `<button class="news-react-btn" onclick="event.stopPropagation();shareNewsLink(${i})"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v14"/></svg></button>` : ''}
+      <button class="news-react-btn news-comment-btn" data-news-action="comment" onclick="event.stopPropagation();openNewsComments('${n.id}')">${IG_ICONS.comment} <span>${cc}</span></button>
+      <button class="news-react-btn news-like-btn ${likeActive}" data-news-reaction="like" onclick="event.stopPropagation();reactNews('${n.id}','like',this)">${IG_ICONS.heart} <span>${n.likes || 0}</span></button>
+      <button class="news-react-btn news-dislike-btn ${dislikeActive}" data-news-reaction="dislike" onclick="event.stopPropagation();reactNews('${n.id}','dislike',this)">${IG_ICONS.thumbsDown} <span>${n.dislikes || 0}</span></button>
+      ${n.url ? `<button class="news-react-btn" data-news-action="share" onclick="event.stopPropagation();shareNewsLink(${i})">${IG_ICONS.share}</button>` : ''}
     </div>
   </div>`;
 }
@@ -626,11 +679,12 @@ async function reactNews(postId, reaction, btnEl) {
     post.dislikes = res.dislikes;
     post.my_reaction = res.my_reaction;
     const card = btnEl.closest('.news-card');
-    card.querySelector('.news-react-btn:nth-child(1) span').textContent = post.likes || 0;
-    card.querySelector('.news-react-btn:nth-child(2) span').textContent = post.dislikes || 0;
-    card.querySelectorAll('.news-react-btn').forEach(b => b.classList.remove('active'));
-    if (post.my_reaction === 'like') card.querySelector('.news-react-btn:nth-child(1)').classList.add('active');
-    if (post.my_reaction === 'dislike') card.querySelector('.news-react-btn:nth-child(2)').classList.add('active');
+    const likeBtn = card.querySelector('[data-news-reaction="like"]');
+    const dislikeBtn = card.querySelector('[data-news-reaction="dislike"]');
+    likeBtn.querySelector('span').textContent = post.likes || 0;
+    dislikeBtn.querySelector('span').textContent = post.dislikes || 0;
+    likeBtn.classList.toggle('active', post.my_reaction === 'like');
+    dislikeBtn.classList.toggle('active', post.my_reaction === 'dislike');
   } catch (e) {
     showToast('Ошибка: ' + e.message, 'error');
   }
@@ -706,14 +760,68 @@ let _ncCurrentPostId = null;
 let _ncOverlayUnregister = null;
 let _ncReplyTo = null; // Раунд 6 §5.1: "Ответить" в меню комментария (news поддерживает reply_to)
 
-function _renderNewsComment(c) {
-  const canDelete = String(c.user_id) === String(_feedMyId) || currentRole === 'owner';
-  const reply = c.reply_to_name ? `<div class="pc-comment-reply">↳ ${esc(c.reply_to_name)}</div>` : '';
+function _commentInitials(name) {
+  const clean = String(name || '').trim();
+  if (!clean) return 'P';
+  return clean.split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase();
+}
+
+function _commentTime(c) {
+  if (c.ts) return _fmtPhotoCommentTime(c.ts * 1000);
+  return _fmtPhotoCommentTime(c.at);
+}
+
+function _renderUnifiedFeedComment(c, byId = {}) {
+  const author = c.name || c.user_id || 'Сотрудник';
+  const replyTo = c.reply_to ? byId[c.reply_to] : null;
+  const replyName = c.reply_to_name || replyTo?.name || replyTo?.user_id || '';
+  const replyPreview = replyTo?.text ? ` · ${String(replyTo.text).slice(0, 80)}` : '';
   return `<div class="pc-comment" data-comment-id="${c.id || ''}">
-    ${reply}
-    <div class="pc-comment-head"><b>${esc(c.name || c.user_id)}</b><span class="pc-comment-time">${_fmtPhotoCommentTime(c.ts ? c.ts * 1000 : c.at)}</span>${c.id ? `<button class="pc-comment-menu" data-menu-comment="${c.id}" type="button" aria-label="Действия">⋯</button>` : ''}</div>
-    <div class="pc-comment-text">${esc(c.text)}</div>
+    <div class="pc-comment-avatar">${esc(_commentInitials(author))}</div>
+    <div class="pc-comment-body">
+      <div class="pc-comment-head"><b>${esc(author)}</b><span class="pc-comment-time">${_commentTime(c)}</span></div>
+      ${replyName ? `<div class="pc-comment-reply">@${esc(replyName)}${esc(replyPreview)}</div>` : ''}
+      <div class="pc-comment-text">${esc(c.text)}</div>
+      <div class="pc-comment-footer">
+        ${c.id ? `<button class="pc-comment-reply-btn" data-reply-comment="${c.id}" type="button">Ответить</button>` : ''}
+      </div>
+    </div>
+    ${c.id ? `<button class="pc-comment-menu" data-menu-comment="${c.id}" type="button" aria-label="Действия">⋯</button>` : ''}
   </div>`;
+}
+
+function _commentPrefix(kind) {
+  return kind === 'news' ? 'nc' : 'pc';
+}
+
+function _setFeedCommentReply(kind, comment) {
+  if (kind === 'news') _ncReplyTo = comment.id;
+  else _pcReplyTo = comment.id;
+  const prefix = _commentPrefix(kind);
+  const bar = document.getElementById(`${prefix}-reply-bar`);
+  const input = document.getElementById(`${prefix}-comment-input`);
+  if (bar) {
+    bar.style.display = 'flex';
+    bar.innerHTML = `<span class="pc-reply-bar-text">Ответ <b>${esc(comment.name || comment.user_id || 'Сотрудник')}</b>: ${esc(comment.text || '').slice(0, 90)}</span><button type="button" class="pc-reply-cancel" aria-label="Отменить ответ">×</button>`;
+    bar.querySelector('.pc-reply-cancel')?.addEventListener('click', () => _clearFeedCommentReply(kind));
+  }
+  if (input) {
+    input.placeholder = `Ответ ${comment.name || 'сотруднику'}…`;
+    input.focus();
+  }
+}
+
+function _clearFeedCommentReply(kind) {
+  if (kind === 'news') _ncReplyTo = null;
+  else _pcReplyTo = null;
+  const prefix = _commentPrefix(kind);
+  const bar = document.getElementById(`${prefix}-reply-bar`);
+  const input = document.getElementById(`${prefix}-comment-input`);
+  if (bar) {
+    bar.style.display = 'none';
+    bar.innerHTML = '';
+  }
+  if (input) input.placeholder = 'Добавить комментарий…';
 }
 
 async function _renderNewsCommentsList() {
@@ -722,8 +830,14 @@ async function _renderNewsCommentsList() {
   const byId = {};
   (data.comments || []).forEach(c => { byId[c.id] = c; });
   (data.comments || []).forEach(c => { if (c.reply_to && byId[c.reply_to]) c.reply_to_name = byId[c.reply_to].name; });
-  list.innerHTML = (data.comments || []).map(_renderNewsComment).join('') ||
+  list.innerHTML = (data.comments || []).map(c => _renderUnifiedFeedComment(c, byId)).join('') ||
     '<div style="color:var(--text-light);font-size:0.95rem;padding:1rem 0">Пока нет комментариев. Будьте первым.</div>';
+  list.querySelectorAll('[data-reply-comment]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = byId[btn.dataset.replyComment];
+      if (c) _setFeedCommentReply('news', c);
+    });
+  });
   list.querySelectorAll('[data-menu-comment]').forEach(btn => {
     btn.addEventListener('click', () => {
       const c = byId[btn.dataset.menuComment];
@@ -732,7 +846,7 @@ async function _renderNewsCommentsList() {
         sourceType: 'news', sourceId: _ncCurrentPostId, comment: c,
         canDelete: String(c.user_id) === String(_feedMyId) || currentRole === 'owner',
         onDelete: () => _deleteNewsComment(c.id),
-        onReply: () => { _ncReplyTo = c.id; document.getElementById('nc-comment-input')?.focus(); },
+        onReply: () => _setFeedCommentReply('news', c),
         inputId: 'nc-comment-input',
       });
     });
@@ -752,7 +866,7 @@ async function _deleteNewsComment(commentId) {
 
 async function openNewsComments(postId) {
   _ncCurrentPostId = postId;
-  _ncReplyTo = null;
+  _clearFeedCommentReply('news');
   _markCommentActivityRead('news_comment', postId); // §5.2/§5.3: открытие обсуждения = прочитано
   const modal = document.getElementById('news-comments-modal');
   modal.style.display = 'flex';
@@ -774,6 +888,7 @@ async function openNewsComments(postId) {
 function _closeNewsCommentsInternal() {
   document.getElementById('news-comments-modal').style.display = 'none';
   _ncCurrentPostId = null;
+  _clearFeedCommentReply('news');
   _ncOverlayUnregister = null;
 }
 
@@ -781,6 +896,7 @@ function closeNewsComments() {
   if (_ncOverlayUnregister) { _ncOverlayUnregister(); _ncOverlayUnregister = null; }
   document.getElementById('news-comments-modal').style.display = 'none';
   _ncCurrentPostId = null;
+  _clearFeedCommentReply('news');
 }
 
 async function _sendNewsComment() {
@@ -792,7 +908,7 @@ async function _sendNewsComment() {
   try {
     await api(`/api/feed/news/${_ncCurrentPostId}/comments`, { method: 'POST', body: JSON.stringify({ text, reply_to: _ncReplyTo || undefined }) });
     input.value = '';
-    _ncReplyTo = null;
+    _clearFeedCommentReply('news');
     hapticImpact('light');
     await _renderNewsCommentsList();
     // обновить счётчик на карточке + «обсуждают» без перезагрузки всей ленты
@@ -937,6 +1053,7 @@ async function _loadFeedTabBadges() {
 // списком комментариев и input снизу. Переиспользует authImg (X-Telegram-Init-Data не проходит
 // через <img src> напрямую) и esc() (защита от XSS на свободном тексте комментария).
 let _pcCurrentPhotoId = null;
+let _pcReplyTo = null;
 
 function _fmtPhotoCommentTime(iso) {
   if (!iso) return '';
@@ -956,13 +1073,6 @@ async function _ensureFeedMyId() {
   return _feedMyId;
 }
 
-function renderPhotoComment(c) {
-  return `<div class="pc-comment" data-comment-id="${c.id || ''}">
-    <div class="pc-comment-head"><b>${esc(c.name || c.user_id)}</b><span class="pc-comment-time">${_fmtPhotoCommentTime(c.at)}</span>${c.id ? `<button class="pc-comment-menu" data-menu-comment="${c.id}" type="button" aria-label="Действия">⋯</button>` : ''}</div>
-    <div class="pc-comment-text">${esc(c.text)}</div>
-  </div>`;
-}
-
 async function _deletePhotoComment(commentId) {
   if (!_pcCurrentPhotoId) return;
   try {
@@ -980,8 +1090,15 @@ async function _renderPhotoCommentsList() {
   const data = await api(`/api/feed/photos/${_pcCurrentPhotoId}/comments`);
   const byId = {};
   (data.comments || []).forEach(c => { byId[c.id] = c; });
-  list.innerHTML = (data.comments || []).map(renderPhotoComment).join('') ||
-    '<div style="color:var(--text-light);font-size:0.85rem">Комментариев нет</div>';
+  (data.comments || []).forEach(c => { if (c.reply_to && byId[c.reply_to]) c.reply_to_name = byId[c.reply_to].name; });
+  list.innerHTML = (data.comments || []).map(c => _renderUnifiedFeedComment(c, byId)).join('') ||
+    '<div style="color:rgba(255,255,255,0.58);font-size:0.95rem;padding:1rem 0">Пока нет комментариев. Будьте первым.</div>';
+  list.querySelectorAll('[data-reply-comment]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = byId[btn.dataset.replyComment];
+      if (c) _setFeedCommentReply('photo', c);
+    });
+  });
   list.querySelectorAll('[data-menu-comment]').forEach(btn => {
     btn.addEventListener('click', () => {
       const c = byId[btn.dataset.menuComment];
@@ -990,7 +1107,7 @@ async function _renderPhotoCommentsList() {
         sourceType: 'photo', sourceId: _pcCurrentPhotoId, comment: c,
         canDelete: String(c.user_id) === String(_feedMyId) || currentRole === 'owner',
         onDelete: () => _deletePhotoComment(c.id),
-        onReply: () => { document.getElementById('pc-comment-input')?.focus(); },
+        onReply: () => _setFeedCommentReply('photo', c),
         inputId: 'pc-comment-input',
       });
     });
@@ -1034,6 +1151,7 @@ async function openPhotoComments(photoId, fileCount) {
   // знает p.files.length); если вызвано без него (старый путь), считаем 1 фото.
   _pcCurrentPhotoId = photoId;
   _pcFileCount = fileCount || 1;
+  _clearFeedCommentReply('photo');
   _markCommentActivityRead('photo_comment', photoId); // §5.2/§5.3
   const modal = document.getElementById('photo-comments-modal');
   modal.style.display = 'flex';
@@ -1060,6 +1178,7 @@ async function openPhotoComments(photoId, fileCount) {
 function _closePhotoCommentsInternal() {
   document.getElementById('photo-comments-modal').style.display = 'none';
   _pcCurrentPhotoId = null;
+  _clearFeedCommentReply('photo');
   _pcOverlayUnregister = null;
 }
 
@@ -1069,6 +1188,7 @@ function closePhotoComments() {
   if (_pcOverlayUnregister) { _pcOverlayUnregister(); _pcOverlayUnregister = null; }
   document.getElementById('photo-comments-modal').style.display = 'none';
   _pcCurrentPhotoId = null;
+  _clearFeedCommentReply('photo');
 }
 
 async function _sendPhotoComment() {
@@ -1080,8 +1200,9 @@ async function _sendPhotoComment() {
   if (!text || !_pcCurrentPhotoId || (btn && btn.disabled)) return;
   if (btn) btn.disabled = true;
   try {
-    await api(`/api/feed/photos/${_pcCurrentPhotoId}/comments`, { method: 'POST', body: JSON.stringify({ text }) });
+    await api(`/api/feed/photos/${_pcCurrentPhotoId}/comments`, { method: 'POST', body: JSON.stringify({ text, reply_to: _pcReplyTo || undefined }) });
     input.value = '';
+    _clearFeedCommentReply('photo');
     hapticImpact('light');
     await _renderPhotoCommentsList();
     loadFeedPhotos(); // обновить счётчик комментариев в ленте
@@ -1163,6 +1284,7 @@ function _openCommentActions({ sourceType, sourceId, comment, canDelete, onDelet
   if (typeof NavigationManager !== 'undefined') {
     _commentActionOverlayUnregister = NavigationManager.registerOverlay(() => {
       document.querySelectorAll('.comment-action-sheet, .comment-action-backdrop').forEach(el => el.remove());
+      _commentActionOverlayUnregister = null;
     });
   }
   backdrop.addEventListener('click', close);

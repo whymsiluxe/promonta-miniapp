@@ -1,15 +1,10 @@
 # Project state
 
-**Last updated**: 2026-08-04, Раунд 4 (Погода-жара / расширенные новости /
-понятные этапы объекта), pushed to `main` and CI-green, **NOT deployed**
-(round instruction: no deploy). See `docs/CHANGELOG.md` entry
-"2026-08-04 (Раунд 4…)" for detail. Note: правка промпта генератора новостей
-и backend weather constants — вне scope (файлы вне `miniapp-repo`). Previous:
-Раунд 3 (Дефекты/Потребности/контекстный чат/Worker Card) at `082d29d`.
-See `docs/CHANGELOG.md` entry "2026-08-04 (Раунд 3…)" for detail. Previous: 2026-08-01, worker profile v2 /
-onboarding v2 / unified work-type catalog / unified assignment feature
-(also not deployed). Earlier: 2026-07-31 4-round release-hardening pass,
-deployed as `526922f`.
+**Last updated**: 2026-09-13, Feed UX round — unified Instagram-like popup
+comments/actions, persistent photo likes, iPhone keyboard/input polish, AI
+composer visibility fix. Local verification: `737 passed, 1 skipped`. See
+`docs/CHANGELOG.md` entry "2026-09-13 (Feed UX — unified popup comments,
+reactions, iPhone polish)" for detail.
 
 **Branch**: `main` (GitHub default). Deployed SHA / production:
 `526922fb263d3296e5958b0a5857b6c4e90d3fef` — the 2026-08-01 work is pushed
@@ -20,7 +15,8 @@ task's own instruction: no deploy without separate go-ahead).
 PUBLIC**. This is a known blocker, see below — needs manual switch to
 private before pilot rollout.
 
-**Working tree**: clean, everything pushed to `origin/main`, CI green.
+**Working tree**: expected clean after the 2026-09-13 Feed UX commit is pushed
+to `origin/main`; production deploy is via `scripts/deploy.sh` after tests.
 
 ## What this document is
 
@@ -85,6 +81,10 @@ App is live, in active daily use. As of this pass:
 - **Test coverage**: 202 automated backend tests (was 151 before this pass),
   fully offline, including real concurrency tests (not sequential-call
   approximations) and a real subprocess `MINIAPP_DATA_ROOT` isolation test.
+- **Feed UX**: photo/news comments share one bottom-sheet popup system with
+  reply, `⋯` actions, copy/forward/delete, and a shared input/reply bar. Photo
+  reactions are persisted in `feed_photo_reactions.json`; photo/news/weather
+  action icons use one SVG icon vocabulary.
 
 ## Known blockers
 

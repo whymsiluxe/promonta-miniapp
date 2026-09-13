@@ -1,5 +1,34 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-13 Feed UX handoff
+
+Current task: owner requested Instagram-like photo feed/comments, one comment
+system everywhere, Apple/iPhone UI polish, fixed photo likes, fixed comment
+`⋯` actions/replies, AI input visibility, and server structure documentation.
+
+Implemented in this session:
+- `backend/main.py` + `backend/core/paths.py`: persistent photo reactions in
+  `feed_photo_reactions.json`; photo list returns `likes`/`liked_by_me`; photo
+  comments store `reply_to`.
+- `frontend/js/feed.js`: shared `IG_ICONS`, photo like API call, photo/news
+  unified comment renderer, reply bars, menu actions, weather/news/photo action
+  icons normalized.
+- `frontend/app.html`: comments are bottom-sheet popups, not route pages;
+  action menu z-index raised above the popup; iOS-safe 16px form inputs; AI
+  screen hides bottom nav; object FAB motion/position tweak.
+- `frontend/css/tokens.css`: Apple/SF system fonts first, Manrope fallback.
+- Tests added/updated in `tests/test_feed_photo_integrity.py`,
+  `tests/test_feed_photo_frontend_contract.py`, and
+  `tests/test_assignment_lifecycle.py`.
+
+Verification: `node --check frontend/js/feed.js`, `python3 -m py_compile
+backend/main.py backend/core/paths.py`, and full `.venv-test/bin/python -m
+pytest tests/ -q` passed (`737 passed, 1 skipped`).
+
+After deploy, update the server-side structure file (`server-structure.md` per
+repo references) with this same change summary if it is not part of the git
+repo.
+
 ## Status
 
 **Phase 0** (test isolation + incident root cause fix): COMPLETE  

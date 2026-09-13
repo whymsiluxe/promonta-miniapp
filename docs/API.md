@@ -107,7 +107,7 @@ This is a route inventory grouped by feature area, built by grepping all `@app.g
 - `POST /api/feed/photos` — post a photo.
 - `GET /api/feed/photos/{photo_id}/comments`, `POST .../comments`, `DELETE .../comments/{comment_id}` — comment thread.
 - `GET /api/feed/photos/{photo_id}/file` — file retrieval.
-- `POST /api/feed/news/{post_id}/react`, `POST /api/feed/weather/react` — reactions.
+- `POST /api/feed/photos/{photo_id}/react`, `POST /api/feed/news/{post_id}/react`, `POST /api/feed/weather/react` — reactions.
 
 ## Profile / workers / users
 
