@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-14 (Calendar light iOS polish)
+
+Tests: 763 passed, 1 skipped.
+
+### Frontend
+- Converted the Calendar/absence screen from its fixed dark olive palette to the
+  shared light iOS page, surface, grouped-surface, border, text, and muted-text
+  tokens.
+- Restyled month navigation, day cells, availability states, period filters,
+  metrics, absence request cards, and bottom-sheet form controls so Calendar no
+  longer feels half-dark/half-light compared with the rest of the app.
+- Replaced visible Calendar request-card emoji controls with local inline SVGs
+  for chat, date, and time affordances, and removed emoji prefixes from the
+  absence reason select labels.
+- Made Calendar month, sheet-close, backdrop, and save handlers idempotent so
+  repeated SPA initialization does not stack duplicate listeners.
+
+### Tests
+- Added `tests/test_calendar_ios_frontend_contract.py` to lock the light iOS
+  palette, SVG month controls, iOS Calendar CSS bridge, plain reason labels,
+  SVG request-card icons, and one-shot listener wiring.
+- Verified `node --check frontend/js/abwesenheit.js`, focused Calendar/absence
+  checks, adjacent premium frontend contracts, and the full suite.
+
 ## 2026-09-14 (Tools iOS search/list polish)
 
 Tests: 759 passed, 1 skipped.

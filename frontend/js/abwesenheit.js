@@ -17,6 +17,11 @@ let _abwPeriodStats = null; // последние успешно загруже�
 let _abwPeriodBusy = false; // двойной tap не дублирует запрос
 
 const ABW_MONTH_NAMES = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+const ABW_ICONS = {
+  chat: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v7A2.5 2.5 0 0 1 17.5 15H9l-5 5V5.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5" stroke="currentColor" stroke-width="2"/><path d="M8 2.5v4M16 2.5v4M4 9h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2"/><path d="M12 7.5v5l3.2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
 
 function _abwFormatDate(y, m, d) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -145,15 +150,15 @@ function renderAbwesenheitList() {
           <div class="abw-request-name">${esc(e.name || e.user_id)}</div>
           <div class="abw-request-status" style="color:${ABW_STATUS_COLOR[status]}">${esc(ABW_STATUS_LABEL[status] || status)}</div>
         </div>
-        ${showChatIcon ? `<button class="abw-request-chat-btn abw-open-chat-btn" data-user-id="${esc(e.user_id)}" data-user-name="${esc(e.name || e.user_id)}" title="Написать в чат">💬</button>` : ''}
+        ${showChatIcon ? `<button class="abw-request-chat-btn abw-open-chat-btn" data-user-id="${esc(e.user_id)}" data-user-name="${esc(e.name || e.user_id)}" title="Написать в чат" aria-label="Написать в чат">${ABW_ICONS.chat}</button>` : ''}
       </div>
 
       <div class="abw-request-body">
         <div class="abw-request-range">
-          <span class="abw-request-range-icon">📅</span>
+          <span class="abw-request-range-icon">${ABW_ICONS.calendar}</span>
           ${fmtDateRangeHuman(e.date_from, e.date_to)}${e.open_ended ? '<span class="abw-request-openbadge">открыто</span>' : ''}
         </div>
-        ${timeStr ? `<div class="abw-request-time"><span class="abw-request-range-icon"><svg viewBox="0 0 24 24" width="13" height="13"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 7v5l3 3"/></svg></span>${timeStr}</div>` : ''}
+        ${timeStr ? `<div class="abw-request-time"><span class="abw-request-range-icon">${ABW_ICONS.clock}</span>${timeStr}</div>` : ''}
         <div class="abw-request-reason">${esc(ABW_REASON_LABEL[e.reason] || e.reason)}</div>
         ${e.note ? `<div class="abw-request-note">${esc(e.note)}</div>` : ''}
       </div>
@@ -292,7 +297,7 @@ async function _initAbwProfileSelector() {
   } catch (e) {
     const opt = document.createElement('option');
     opt.value = '';
-    opt.textContent = '⚠️ Работники недоступны — попробуй позже';
+    opt.textContent = 'Работники недоступны — попробуй позже';
     opt.disabled = true;
     select.appendChild(opt);
   }
@@ -496,27 +501,49 @@ function _initAbwPeriodPicker() {
   });
 }
 
+async function _shiftAbwMonth(delta) {
+  _abwCurrentMonth = new Date(_abwCurrentMonth.getFullYear(), _abwCurrentMonth.getMonth() + delta, 1);
+  await _loadAbwAvailability();
+  renderAbwesenheitMonth();
+  renderAbwesenheitList();
+}
+
 async function initAbwesenheitView() {
   await _loadAbwAvailability();
   loadAbwesenheit();
   _initAbwProfileSelector();
   _initAbwPeriodPicker();
   _loadAbwPeriodStats(); // worker сразу видит свою статистику; owner — после выбора
-  document.getElementById('abw-prev-month').addEventListener('click', async () => {
-    _abwCurrentMonth = new Date(_abwCurrentMonth.getFullYear(), _abwCurrentMonth.getMonth() - 1, 1);
-    await _loadAbwAvailability();
-    renderAbwesenheitMonth();
-    renderAbwesenheitList();
-  });
-  document.getElementById('abw-next-month').addEventListener('click', async () => {
-    _abwCurrentMonth = new Date(_abwCurrentMonth.getFullYear(), _abwCurrentMonth.getMonth() + 1, 1);
-    await _loadAbwAvailability();
-    renderAbwesenheitMonth();
-    renderAbwesenheitList();
-  });
-  document.getElementById('abw-cancel-btn').addEventListener('click', _closeAbwReasonForm);
-  document.getElementById('abw-reason-sheet').addEventListener('click', (e) => {
-    if (e.target.id === 'abw-reason-sheet') _closeAbwReasonForm(); // тап по фону закрывает
-  });
-  document.getElementById('abw-save-btn').addEventListener('click', _saveAbwesenheit);
+
+  const prevBtn = document.getElementById('abw-prev-month');
+  if (prevBtn && !prevBtn.dataset.wired) {
+    prevBtn.dataset.wired = '1';
+    prevBtn.addEventListener('click', () => _shiftAbwMonth(-1));
+  }
+
+  const nextBtn = document.getElementById('abw-next-month');
+  if (nextBtn && !nextBtn.dataset.wired) {
+    nextBtn.dataset.wired = '1';
+    nextBtn.addEventListener('click', () => _shiftAbwMonth(1));
+  }
+
+  const cancelBtn = document.getElementById('abw-cancel-btn');
+  if (cancelBtn && !cancelBtn.dataset.wired) {
+    cancelBtn.dataset.wired = '1';
+    cancelBtn.addEventListener('click', _closeAbwReasonForm);
+  }
+
+  const reasonSheet = document.getElementById('abw-reason-sheet');
+  if (reasonSheet && !reasonSheet.dataset.wired) {
+    reasonSheet.dataset.wired = '1';
+    reasonSheet.addEventListener('click', (e) => {
+      if (e.target.id === 'abw-reason-sheet') _closeAbwReasonForm(); // тап по фону закрывает
+    });
+  }
+
+  const saveBtn = document.getElementById('abw-save-btn');
+  if (saveBtn && !saveBtn.dataset.wired) {
+    saveBtn.dataset.wired = '1';
+    saveBtn.addEventListener('click', _saveAbwesenheit);
+  }
 }

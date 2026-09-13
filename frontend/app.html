@@ -3376,14 +3376,14 @@ body.chat-reply-active .chat-messages {
   --chat-border: var(--border-color);
   --chat-divider: var(--border-color);
 
-  /* 28.07: owner request -- Календарь тёмный, тот же оливково-серый принцип, что был
-     у чата до отката (не charcoal, светлее, чтобы текст/иконки читались легко). */
-  --abw-bg: #2A2D27;
-  --abw-surface: #34382F;
-  --abw-surface-raised: #3D423A;
-  --abw-text: #F5F1E8;
-  --abw-text-secondary: #C4BFB2;
-  --abw-border: rgba(245,241,232,0.12);
+  /* 14.09: Calendar now follows the shared light iOS palette instead of the
+     previous fixed dark olive island. */
+  --abw-bg: var(--ios-page-bg, var(--bg-app));
+  --abw-surface: var(--ios-surface, var(--bg-card));
+  --abw-surface-raised: var(--ios-grouped-surface, var(--bg-card-raised));
+  --abw-text: var(--ios-text, var(--text-main));
+  --abw-text-secondary: var(--ios-muted, var(--text-light));
+  --abw-border: var(--ios-border, var(--border-color));
 }
 
 #view-abwesenheit.active { background: var(--abw-bg); }
@@ -5268,20 +5268,21 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
   color: #fff; font-weight: 700; font-size: 1.05rem; display: flex; align-items: center; justify-content: center;
 }
 .abw-request-who { flex: 1; min-width: 0; }
-.abw-request-name { font-weight: 700; font-size: 1.1rem; color: #fff; }
+.abw-request-name { font-weight: 700; font-size: 1.1rem; color: var(--text-main); }
 .abw-request-status { font-size: 0.85rem; font-weight: 600; margin-top: 0.1rem; }
 .abw-request-chat-btn {
-  flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--accent);
-  background: rgba(93,214,44,0.15); font-size: 1.3rem; cursor: pointer;
+  flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-color);
+  background: var(--bg-card-raised); color: var(--accent); font-size: 0; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
+.abw-request-chat-btn svg { display: block; }
 
 .abw-request-body { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.5rem; }
-.abw-request-range, .abw-request-time { display: flex; align-items: center; gap: 0.5rem; font-size: 1rem; color: #fff; font-weight: 600; }
-.abw-request-range-icon { font-size: 1rem; }
+.abw-request-range, .abw-request-time { display: flex; align-items: center; gap: 0.5rem; font-size: 1rem; color: var(--text-main); font-weight: 600; }
+.abw-request-range-icon { display: inline-flex; color: var(--text-light); }
 .abw-request-openbadge { background: rgba(245,158,11,0.2); color: var(--warning); font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px; margin-left: 0.4rem; }
 .abw-request-reason { font-size: 0.95rem; color: var(--text-light); }
-.abw-request-note { font-size: 0.9rem; color: var(--text-light); font-style: italic; background: rgba(255,255,255,0.04); padding: 0.5rem 0.65rem; border-radius: var(--radius-sm); }
+.abw-request-note { font-size: 0.9rem; color: var(--text-light); font-style: italic; background: var(--bg-card-raised); padding: 0.5rem 0.65rem; border-radius: var(--radius-sm); }
 
 .abw-request-actions { display: flex; gap: 0.6rem; margin-top: 0.7rem; }
 .abw-request-action-btn {
@@ -5332,10 +5333,10 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .abw-avail-cell { cursor: default; position: relative; }
 /* 21.07 + 22.07: единая система 4 состояний, одна заливка на состояние (не заливка+точка вперемешку) —
    зелёный=доступен, серый=отработал (приоритет), красный=недоступен, синий=назначен на объект. */
-.abw-state-available { background: rgba(93,214,44,0.22); color: #fff; }
-.abw-state-worked { background: rgba(148,163,184,0.28); color: #fff; }
-.abw-state-unavailable { background: rgba(248,113,113,0.28); color: #fff; }
-.abw-state-assigned { background: rgba(96,165,250,0.28); color: #fff; }
+.abw-state-available { background: rgba(93,214,44,0.14); color: var(--accent); }
+.abw-state-worked { background: rgba(148,163,184,0.18); color: var(--text-light); }
+.abw-state-unavailable { background: rgba(248,113,113,0.16); color: var(--red); }
+.abw-state-assigned { background: rgba(96,165,250,0.16); color: #2563eb; }
 
 /* ── Checkin photo preview modal — multi-photo + retake + удаление (Фаза 10.31) ── */
 /* 24.07: экран фото-фиксации (особенно финиш смены — опрос дня) на весь экран,
@@ -5770,6 +5771,254 @@ body {
   color: var(--ios-muted, var(--text-light));
   font-size: var(--font-secondary, 15px);
   line-height: 1.45;
+}
+
+#view-abwesenheit {
+  background: var(--ios-page-bg, var(--bg-app));
+}
+#view-abwesenheit header {
+  background: var(--ios-page-bg, var(--bg-app));
+  border-bottom: none;
+}
+#view-abwesenheit header h1 {
+  color: var(--ios-text, var(--text-main));
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+#view-abwesenheit #abw-profile-selector-wrap,
+#view-abwesenheit #abw-period-panel {
+  margin-top: 0.1rem;
+}
+#view-abwesenheit #abw-profile-select,
+#view-abwesenheit .mangel-select,
+#view-abwesenheit .mangel-textarea {
+  min-height: 44px;
+  border-color: var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-text, var(--text-main));
+  font-size: 16px;
+  box-shadow: none;
+}
+#view-abwesenheit .abwesenheit-month-nav {
+  margin: 0 0.75rem 0.65rem;
+  padding: 0.25rem;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-abwesenheit .abw-month-btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--ios-muted, var(--text-light));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+#view-abwesenheit .abw-month-btn:active {
+  background: var(--ios-grouped-surface, var(--bg-card));
+}
+#view-abwesenheit #abw-month-label {
+  color: var(--ios-text, var(--text-main));
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+#view-abwesenheit .abwesenheit-weekdays {
+  padding: 0 0.85rem;
+  color: var(--ios-muted, var(--text-light));
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+#view-abwesenheit #abw-month-grid {
+  gap: 6px;
+  padding: 0 0.75rem 0.85rem;
+}
+#view-abwesenheit .heatmap-cell {
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 10px;
+  background: var(--ios-surface, var(--bg-card-raised));
+  color: var(--ios-muted, var(--text-light));
+  font-size: 13px;
+  font-weight: 650;
+}
+#view-abwesenheit .heatmap-cell.today {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ios-accent, var(--accent)) 34%, transparent);
+}
+#view-abwesenheit .heatmap-cell.focus-range {
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 15%, var(--ios-surface)) !important;
+  box-shadow: 0 0 0 2px var(--ios-accent, var(--accent));
+}
+#view-abwesenheit .abw-avail-cell {
+  cursor: default;
+}
+#view-abwesenheit .abw-state-available {
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 12%, var(--ios-surface));
+  color: var(--ios-accent, var(--accent));
+  border-color: color-mix(in srgb, var(--ios-accent, var(--accent)) 24%, var(--ios-border));
+}
+#view-abwesenheit .abw-state-worked {
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-muted, var(--text-light));
+}
+#view-abwesenheit .abw-state-unavailable {
+  background: color-mix(in srgb, var(--c-red, var(--red)) 11%, var(--ios-surface));
+  color: var(--c-red, var(--red));
+  border-color: color-mix(in srgb, var(--c-red, var(--red)) 22%, var(--ios-border));
+}
+#view-abwesenheit .abw-state-assigned {
+  background: color-mix(in srgb, #2563eb 10%, var(--ios-surface));
+  color: #2563eb;
+  border-color: color-mix(in srgb, #2563eb 20%, var(--ios-border));
+}
+#view-abwesenheit #abw-availability-legend {
+  margin: 0 0.75rem 0.65rem;
+  padding: 0;
+}
+#view-abwesenheit .abw-legend-item {
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-meta, 14px);
+  letter-spacing: 0;
+}
+#view-abwesenheit #abw-profile-metrics {
+  margin: 0 0.75rem 0.75rem;
+}
+#view-abwesenheit .abw-metric-chip,
+#view-abwesenheit .abw-period-grid,
+#view-abwesenheit .abw-request-card {
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-abwesenheit .abw-metric-value,
+#view-abwesenheit .abw-period-row b {
+  color: var(--ios-text, var(--text-main));
+}
+#view-abwesenheit .abw-metric-label,
+#view-abwesenheit .abw-period-row,
+#view-abwesenheit .abw-period-loading,
+#view-abwesenheit .abw-period-error {
+  color: var(--ios-muted, var(--text-light));
+}
+#view-abwesenheit .abw-period-pills {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 3px;
+  padding: 3px;
+  margin-bottom: 0.6rem;
+  overflow-x: auto;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-grouped-surface, var(--bg-card));
+}
+#view-abwesenheit .abw-period-pill {
+  min-height: 32px;
+  padding: 0 0.75rem;
+  border: 1px solid transparent;
+  border-radius: calc(var(--ios-radius-control, 11px) - 3px);
+  background: transparent;
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-meta, 14px);
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+  box-shadow: none;
+}
+#view-abwesenheit .abw-period-pill.active {
+  background: var(--ios-surface, var(--bg-card-raised));
+  color: var(--ios-text, var(--text-main));
+  border-color: transparent;
+  box-shadow: 0 1px 3px rgba(33, 30, 23, 0.12);
+}
+#view-abwesenheit .abw-period-custom {
+  gap: 0.5rem;
+}
+#view-abwesenheit .abw-period-apply-btn,
+#view-abwesenheit .abw-period-csv-btn,
+#view-abwesenheit #abw-save-btn {
+  min-height: 44px;
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-accent, var(--accent));
+  color: white;
+  border: none;
+  font-size: 16px;
+  font-weight: 650;
+}
+#view-abwesenheit .abw-period-grid {
+  padding: 0 0.75rem;
+}
+#view-abwesenheit .abw-period-row {
+  min-height: 44px;
+  padding: 0.42rem 0;
+  border-bottom-color: var(--ios-separator, var(--border-color));
+}
+#view-abwesenheit .abw-request-card {
+  margin: 0 0.75rem 0.75rem;
+  padding: 0.85rem;
+}
+#view-abwesenheit .abw-request-card:last-child {
+  margin-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+}
+#view-abwesenheit .abw-request-avatar {
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 14%, var(--ios-surface));
+  border: 1px solid color-mix(in srgb, var(--ios-accent, var(--accent)) 30%, var(--ios-border));
+  box-shadow: none;
+  color: var(--ios-accent, var(--accent));
+}
+#view-abwesenheit .abw-request-name {
+  color: var(--ios-text, var(--text-main));
+  font-size: 17px;
+  font-weight: 700;
+}
+#view-abwesenheit .abw-request-range,
+#view-abwesenheit .abw-request-time {
+  color: var(--ios-text, var(--text-main));
+  font-size: 16px;
+  font-weight: 650;
+}
+#view-abwesenheit .abw-request-range-icon {
+  color: var(--ios-muted, var(--text-light));
+}
+#view-abwesenheit .abw-request-chat-btn {
+  width: 40px;
+  height: 40px;
+  border-color: var(--ios-border, var(--border-color));
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-accent, var(--accent));
+}
+#view-abwesenheit .abw-request-note {
+  background: var(--ios-grouped-surface, var(--bg-card));
+}
+#view-abwesenheit .abw-request-action-btn,
+#view-abwesenheit .abw-decide-close {
+  min-height: 44px;
+  height: 44px;
+  border-radius: var(--ios-radius-control, 11px);
+}
+#view-abwesenheit .abw-request-approve {
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 13%, var(--ios-surface));
+  color: var(--ios-accent, var(--accent));
+}
+#view-abwesenheit .abw-request-reject {
+  background: color-mix(in srgb, var(--c-red, var(--red)) 11%, var(--ios-surface));
+  color: var(--c-red, var(--red));
+}
+#view-abwesenheit .abw-field-label {
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-meta, 14px);
+  letter-spacing: 0;
+}
+#view-abwesenheit .abw-hint,
+#view-abwesenheit .abw-time-sep {
+  color: var(--ios-muted, var(--text-light));
 }
 
 #view-tools {
@@ -7106,7 +7355,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 </div>
 
 <!-- ═══════════ ABWESENHEIT (Фаза 5) ═══════════ -->
-<div class="view" id="view-abwesenheit">
+<div class="view ios-page" id="view-abwesenheit">
   <header>
     <h1>Календарь</h1>
   </header>
@@ -7138,9 +7387,13 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     <div id="abw-period-stats"></div>
   </div>
   <div class="abwesenheit-month-nav">
-    <button id="abw-prev-month" type="button">←</button>
+    <button id="abw-prev-month" class="abw-month-btn" type="button" aria-label="Предыдущий месяц">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true"><path d="m15 18-6-6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
     <span id="abw-month-label"></span>
-    <button id="abw-next-month" type="button">→</button>
+    <button id="abw-next-month" class="abw-month-btn" type="button" aria-label="Следующий месяц">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true"><path d="m9 18 6-6-6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
   </div>
   <div class="abwesenheit-weekdays">
     <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
@@ -7162,9 +7415,9 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
       </div>
       <div id="abw-reason-form" class="mangel-form">
         <select id="abw-reason-select" class="mangel-select">
-          <option value="Krankheit">🤒 Болезнь</option>
-          <option value="Urlaub">🏖 Отпуск</option>
-          <option value="Sonstiges">📋 Другое</option>
+          <option value="Krankheit">Болезнь</option>
+          <option value="Urlaub">Отпуск</option>
+          <option value="Sonstiges">Другое</option>
         </select>
 
         <label class="abw-field-label">До какой даты (необязательно)</label>

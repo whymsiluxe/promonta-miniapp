@@ -1,5 +1,35 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-14 Calendar light iOS polish handoff
+
+Current autonomous slice: Stage 1 Calendar premium UI polish from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `frontend/app.html`: mapped Calendar/absence palette variables to the shared
+  light iOS tokens, added an iOS bridge for month navigation, day cells,
+  availability states, period filters, metrics, request cards, and form controls.
+- `frontend/app.html`: marked Calendar as an `ios-page`, replaced month arrows
+  with accessible SVG buttons, and removed emoji prefixes from absence reason
+  options.
+- `frontend/js/abwesenheit.js`: added local SVG icons for chat/date/time
+  affordances in absence cards, removed visible emoji fallback text, and made
+  Calendar month/sheet/save event binding idempotent.
+- `tests/test_calendar_ios_frontend_contract.py`: new static contract for the
+  light Calendar palette, SVG controls, iOS CSS bridge, plain reason labels,
+  SVG request-card icons, and one-shot listeners.
+
+Verification:
+- `node --check frontend/js/abwesenheit.js`.
+- Focused Calendar/absence checks: `21 passed`.
+- Adjacent frontend contracts: `32 passed`.
+- Full suite: `763 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended Stage 1 slice:
+- Continue the premium UI pass with Team/Control/Needs/Alerts list surfaces, or
+  move into Stage 2 start/finish location/photo validation if evidence capture
+  is the higher priority.
+
 ## 2026-09-14 Tools iOS search/list polish handoff
 
 Current autonomous slice: Stage 1 Tools premium UI polish from
