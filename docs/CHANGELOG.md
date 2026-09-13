@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-09-13 (Home Today cockpit)
+
+Tests: 753 passed, 1 skipped.
+
+### Frontend
+- Added the owner Home `Сегодня` cockpit, backed by existing objects, workers,
+  shifts, tasks, blockers, and daily-plan endpoints instead of a separate data
+  path.
+- The cockpit now summarizes active objects, worker count, active shifts, and
+  operational risk count, then lists active shifts and today's attention items:
+  workers who have not started, tasks awaiting confirmation, overdue needs,
+  stage blockers, budget risks, and daily-plan risks.
+- Added a clean `Остальное спокойно` state when there are no critical signals
+  for today.
+- Flattened the old Home KPI and quick-action cards into the shared iOS surface
+  system, removed the heavy transform/depth effect, and changed the Home title
+  from `Dashboard` to `Сегодня`.
+
+### Tests
+- Added `tests/test_home_today_cockpit_frontend_contract.py` to lock the new
+  cockpit shell, endpoint usage, risk categories, clean state, and Home visual
+  flattening.
+- Verified `node --check frontend/js/home.js`, focused Home/frontend contracts,
+  and the full suite with `python3 -m pytest -q`.
+
 ## 2026-09-13 (Premium iOS UI foundation)
 
 Tests: 751 passed, 1 skipped.

@@ -20,6 +20,10 @@ async function initHomeView() {
   // Главный оперативный блок "Команда" объединяет: Требует внимания / Смены и
   // назначения (4 группы) / Часы команды -- вместо разрозненных секций как раньше.
   slot.innerHTML = `
+    <section id="home-today-cockpit" class="home-today-cockpit" aria-live="polite">
+      <div class="home-today-loading">Загрузка сегодняшней сводки...</div>
+    </section>
+
     <div id="home-kpi-bar" class="home-kpi-bar">
       <div class="kpi-tile" id="kpi-objects" onclick="switchView('objects')"><span class="kpi-num">—</span><span class="kpi-label">Объекты</span></div>
       <div class="kpi-tile" id="kpi-working" onclick="switchView('working-objects')">
@@ -123,6 +127,7 @@ async function _loadHomeData() {
   _loadHomeKontrolDaySummary();
   // Calendar widget and abwesenheit summary both need /api/abwesenheit/all — share one fetch
   if (currentRole === 'owner') {
+    _loadHomeTodayCockpit();
     const _absPromise = api('/api/abwesenheit/all').catch(() => ({ entries: [] }));
     const _wrkPromise = api('/api/workers').catch(() => ({ workers: [] }));
     // Item 13: real assignment/shift status comes from /api/dashboard/team-plan,
@@ -135,6 +140,133 @@ async function _loadHomeData() {
   } else {
     _loadHomeAbwesenheitSummary();
   }
+}
+
+function _homeTodayGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Доброе утро';
+  if (h < 18) return 'Добрый день';
+  return 'Добрый вечер';
+}
+
+function _homeBudgetPct(obj) {
+  const keys = ['потрачено в % от бюджета', '% бюджета', 'Потрачено %'];
+  for (const key of keys) {
+    const val = Number(String(obj?.[key] ?? '').replace(',', '.'));
+    if (Number.isFinite(val) && val > 0) return val;
+  }
+  return 0;
+}
+
+function _homeTodayAction(action) {
+  if (action === 'objects') switchView('objects');
+  else if (action === 'team') switchView('working-objects');
+  else if (action === 'tasks') switchView('tasks');
+  else if (action === 'alerts') openAlertsView();
+  else if (action === 'kontrol') switchView('kontrol-day');
+}
+
+function _homeTodayRow(title, meta, tone, action) {
+  return `<button type="button" class="home-today-row home-today-row-${tone || 'muted'}" data-home-action="${esc(action || '')}">
+    <span class="home-today-row-main">${esc(title)}</span>
+    ${meta ? `<span class="home-today-row-meta">${esc(meta)}</span>` : ''}
+  </button>`;
+}
+
+function _bindHomeTodayCockpit(root) {
+  root.querySelectorAll('[data-home-action]').forEach(el => {
+    const action = el.dataset.homeAction;
+    if (!action) return;
+    el.addEventListener('click', () => _homeTodayAction(action));
+  });
+  root.querySelector('#home-today-retry')?.addEventListener('click', () => _loadHomeTodayCockpit());
+}
+
+async function _loadHomeTodayCockpit() {
+  const root = document.getElementById('home-today-cockpit');
+  if (!root || currentRole !== 'owner') return;
+
+  root.innerHTML = '<div class="home-today-loading">Загрузка сегодняшней сводки...</div>';
+  const [objectsData, workersData, shiftsData, tasksData, blockersData, planData] = await Promise.all([
+    api('/api/objects').catch(e => ({ _error: e })),
+    api('/api/workers').catch(e => ({ _error: e })),
+    api('/api/dashboard/shifts-today').catch(e => ({ _error: e })),
+    api('/api/tasks').catch(e => ({ _error: e })),
+    api('/api/dashboard/active-blockers').catch(e => ({ _error: e, blockers: [] })),
+    api('/api/daily-plan/owner/today').catch(e => ({ _error: e, rows: [], summary: {} })),
+  ]);
+
+  const anyCoreError = objectsData._error && workersData._error && shiftsData._error;
+  if (anyCoreError) {
+    root.innerHTML = `<div class="home-today-error">
+      <div>Не удалось собрать сводку</div>
+      <button type="button" id="home-today-retry">Повторить</button>
+    </div>`;
+    _bindHomeTodayCockpit(root);
+    return;
+  }
+
+  const objects = objectsData.objects || [];
+  const activeObjects = objects.filter(o => o['Статус'] === 'В работе');
+  const workers = (workersData.workers || []).filter(w => w.role === 'worker');
+  const working = shiftsData.working_now || [];
+  const notStarted = shiftsData.not_started || [];
+  const awaiting = shiftsData.awaiting_response || [];
+  const blockers = blockersData.blockers || [];
+  const openTasks = (tasksData.tasks || []).filter(t => t.status !== 'закрыто');
+  const nowSec = Math.floor(Date.now() / 1000);
+  const overdueTasks = openTasks.filter(t => Number(t.due_at) && Number(t.due_at) < nowSec);
+  const budgetRisks = activeObjects.filter(o => _homeBudgetPct(o) >= 90);
+  const planRisks = (planData.rows || []).filter(r => r.risk_level === 'orange' || r.risk_level === 'red');
+  const riskCount = notStarted.length + awaiting.length + blockers.length + overdueTasks.length + budgetRisks.length + planRisks.length;
+
+  const activeShiftRows = working.length
+    ? working.slice(0, 3).map(w => _homeTodayRow(
+        w.worker_name || 'Сотрудник',
+        [w.object_name, w.stage_name || w.stage_id].filter(Boolean).join(' · '),
+        'success',
+        'team',
+      )).join('')
+    : _homeTodayRow('Активных смен сейчас нет', 'Проверьте план перед стартом работ', 'muted', 'team');
+
+  const attentionRows = [];
+  if (notStarted.length) attentionRows.push(_homeTodayRow(`${notStarted.length} не начали смену`, 'Назначены на сегодня', 'warning', 'team'));
+  if (awaiting.length) attentionRows.push(_homeTodayRow(`${awaiting.length} ждут подтверждения`, 'Работники ещё не приняли задачу', 'warning', 'team'));
+  if (overdueTasks.length) attentionRows.push(_homeTodayRow(`${overdueTasks.length} просроченных потребностей`, 'Материалы/доступ требуют решения', 'danger', 'tasks'));
+  if (blockers.length) attentionRows.push(_homeTodayRow(`${blockers.length} проблем по этапам`, 'Работы заблокированы на объекте', 'danger', 'team'));
+  if (budgetRisks.length) attentionRows.push(_homeTodayRow(`${budgetRisks.length} бюджетных рисков`, 'Объекты близко к лимиту', 'warning', 'objects'));
+  if (planRisks.length) attentionRows.push(_homeTodayRow(`${planRisks.length} рисков в плане дня`, 'Контроль дня отмечает отклонения', 'warning', 'kontrol'));
+
+  const attentionHtml = attentionRows.length
+    ? attentionRows.slice(0, 5).join('')
+    : _homeTodayRow('Остальное спокойно', 'Критичных сигналов на сегодня нет', 'success', 'kontrol');
+
+  root.innerHTML = `
+    <div class="home-today-head">
+      <div>
+        <div class="home-today-eyebrow">${_homeTodayGreeting()}</div>
+        <div class="home-today-title">Сегодня</div>
+      </div>
+      <button type="button" class="home-today-open" data-home-action="team">Команда</button>
+    </div>
+    <div class="home-today-stats">
+      <button type="button" class="home-today-stat" data-home-action="objects"><span>${activeObjects.length}</span><small>объектов</small></button>
+      <button type="button" class="home-today-stat" data-home-action="team"><span>${workers.length}</span><small>работников</small></button>
+      <button type="button" class="home-today-stat" data-home-action="team"><span>${working.length}</span><small>на смене</small></button>
+      <button type="button" class="home-today-stat${riskCount ? ' home-today-stat-hot' : ''}" data-home-action="${riskCount ? 'alerts' : 'kontrol'}"><span>${riskCount}</span><small>рисков</small></button>
+    </div>
+    <div class="home-today-grid">
+      <div class="home-today-block">
+        <div class="home-today-block-title">Активные смены</div>
+        <div class="home-today-list">${activeShiftRows}</div>
+      </div>
+      <div class="home-today-block">
+        <div class="home-today-block-title">Внимание</div>
+        <div class="home-today-list">${attentionHtml}</div>
+      </div>
+    </div>
+  `;
+  _bindHomeTodayCockpit(root);
 }
 
 async function _loadHomeKontrolDaySummary() {

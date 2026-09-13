@@ -5772,6 +5772,180 @@ body {
   line-height: 1.45;
 }
 
+#view-home .kpi-tile,
+#view-home .quick-primary-item,
+#view-home .quick-sec-item {
+  background: var(--ios-surface, var(--bg-card-raised)) !important;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+  transform: none !important;
+}
+#view-home .kpi-tile::after,
+#view-home .quick-primary-item::after,
+#view-home .quick-sec-item::after {
+  display: none;
+}
+#view-home .kpi-label {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.home-today-cockpit {
+  margin: 0.75rem 0.75rem 0.65rem;
+  padding: 0.85rem;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+.home-today-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.home-today-eyebrow {
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-meta, 14px);
+  font-weight: 600;
+}
+.home-today-title {
+  color: var(--ios-text, var(--text-main));
+  font-size: 1.55rem;
+  line-height: 1.08;
+  font-weight: 800;
+}
+.home-today-open {
+  min-height: 34px;
+  padding: 0 0.8rem;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 999px;
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-accent, var(--accent));
+  font-size: var(--font-meta, 14px);
+  font-weight: 700;
+}
+.home-today-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+.home-today-stat {
+  min-width: 0;
+  min-height: 66px;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-text, var(--text-main));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.12rem;
+  padding: 0.55rem 0.58rem;
+  text-align: left;
+}
+.home-today-stat span {
+  font-size: 1.28rem;
+  line-height: 1;
+  font-weight: 800;
+}
+.home-today-stat small {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.12;
+}
+.home-today-stat-hot {
+  border-color: color-mix(in srgb, var(--c-yellow, var(--warning)) 45%, var(--ios-border));
+  background: color-mix(in srgb, var(--c-yellow, var(--warning)) 10%, var(--ios-grouped-surface));
+}
+.home-today-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+}
+.home-today-block-title {
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-meta, 14px);
+  font-weight: 750;
+  margin-bottom: 0.35rem;
+}
+.home-today-list {
+  overflow: hidden;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  background: var(--ios-surface, var(--bg-card-raised));
+}
+.home-today-row {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.62rem 0.72rem;
+  border: none;
+  border-bottom: 1px solid var(--ios-separator, var(--border-color));
+  background: transparent;
+  color: var(--ios-text, var(--text-main));
+  text-align: left;
+  font-family: var(--font-family-body);
+}
+.home-today-row:last-child {
+  border-bottom: none;
+}
+.home-today-row-main {
+  min-width: 0;
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-today-row-meta {
+  max-width: 48%;
+  color: var(--ios-muted, var(--text-light));
+  font-size: 0.78rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-today-row-success .home-today-row-main { color: var(--c-green, var(--accent)); }
+.home-today-row-warning .home-today-row-main { color: var(--c-yellow, var(--warning)); }
+.home-today-row-danger .home-today-row-main { color: var(--c-red, var(--red)); }
+.home-today-loading,
+.home-today-error {
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-secondary, 15px);
+  padding: 0.35rem 0;
+}
+.home-today-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+#home-today-retry {
+  min-height: 34px;
+  padding: 0 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--ios-accent, var(--accent));
+  background: transparent;
+  color: var(--ios-accent, var(--accent));
+  font-weight: 700;
+}
+@media (min-width: 420px) {
+  .home-today-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 /* Extra bottom padding for views when bar is visible */
 body.today-plan-bar-visible .view { padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 42px); }
 body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 42px); }
@@ -6090,7 +6264,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 </div>
 
 <div class="view active" id="view-home">
-  <header><h1>Dashboard</h1></header>
+  <header><h1>Сегодня</h1></header>
   <div id="home-dashboard-slot"><!-- KPI-бар, quick-actions, calendar widget, rings, погода — Phase 3 --></div>
 </div>
 

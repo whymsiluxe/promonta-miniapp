@@ -1,5 +1,35 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-13 Home Today cockpit handoff
+
+Current autonomous slice: Stage 1 owner Home dashboard replacement from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `frontend/js/home.js`: added the owner `Сегодня` cockpit above the legacy Home
+  widgets, using existing objects, workers, shifts, tasks, blockers, and
+  daily-plan endpoints to summarize today's operational state.
+- The cockpit surfaces compact stats, active shifts, workers who have not
+  started, awaiting confirmations, overdue needs/tasks, stage blockers, budget
+  risks, daily-plan risks, and a calm `Остальное спокойно` state.
+- `frontend/app.html`: added Home cockpit styling, flattened legacy KPI/quick
+  cards into the shared iOS surface system, removed heavy depth transforms, and
+  changed the visible Home title from `Dashboard` to `Сегодня`.
+- `tests/test_home_today_cockpit_frontend_contract.py`: new contract test for
+  the cockpit shell, endpoint usage, risk categories, clean state, and Home
+  visual flattening.
+
+Verification:
+- `node --check frontend/js/home.js`.
+- Focused Home/backend date contracts: `57 passed`.
+- Frontend contract subset: `25 passed`.
+- Full suite: `753 passed, 1 skipped` with only existing deprecation/cache
+  warnings.
+
+Next recommended Stage 1 slice:
+- Continue the premium UI pass with the Chat list/object chat stale-load polish,
+  then wire the Stage 2 location send button into the same composer pattern.
+
 ## 2026-09-13 Premium iOS foundation handoff
 
 Current autonomous slice: Stage 1 shared visual system foundation from
