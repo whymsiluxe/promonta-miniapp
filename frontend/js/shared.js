@@ -417,6 +417,7 @@ let _voiceInputChunks = [];
 function attachVoiceInputButton(buttonEl, onTranscript) {
   if (!buttonEl || buttonEl.dataset.voiceWired) return;
   buttonEl.dataset.voiceWired = '1';
+  const idleHtml = buttonEl.innerHTML;
   buttonEl.addEventListener('click', async () => {
     if (_voiceInputRecorder) {
       _voiceInputRecorder.stop();
@@ -434,10 +435,10 @@ function attachVoiceInputButton(buttonEl, onTranscript) {
         stream.getTracks().forEach(t => t.stop());
         _voiceInputRecorder = null;
         buttonEl.classList.remove('voice-input-recording');
-        buttonEl.textContent = '🎤';
+        buttonEl.innerHTML = idleHtml;
         const blob = new Blob(_voiceInputChunks, { type: usedMime });
         if (blob.size < 500) return;
-        buttonEl.textContent = '⏳';
+        buttonEl.textContent = 'Распознаю...';
         try {
           const fd = new FormData();
           fd.append('file', blob, 'voice.webm');
@@ -452,12 +453,12 @@ function attachVoiceInputButton(buttonEl, onTranscript) {
         } catch (e) {
           showToast('Не удалось распознать речь: ' + e.message, 'error');
         } finally {
-          buttonEl.textContent = '🎤';
+          buttonEl.innerHTML = idleHtml;
         }
       };
       _voiceInputRecorder.start();
       buttonEl.classList.add('voice-input-recording');
-      buttonEl.textContent = '⏹';
+      buttonEl.textContent = 'Стоп';
       hapticImpact('light');
     } catch (e) {
       showToast('Нет доступа к микрофону: ' + e.message, 'error');

@@ -22,6 +22,11 @@ function taskStage(status) {
 const TASK_CATEGORY_LABEL = { materials: 'Материалы', tool: 'Инструмент', ppe: 'СИЗ', access: 'Доступ', other: 'Другое' };
 function taskCategoryLabel(c) { return TASK_CATEGORY_LABEL[c] || 'Другое'; }
 
+const TASK_ICONS = {
+  chat: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v7A2.5 2.5 0 0 1 17.5 15H9l-5 5V5.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+  more: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M6 12h.01M12 12h.01M18 12h.01" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>',
+};
+
 let _tasksList = [];
 let _tasksObjectNames = {}; // object_id -> имя (для показа объекта по имени, не ID)
 let _tasksFilter = 'active'; // active | new | accepted | done
@@ -86,11 +91,11 @@ function renderTaskCard(task) {
     <div class="task-card-sub">Запросил: ${esc(task.from_name || task.from_user_id || '—')} · ${esc(_taskWhen(task.created_at))}</div>
     ${_taskDueHtml(task)}
     <div class="task-card-actions">
-      <span class="task-status-pill ${pillClass}">${esc(taskStatusLabel(task.status))}</span>
+      <span class="task-status-pill ios-status-pill ${pillClass}">${esc(taskStatusLabel(task.status))}</span>
       <div class="task-card-btns">
-        ${primary ? `<button class="submit-btn task-primary-btn" data-task-advance="${task.id}" data-next-status="${esc(primary.status)}" type="button">${esc(primary.label)}</button>` : ''}
-        <button class="task-chat-btn" data-task-open-chat="${task.id}" data-task-title="${esc(task.title)}" type="button">Открыть чат</button>
-        ${isOwner ? `<button class="task-menu-btn" data-task-menu="${task.id}" type="button" aria-label="Ещё">⋯</button>` : ''}
+        ${primary ? `<button class="submit-btn task-primary-btn ios-action-button" data-task-advance="${task.id}" data-next-status="${esc(primary.status)}" type="button">${esc(primary.label)}</button>` : ''}
+        <button class="task-chat-btn ios-action-button" data-task-open-chat="${task.id}" data-task-title="${esc(task.title)}" type="button">${TASK_ICONS.chat}<span>Чат</span></button>
+        ${isOwner ? `<button class="task-menu-btn ios-icon-button" data-task-menu="${task.id}" type="button" aria-label="Ещё">${TASK_ICONS.more}</button>` : ''}
       </div>
     </div>
   </div>`;
@@ -123,7 +128,11 @@ function _renderTasksScreen() {
   _tasksList.forEach(t => { counts[taskStage(t.status)]++; });
   const countersEl = document.getElementById('tasks-counters');
   if (countersEl) countersEl.innerHTML =
-    `<span>Новые <b>${counts.new}</b></span><span>Приняты <b>${counts.accepted}</b></span><span>Выполнены <b>${counts.done}</b></span>`;
+    [
+      { key: 'new', label: 'Новые', value: counts.new },
+      { key: 'accepted', label: 'Приняты', value: counts.accepted },
+      { key: 'done', label: 'Выполнены', value: counts.done },
+    ].map(c => `<div class="tasks-counter-tile ios-stat-tile" data-task-counter="${c.key}"><span class="tasks-counter-value">${c.value}</span><span class="tasks-counter-label">${esc(c.label)}</span></div>`).join('');
   document.querySelectorAll('#tasks-filters .tasks-filter-chip').forEach(c =>
     c.classList.toggle('active', c.dataset.filter === _tasksFilter));
 
@@ -256,7 +265,7 @@ async function _populateTasksObjectSelect() {
   } catch (e) {
     const opt = document.createElement('option');
     opt.value = '';
-    opt.textContent = '⚠️ Объекты недоступны — попробуй позже';
+    opt.textContent = 'Объекты недоступны — попробуй позже';
     opt.disabled = true;
     select.appendChild(opt);
   }
@@ -272,7 +281,7 @@ function _closeTasksForm() {
   document.getElementById('tasks-due-input').value = '';
   _taskPriority = 'обычная';
   _taskCategory = 'materials';
-  document.querySelectorAll('#tasks-form .doc-type-opt').forEach(btn => {
+  document.querySelectorAll('#tasks-priority-row .doc-type-opt').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.priority === 'обычная');
   });
   document.querySelectorAll('#tasks-category-row .fw-cat-btn').forEach(btn => {
@@ -309,36 +318,70 @@ async function submitTask() {
 }
 
 function initTasksView() {
-  document.getElementById('tasks-new-btn').style.display = currentRole === 'owner' ? 'none' : 'flex';
+  const newBtn = document.getElementById('tasks-new-btn');
+  if (newBtn) newBtn.style.display = currentRole === 'owner' ? 'none' : 'flex';
 
-  document.querySelectorAll('#tasks-filters .tasks-filter-chip').forEach(chip => {
-    chip.addEventListener('click', () => { _tasksFilter = chip.dataset.filter; _renderTasksScreen(); hapticImpact('light'); });
-  });
+  const filtersEl = document.getElementById('tasks-filters');
+  if (filtersEl && !filtersEl.dataset.wired) {
+    filtersEl.dataset.wired = '1';
+    filtersEl.addEventListener('click', e => {
+      const chip = e.target.closest('.tasks-filter-chip');
+      if (!chip) return;
+      _tasksFilter = chip.dataset.filter;
+      _renderTasksScreen();
+      hapticImpact('light');
+    });
+  }
 
   if (currentRole !== 'owner') {
     _populateTasksObjectSelect();
-    document.getElementById('tasks-new-btn').addEventListener('click', () => {
-      const dueInput = document.getElementById('tasks-due-input');
-      if (dueInput) dueInput.min = _datetimeLocalValue(new Date());
-      document.getElementById('tasks-form').style.display = 'block';
-      hapticImpact('light');
-    });
-    document.getElementById('tasks-cancel-btn').addEventListener('click', _closeTasksForm);
-    document.getElementById('tasks-submit-btn').addEventListener('click', submitTask);
-    document.querySelectorAll('#tasks-form .doc-type-opt').forEach(btn => {
-      btn.addEventListener('click', () => {
+
+    if (newBtn && !newBtn.dataset.wired) {
+      newBtn.dataset.wired = '1';
+      newBtn.addEventListener('click', () => {
+        const dueInput = document.getElementById('tasks-due-input');
+        if (dueInput) dueInput.min = _datetimeLocalValue(new Date());
+        document.getElementById('tasks-form').style.display = 'block';
+        hapticImpact('light');
+      });
+    }
+
+    const cancelBtn = document.getElementById('tasks-cancel-btn');
+    if (cancelBtn && !cancelBtn.dataset.wired) {
+      cancelBtn.dataset.wired = '1';
+      cancelBtn.addEventListener('click', _closeTasksForm);
+    }
+
+    const submitBtn = document.getElementById('tasks-submit-btn');
+    if (submitBtn && !submitBtn.dataset.wired) {
+      submitBtn.dataset.wired = '1';
+      submitBtn.addEventListener('click', submitTask);
+    }
+
+    const priorityRow = document.getElementById('tasks-priority-row');
+    if (priorityRow && !priorityRow.dataset.wired) {
+      priorityRow.dataset.wired = '1';
+      priorityRow.addEventListener('click', e => {
+        const btn = e.target.closest('.doc-type-opt');
+        if (!btn) return;
         _taskPriority = btn.dataset.priority;
-        document.querySelectorAll('#tasks-form .doc-type-opt').forEach(b => b.classList.toggle('active', b === btn));
+        priorityRow.querySelectorAll('.doc-type-opt').forEach(b => b.classList.toggle('active', b === btn));
         hapticImpact('light');
       });
-    });
-    document.querySelectorAll('#tasks-category-row .fw-cat-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
+    }
+
+    const categoryRow = document.getElementById('tasks-category-row');
+    if (categoryRow && !categoryRow.dataset.wired) {
+      categoryRow.dataset.wired = '1';
+      categoryRow.addEventListener('click', e => {
+        const btn = e.target.closest('.fw-cat-btn');
+        if (!btn) return;
         _taskCategory = btn.dataset.category;
-        document.querySelectorAll('#tasks-category-row .fw-cat-btn').forEach(b => b.classList.toggle('active', b === btn));
+        categoryRow.querySelectorAll('.fw-cat-btn').forEach(b => b.classList.toggle('active', b === btn));
         hapticImpact('light');
       });
-    });
+    }
+
     attachVoiceInputButton(document.getElementById('tasks-voice-btn'), transcript => {
       const input = document.getElementById('tasks-title-input');
       input.value = input.value ? `${input.value} ${transcript}` : transcript;

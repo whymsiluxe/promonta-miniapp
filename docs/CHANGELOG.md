@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-09-14 (Needs iOS summary/list polish)
+
+Tests: 767 passed, 1 skipped.
+
+### Frontend
+- Restyled the `Потребности` screen around the shared iOS language: page shell,
+  explicit owner/worker add icon, compact request form, stat tiles, segmented
+  filters, restrained request cards, and bottom-nav-safe spacing.
+- Converted Needs cards to use shared action/status/button classes with local
+  SVG chat and overflow icons instead of a text-heavy action row.
+- Removed visible emoji prefixes from the Needs create form controls and made
+  the shared voice helper restore the original rich button HTML after recording
+  or transcription states.
+- Made Needs view initialization idempotent with delegated filter, priority, and
+  category handlers so returning to the screen does not stack duplicate
+  listeners.
+
+### Tests
+- Added `tests/test_needs_ios_frontend_contract.py` to lock the Needs iOS
+  markup, CSS bridge, stat tiles, SVG actions, plain labels, voice restore
+  behavior, and one-shot listener wiring.
+- Verified `node --check frontend/js/tasks.js`, `node --check
+  frontend/js/shared.js`, focused Needs workflow/access tests, adjacent premium
+  frontend contracts, and the full suite.
+
 ## 2026-09-14 (Calendar light iOS polish)
 
 Tests: 763 passed, 1 skipped.

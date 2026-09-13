@@ -5773,6 +5773,237 @@ body {
   line-height: 1.45;
 }
 
+#view-tasks {
+  background: var(--ios-page-bg, var(--bg-app));
+}
+#view-tasks header h1 {
+  color: var(--ios-text, var(--text-main));
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+#view-tasks .tasks-new-btn {
+  position: static;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 999px;
+  background: var(--ios-accent, var(--accent));
+  color: white;
+  border: none;
+  box-shadow: none;
+  font-size: 0;
+}
+#view-tasks .tasks-new-btn svg {
+  display: block;
+}
+#view-tasks #tasks-tab-content {
+  padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+}
+#view-tasks #tasks-form {
+  margin: 0.75rem 0.75rem 0.8rem;
+  padding: 0.85rem;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-tasks .mangel-select,
+#view-tasks .mangel-textarea {
+  min-height: 44px;
+  border-color: var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-text, var(--text-main));
+  font-size: 16px;
+  box-shadow: none;
+}
+#view-tasks .tasks-voice-btn {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-accent, var(--accent));
+  font-size: 16px;
+  font-weight: 650;
+  box-shadow: none;
+}
+#view-tasks #tasks-category-row {
+  gap: 0.4rem;
+}
+#view-tasks #tasks-category-row .fw-cat-btn {
+  min-height: 36px;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 999px;
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-meta, 14px);
+  font-weight: 650;
+}
+#view-tasks #tasks-category-row .fw-cat-btn.active {
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 13%, var(--ios-surface));
+  color: var(--ios-accent, var(--accent));
+  border-color: color-mix(in srgb, var(--ios-accent, var(--accent)) 30%, var(--ios-border));
+}
+#view-tasks #tasks-priority-row {
+  margin: 0.5rem 0;
+  padding: 3px;
+}
+#view-tasks .task-due-label {
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-meta, 14px);
+  font-weight: 650;
+  letter-spacing: 0;
+}
+#view-tasks .mangel-form-actions .submit-btn {
+  min-height: 44px;
+  border-radius: var(--ios-radius-control, 11px);
+  font-size: 16px;
+  font-weight: 650;
+  box-shadow: none;
+}
+#view-tasks .tasks-counters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0 0.75rem 0.65rem;
+}
+#view-tasks .tasks-counter-tile {
+  min-width: 0;
+  padding: 0.6rem 0.5rem;
+  text-align: center;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-tasks .tasks-counter-value {
+  display: block;
+  color: var(--ios-text, var(--text-main));
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+}
+#view-tasks .tasks-counter-label {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--ios-muted, var(--text-light));
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.1;
+}
+#view-tasks .tasks-filters {
+  margin: 0 0.75rem 0.65rem;
+  padding: 3px;
+  gap: 3px;
+  background: var(--ios-grouped-surface, var(--bg-card));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-control, 11px);
+}
+#view-tasks .tasks-filter-chip {
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--ios-radius-control, 11px) - 3px);
+  background: transparent;
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-meta, 14px);
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
+}
+#view-tasks .tasks-filter-chip.active {
+  background: var(--ios-surface, var(--bg-card-raised));
+  color: var(--ios-text, var(--text-main));
+  border-color: transparent;
+  box-shadow: 0 1px 3px rgba(33, 30, 23, 0.12);
+}
+#view-tasks #tasks-list {
+  padding: 0 0.75rem;
+}
+#view-tasks .task-card {
+  margin: 0 0 0.65rem;
+  padding: 0.82rem;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-tasks .task-card-title {
+  color: var(--ios-text, var(--text-main));
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+#view-tasks .task-card-meta,
+#view-tasks .task-card-sub {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 14px;
+  line-height: 1.3;
+}
+#view-tasks .task-urgent {
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c-red, var(--red)) 11%, var(--ios-surface));
+  color: var(--c-red, var(--red));
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+#view-tasks .task-status-pill {
+  padding: 0.2rem 0.55rem;
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-muted, var(--text-light));
+  font-size: 13px;
+  font-weight: 650;
+}
+#view-tasks .task-pill-new {
+  color: var(--c-red, var(--red));
+}
+#view-tasks .task-pill-accepted {
+  color: var(--ios-accent, var(--accent));
+}
+#view-tasks .task-card-btns {
+  gap: 0.45rem;
+}
+#view-tasks .task-primary-btn,
+#view-tasks .task-chat-btn {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border-radius: var(--ios-radius-control, 11px);
+  font-size: 15px;
+  font-weight: 650;
+  box-shadow: none;
+}
+#view-tasks .task-primary-btn {
+  border: none;
+  background: var(--ios-accent, var(--accent));
+  color: white;
+}
+#view-tasks .task-chat-btn {
+  border: 1px solid var(--ios-border, var(--border-color));
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-text, var(--text-main));
+}
+#view-tasks .task-menu-btn {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 50%;
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-muted, var(--text-light));
+  font-size: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 #view-abwesenheit {
   background: var(--ios-page-bg, var(--bg-app));
 }
@@ -7075,17 +7306,22 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 </div>
 
 <!-- ═══════════ MÄNGEL + ПОТРЕБНОСТИ (Фаза 3 + 10.33) ═══════════ -->
-<div class="view" id="view-tasks">
+<div class="view ios-page" id="view-tasks">
   <header>
     <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>Потребности</h1>
-    <button class="fab" id="tasks-new-btn" type="button" aria-label="Новая потребность" style="display:none;">+</button>
+    <button class="fab tasks-new-btn ios-icon-button" id="tasks-new-btn" type="button" aria-label="Новая потребность" title="Новая потребность" style="display:none;">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    </button>
   </header>
 
   <div id="tasks-tab-content">
     <div id="tasks-form" class="mangel-form" style="display:none;">
       <textarea id="tasks-title-input" class="mangel-textarea" placeholder="Что нужно? (например: перфоратор, 2 мешка цемента, каска)" rows="4"></textarea>
-      <button type="button" id="tasks-voice-btn" class="fw-voice-btn">🎤 Голосом</button>
+      <button type="button" id="tasks-voice-btn" class="fw-voice-btn tasks-voice-btn">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" stroke="currentColor" stroke-width="2"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v3M8.5 21h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>Голосом</span>
+      </button>
       <select id="tasks-object-select" class="mangel-select"><option value="">Выбери объект…</option></select>
       <label for="tasks-due-input" class="task-due-label">Срок, если важно</label>
       <input type="datetime-local" id="tasks-due-input" class="mangel-select" aria-label="Срок потребности">
@@ -7096,9 +7332,9 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
         <button type="button" class="fw-cat-btn" data-category="access">Доступ</button>
         <button type="button" class="fw-cat-btn" data-category="other">Другое</button>
       </div>
-      <div class="doc-type-switch" style="margin:0.5rem 0;">
+      <div class="doc-type-switch tasks-priority-row" id="tasks-priority-row" style="margin:0.5rem 0;">
         <button type="button" class="doc-type-opt active" data-priority="обычная" style="flex:1;">Обычная</button>
-        <button type="button" class="doc-type-opt" data-priority="срочно" style="flex:1;">🔴 Срочно</button>
+        <button type="button" class="doc-type-opt" data-priority="срочно" style="flex:1;">Срочно</button>
       </div>
       <div class="mangel-form-actions">
         <button class="submit-btn" id="tasks-cancel-btn" type="button" style="background:var(--bg-card-raised);color:var(--text-main);">Отмена</button>

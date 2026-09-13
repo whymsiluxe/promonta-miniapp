@@ -1,5 +1,35 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-14 Needs iOS summary/list polish handoff
+
+Current autonomous slice: Stage 1 `Потребности` premium UI polish from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `frontend/app.html`: restyled Needs with an iOS page shell, explicit SVG add
+  action, compact request form, stat tiles, segmented filters, restrained cards,
+  and bottom-nav-safe spacing.
+- `frontend/js/tasks.js`: rendered Needs counters as `ios-stat-tile` cards,
+  upgraded request-card actions/statuses to shared iOS classes with local SVG
+  chat/overflow icons, removed visible warning emoji fallback text, and made
+  filters/form controls one-shot wired.
+- `frontend/js/shared.js`: voice input buttons now restore their original rich
+  HTML after recording/transcription instead of degrading to a bare emoji.
+- `tests/test_needs_ios_frontend_contract.py`: new static contract for Needs
+  markup, CSS bridge, stat tiles, SVG actions, plain labels, voice restore
+  behavior, and one-shot listeners.
+
+Verification:
+- `node --check frontend/js/tasks.js`.
+- `node --check frontend/js/shared.js`.
+- Focused Needs tests: `24 passed`.
+- Adjacent frontend contracts: `36 passed`.
+- Full suite: `767 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended Stage 1 slice:
+- Continue the premium UI pass with Team/Control/Alerts surfaces, then move into
+  Stage 2 worker start/finish evidence and offline validation work.
+
 ## 2026-09-14 Calendar light iOS polish handoff
 
 Current autonomous slice: Stage 1 Calendar premium UI polish from
