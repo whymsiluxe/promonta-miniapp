@@ -108,6 +108,26 @@ class FeedPhotoIntegrityTests(unittest.TestCase):
             self.assertEqual(result['item_type'], 'photo')
             self.assertTrue(result['saved_by_me'])
 
+    def test_save_weather_accepts_info_alias_and_marks_feed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved_path = os.path.join(tmp, 'feed_saved.json')
+            weather_path = os.path.join(tmp, 'weather.json')
+            backend._atomic_write_json(weather_path, [{'object': 'Дом', 'created': '2026-09-13T08:00:00'}])
+
+            with (
+                patch.object(backend, 'WEATHER_FEED_FILE', weather_path),
+                patch.object(backend, 'FEED_SAVED_FILE', saved_path),
+            ):
+                result = backend.set_feed_saved(
+                    backend.FeedSavedBody(item_type='info', item_id='Дом::2026-09-13T08:00:00', saved=True),
+                    user={'id': 7},
+                )
+                feed = backend.get_weather_feed(user={'id': 7})
+
+            self.assertEqual(result['item_type'], 'weather')
+            self.assertTrue(result['saved_by_me'])
+            self.assertTrue(feed['feed'][0]['saved_by_me'])
+
     def test_photo_comment_reply_to_is_stored(self):
         with tempfile.TemporaryDirectory() as tmp:
             meta_path = os.path.join(tmp, 'feed_photos.json')

@@ -337,7 +337,7 @@ async function _extractTaskFromTranscript(transcript, btnEl) {
 let _chatLongPressTimer = null;
 
 // 28.07 (Phase 06): один long-press-меню на реакции + удаление (раньше long-press
-// сразу открывал confirm() на удаление, только для своих/owner сообщений; реакции
+// сразу открывал системное подтверждение удаления, только для своих/owner сообщений; реакции
 // нужны на ЛЮБОМ сообщении, поэтому меню теперь общее, delete-пункт в нём — опционален).
 // 09.09 v10: scope param -- append-only render (see _renderChatMessages) must
 // bind handlers ONLY on the newly appended bubbles, not re-scan the whole
@@ -734,7 +734,7 @@ async function _openChatForwardDialog(msgId) {
   });
 }
 
-async function _confirmDeleteChatMessage(msgId, bubbleEl) {
+function _openChatConfirmSheet({ title, note, confirmLabel, danger = false, onConfirm }) {
   _closeChatMessageOverlays();
   const backdrop = document.createElement('div');
   backdrop.className = 'chat-bubble-menu-backdrop';
@@ -742,11 +742,11 @@ async function _confirmDeleteChatMessage(msgId, bubbleEl) {
   sheet.className = 'chat-bubble-menu chat-action-sheet';
   sheet.innerHTML = `
     <div class="chat-action-sheet-handle"></div>
-    <div class="chat-delete-confirm-title">Удалить сообщение?</div>
-    <div class="chat-delete-confirm-note">Оно исчезнет из текущего чата. История останется в архиве сервера.</div>
+    <div class="chat-delete-confirm-title">${_escChat(title || 'Подтвердить действие')}</div>
+    <div class="chat-delete-confirm-note">${_escChat(note || '')}</div>
     <div class="chat-delete-confirm-row">
       <button type="button" class="comment-action-item" data-act="cancel">Отмена</button>
-      <button type="button" class="comment-action-item comment-action-danger" data-act="delete">Удалить</button>
+      <button type="button" class="comment-action-item ${danger ? 'comment-action-danger' : ''}" data-act="confirm">${_escChat(confirmLabel || 'Подтвердить')}</button>
     </div>`;
   document.body.appendChild(backdrop);
   document.body.appendChild(sheet);
@@ -768,7 +768,19 @@ async function _confirmDeleteChatMessage(msgId, bubbleEl) {
     btn.addEventListener('click', async () => {
       const act = btn.dataset.act;
       close();
-      if (act !== 'delete') return;
+      if (act !== 'confirm' || !onConfirm) return;
+      await onConfirm();
+    });
+  });
+}
+
+async function _confirmDeleteChatMessage(msgId, bubbleEl) {
+  _openChatConfirmSheet({
+    title: 'Удалить сообщение?',
+    note: 'Оно исчезнет из текущего чата. История останется в архиве сервера.',
+    confirmLabel: 'Удалить',
+    danger: true,
+    onConfirm: async () => {
       try {
         await api(`/api/chat/messages/${msgId}`, { method: 'DELETE' });
         bubbleEl.remove();
@@ -776,7 +788,7 @@ async function _confirmDeleteChatMessage(msgId, bubbleEl) {
       } catch (e) {
         showToast('Ошибка удаления: ' + e.message, 'error');
       }
-    });
+    },
   });
 }
 
@@ -1296,19 +1308,26 @@ function _openChatThreadPrefsMenu(itemEl, prefsKey, payloadBase) {
   });
   const deleteBtn = menu.querySelector('[data-delete-thread]');
   if (deleteBtn) {
-    deleteBtn.addEventListener('click', async () => {
+    deleteBtn.addEventListener('click', () => {
       close();
-      if (!confirm('Удалить весь чат? Собеседник тоже его больше не увидит. История сохранится на сервере.')) return;
-      try {
-        const qs = payloadBase.thread_key
-          ? `thread_key=${encodeURIComponent(payloadBase.thread_key)}`
-          : `with_=${encodeURIComponent(payloadBase.to_user_id)}`;
-        await api(`/api/chat/threads?${qs}`, { method: 'DELETE' });
-        hapticImpact('medium');
-        renderChatThreadList();
-      } catch (e) {
-        showToast('Ошибка: ' + e.message, 'error');
-      }
+      _openChatConfirmSheet({
+        title: 'Удалить чат?',
+        note: 'Собеседник тоже больше не увидит этот чат. История сохранится в архиве сервера.',
+        confirmLabel: 'Удалить',
+        danger: true,
+        onConfirm: async () => {
+          try {
+            const qs = payloadBase.thread_key
+              ? `thread_key=${encodeURIComponent(payloadBase.thread_key)}`
+              : `with_=${encodeURIComponent(payloadBase.to_user_id)}`;
+            await api(`/api/chat/threads?${qs}`, { method: 'DELETE' });
+            hapticImpact('medium');
+            renderChatThreadList();
+          } catch (e) {
+            showToast('Ошибка: ' + e.message, 'error');
+          }
+        },
+      });
     });
   }
 }
@@ -1566,17 +1585,23 @@ async function _refreshChatThreadCloseState() {
 }
 
 async function _closeCurrentChatThread() {
-  if (!confirm('Закрыть этот чат? Работник получит уведомление.')) return;
-  try {
-    await api('/api/chat/threads/close', {
-      method: 'POST',
-      body: JSON.stringify({ to_user_id: _chatActiveThread }),
-    });
-    hapticImpact('medium');
-    await _refreshChatThreadCloseState();
-  } catch (e) {
-    showToast('Ошибка: ' + e.message, 'error');
-  }
+  _openChatConfirmSheet({
+    title: 'Закрыть чат?',
+    note: 'Работник увидит, что чат закрыт руководством. Открыть его снова можно будет позже.',
+    confirmLabel: 'Закрыть',
+    onConfirm: async () => {
+      try {
+        await api('/api/chat/threads/close', {
+          method: 'POST',
+          body: JSON.stringify({ to_user_id: _chatActiveThread }),
+        });
+        hapticImpact('medium');
+        await _refreshChatThreadCloseState();
+      } catch (e) {
+        showToast('Ошибка: ' + e.message, 'error');
+      }
+    },
+  });
 }
 
 async function _reopenCurrentChatThread() {

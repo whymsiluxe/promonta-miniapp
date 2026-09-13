@@ -532,18 +532,21 @@ function _refreshFeedSavedCounts() {
 
 async function toggleFeedSave(btn, itemType, itemId) {
   if (!itemId || (btn && btn.disabled)) return;
-  const item = _findFeedSavedItem(itemType, itemId);
-  const previousSaved = item ? !!item.saved_by_me : !!btn?.classList.contains('saved');
-  const nextSaved = !previousSaved;
+  let item = null;
+  let previousSaved = !!btn?.classList.contains('saved');
+  let nextSaved = !previousSaved;
   if (btn) btn.disabled = true;
-  if (item) item.saved_by_me = nextSaved;
-  if (btn) {
-    btn.classList.toggle('saved', nextSaved);
-    btn.setAttribute('aria-pressed', nextSaved ? 'true' : 'false');
-    btn.setAttribute('aria-label', nextSaved ? 'Убрать из сохранённых' : 'Сохранить');
-  }
-  _refreshFeedSavedCounts();
   try {
+    item = _findFeedSavedItem(itemType, itemId);
+    previousSaved = item ? !!item.saved_by_me : !!btn?.classList.contains('saved');
+    nextSaved = !previousSaved;
+    if (item) item.saved_by_me = nextSaved;
+    if (btn) {
+      btn.classList.toggle('saved', nextSaved);
+      btn.setAttribute('aria-pressed', nextSaved ? 'true' : 'false');
+      btn.setAttribute('aria-label', nextSaved ? 'Убрать из сохранённых' : 'Сохранить');
+    }
+    _refreshFeedSavedCounts();
     const res = await api('/api/feed/saved', {
       method: 'POST',
       body: JSON.stringify({ item_type: itemType, item_id: String(itemId), saved: nextSaved }),

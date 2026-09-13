@@ -29,6 +29,7 @@ def test_chat_message_actions_match_comment_bottom_sheet_contract():
     assert "menu.className = 'chat-bubble-menu chat-action-sheet'" in js
     assert "modal.className = 'chat-forward-modal chat-forward-sheet'" in js
     assert "_bindChatQuickEmojiRow()" in js
+    assert "_openChatConfirmSheet" in js
     assert "window.confirm" not in js
-    assert "confirm('Удалить сообщение?')" not in js
+    assert "confirm(" not in js
     assert "canDelete = _chatIsOwner || Number(bubble.dataset.uid) === _chatMyId" in js
