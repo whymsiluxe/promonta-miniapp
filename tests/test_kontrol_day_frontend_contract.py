@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP_HTML = ROOT / "frontend" / "app.html"
 KONTROL_DAY_JS = ROOT / "frontend" / "js" / "kontrol-day.js"
+SWIPE_NAV_JS = ROOT / "frontend" / "js" / "swipe-nav.js"
 
 
 def _source(path: Path) -> str:
@@ -12,12 +13,15 @@ def _source(path: Path) -> str:
 
 def test_kontrol_day_horizontal_strips_do_not_trigger_global_swipe_nav():
     src = _source(APP_HTML)
+    swipe_src = _source(SWIPE_NAV_JS)
 
     assert '<script src="js/kontrol-day.js"></script>' in src
     assert 'id="kd-kpi-strip" class="kd-kpi-strip" data-no-swipe' in src
     assert 'id="kd-filters" class="kd-filters" data-no-swipe' in src
     assert ".kd-kpi-strip" in src and "touch-action: pan-x" in src
     assert ".kd-filters" in src and "overscroll-behavior-x: contain" in src
+    assert "scroll-snap-type: x proximity" in src
+    assert "target instanceof Element ? target : target?.parentElement" in swipe_src
 
 
 def test_kontrol_day_filter_chips_are_not_wired_once():

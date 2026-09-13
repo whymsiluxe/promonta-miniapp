@@ -4379,9 +4379,9 @@ body.chat-reply-active .chat-messages {
 .kd-kpi-chip.active { background: color-mix(in srgb, var(--accent) 15%, var(--bg-card)); border: 1px solid var(--accent); }
 .kd-kpi-num { font-family: var(--font-heading); font-size: 1.25rem; font-weight: 700; color: var(--accent); }
 .kd-kpi-label { font-size: 0.65rem; color: var(--text-light); text-align: center; white-space: nowrap; margin-top: 0.1rem; }
-.kd-filters { display: flex; gap: 0.4rem; padding: 0 0.75rem 0.6rem; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; touch-action: pan-x; }
+.kd-filters { display: flex; gap: 0.4rem; padding: 0 0.75rem 0.6rem; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; touch-action: pan-x; scroll-snap-type: x proximity; }
 .kd-filters::-webkit-scrollbar { display: none; }
-.kd-filter-chip { flex-shrink: 0; padding: 0.3rem 0.7rem; border-radius: 999px; background: var(--bg-card); font-size: 0.78rem; font-weight: 600; color: var(--text-light); cursor: pointer; white-space: nowrap; border: 1px solid transparent; }
+.kd-filter-chip { flex-shrink: 0; padding: 0.3rem 0.7rem; border-radius: 999px; background: var(--bg-card); font-size: 0.78rem; font-weight: 600; color: var(--text-light); cursor: pointer; white-space: nowrap; border: 1px solid transparent; scroll-snap-align: start; user-select: none; -webkit-user-select: none; }
 .kd-filter-chip.active { background: var(--accent); color: #fff; }
 .kd-row { background: var(--bg-card); border-radius: var(--radius-md); padding: 0.65rem 0.75rem; margin: 0 0.75rem 0.5rem; cursor: pointer; }
 .kd-row:active { transform: scale(0.985); }

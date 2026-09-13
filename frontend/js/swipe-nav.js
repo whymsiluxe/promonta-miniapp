@@ -14,7 +14,8 @@ let _touchStartOnExcludedEl = false;
 // глобального свайп-жеста — новые горизонтально-интерактивные элементы (drag, месяц-grid,
 // period-pills) помечаются этим атрибутом сразу при создании, а не патчатся здесь централизованно.
 function _isExcludedSwipeTarget(target) {
-  return !!target.closest?.('[data-no-swipe], .mangel-card, .mangel-kanban, .doc-type-switch, .chat-category-tabs, .nav-item-start, #radio-fab, .checkin-status-modal, .feed-photo-img-wrap, #view-object-detail, .obj-filter-row, .filters, .profile-tabs, .profile-period-pills, .wx-city-tabs, .wx-object-tabs, .home-radio-stations-viewport');
+  const el = target instanceof Element ? target : target?.parentElement;
+  return !!el?.closest?.('[data-no-swipe], .mangel-card, .mangel-kanban, .doc-type-switch, .chat-category-tabs, .nav-item-start, #radio-fab, .checkin-status-modal, .feed-photo-img-wrap, #view-object-detail, .obj-filter-row, .filters, .profile-tabs, .profile-period-pills, .wx-city-tabs, .wx-object-tabs, .home-radio-stations-viewport');
 }
 
 function animateSwipeTransition(fromViewName, toViewName, direction) {
