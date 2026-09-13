@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-13 (Chat list and stale-load polish)
+
+Tests: 754 passed, 1 skipped.
+
+### Frontend
+- Reworked the Chat list top area into a compact iOS-style layout: inline search
+  field, smaller contact strip, shared segmented category tabs, and a grouped
+  list surface for threads.
+- Added current-request helpers for chat thread loads so stale responses cannot
+  repaint a previously selected thread after the user switches chats.
+- Added a blocking load error state with a retry button for initial thread load
+  failures, while background poll errors continue to avoid disrupting an already
+  loaded chat.
+- Clearing/closing a chat thread now resets hidden messages, input draft height,
+  reply state, render signatures, and loading state before returning to the list.
+
+### Tests
+- Extended `tests/test_chat_frontend_contract.py` for the inline search/list UI,
+  loading helper, retry state, and stale-response guard.
+- Verified `node --check frontend/js/chat.js`, chat backend/frontend focused
+  tests, and adjacent frontend contracts.
+
 ## 2026-09-13 (Home Today cockpit)
 
 Tests: 753 passed, 1 skipped.

@@ -1,5 +1,36 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-13 Chat list and stale-load polish handoff
+
+Current autonomous slice: Stage 1 Chat list/object chat polish from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `frontend/app.html`: moved Chat search into an inline iOS-style field above
+  the contact strip, compacted the contact strip, and restyled the thread list as
+  a grouped iOS list surface with smaller avatars, tighter rows, and the shared
+  premium tokens.
+- `frontend/js/chat.js`: added `_isCurrentChatRequest`,
+  `_setChatThreadLoading`, and `_renderChatLoadError` so initial thread loads
+  never repaint stale chat content and can recover through an in-pane retry.
+- `frontend/js/chat.js`: closing a thread now clears hidden message DOM, draft
+  text/height, reply state, render signatures, and loading state before returning
+  to the chat list.
+- `tests/test_chat_frontend_contract.py`: extended the frontend contract for
+  inline search, iOS list styling, stale-load guard, retry state, and cleanup.
+
+Verification:
+- `node --check frontend/js/chat.js`.
+- Focused chat tests: `22 passed`.
+- Adjacent frontend contracts: `41 passed`.
+- Full suite: `754 passed, 1 skipped` with only existing deprecation/cache
+  warnings.
+
+Next recommended Stage 1 slice:
+- Continue screen-by-screen premium polishing with Profile as an iOS
+  Settings-style list, or move to Stage 2 start/finish location/photo validation
+  since chat location send is already wired.
+
 ## 2026-09-13 Home Today cockpit handoff
 
 Current autonomous slice: Stage 1 owner Home dashboard replacement from

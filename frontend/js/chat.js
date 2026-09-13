@@ -585,6 +585,32 @@ function _bindChatQuickEmojiRow() {
   });
 }
 
+function _isCurrentChatRequest(requestSeq, requestUser, requestKey) {
+  return requestSeq === _chatThreadLoadSeq &&
+    requestUser === _chatActiveThread &&
+    requestKey === _chatActiveThreadKey;
+}
+
+function _setChatThreadLoading(isLoading) {
+  document.body.classList.toggle('chat-thread-loading', !!isLoading);
+  document.getElementById('chat-thread-detail-view')?.classList.toggle('chat-thread-loading', !!isLoading);
+}
+
+function _renderChatLoadError(message) {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+  container.innerHTML = `<div class="chat-empty chat-load-error">
+    Не удалось загрузить чат
+    <button type="button" id="chat-retry-load">Повторить</button>
+  </div>`;
+  container.querySelector('#chat-retry-load')?.addEventListener('click', () => {
+    const title = document.getElementById('chat-thread-title')?.textContent || 'Чат';
+    _prepareChatThreadSurface(title);
+    _loadChatMessages(true);
+  });
+  if (message) console.error('Chat load error:', message);
+}
+
 // Копирование полного НЕэкранированного текста -- msg.text из данных, не textContent
 // пузыря, иначе в буфер попал бы HTML-экранированный вариант (пункт 2 задачи).
 async function _copyChatMessageText(msgId) {
@@ -796,11 +822,13 @@ async function _loadChatMessages(forceScroll, signal) {
   const requestUser = _chatActiveThread;
   const requestKey = _chatActiveThreadKey;
   const requestSeq = _chatThreadLoadSeq;
+  const showBlockingError = document.body.classList.contains('chat-thread-loading');
   try {
     const path = requestKey ? `/api/chat/messages?thread_key=${encodeURIComponent(requestKey)}`
       : requestUser ? `/api/chat/messages?with_=${requestUser}` : '/api/chat/messages';
     const data = await api(path, signal ? { signal } : {});
-    if (requestSeq !== _chatThreadLoadSeq || requestUser !== _chatActiveThread || requestKey !== _chatActiveThreadKey) return;
+    if (!_isCurrentChatRequest(requestSeq, requestUser, requestKey)) return;
+    _setChatThreadLoading(false);
     _renderChatMessages(data.messages || []);
     if (forceScroll) {
       const c = document.getElementById('chat-messages');
@@ -808,6 +836,10 @@ async function _loadChatMessages(forceScroll, signal) {
     }
   } catch (e) {
     if (e.name === 'AbortError') return;
+    if (_isCurrentChatRequest(requestSeq, requestUser, requestKey) && showBlockingError) {
+      _setChatThreadLoading(false);
+      _renderChatLoadError(e.message);
+    }
     console.error('Chat poll error:', e.message);
   }
 }
@@ -819,6 +851,7 @@ function _prepareChatThreadSurface(title) {
   _chatMessagesById = {};
   _revokeAllChatBlobUrls();
   _clearChatReplyTarget();
+  _setChatThreadLoading(true);
   const titleEl = document.getElementById('chat-thread-title');
   const messagesEl = document.getElementById('chat-messages');
   const input = document.getElementById('chat-input');
@@ -1156,9 +1189,13 @@ let _chatSearchDebounceTimer = null;
 function _setChatSearchExpanded(expanded) {
   const circle = document.getElementById('chat-search-circle');
   const strip = document.getElementById('chat-worker-strip');
+  const inline = document.querySelector('.chat-inline-search');
+  const input = document.getElementById('chat-thread-search');
+  const hasQuery = !!(input && input.value.trim());
   if (!circle) return;
-  circle.classList.toggle('expanded', expanded);
-  if (strip) strip.classList.toggle('search-active', expanded);
+  circle.classList.toggle('expanded', !!inline || expanded);
+  circle.classList.toggle('has-query', hasQuery);
+  if (strip) strip.classList.toggle('search-active', expanded && !inline);
 }
 
 function _initChatSearchCircle() {
@@ -1187,9 +1224,10 @@ function _initChatSearchCircle() {
     if (e.key === 'Escape') input.blur();
   });
   input.addEventListener('input', () => {
+    _chatSearchQuery = input.value;
+    _setChatSearchExpanded(true);
     if (_chatSearchDebounceTimer) clearTimeout(_chatSearchDebounceTimer);
     _chatSearchDebounceTimer = setTimeout(() => {
-      _chatSearchQuery = input.value;
       renderChatThreadList();
     }, 250);
   });
@@ -1200,6 +1238,8 @@ function _initChatSearchCircle() {
   if (_chatSearchQuery) {
     input.value = _chatSearchQuery;
     _setChatSearchExpanded(true);
+  } else {
+    _setChatSearchExpanded(false);
   }
 }
 
@@ -1626,6 +1666,7 @@ function closeChatThread() {
   // classList.remove на отсутствующий класс, unregister === null проверяется).
   _closeChatMessageOverlays();
   _chatThreadLoadSeq += 1;
+  _setChatThreadLoading(false);
 
   document.getElementById('chat-thread-detail-view').style.display = 'none';
   document.getElementById('chat-thread-list-view').style.display = 'flex';
@@ -1633,6 +1674,20 @@ function closeChatThread() {
 
   _chatActiveThread = null;
   _chatActiveThreadKey = null;
+  _chatLastRenderSig = null;
+  _chatLastRenderedIds = [];
+  _chatMessagesById = {};
+  _clearChatReplyTarget();
+  const messagesEl = document.getElementById('chat-messages');
+  const input = document.getElementById('chat-input');
+  if (messagesEl) {
+    messagesEl.scrollTop = 0;
+    messagesEl.innerHTML = '<div class="chat-empty">Загрузка...</div>';
+  }
+  if (input) {
+    input.value = '';
+    input.style.height = 'auto';
+  }
 
   // Если closeChatThread() вызван ИЗНУТРИ callback'а registerOverlay() (Telegram Back /
   // hardware back / popstate) -- NavigationManager.back() уже сделал overlayStack.pop()

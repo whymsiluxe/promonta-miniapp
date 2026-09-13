@@ -5772,6 +5772,133 @@ body {
   line-height: 1.45;
 }
 
+#view-chat .chat-list-header {
+  padding-bottom: 0.45rem;
+  background: var(--ios-bg, var(--bg-app));
+  border-bottom: none;
+}
+#view-chat .chat-list-header h1 {
+  color: var(--ios-text, var(--text-main));
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+#view-chat .chat-inline-search {
+  padding: 0 0.75rem 0.55rem;
+}
+#view-chat .chat-inline-search .chat-search-circle {
+  width: 100%;
+  height: 42px;
+  border-radius: var(--ios-radius-control, 11px);
+  align-self: stretch;
+  background: var(--ios-grouped-surface, var(--bg-card));
+  border-color: var(--ios-border, var(--border-color));
+  box-shadow: none;
+}
+#view-chat .chat-inline-search .chat-search-circle.expanded {
+  width: 100%;
+  border-radius: var(--ios-radius-control, 11px);
+}
+#view-chat .chat-inline-search .chat-search-icon-btn {
+  width: 42px;
+  height: 42px;
+}
+#view-chat .chat-inline-search .chat-search-circle-input {
+  opacity: 1;
+  pointer-events: auto;
+  font-size: 16px;
+  color: var(--ios-text, var(--text-main));
+}
+#view-chat .chat-inline-search .chat-search-close-btn {
+  width: 38px;
+  height: 42px;
+  display: none;
+}
+#view-chat .chat-inline-search .chat-search-circle.has-query .chat-search-close-btn {
+  display: flex;
+}
+#view-chat .chat-worker-strip {
+  padding: 0 0.75rem 0.45rem;
+  gap: 0.5rem;
+  min-height: 0;
+}
+#view-chat .chat-worker-strip-avatars {
+  gap: 0.5rem;
+}
+#view-chat .chat-worker-avatar-item {
+  width: 46px;
+  gap: 0.16rem;
+}
+#view-chat .chat-worker-avatar-circle {
+  width: 42px;
+  height: 42px;
+  border-width: 1px;
+  font-size: 1rem;
+}
+#view-chat .chat-worker-avatar-name {
+  display: none;
+}
+#view-chat .chat-filter-tabs.chat-category-tabs {
+  margin: 0 0.75rem 0.55rem;
+  padding: 3px;
+}
+#view-chat .chat-thread-list {
+  margin: 0 0.75rem;
+  padding: 0;
+  overflow: hidden;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-chat .chat-thread-item {
+  min-height: 64px;
+  padding: 0.62rem 0.75rem;
+  background: transparent;
+  border-bottom: 1px solid var(--ios-separator, var(--border-color));
+}
+#view-chat .chat-thread-item:last-child {
+  border-bottom: none;
+}
+#view-chat .chat-thread-item:active {
+  background: var(--ios-grouped-surface, var(--bg-card));
+}
+#view-chat .chat-thread-avatar {
+  width: 42px;
+  height: 42px;
+  border-width: 1px;
+  font-size: 1rem;
+}
+#view-chat .chat-thread-name {
+  color: var(--ios-text, var(--text-main));
+  font-size: 16px;
+  font-weight: 700;
+}
+#view-chat .chat-thread-preview {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 14px;
+  line-height: 1.22;
+}
+#view-chat .chat-thread-meta {
+  min-width: 42px;
+}
+#view-chat .chat-empty {
+  padding: 1.4rem 1rem;
+}
+#view-chat .chat-load-error {
+  color: var(--c-red, var(--red));
+}
+#chat-retry-load {
+  margin-top: 0.75rem;
+  min-height: 36px;
+  padding: 0 0.85rem;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 999px;
+  background: var(--ios-surface, var(--bg-card-raised));
+  color: var(--ios-accent, var(--accent));
+  font-weight: 700;
+}
+
 #view-home .kpi-tile,
 #view-home .quick-primary-item,
 #view-home .quick-sec-item {
@@ -6691,17 +6818,18 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     <header class="chat-list-header">
       <h1>Чат</h1>
     </header>
-    <!-- 28.07 (Phase 06): search circle слит в одну ленту с worker-strip, первым
-         элементом, как в спеке. Раскрывается по тапу (icon-btn), схлопывается по ×
-         или blur-если-пусто. Полнотекстовый поиск по сообщениям не реализован (нет
-         backend search endpoint) -- фильтр client-side по уже загруженным заголовкам
-         тредов/именам/превью, см. chat.js _initChatSearchCircle(). -->
-    <div id="chat-worker-strip" class="chat-worker-strip" data-no-swipe>
+    <!-- 13.09: Stage 1 premium pass -- search is now an inline iOS-style field
+         above the contact strip. It remains client-side filtering by loaded
+         thread titles/names/previews; full-text message search needs a backend
+         endpoint and is intentionally not faked here. -->
+    <div class="chat-inline-search" data-no-swipe>
       <div class="chat-search-circle" id="chat-search-circle">
         <button class="chat-search-icon-btn" id="chat-search-icon-btn" type="button" aria-label="Поиск"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
         <input type="text" id="chat-thread-search" class="chat-search-circle-input" placeholder="Поиск" autocomplete="off">
         <button class="chat-search-close-btn" id="chat-search-close-btn" type="button" aria-label="Закрыть поиск" tabindex="-1"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       </div>
+    </div>
+    <div id="chat-worker-strip" class="chat-worker-strip" data-no-swipe>
       <div class="chat-worker-strip-avatars" id="chat-worker-strip-avatars"></div>
     </div>
     <div class="chat-filter-tabs chat-category-tabs">
