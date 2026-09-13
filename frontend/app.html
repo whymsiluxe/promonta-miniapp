@@ -4032,8 +4032,11 @@ body.chat-reply-active .chat-messages {
 #view-objects .obj-card-v2 {
   border-radius: 24px;
   border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-card) 94%, white);
   box-shadow: 0 14px 34px -24px rgba(18, 20, 16, 0.45), 0 1px 0 rgba(255,255,255,0.48) inset;
   transition: transform 160ms ease, box-shadow 180ms ease;
+  -webkit-tap-highlight-color: transparent;
+  contain: layout paint;
 }
 #view-objects .obj-card-v2:active {
   transform: scale(0.992);
@@ -4675,8 +4678,8 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
    Press: scale(0.92), спека owner. ── */
 .objects-fab {
   position: fixed;
-  right: max(18px, calc(env(safe-area-inset-right, 0px) + 12px));
-  bottom: calc(var(--app-bottom-nav-height, 70px) + max(12px, env(safe-area-inset-bottom)) + 18px);
+  right: max(18px, calc(env(safe-area-inset-right, 0px) + 14px));
+  bottom: calc(var(--app-bottom-nav-height, 70px) + max(10px, env(safe-area-inset-bottom)) + 20px);
   width: 60px; height: 60px;
   border-radius: 21px;
   background: linear-gradient(145deg, color-mix(in srgb, var(--c-forest, #1F513E) 88%, white) 0%, var(--c-forest, #1F513E) 100%);
@@ -4691,6 +4694,9 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
   transition: transform 220ms cubic-bezier(.22,.7,.32,1), opacity 220ms ease, box-shadow 140ms ease;
   pointer-events: none;
   overflow: hidden;
+  transform-origin: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .objects-fab::before {
   content: '';
@@ -4701,7 +4707,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
   opacity: 0;
   transform: scale(0.74);
 }
-.objects-fab svg { position: relative; z-index: 1; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.22)); }
+.objects-fab svg { position: relative; z-index: 1; width: 30px; height: 30px; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.22)); }
 .objects-fab.visible::before {
   animation: objects-fab-pulse 2.8s ease-in-out infinite;
 }
@@ -4712,7 +4718,7 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
   animation: objects-fab-breathe 2.8s ease-in-out infinite;
 }
 .objects-fab.visible:active {
-  transform: translateY(0) scale(0.92);
+  transform: translateY(0) scale(0.9) rotate(6deg);
   animation-play-state: paused;
 }
 @keyframes objects-fab-breathe {
@@ -4722,6 +4728,10 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 @keyframes objects-fab-pulse {
   0%, 100% { opacity: 0; transform: scale(0.74); }
   44% { opacity: 0.6; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .objects-fab.visible, .objects-fab.visible::before { animation: none; }
+  .objects-fab { transition: opacity 160ms ease; }
 }
 body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; }
 
@@ -6080,15 +6090,15 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     <div class="form-section">
       <div class="form-field">
         <label>Название</label>
-        <input type="text" id="new-obj-name" placeholder="напр. Дом Шульц">
+        <input type="text" id="new-obj-name" placeholder="напр. Дом Шульц" autocomplete="off" autocorrect="off" spellcheck="false">
       </div>
       <div class="form-field">
         <label>Адрес</label>
-        <input type="text" id="new-obj-adresse" placeholder="Straße, PLZ Ort">
+        <input type="text" id="new-obj-adresse" placeholder="Straße, PLZ Ort" autocomplete="off" autocorrect="off" spellcheck="false">
       </div>
       <div class="form-field">
         <label>Бюджет €</label>
-        <input type="number" step="0.01" id="new-obj-budget" placeholder="10000">
+        <input type="number" step="0.01" inputmode="decimal" id="new-obj-budget" placeholder="10000" autocomplete="off">
       </div>
       <div class="form-row">
         <div class="form-field">

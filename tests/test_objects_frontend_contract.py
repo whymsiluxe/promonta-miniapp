@@ -16,3 +16,7 @@ def test_objects_sheet_keyboard_and_fab_motion_contracts():
     assert ".objects-fab::before" in src
     assert "objects-fab-pulse" in src
     assert "z-index: 240" in src
+    assert "touch-action: manipulation" in src
+    assert "@media (prefers-reduced-motion: reduce)" in src
+    assert 'id="new-obj-name" placeholder="напр. Дом Шульц" autocomplete="off" autocorrect="off" spellcheck="false"' in src
+    assert 'id="new-obj-budget" placeholder="10000" autocomplete="off"' in src
