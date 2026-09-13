@@ -65,6 +65,11 @@ def test_comment_modal_is_bottom_sheet_not_route_page():
     assert "touch-action: none" in src
     assert "_renderUnifiedFeedComment" in feed_src
     assert "_insertFeedQuickReaction" in feed_src
+    assert "_bindFeedCommentBackdropClose" in feed_src
+    assert "target.closest('.pc-sheet, .pc-photo-nav')" in feed_src
+    assert "pointerup" in feed_src
+    assert "_bindTouchSafeSend(pcSendBtn, pcInput, _sendPhotoComment)" in feed_src
+    assert "_bindTouchSafeSend(ncSendBtn, ncInput, _sendNewsComment)" in feed_src
     assert "pointerdown" in feed_src
     assert "_setFeedCommentReply('photo'" in feed_src
     assert "_setFeedCommentReply('news'" in feed_src

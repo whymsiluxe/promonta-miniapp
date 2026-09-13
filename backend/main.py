@@ -3014,7 +3014,14 @@ def dismiss_alerts(body: AlertDismissBody, user: dict = Depends(get_current_user
 @app.get("/api/tools")
 def list_tools(user: dict = Depends(get_current_user)):
     tl = _load_repo_tools_lib()
-    return {"tools": tl.list_tools()}
+    try:
+        return {"tools": tl.list_tools()}
+    except Exception as e:
+        # Инструменты живут в отдельной Google Sheet. Если лист/диапазон временно
+        # недоступен, это не должно ронять bootstrap всего miniapp и показывать
+        # глобальный баннер поверх других вкладок.
+        print(f"[tools] list_tools unavailable: {type(e).__name__}: {e}")
+        return {"tools": [], "warning": "tools_unavailable"}
 
 
 @app.get("/api/tools/{serial}/history")

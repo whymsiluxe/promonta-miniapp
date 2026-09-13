@@ -91,6 +91,19 @@ class RepoTrackedToolsLibImportTests(unittest.TestCase):
         self.assertEqual(insert_lines, ["sys.path.insert(0, '/home/promonta/agent')"])
 
 
+class ToolsListRouteFallbackTests(unittest.TestCase):
+    def test_list_tools_returns_empty_payload_when_google_sheet_is_unavailable(self):
+        class BrokenToolsLib:
+            @staticmethod
+            def list_tools():
+                raise RuntimeError('HTTP Error 404: Not Found')
+
+        with patch.object(backend, '_load_repo_tools_lib', return_value=BrokenToolsLib):
+            result = backend.list_tools(user={'id': 777})
+
+        self.assertEqual(result, {'tools': [], 'warning': 'tools_unavailable'})
+
+
 class CheckoutHolderNameTests(unittest.TestCase):
     """Имя держателя определяется backend'ом из авторизованного Telegram user,
     клиентский holder полностью игнорируется (реальный найденный баг: Worker мог

@@ -533,8 +533,16 @@ function _refreshFeedSavedCounts() {
 async function toggleFeedSave(btn, itemType, itemId) {
   if (!itemId || (btn && btn.disabled)) return;
   const item = _findFeedSavedItem(itemType, itemId);
-  const nextSaved = !(item ? item.saved_by_me : btn?.classList.contains('saved'));
+  const previousSaved = item ? !!item.saved_by_me : !!btn?.classList.contains('saved');
+  const nextSaved = !previousSaved;
   if (btn) btn.disabled = true;
+  if (item) item.saved_by_me = nextSaved;
+  if (btn) {
+    btn.classList.toggle('saved', nextSaved);
+    btn.setAttribute('aria-pressed', nextSaved ? 'true' : 'false');
+    btn.setAttribute('aria-label', nextSaved ? 'Убрать из сохранённых' : 'Сохранить');
+  }
+  _refreshFeedSavedCounts();
   try {
     const res = await api('/api/feed/saved', {
       method: 'POST',
@@ -551,6 +559,13 @@ async function toggleFeedSave(btn, itemType, itemId) {
     _refreshFeedSavedCounts();
     if (FEED_SAVED_FILTERS[kind] === 'saved') _rerenderFeedKind(kind);
   } catch (e) {
+    if (item) item.saved_by_me = previousSaved;
+    if (btn) {
+      btn.classList.toggle('saved', previousSaved);
+      btn.setAttribute('aria-pressed', previousSaved ? 'true' : 'false');
+      btn.setAttribute('aria-label', previousSaved ? 'Убрать из сохранённых' : 'Сохранить');
+    }
+    _refreshFeedSavedCounts();
     showToast('Ошибка сохранения: ' + e.message, 'error');
   } finally {
     if (btn) btn.disabled = false;
@@ -999,6 +1014,32 @@ function _insertFeedQuickReaction(kind, emoji, btn) {
   hapticImpact('light');
 }
 
+function _bindFeedCommentBackdropClose(modalId, closeFn) {
+  const modal = document.getElementById(modalId);
+  if (!modal || modal.dataset.backdropCloseWired) return;
+  modal.dataset.backdropCloseWired = '1';
+
+  let tapStart = null;
+  modal.addEventListener('pointerdown', (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target || target.closest('.pc-sheet, .pc-photo-nav')) {
+      tapStart = null;
+      return;
+    }
+    tapStart = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  });
+  modal.addEventListener('pointerup', (e) => {
+    if (!tapStart || tapStart.id !== e.pointerId) return;
+    const moved = Math.abs(e.clientX - tapStart.x) + Math.abs(e.clientY - tapStart.y);
+    tapStart = null;
+    if (moved > 12) return;
+    e.preventDefault();
+    closeFn();
+  });
+  modal.addEventListener('pointercancel', () => { tapStart = null; });
+  modal.querySelector('.pc-sheet')?.addEventListener('pointerdown', e => e.stopPropagation());
+}
+
 async function _renderNewsCommentsList() {
   const list = document.getElementById('nc-list');
   const data = await api(`/api/feed/news/${_ncCurrentPostId}/comments`);
@@ -1398,13 +1439,27 @@ function _pcGoNext() {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pc-back-btn')?.addEventListener('click', closePhotoComments);
-  document.getElementById('pc-comment-send-btn')?.addEventListener('click', _sendPhotoComment);
+  const pcSendBtn = document.getElementById('pc-comment-send-btn');
+  const pcInput = document.getElementById('pc-comment-input');
+  if (pcSendBtn && pcInput && typeof _bindTouchSafeSend === 'function') {
+    _bindTouchSafeSend(pcSendBtn, pcInput, _sendPhotoComment);
+  } else {
+    pcSendBtn?.addEventListener('click', _sendPhotoComment);
+  }
   document.getElementById('pc-photo-prev')?.addEventListener('click', _pcGoPrev);
   document.getElementById('pc-photo-next')?.addEventListener('click', _pcGoNext);
+  _bindFeedCommentBackdropClose('photo-comments-modal', closePhotoComments);
 
   // Раунд 5 §8: комментарии к новости — те же обработчики (закрытие/отправка), что фото.
   document.getElementById('nc-back-btn')?.addEventListener('click', closeNewsComments);
-  document.getElementById('nc-comment-send-btn')?.addEventListener('click', _sendNewsComment);
+  const ncSendBtn = document.getElementById('nc-comment-send-btn');
+  const ncInput = document.getElementById('nc-comment-input');
+  if (ncSendBtn && ncInput && typeof _bindTouchSafeSend === 'function') {
+    _bindTouchSafeSend(ncSendBtn, ncInput, _sendNewsComment);
+  } else {
+    ncSendBtn?.addEventListener('click', _sendNewsComment);
+  }
+  _bindFeedCommentBackdropClose('news-comments-modal', closeNewsComments);
   document.querySelectorAll('.pc-quick-reactions').forEach(row => {
     row.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
