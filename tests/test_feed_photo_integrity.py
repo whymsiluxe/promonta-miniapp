@@ -91,6 +91,23 @@ class FeedPhotoIntegrityTests(unittest.TestCase):
             self.assertTrue(saved['saved_by_me'])
             self.assertFalse(unsaved['saved_by_me'])
 
+    def test_save_feed_photo_accepts_legacy_plural_type(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved_path = os.path.join(tmp, 'feed_saved.json')
+            meta = [{'id': 'PH1', 'files': ['keep.jpg']}]
+
+            with (
+                patch.object(backend, 'FEED_SAVED_FILE', saved_path),
+                patch.object(backend, '_load_photo_meta', return_value=meta),
+            ):
+                result = backend.set_feed_saved(
+                    backend.FeedSavedBody(item_type='photos', item_id='PH1', saved=True),
+                    user={'id': 7},
+                )
+
+            self.assertEqual(result['item_type'], 'photo')
+            self.assertTrue(result['saved_by_me'])
+
     def test_photo_comment_reply_to_is_stored(self):
         with tempfile.TemporaryDirectory() as tmp:
             meta_path = os.path.join(tmp, 'feed_photos.json')
@@ -116,6 +133,33 @@ class FeedPhotoIntegrityTests(unittest.TestCase):
 
             self.assertEqual(result['comments'][1]['reply_to'], 'C1')
             self.assertEqual(result['comments'][1]['text'], 'reply')
+
+    def test_worker_cannot_delete_another_photo_comment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            meta_path = os.path.join(tmp, 'feed_photos.json')
+            backend._atomic_write_json(meta_path, [{
+                'id': 'PH1', 'files': ['keep.jpg'],
+                'comments': [{'id': 'C1', 'user_id': '9', 'text': 'hello'}],
+            }])
+
+            with patch.object(backend, 'PHOTO_META_FILE', meta_path):
+                with self.assertRaises(backend.HTTPException) as ctx:
+                    backend.delete_feed_photo_comment('PH1', 'C1', user={'id': 10}, role='worker')
+
+            self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_worker_deletes_own_photo_comment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            meta_path = os.path.join(tmp, 'feed_photos.json')
+            backend._atomic_write_json(meta_path, [{
+                'id': 'PH1', 'files': ['keep.jpg'],
+                'comments': [{'id': 'C1', 'user_id': '9', 'text': 'hello'}],
+            }])
+
+            with patch.object(backend, 'PHOTO_META_FILE', meta_path):
+                result = backend.delete_feed_photo_comment('PH1', 'C1', user={'id': 9}, role='worker')
+
+            self.assertEqual(result['comments'], [])
 
 
 if __name__ == '__main__':

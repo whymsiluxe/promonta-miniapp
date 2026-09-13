@@ -70,9 +70,12 @@ def test_comment_modal_is_bottom_sheet_not_route_page():
     assert "pointerup" in feed_src
     assert "_bindTouchSafeSend(pcSendBtn, pcInput, _sendPhotoComment)" in feed_src
     assert "_bindTouchSafeSend(ncSendBtn, ncInput, _sendNewsComment)" in feed_src
+    assert "_scrollFeedCommentsToBottom('pc-list')" in feed_src
+    assert "_scrollFeedCommentsToBottom('nc-list')" in feed_src
     assert "pointerdown" in feed_src
     assert "_setFeedCommentReply('photo'" in feed_src
     assert "_setFeedCommentReply('news'" in feed_src
+    assert feed_src.count("canDelete: String(c.user_id) === String(_feedMyId) || currentRole === 'owner'") == 2
 
 
 def test_feed_uses_unified_instagram_style_icons():

@@ -108,7 +108,9 @@ function api(path, options = {}) {
         // ещё) -- явное сообщение юзеру, не silent redirect/белый экран без объяснения.
         _handleSessionExpired();
       }
-      throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+      const err = new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
     }
     return res.json();
   });

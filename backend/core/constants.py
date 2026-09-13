@@ -121,7 +121,7 @@ _INVISIBLE_FILLER_CHARS = (
 
 BUDGET_FIELDS = ['Бюджет (EUR)', 'Потрачено (EUR)', 'потрачено в % от бюджета', '% бюджета', 'Потрачено %']
 VALID_OBJECT_STATUSES = {'В работе', 'Пауза', 'Завершён'}
-CHAT_REACTION_OPTIONS = ['👍', '✅', '👀', '❗']
+CHAT_REACTION_OPTIONS = ['❤️', '🙌', '🔥', '👏', '🥲', '😍', '😮', '😂', '👍', '✅', '👀', '❗']
 THREAD_TYPE_BY_PREFIX = {'obj:': 'OBJECT', 'mangel:': 'DEFECT', 'task:': 'TASK'}
 DEFAULT_THREAD_PREFS = {'muted': False, 'pinned': False, 'archived': False}
 AI_MODELS = ('glm', 'sonnet', 'opus')

@@ -68,9 +68,8 @@ function _registerChatThreadOverlay() {
   });
 }
 
-// 28.07 (Phase 06): message reactions — компактный фиксированный набор, зеркалит
-// backend CHAT_REACTION_OPTIONS (main.py). Держать в синхроне при изменении набора.
-const CHAT_REACTION_OPTIONS = ['👍', '✅', '👀', '❗'];
+// Message reactions: the visible quick row matches feed comments; backend also accepts legacy reactions.
+const CHAT_REACTION_OPTIONS = ['❤️', '🙌', '🔥', '👏', '🥲', '😍', '😮', '😂'];
 let _chatMessagesById = {}; // msg_id -> msg (последний рендер), для optimistic reaction toggle
 
 function _escChat(s) {
@@ -482,8 +481,9 @@ function _openChatBubbleMenu(bubble, msgId, canDelete) {
   const backdrop = document.createElement('div');
   backdrop.className = 'chat-bubble-menu-backdrop';
   const menu = document.createElement('div');
-  menu.className = 'chat-bubble-menu';
+  menu.className = 'chat-bubble-menu chat-action-sheet';
   menu.innerHTML = `
+    <div class="chat-action-sheet-handle"></div>
     <div class="chat-bubble-menu-reactions">
       ${CHAT_REACTION_OPTIONS.map(r => `<button type="button" data-reaction="${r}">${r}</button>`).join('')}
     </div>
@@ -494,15 +494,6 @@ function _openChatBubbleMenu(bubble, msgId, canDelete) {
   `;
   document.body.appendChild(backdrop);
   document.body.appendChild(menu);
-
-  const rect = bubble.getBoundingClientRect();
-  const menuWidth = menu.offsetWidth || 210;
-  const menuHeight = menu.offsetHeight || 100;
-  let left = Math.min(Math.max(16, rect.left), window.innerWidth - menuWidth - 16);
-  let top = rect.bottom + 6;
-  if (top + menuHeight > window.innerHeight - 16) top = rect.top - menuHeight - 6;
-  menu.style.left = left + 'px';
-  menu.style.top = Math.max(16, top) + 'px';
 
   // 03.08: регистрация в NavigationManager.overlayStack -- Telegram Back / hardware back /
   // popstate теперь закрывают ТОЛЬКО это меню первым приоритетом (back() в navigation-manager.js
@@ -524,7 +515,9 @@ function _openChatBubbleMenu(bubble, msgId, canDelete) {
   const onKeydown = e => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKeydown);
 
+  backdrop.addEventListener('pointerdown', e => { e.preventDefault(); close(); });
   backdrop.addEventListener('click', close);
+  menu.addEventListener('pointerdown', e => e.stopPropagation());
   menu.querySelectorAll('[data-reaction]').forEach(btn => {
     btn.addEventListener('click', () => {
       close();
@@ -642,8 +635,8 @@ async function _openChatForwardDialog(msgId) {
   const backdrop = document.createElement('div');
   backdrop.className = 'chat-forward-modal-backdrop';
   const modal = document.createElement('div');
-  modal.className = 'chat-forward-modal';
-  modal.innerHTML = `<div class="chat-forward-modal-title">Переслать в…</div><div class="chat-forward-modal-list">Загрузка…</div>`;
+  modal.className = 'chat-forward-modal chat-forward-sheet';
+  modal.innerHTML = `<div class="chat-action-sheet-handle"></div><div class="chat-forward-modal-title">Переслать в…</div><div class="chat-forward-modal-list">Загрузка…</div>`;
   document.body.appendChild(backdrop);
   document.body.appendChild(modal);
 
@@ -664,7 +657,9 @@ async function _openChatForwardDialog(msgId) {
   const onKeydown = e => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKeydown);
 
+  backdrop.addEventListener('pointerdown', e => { e.preventDefault(); close(); });
   backdrop.addEventListener('click', close);
+  modal.addEventListener('pointerdown', e => e.stopPropagation());
 
   const destinations = [{ id: null, thread_key: null, title: 'Общий чат' }];
   try {

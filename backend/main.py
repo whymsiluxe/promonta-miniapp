@@ -3630,6 +3630,7 @@ def _save_weather_reactions(data: dict):
 
 
 FEED_SAVE_TYPES = {'photo', 'news', 'weather'}
+FEED_SAVE_TYPE_ALIASES = {'photos': 'photo', 'info': 'weather'}
 
 
 def _load_feed_saved() -> dict:
@@ -3967,7 +3968,8 @@ def mark_feed_read(body: FeedReadBody, user: dict = Depends(get_current_user)):
 
 @app.post("/api/feed/saved")
 def set_feed_saved(body: FeedSavedBody, user: dict = Depends(get_current_user)):
-    item_type = (body.item_type or '').strip()
+    raw_item_type = (body.item_type or '').strip()
+    item_type = FEED_SAVE_TYPE_ALIASES.get(raw_item_type, raw_item_type)
     item_id = (body.item_id or '').strip()
     if item_type not in FEED_SAVE_TYPES:
         raise HTTPException(400, "item_type должен быть photo/news/weather")

@@ -1040,6 +1040,15 @@ function _bindFeedCommentBackdropClose(modalId, closeFn) {
   modal.querySelector('.pc-sheet')?.addEventListener('pointerdown', e => e.stopPropagation());
 }
 
+function _scrollFeedCommentsToBottom(listId) {
+  const list = document.getElementById(listId);
+  if (!list) return;
+  const scroll = () => { list.scrollTop = list.scrollHeight; };
+  requestAnimationFrame(() => requestAnimationFrame(scroll));
+  setTimeout(scroll, 140);
+  setTimeout(scroll, 320);
+}
+
 async function _renderNewsCommentsList() {
   const list = document.getElementById('nc-list');
   const data = await api(`/api/feed/news/${_ncCurrentPostId}/comments`);
@@ -1127,6 +1136,7 @@ async function _sendNewsComment() {
     _clearFeedCommentReply('news');
     hapticImpact('light');
     await _renderNewsCommentsList();
+    _scrollFeedCommentsToBottom('nc-list');
     // обновить счётчик на карточке + «обсуждают» без перезагрузки всей ленты
     const post = _newsItems.find(n => n.id === _ncCurrentPostId);
     if (post) { post.comment_count = (post.comment_count || 0) + 1; post.last_comment_at = Math.floor(Date.now() / 1000); }
@@ -1422,7 +1432,8 @@ async function _sendPhotoComment() {
     _clearFeedCommentReply('photo');
     hapticImpact('light');
     await _renderPhotoCommentsList();
-    loadFeedPhotos(); // обновить счётчик комментариев в ленте
+    _scrollFeedCommentsToBottom('pc-list');
+    loadFeedPhotos().catch(() => {}); // обновить счётчик комментариев в ленте
   } catch (e) {
     showToast('Ошибка отправки: ' + e.message, 'error');
   } finally {

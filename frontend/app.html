@@ -1200,6 +1200,27 @@ header h1 {
    карточка, форма внутри неё должна быть просто контентом. */
 .bottom-sheet-panel .mangel-form { background: transparent; margin: 0; border-radius: 0; padding: 0 1rem; }
 
+/* Object creation sheet: keep the overlay geometry stable when the iOS keyboard opens.
+   The panel itself moves with --keyboard-inset, so the form does not jump/zoom like a
+   full page reflow and the submit bar stays attached to the sheet. */
+#new-object-sheet {
+  height: var(--tg-fullscreen-height, 100dvh);
+}
+#new-object-sheet .bottom-sheet-panel {
+  max-height: min(88vh, calc(var(--tg-fullscreen-height, 100dvh) - var(--keyboard-inset, 0px) - var(--tg-safe-top, 0px) - 10px));
+  transform: translate3d(0, calc(28px - var(--keyboard-inset, 0px)), 0);
+  will-change: transform, max-height;
+}
+#new-object-sheet.open .bottom-sheet-panel {
+  transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0);
+}
+#new-object-sheet .form-submit-bar {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 0%, transparent), var(--bg-card) 24%);
+  padding-top: 0.85rem;
+}
+
 #stages-view { display: none; padding-bottom: var(--bottom-nav-safe-pad); }
 #stages-view.open { display: block; }
 
@@ -3122,6 +3143,48 @@ body.chat-composer-focused .chat-input-bar, body.chat-composer-focused .ai-input
 }
 .chat-bubble-menu-delete:active { background: var(--chat-surface-hover); }
 
+/* Chat message actions use the same bottom-sheet language as feed comments. */
+.chat-bubble-menu-backdrop { background: rgba(0,0,0,0.46); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.chat-action-sheet {
+  left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important;
+  width: auto; max-width: 480px; margin: 0 auto;
+  border-radius: 24px 24px 0 0;
+  padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  background: #171a1f; border: none; color: #fff;
+  box-shadow: 0 -14px 42px rgba(0,0,0,0.38);
+}
+.chat-action-sheet-handle {
+  width: 58px; height: 4px; border-radius: 999px;
+  background: rgba(255,255,255,0.22); margin: 0.1rem auto 0.7rem;
+}
+.chat-action-sheet .chat-bubble-menu-reactions {
+  justify-content: space-between; gap: 0.35rem; padding: 0.1rem 0.1rem 0.65rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.chat-action-sheet .chat-bubble-menu-reactions button {
+  width: 40px; height: 40px; flex: 0 0 auto; padding: 0; border-radius: 50%;
+  color: #fff; -webkit-tap-highlight-color: transparent;
+  transition: transform 120ms ease, background 120ms ease;
+}
+.chat-action-sheet .chat-bubble-menu-reactions button:active { background: rgba(255,255,255,0.12); transform: scale(1.22); }
+.chat-action-sheet .chat-bubble-menu-reply,
+.chat-action-sheet .chat-bubble-menu-copy,
+.chat-action-sheet .chat-bubble-menu-forward,
+.chat-action-sheet .chat-bubble-menu-delete {
+  display: block; width: 100%; text-align: center; padding: 0.95rem;
+  font-size: 1rem; border-radius: 0; border-bottom: 1px solid rgba(255,255,255,0.08);
+  color: #f7f7f8;
+}
+.chat-action-sheet .chat-bubble-menu-delete { color: #ff6b6b; border-top: none; border-bottom: none; }
+.chat-forward-sheet {
+  left: 0; right: 0; top: auto; bottom: 0; transform: none;
+  width: auto; max-width: 480px; margin: 0 auto; max-height: 70vh;
+  border-radius: 24px 24px 0 0; padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  background: #171a1f; border: none;
+}
+.chat-forward-sheet .chat-forward-modal-title { text-align: center; font-size: 1rem; font-weight: 800; color: #fff; }
+.chat-forward-sheet .chat-forward-dest { color: #f7f7f8; border-bottom: 1px solid rgba(255,255,255,0.08); padding: 0.9rem 0.5rem; }
+
 /* 31.07: кнопка ⋯ явный вход в то же меню, что long-press/right-click открывают --
    long-press один в Telegram WebView работает неочевидно (спека задачи). Раньше кнопка
    была частью .chat-msg-header и пропадала вместе с ним на сгруппированных сообщениях
@@ -3367,8 +3430,28 @@ body.chat-reply-active .chat-messages {
 #view-chat .chat-day-divider { color: var(--chat-text-tertiary); }
 
 #view-chat .chat-messages { background: var(--chat-bg); }
+#view-chat .chat-messages { padding-left: 0.75rem; padding-right: 0.75rem; gap: 0.4rem; }
+#view-chat .chat-bubble {
+  width: auto; max-width: 86%; padding: 0.55rem 0.72rem 0.5rem;
+  border-radius: 20px; box-shadow: 0 8px 18px -16px rgba(0,0,0,0.45);
+}
+#view-chat .chat-bubble-other {
+  align-self: flex-start; background: var(--chat-surface); border: 1px solid var(--chat-border);
+  border-bottom-left-radius: 7px;
+}
+#view-chat .chat-bubble-own {
+  align-self: flex-end; background: var(--chat-forest); border: 1px solid color-mix(in srgb, var(--chat-forest) 82%, white);
+  border-bottom-right-radius: 7px;
+}
+#view-chat .chat-bubble-own .chat-text,
+#view-chat .chat-bubble-own .chat-name,
+#view-chat .chat-bubble-own .chat-time,
+#view-chat .chat-bubble-own .chat-read-receipt { color: #fff; }
+#view-chat .chat-bubble-own .chat-msg-menu-btn { color: rgba(255,255,255,0.74); }
+#view-chat .chat-bubble-grouped { margin-top: -0.22rem; }
+#view-chat .chat-msg-header { padding-right: 2rem; }
 #view-chat .chat-msg-header .chat-name { color: var(--chat-text); }
-#view-chat .chat-bubble-own .chat-msg-header .chat-name { color: var(--chat-forest-light); }
+#view-chat .chat-bubble-own .chat-msg-header .chat-name { color: #fff; }
 #view-chat .chat-text { color: var(--chat-text); }
 #view-chat .chat-time { color: var(--chat-text-tertiary); }
 #view-chat .chat-empty { color: var(--chat-text-tertiary); }
@@ -3850,7 +3933,26 @@ body.chat-reply-active .chat-messages {
    отдельной pill-полосой внизу. Заменяет более раннюю V2 (Obertauern) версию,
    которая дублировала budget/status/stage по 2-3 раза одновременно. */
 .obj-card-v2 { padding: 0; overflow: hidden; border-radius: var(--radius-lg, 20px); }
+#view-objects .obj-card-v2 {
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  box-shadow: 0 14px 34px -24px rgba(18, 20, 16, 0.45), 0 1px 0 rgba(255,255,255,0.48) inset;
+  transition: transform 160ms ease, box-shadow 180ms ease;
+}
+#view-objects .obj-card-v2:active {
+  transform: scale(0.992);
+  box-shadow: 0 8px 24px -22px rgba(18, 20, 16, 0.42), 0 1px 0 rgba(255,255,255,0.44) inset;
+}
 .obj-card-hero { position: relative; height: 200px; display: flex; align-items: flex-end; overflow: hidden; }
+#view-objects .obj-card-hero { height: 188px; }
+#view-objects .obj-card-hero::after {
+  content: '';
+  position: absolute;
+  inset: 42% 0 0;
+  z-index: 1;
+  background: linear-gradient(180deg, transparent 0%, rgba(7, 9, 8, 0.68) 100%);
+  pointer-events: none;
+}
 /* 28.07: photo carousel (PHASE F spec) -- slide layers stacked absolute, only .active
    visible. Simple opacity crossfade instead of transform-slide -- cheaper, no risk of
    layout shift, and swipe/dot-tap already gives clear directional feedback via dots. */
@@ -3872,6 +3974,7 @@ body.chat-reply-active .chat-messages {
 
 .obj-weather-island {
   position: absolute; top: 0.7rem; left: 50%; transform: translateX(-50%);
+  z-index: 2;
   display: flex; align-items: baseline; gap: 0.35rem;
   background: rgba(20,22,18,0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(245,241,232,0.14); border-radius: 14px; padding: 0.35rem 0.7rem;
@@ -3882,7 +3985,7 @@ body.chat-reply-active .chat-messages {
 .obj-weather-island-heat { background: rgba(146,64,14,0.62); border-color: rgba(245,158,11,0.4); }
 .obj-weather-island-extreme_heat { background: rgba(153,27,27,0.66); border-color: rgba(249,115,22,0.5); }
 
-.obj-hero-people { position: absolute; bottom: 0.7rem; left: 0.7rem; display: flex; align-items: center; }
+.obj-hero-people { position: absolute; bottom: 0.7rem; left: 0.7rem; z-index: 2; display: flex; align-items: center; }
 .obj-people-dot {
   border-radius: 50%; background: var(--c-forest, var(--bg-card)); color: #F5F1E8;
   border: 2.5px solid rgba(245,241,232,0.85); display: flex; align-items: center; justify-content: center;
@@ -3900,7 +4003,8 @@ body.chat-reply-active .chat-messages {
   position: relative; z-index: 8; pointer-events: auto; flex-shrink: 0;
   width: 44px; height: 44px; margin-left: 10px; padding: 0;
   border-radius: 13px; border: none; cursor: pointer;
-  background: var(--c-brass, var(--accent)); color: var(--primary-dark, #1a1a1a);
+  background: linear-gradient(145deg, #d7b56b 0%, var(--c-brass, var(--accent)) 100%);
+  color: var(--primary-dark, #1a1a1a);
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 2px 8px rgba(0,0,0,0.28);
   transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
@@ -3911,15 +4015,20 @@ body.chat-reply-active .chat-messages {
 
 .obj-hero-status-pill {
   position: absolute; bottom: 0.7rem; right: 0.7rem;
+  z-index: 2;
   background: rgba(20,22,18,0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(245,241,232,0.14); border-radius: 999px; padding: 0.4rem 0.8rem;
   font-size: 0.78rem; font-weight: 700; color: var(--pill-accent, #F5F1E8); white-space: nowrap;
 }
 
 .obj-card-body { padding: 0.9rem 1rem 0.4rem; text-align: center; }
+#view-objects .obj-card-body { padding: 1rem 1rem 0.45rem; text-align: left; }
 .obj-card-title { font-family: var(--font-heading); font-weight: 700; font-size: 1.3rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; }
+#view-objects .obj-card-title { font-size: 1.18rem; line-height: 1.2; font-weight: 780; }
 .obj-card-address { font-size: 0.88rem; color: var(--text-light); margin-top: 0.3rem; display: flex; align-items: center; justify-content: center; gap: 0.3rem; }
+#view-objects .obj-card-address { justify-content: flex-start; line-height: 1.3; }
 .obj-address-link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; min-height: 44px; align-items: center; }
+#view-objects .obj-address-link { text-decoration-thickness: 1px; text-decoration-color: color-mix(in srgb, var(--text-light) 38%, transparent); }
 .obj-address-pin { color: var(--c-brass, var(--red)); flex-shrink: 0; }
 .obj-card-startdate { font-size: 0.8rem; color: var(--text-light); margin-top: 0.15rem; }
 
@@ -3944,6 +4053,12 @@ body.chat-reply-active .chat-messages {
 .obj-stage-block {
   margin: 0.8rem 0.75rem 0.75rem; background: var(--bg-card-raised); border-radius: var(--radius-md, 16px);
   padding: 0.7rem 0.9rem; cursor: pointer; transition: transform 0.12s ease;
+}
+#view-objects .obj-stage-block {
+  margin: 0.75rem 0.85rem 0.8rem;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-card-raised) 92%, white);
+  border: 1px solid color-mix(in srgb, var(--border-color) 62%, transparent);
 }
 .obj-stage-block:active { transform: scale(0.99); }
 .obj-stage-head { display: flex; align-items: baseline; justify-content: space-between; }
@@ -4465,20 +4580,34 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
 .objects-fab {
   position: fixed;
   right: max(18px, calc(env(safe-area-inset-right, 0px) + 12px));
-  bottom: calc(var(--app-bottom-nav-height, 70px) + max(12px, env(safe-area-inset-bottom)) + 22px);
+  bottom: calc(var(--app-bottom-nav-height, 70px) + max(12px, env(safe-area-inset-bottom)) + 18px);
   width: 60px; height: 60px;
   border-radius: 21px;
-  background: var(--c-forest, #1F513E);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--c-forest, #1F513E) 88%, white) 0%, var(--c-forest, #1F513E) 100%);
   color: #F5F1E8;
-  border: none;
+  border: 1px solid rgba(245,241,232,0.16);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 10px 24px -8px rgba(15,20,15,0.45), 0 2px 6px -2px rgba(15,20,15,0.3);
+  box-shadow: 0 16px 34px -16px rgba(15,20,15,0.62), 0 2px 6px -2px rgba(15,20,15,0.3), 0 1px 0 rgba(255,255,255,0.22) inset;
   cursor: pointer;
-  z-index: 60;
+  z-index: 240;
   opacity: 0;
   transform: translateY(16px) scale(0.9);
   transition: transform 220ms cubic-bezier(.22,.7,.32,1), opacity 220ms ease, box-shadow 140ms ease;
   pointer-events: none;
+  overflow: hidden;
+}
+.objects-fab::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border-radius: 17px;
+  border: 1px solid rgba(245,241,232,0.16);
+  opacity: 0;
+  transform: scale(0.74);
+}
+.objects-fab svg { position: relative; z-index: 1; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.22)); }
+.objects-fab.visible::before {
+  animation: objects-fab-pulse 2.8s ease-in-out infinite;
 }
 .objects-fab.visible {
   opacity: 1;
@@ -4491,8 +4620,12 @@ body.view-locked .nav-item-start { display: none; } /* не мешать кла�
   animation-play-state: paused;
 }
 @keyframes objects-fab-breathe {
-  0%, 100% { box-shadow: 0 10px 24px -8px rgba(15,20,15,0.45), 0 2px 6px -2px rgba(15,20,15,0.3); }
-  50% { box-shadow: 0 14px 30px -10px rgba(31,81,62,0.58), 0 0 0 7px rgba(31,81,62,0.08); }
+  0%, 100% { box-shadow: 0 16px 34px -16px rgba(15,20,15,0.62), 0 2px 6px -2px rgba(15,20,15,0.3), 0 1px 0 rgba(255,255,255,0.22) inset; }
+  50% { box-shadow: 0 18px 38px -16px rgba(31,81,62,0.74), 0 0 0 7px rgba(31,81,62,0.08), 0 1px 0 rgba(255,255,255,0.22) inset; }
+}
+@keyframes objects-fab-pulse {
+  0%, 100% { opacity: 0; transform: scale(0.74); }
+  44% { opacity: 0.6; transform: scale(1); }
 }
 body.view-locked .objects-fab, body.keyboard-open .objects-fab { display: none; }
 
@@ -7086,7 +7219,7 @@ async function initApp() {
   }
 
   function _showErrorBanner(msg) {
-    // Never show a banner for known non-critical fetch failures (e.g. prefetch 401/403)
+    // Never show a banner for known non-critical fetch failures (e.g. background 401/403).
     if (msg && (msg.includes('401') || msg.includes('403') || msg.includes('AbortError'))) return;
     let banner = document.getElementById('_global-error-banner');
     if (!banner) {
@@ -7119,6 +7252,7 @@ async function initApp() {
     const reason = e.reason;
     const safeMsg = reason instanceof Error ? String(reason.message).slice(0, 200) : String(reason).slice(0, 200);
     console.error('[app-unhandled-rejection]', { build: _BUILD_SHA, view: _lastView, reason: safeMsg, stack: _safeStack(reason) });
+    if (reason && (reason.status === 401 || reason.status === 403 || reason.name === 'AbortError')) return;
     _showErrorBanner(safeMsg);
   });
 })();
