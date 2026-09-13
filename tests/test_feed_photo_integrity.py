@@ -25,6 +25,7 @@ class FeedPhotoIntegrityTests(unittest.TestCase):
                 patch.object(backend, 'PHOTO_DIR', tmp),
                 patch.object(backend, '_load_photo_meta', return_value=items),
                 patch.object(backend, '_load_photo_reactions', return_value={'partial': {'1': True, '2': True}}),
+                patch.object(backend, '_load_feed_saved', return_value={'1': {'photo': {'partial': 123}}}),
             ):
                 result = backend.list_feed_photos(user={'id': 1})
 
@@ -33,6 +34,7 @@ class FeedPhotoIntegrityTests(unittest.TestCase):
             self.assertEqual(result['photos'][0]['comment_count'], 0)
             self.assertEqual(result['photos'][0]['likes'], 2)
             self.assertTrue(result['photos'][0]['liked_by_me'])
+            self.assertTrue(result['photos'][0]['saved_by_me'])
 
     def test_react_feed_photo_persists_like_state(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -67,6 +69,27 @@ class FeedPhotoIntegrityTests(unittest.TestCase):
                 )
 
         self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_save_feed_photo_persists_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved_path = os.path.join(tmp, 'feed_saved.json')
+            meta = [{'id': 'PH1', 'files': ['keep.jpg']}]
+
+            with (
+                patch.object(backend, 'FEED_SAVED_FILE', saved_path),
+                patch.object(backend, '_load_photo_meta', return_value=meta),
+            ):
+                saved = backend.set_feed_saved(
+                    backend.FeedSavedBody(item_type='photo', item_id='PH1', saved=True),
+                    user={'id': 7},
+                )
+                unsaved = backend.set_feed_saved(
+                    backend.FeedSavedBody(item_type='photo', item_id='PH1', saved=False),
+                    user={'id': 7},
+                )
+
+            self.assertTrue(saved['saved_by_me'])
+            self.assertFalse(unsaved['saved_by_me'])
 
     def test_photo_comment_reply_to_is_stored(self):
         with tempfile.TemporaryDirectory() as tmp:

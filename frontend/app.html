@@ -1914,9 +1914,65 @@ header h1 {
 .chat-category-tabs .doc-type-opt { background: var(--bg-card); border-radius: 999px; }
 .chat-category-tabs .doc-type-opt.active { background: var(--c-accent, var(--accent)); color: #fff; }
 
-.feed-tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; margin-left: 4px; border-radius: 999px; background: var(--red); color: #fff; font-size: 0.65rem; font-weight: 700; vertical-align: middle; }
+.feed-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 850;
+  vertical-align: middle;
+  box-shadow: 0 0 0 2px var(--bg-card-raised), 0 4px 12px rgba(220,38,38,0.34);
+}
 
-/* ── День рождения баннер в ленте "Инфо" (Фаза 10.31) ── */
+.feed-saved-switch {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0 0.75rem 0.7rem;
+}
+.feed-saved-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 34px;
+  padding: 0 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+  color: var(--text-light);
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.feed-saved-opt.active {
+  background: var(--text-main);
+  border-color: var(--text-main);
+  color: var(--bg-white);
+}
+.feed-saved-opt:active { transform: scale(0.96); }
+.feed-saved-count {
+  display: none;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  color: inherit;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+/* ── День рождения баннер в ленте "Погода" (Фаза 10.31) ── */
 .feed-birthday-card { display: flex; align-items: center; gap: 0.7rem; background: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(249,115,22,0.1)); border: 1px solid rgba(251,191,36,0.35); border-radius: var(--radius-lg); padding: 0.85rem 1rem; margin: 0 0.75rem 0.75rem; }
 .feed-birthday-icon { font-size: 1.8rem; }
 .feed-birthday-text { font-size: 0.92rem; color: var(--text-main); font-weight: 600; }
@@ -2051,6 +2107,12 @@ header h1 {
 .feed-photo-like-action.liked { color: #ff3040; }
 .feed-photo-like-action.liked svg { fill: currentColor; }
 .feed-photo-save-action { margin-left: auto; }
+.feed-photo-save-action.saved,
+.news-save-btn.saved,
+.wx-save-btn.saved { color: var(--primary); }
+.feed-photo-save-action.saved svg,
+.news-save-btn.saved svg,
+.wx-save-btn.saved svg { fill: currentColor; }
 .feed-photo-object-pill {
   min-width: 0;
   max-width: 62%;
@@ -2076,7 +2138,8 @@ header h1 {
 .photo-comments-modal {
   position: fixed; inset: 0; z-index: 5000; display: flex;
   align-items: flex-end; justify-content: flex-end;
-  height: var(--tg-vp-height, 100dvh);
+  height: var(--tg-fullscreen-height, 100dvh);
+  min-height: 100dvh;
   background: rgba(2, 4, 8, 0.58);
   color: #f7f7f8;
   overflow: hidden;
@@ -2089,17 +2152,19 @@ header h1 {
   width: 100%;
   max-width: 480px;
   min-height: 58vh;
-  max-height: min(78vh, calc(var(--tg-vp-height, 100dvh) - 56px));
+  max-height: min(78vh, calc(var(--tg-fullscreen-height, 100dvh) - var(--keyboard-inset, 0px) - 56px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border-radius: 28px 28px 0 0;
   background: #111418;
   box-shadow: 0 -18px 48px rgba(0,0,0,0.38);
+  transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0);
+  transition: transform 180ms ease, max-height 180ms ease;
 }
 .pc-news-sheet {
   min-height: 78vh;
-  max-height: min(88vh, calc(var(--tg-vp-height, 100dvh) - 24px));
+  max-height: min(88vh, calc(var(--tg-fullscreen-height, 100dvh) - var(--keyboard-inset, 0px) - 24px));
 }
 .pc-sheet-handle {
   width: 44px;
@@ -2224,7 +2289,7 @@ header h1 {
   border-radius: 50%;
 }
 .pc-comment-menu:active { background: rgba(255,255,255,0.08); transform: scale(0.94); }
-.comment-action-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.46); z-index: 6000; }
+.comment-action-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.46); z-index: 6000; touch-action: none; }
 .comment-action-sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 6001;
   background: #171a1f;
@@ -2271,6 +2336,29 @@ header h1 {
   padding: 0.5rem 1.05rem;
   border-top: 1px solid rgba(255,255,255,0.08);
   font-size: 1.45rem;
+}
+.pc-quick-reaction {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  font-size: 1.45rem;
+  line-height: 1;
+  cursor: pointer;
+  transform: translateZ(0);
+  transition: transform 120ms ease, background 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.pc-quick-reaction:active,
+.pc-quick-reaction.pc-quick-reaction-hit {
+  transform: scale(1.22);
+  background: rgba(255,255,255,0.12);
 }
 .pc-reply-bar {
   flex-shrink: 0;
@@ -4209,7 +4297,7 @@ body.chat-reply-active .chat-messages {
 .splash-crane-hook { animation: splash-hook-swing 5.5s ease-in-out infinite; transform-origin: 230px 152px; }
 @keyframes splash-hook-swing { 0%, 100% { transform: rotate(-2.4deg); } 50% { transform: rotate(2.4deg); } }
 
-/* ── Weather-alert Instagram-посты (Инфо суб-таб, референс "Stormy Monday"/"Brooklyn") ── */
+/* ── Weather-alert Instagram-посты (Погода суб-таб, референс "Stormy Monday"/"Brooklyn") ── */
 .wx-city-tabs { display: flex; gap: 1.1rem; padding: 0 0.9rem 0.7rem; overflow-x: auto; }
 .wx-city-tab { font-size: 0.85rem; color: var(--text-light); font-weight: 600; cursor: pointer; padding-bottom: 0.3rem; white-space: nowrap; }
 .wx-city-tab.active { color: var(--text-main); border-bottom: 2px solid var(--accent); }
@@ -4243,6 +4331,7 @@ body.chat-reply-active .chat-messages {
 .wx-act svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .wx-act.liked { color: #ff3040; }
 .wx-act.liked .wx-heart svg { fill: currentColor; }
+.wx-save-btn { margin-left: auto; }
 .wx-like-count { font-size: 0.75rem; font-weight: 600; color: var(--text-light); }
 .wx-post-caption { padding: 0.3rem 0.85rem 0.85rem; }
 .wx-caption-day { margin-bottom: 0.4rem; }
@@ -4271,6 +4360,7 @@ body.chat-reply-active .chat-messages {
 .news-like-btn.active { color: #ff3040; }
 .news-like-btn.active svg { fill: currentColor; }
 .news-react-btn:active { transform: scale(0.92); }
+.news-save-btn { margin-left: auto; }
 .news-load-more { text-align: center; padding: 1rem 0; color: var(--text-light); font-size: 0.85rem; }
 
 /* ── HomeRadioPlayer + RadioMiniPlayer (25.07 v2) ──
@@ -5537,10 +5627,14 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     <div class="doc-type-switch" style="margin:0 0.75rem 0.75rem;">
       <div class="doc-type-opt active" data-feed="photos">Фото<span class="feed-tab-badge" id="feed-badge-photos" style="display:none">0</span></div>
       <div class="doc-type-opt" data-feed="news">Новости<span class="feed-tab-badge" id="feed-badge-news" style="display:none">0</span></div>
-      <div class="doc-type-opt" data-feed="weather">Инфо<span class="feed-tab-badge" id="feed-badge-weather" style="display:none">0</span></div>
+      <div class="doc-type-opt" data-feed="weather">Погода<span class="feed-tab-badge" id="feed-badge-weather" style="display:none">0</span></div>
     </div>
 
     <div id="feed-photos-content">
+      <div class="feed-saved-switch" data-feed-saved-kind="photos" aria-label="Фильтр фото">
+        <button class="feed-saved-opt active" type="button" data-feed-saved-filter="all">Все</button>
+        <button class="feed-saved-opt" type="button" data-feed-saved-filter="saved">Сохранённые<span class="feed-saved-count" id="feed-saved-count-photos">0</span></button>
+      </div>
       <div style="padding:0 0.75rem 0.75rem;">
         <button class="submit-btn" id="feed-add-photo-btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px;margin-right:0.3rem;"><path d="M4 8h3l2-2h6l2 2h3v11H4V8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" stroke="currentColor" stroke-width="2"/></svg> Добавить фото</button>
         <input type="file" id="feed-photo-input-camera" accept="image/*" capture="environment" style="display:none;">
@@ -5552,12 +5646,20 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     </div>
 
     <div id="feed-news-content" style="display:none;">
+      <div class="feed-saved-switch" data-feed-saved-kind="news" aria-label="Фильтр новостей">
+        <button class="feed-saved-opt active" type="button" data-feed-saved-filter="all">Все</button>
+        <button class="feed-saved-opt" type="button" data-feed-saved-filter="saved">Сохранённые<span class="feed-saved-count" id="feed-saved-count-news">0</span></button>
+      </div>
       <div id="feed-news-list">
         <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Скоро: утренняя сводка новостей</div>
       </div>
     </div>
 
     <div id="feed-weather-content" style="display:none;">
+      <div class="feed-saved-switch" data-feed-saved-kind="weather" aria-label="Фильтр погоды">
+        <button class="feed-saved-opt active" type="button" data-feed-saved-filter="all">Все</button>
+        <button class="feed-saved-opt" type="button" data-feed-saved-filter="saved">Сохранённые<span class="feed-saved-count" id="feed-saved-count-weather">0</span></button>
+      </div>
       <div id="feed-birthdays"></div>
       <div id="feed-list">
         <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка...</div>
@@ -5834,8 +5936,15 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     </div>
     <div id="pc-list" class="pc-list"></div>
     <div id="pc-reply-bar" class="pc-reply-bar" style="display:none;"></div>
-    <div class="pc-quick-reactions" aria-hidden="true">
-      <span>❤️</span><span>🙌</span><span>🔥</span><span>👏</span><span>🥲</span><span>😍</span><span>😮</span><span>😂</span>
+    <div class="pc-quick-reactions" data-comment-kind="photo" aria-label="Быстрые реакции">
+      <button class="pc-quick-reaction" type="button" data-emoji="❤️" aria-label="Добавить ❤️">❤️</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="🙌" aria-label="Добавить 🙌">🙌</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="🔥" aria-label="Добавить 🔥">🔥</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="👏" aria-label="Добавить 👏">👏</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="🥲" aria-label="Добавить 🥲">🥲</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="😍" aria-label="Добавить 😍">😍</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="😮" aria-label="Добавить 😮">😮</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="😂" aria-label="Добавить 😂">😂</button>
     </div>
     <div class="pc-input-row">
       <textarea id="pc-comment-input" placeholder="Добавить комментарий…" class="mangel-select pc-comment-input" rows="1"></textarea>
@@ -5857,8 +5966,15 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     <div id="nc-title" class="nc-title"></div>
     <div id="nc-list" class="pc-list"></div>
     <div id="nc-reply-bar" class="pc-reply-bar" style="display:none;"></div>
-    <div class="pc-quick-reactions" aria-hidden="true">
-      <span>❤️</span><span>🙌</span><span>🔥</span><span>👏</span><span>🥲</span><span>😍</span><span>😮</span><span>😂</span>
+    <div class="pc-quick-reactions" data-comment-kind="news" aria-label="Быстрые реакции">
+      <button class="pc-quick-reaction" type="button" data-emoji="❤️" aria-label="Добавить ❤️">❤️</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="🙌" aria-label="Добавить 🙌">🙌</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="🔥" aria-label="Добавить 🔥">🔥</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="👏" aria-label="Добавить 👏">👏</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="🥲" aria-label="Добавить 🥲">🥲</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="😍" aria-label="Добавить 😍">😍</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="😮" aria-label="Добавить 😮">😮</button>
+      <button class="pc-quick-reaction" type="button" data-emoji="😂" aria-label="Добавить 😂">😂</button>
     </div>
     <div class="pc-input-row">
       <textarea id="nc-comment-input" placeholder="Добавить комментарий…" class="mangel-select pc-comment-input" rows="1"></textarea>

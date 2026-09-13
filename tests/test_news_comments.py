@@ -14,6 +14,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
@@ -28,6 +29,7 @@ WORKER_B = {'id': 200, 'first_name': 'Oleg'}
 def _reset():
     backend._save_news_comments({})
     backend._save_feed_reads({})
+    backend._atomic_write_json(backend.FEED_SAVED_FILE, {})
 
 
 class NewsCommentTests(unittest.TestCase):
@@ -72,6 +74,25 @@ class NewsCommentTests(unittest.TestCase):
         comments = backend._load_news_comments()['p1']
         self.assertEqual(comments[1]['reply_to'], first)
 
+    def test_news_feed_marks_saved_by_me(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            news_path = os.path.join(tmp, 'news.json')
+            saved_path = os.path.join(tmp, 'feed_saved.json')
+            with open(news_path, 'w', encoding='utf-8') as f:
+                json.dump([{'id': 'p1', 'created': 100, 'category': 'X'}], f)
+            with (
+                patch.object(backend, 'NEWS_FEED_FILE', news_path),
+                patch.object(backend, 'FEED_SAVED_FILE', saved_path),
+            ):
+                out = backend.set_feed_saved(
+                    backend.FeedSavedBody(item_type='news', item_id='p1', saved=True),
+                    user=WORKER_A,
+                )
+                feed = backend.get_news_feed(user=WORKER_A)
+
+            self.assertTrue(out['saved_by_me'])
+            self.assertTrue(feed['feed'][0]['saved_by_me'])
+
 
 class FeedUnreadTests(unittest.TestCase):
     def setUp(self):
@@ -106,6 +127,24 @@ class FeedUnreadTests(unittest.TestCase):
         backend._save_news_comments({'p1': [{'id': 'c1', 'user_id': '9', 'text': 'x', 'ts': 300}]})
         res = backend.get_feed_unread(user=WORKER_A)
         self.assertEqual(res['news'], 1)
+
+    def test_weather_publication_is_unread_until_info_read_marker(self):
+        fd, tmp_weather = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        try:
+            with open(tmp_weather, 'w', encoding='utf-8') as f:
+                json.dump([{'object': 'OBJ-1', 'created': 300, 'forecast': []}], f)
+            backend._save_feed_reads({'100': {'last_info_read_at': 200}})
+            with patch.object(backend, 'WEATHER_FEED_FILE', tmp_weather):
+                unread = backend.get_feed_unread(user=WORKER_A)
+                backend._save_feed_reads({'100': {'last_info_read_at': 400}})
+                read = backend.get_feed_unread(user=WORKER_A)
+        finally:
+            if os.path.exists(tmp_weather):
+                os.remove(tmp_weather)
+
+        self.assertEqual(unread['info'], 1)
+        self.assertEqual(read['info'], 0)
 
     def test_mark_feed_read_writes_marker(self):
         out = backend.mark_feed_read(backend.FeedReadBody(tab='news'), user=WORKER_A)

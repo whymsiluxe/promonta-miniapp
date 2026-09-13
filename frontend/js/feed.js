@@ -92,6 +92,21 @@ const IG_ICONS = {
   thumbsDown: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>',
 };
 
+const FEED_SAVED_FILTERS = { photos: 'all', news: 'all', weather: 'all' };
+
+function _feedJsString(value) {
+  return JSON.stringify(String(value == null ? '' : value));
+}
+
+function _weatherSaveId(entry) {
+  return `${entry?.object || ''}::${entry?.created || ''}`;
+}
+
+function _feedKindForSaveType(itemType) {
+  if (itemType === 'photo') return 'photos';
+  return itemType;
+}
+
 // Основная подпись поста: при жаре -- температурная, иначе первый risk или label типа.
 function _wxPrimaryLabel(entry) {
   const type = _dominantWxType(entry);
@@ -182,6 +197,8 @@ let _wxEntries = [];
 function renderFeedCard(entry, idx, isActive) {
   const type = WX_TYPES[_dominantWxType(entry)];
   const liked = !!entry.liked_by_me;
+  const saved = !!entry.saved_by_me;
+  const saveId = _weatherSaveId(entry);
   const waveSvg = _buildWaveSvg(entry.wave, type.hue);
 
   // \u0420\u0435\u0444\u0435\u0440\u0435\u043D\u0441 "16\u00B0 / Stormy Monday": \u043A\u0440\u0443\u043F\u043D\u0430\u044F \u0442\u0435\u043C\u043F \u0441\u0435\u0433\u043E\u0434\u043D\u044F + \u0434\u0438\u0430\u043F\u0430\u0437\u043E\u043D \u043C\u0438\u043D/\u043C\u0430\u043A\u0441 + \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0441\u043E\u0431\u044B\u0442\u0438\u044F.
@@ -240,6 +257,9 @@ function renderFeedCard(entry, idx, isActive) {
       </button>
       <button class="wx-act" type="button" onclick="switchView('chat')" aria-label="Комментарии">${IG_ICONS.comment}</button>
       <button class="wx-act" type="button" onclick="shareWxPost(_wxEntries[${idx}])" aria-label="Поделиться">${IG_ICONS.share}</button>
+      <button class="wx-act wx-save-btn ${saved ? 'saved' : ''}" type="button"
+        onclick="toggleFeedSave(this, 'weather', ${_feedJsString(saveId)})"
+        aria-label="${saved ? 'Убрать из сохранённых' : 'Сохранить'}" aria-pressed="${saved ? 'true' : 'false'}">${IG_ICONS.bookmark}</button>
     </div>
     <div class="wx-post-caption">${caption}</div>
   </div>`;
@@ -286,11 +306,26 @@ function _renderCompactWeatherRow(entry, idx) {
 
 function _renderActiveWeatherCard() {
   const container = document.getElementById('feed-list');
-  if (!_wxEntries.length) return;
+  if (!_wxEntries.length) {
+    _updateFeedSavedCount('weather', 0);
+    if (container) {
+      container.innerHTML = FEED_SAVED_FILTERS.weather === 'saved'
+        ? '<div class="empty-state">Сохранённой погоды пока нет</div>'
+        : '<div class="empty-state">Погодных рисков не обнаружено. Проверка каждый день в 18:00 и 6:30.</div>';
+    }
+    return;
+  }
+  _updateFeedSavedCount('weather', _wxEntries.filter(e => e.saved_by_me).length);
   // Раунд 5 §12: группировка Инфо-ленты по серьёзности (Критично/Предупреждения/
   // Информация). Секция рендерится только если в ней есть объекты; исходный индекс
   // сохраняется для expand-логики, чтобы клик по строке разворачивал нужную запись.
-  const indexed = _wxEntries.map((e, i) => ({ e, i, level: weatherSeverityLevel(e) }));
+  const indexed = _wxEntries
+    .map((e, i) => ({ e, i, level: weatherSeverityLevel(e) }))
+    .filter(x => FEED_SAVED_FILTERS.weather !== 'saved' || x.e.saved_by_me);
+  if (!indexed.length) {
+    container.innerHTML = '<div class="empty-state">Сохранённой погоды пока нет</div>';
+    return;
+  }
   container.innerHTML = WX_SEVERITY_SECTIONS.map(sec => {
     const rows = indexed.filter(x => x.level === sec.level);
     if (!rows.length) return '';
@@ -338,7 +373,8 @@ async function loadWeatherFeed() {
   try {
     const data = await api('/api/feed/weather');
     if (!data.feed || data.feed.length === 0) {
-      container.innerHTML = '<div class="empty-state">Погодных рисков не обнаружено. Проверка каждый день в 18:00 и 6:30.</div>';
+      _wxEntries = [];
+      _renderActiveWeatherCard();
       return;
     }
     _wxEntries = data.feed;
@@ -389,6 +425,7 @@ function renderPhotoItem(p) {
   const caption = (p.caption || '').trim();
   const fileCount = (p.files || []).length;
   const liked = !!p.liked_by_me;
+  const saved = !!p.saved_by_me;
   // 24.07: мультифото — свайп прямо в карточке ленты (как в Инсте), не только в модалке.
   // img-wrap — горизонтальный scroll-snap контейнер со всеми фото поста; badge/dots
   // обновляются по scroll-позиции (см. _initFeedPhotoSwipeDots). Тап на карточку всё
@@ -429,7 +466,9 @@ function renderPhotoItem(p) {
           ${IG_ICONS.share}
         </button>
       </div>
-      <button class="feed-photo-icon-action feed-photo-save-action" type="button" onclick="event.stopPropagation(); hapticImpact('light')" aria-label="Сохранить">
+      <button class="feed-photo-icon-action feed-photo-save-action ${saved ? 'saved' : ''}" type="button"
+        onclick="event.stopPropagation(); toggleFeedSave(this, 'photo', ${_feedJsString(p.id)})"
+        aria-label="${saved ? 'Убрать из сохранённых' : 'Сохранить'}" aria-pressed="${saved ? 'true' : 'false'}">
         ${IG_ICONS.bookmark}
       </button>
     </div>
@@ -472,6 +511,52 @@ function sharePhotoPost(photoId) {
   try { navigator.clipboard.writeText(text); showToast('Скопировано', 'success'); } catch (e) {}
 }
 
+function _findFeedSavedItem(itemType, itemId) {
+  if (itemType === 'photo') return _feedPhotosCache.find(p => String(p.id) === String(itemId));
+  if (itemType === 'news') return _newsItems.find(n => String(n.id) === String(itemId));
+  if (itemType === 'weather') return _wxEntries.find(e => _weatherSaveId(e) === String(itemId));
+  return null;
+}
+
+function _rerenderFeedKind(kind) {
+  if (kind === 'photos') _renderFeedPhotosFromCache();
+  else if (kind === 'news') _renderNewsFromCache();
+  else if (kind === 'weather') _renderActiveWeatherCard();
+}
+
+function _refreshFeedSavedCounts() {
+  _updateFeedSavedCount('photos', _feedPhotosCache.filter(p => p.saved_by_me).length);
+  _updateFeedSavedCount('news', _newsItems.filter(n => n.saved_by_me).length);
+  _updateFeedSavedCount('weather', _wxEntries.filter(e => e.saved_by_me).length);
+}
+
+async function toggleFeedSave(btn, itemType, itemId) {
+  if (!itemId || (btn && btn.disabled)) return;
+  const item = _findFeedSavedItem(itemType, itemId);
+  const nextSaved = !(item ? item.saved_by_me : btn?.classList.contains('saved'));
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api('/api/feed/saved', {
+      method: 'POST',
+      body: JSON.stringify({ item_type: itemType, item_id: String(itemId), saved: nextSaved }),
+    });
+    if (item) item.saved_by_me = !!res.saved_by_me;
+    if (btn) {
+      btn.classList.toggle('saved', !!res.saved_by_me);
+      btn.setAttribute('aria-pressed', res.saved_by_me ? 'true' : 'false');
+      btn.setAttribute('aria-label', res.saved_by_me ? 'Убрать из сохранённых' : 'Сохранить');
+    }
+    hapticImpact('light');
+    const kind = _feedKindForSaveType(itemType);
+    _refreshFeedSavedCounts();
+    if (FEED_SAVED_FILTERS[kind] === 'saved') _rerenderFeedKind(kind);
+  } catch (e) {
+    showToast('Ошибка сохранения: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function _initFeedPhotoSwipeDots(grid) {
   grid.querySelectorAll('.feed-photo-img-wrap[data-file-count]').forEach(wrap => {
     const count = parseInt(wrap.dataset.fileCount, 10);
@@ -488,6 +573,33 @@ function _initFeedPhotoSwipeDots(grid) {
 }
 
 let _feedPhotosCache = [];
+
+function _updateFeedSavedCount(kind, count) {
+  const el = document.getElementById(`feed-saved-count-${kind}`);
+  if (!el) return;
+  el.textContent = count > 99 ? '99+' : count;
+  el.style.display = count > 0 ? 'inline-flex' : 'none';
+}
+
+function _renderFeedPhotosFromCache() {
+  const grid = document.getElementById('feed-photo-grid');
+  if (!grid) return;
+  const savedCount = _feedPhotosCache.filter(p => p.saved_by_me).length;
+  _updateFeedSavedCount('photos', savedCount);
+  const photos = FEED_SAVED_FILTERS.photos === 'saved'
+    ? _feedPhotosCache.filter(p => p.saved_by_me)
+    : _feedPhotosCache;
+  _revokeFeedBlobUrls(grid);
+  if (!photos.length) {
+    grid.innerHTML = FEED_SAVED_FILTERS.photos === 'saved'
+      ? '<div class="empty-state">Сохранённых фото пока нет</div>'
+      : '<div class="empty-state">Фото пока нет. Загрузите первым 📷</div>';
+    return;
+  }
+  grid.innerHTML = photos.map(renderPhotoItem).join('');
+  _lazyLoadAuthImages([...grid.querySelectorAll('img[data-auth-src]')]);
+  _initFeedPhotoSwipeDots(grid);
+}
 
 // Lazy-load auth images using IntersectionObserver — avoids fetching all blob URLs at once.
 // Falls back to immediate load if IntersectionObserver is unavailable.
@@ -518,14 +630,7 @@ async function loadFeedPhotos() {
   try {
     const data = await api('/api/feed/photos');
     _feedPhotosCache = data.photos || [];
-    _revokeFeedBlobUrls(grid);
-    if (!data.photos || data.photos.length === 0) {
-      grid.innerHTML = '<div class="empty-state">Фото пока нет. Загрузите первым 📷</div>';
-      return;
-    }
-    grid.innerHTML = data.photos.map(renderPhotoItem).join('');
-    _lazyLoadAuthImages([...grid.querySelectorAll('img[data-auth-src]')]);
-    _initFeedPhotoSwipeDots(grid);
+    _renderFeedPhotosFromCache();
     _markFeedRead('photos');
   } catch (e) {
     grid.innerHTML = `<div class="empty-state" style="color:var(--red)">Ошибка загрузки: ${esc(e.message)}</div>`;
@@ -557,6 +662,29 @@ const FEED_TABS = ['photos', 'news', 'weather'];
 // #view-home fallback keeps this safe if DOM is partially loaded.
 function getFeedRoot() {
   return document.getElementById('view-feed') || document.getElementById('view-home');
+}
+
+function _setFeedSavedFilter(kind, filter) {
+  FEED_SAVED_FILTERS[kind] = filter === 'saved' ? 'saved' : 'all';
+  const row = document.querySelector(`.feed-saved-switch[data-feed-saved-kind="${kind}"]`);
+  row?.querySelectorAll('.feed-saved-opt').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.feedSavedFilter === FEED_SAVED_FILTERS[kind]);
+  });
+  _rerenderFeedKind(kind);
+  hapticImpact('light');
+}
+
+function _initFeedSavedFilters() {
+  document.querySelectorAll('.feed-saved-switch[data-feed-saved-kind]').forEach(row => {
+    if (row.dataset.wired) return;
+    row.dataset.wired = '1';
+    row.addEventListener('click', (e) => {
+      const target = e.target instanceof Element ? e.target : null;
+      const btn = target?.closest('.feed-saved-opt');
+      if (!btn) return;
+      _setFeedSavedFilter(row.dataset.feedSavedKind, btn.dataset.feedSavedFilter || 'all');
+    });
+  });
 }
 
 function _selectFeedTab(which, opts = {}) {
@@ -642,6 +770,7 @@ function _newsCardHtml(n, i) {
   const catColor = NEWS_CAT_COLORS[n.category] || 'var(--accent)';
   const likeActive = n.my_reaction === 'like' ? 'active' : '';
   const dislikeActive = n.my_reaction === 'dislike' ? 'active' : '';
+  const saved = !!n.saved_by_me;
   const cc = n.comment_count || 0;
   const discussBadge = cc > 0 ? `<span class="news-discuss-badge">Обсуждают · ${cc}</span>` : '';
   return `
@@ -660,6 +789,9 @@ function _newsCardHtml(n, i) {
       <button class="news-react-btn news-like-btn ${likeActive}" data-news-reaction="like" onclick="event.stopPropagation();reactNews('${n.id}','like',this)">${IG_ICONS.heart} <span>${n.likes || 0}</span></button>
       <button class="news-react-btn news-dislike-btn ${dislikeActive}" data-news-reaction="dislike" onclick="event.stopPropagation();reactNews('${n.id}','dislike',this)">${IG_ICONS.thumbsDown} <span>${n.dislikes || 0}</span></button>
       ${n.url ? `<button class="news-react-btn" data-news-action="share" onclick="event.stopPropagation();shareNewsLink(${i})">${IG_ICONS.share}</button>` : ''}
+      <button class="news-react-btn news-save-btn ${saved ? 'saved' : ''}" data-news-action="save"
+        onclick="event.stopPropagation();toggleFeedSave(this, 'news', ${_feedJsString(n.id)})"
+        aria-label="${saved ? 'Убрать из сохранённых' : 'Сохранить'}" aria-pressed="${saved ? 'true' : 'false'}">${IG_ICONS.bookmark}</button>
     </div>
   </div>`;
 }
@@ -690,15 +822,22 @@ async function reactNews(postId, reaction, btnEl) {
   }
 }
 
+function _visibleNewsEntries() {
+  return _newsItems
+    .map((n, index) => ({ n, index }))
+    .filter(x => FEED_SAVED_FILTERS.news !== 'saved' || x.n.saved_by_me);
+}
+
 function _renderMoreNews() {
   const list = document.getElementById('feed-news-list');
-  const nextBatch = _newsItems.slice(_newsRenderedCount, _newsRenderedCount + NEWS_PAGE_SIZE);
-  const html = nextBatch.map((n, idx) => _newsCardHtml(n, _newsRenderedCount + idx)).join('');
+  const visible = _visibleNewsEntries();
+  const nextBatch = visible.slice(_newsRenderedCount, _newsRenderedCount + NEWS_PAGE_SIZE);
+  const html = nextBatch.map(x => _newsCardHtml(x.n, x.index)).join('');
   const moreEl = document.getElementById('news-load-more');
   if (moreEl) moreEl.insertAdjacentHTML('beforebegin', html);
   else list.insertAdjacentHTML('beforeend', html);
   _newsRenderedCount += nextBatch.length;
-  if (moreEl) moreEl.style.display = _newsRenderedCount < _newsItems.length ? 'block' : 'none';
+  if (moreEl) moreEl.style.display = _newsRenderedCount < visible.length ? 'block' : 'none';
 }
 
 function _initNewsInfiniteScroll() {
@@ -710,9 +849,26 @@ function _initNewsInfiniteScroll() {
     const newsActive = document.getElementById('feed-news-content')?.style.display !== 'none';
     if (!newsActive) return;
     if (window.innerHeight + window.scrollY > document.body.scrollHeight - 400) {
-      if (_newsRenderedCount < _newsItems.length) _renderMoreNews();
+      if (_newsRenderedCount < _visibleNewsEntries().length) _renderMoreNews();
     }
   });
+}
+
+function _renderNewsFromCache() {
+  const list = document.getElementById('feed-news-list');
+  if (!list) return;
+  _updateFeedSavedCount('news', _newsItems.filter(n => n.saved_by_me).length);
+  const visible = _visibleNewsEntries();
+  _newsRenderedCount = 0;
+  if (!visible.length) {
+    list.innerHTML = FEED_SAVED_FILTERS.news === 'saved'
+      ? '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Сохранённых новостей пока нет</div>'
+      : '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Сводка новостей появится в течение дня</div>';
+    return;
+  }
+  list.innerHTML = (FEED_SAVED_FILTERS.news === 'saved' ? '' : _renderDiscussingSection()) +
+    '<div class="news-load-more" id="news-load-more" style="display:none">Загрузка…</div>';
+  _renderMoreNews();
 }
 
 async function loadNewsFeed() {
@@ -720,14 +876,7 @@ async function loadNewsFeed() {
   try {
     const res = await api('/api/feed/news');
     _newsItems = res?.feed || [];
-    _newsRenderedCount = 0;
-    if (!_newsItems.length) {
-      list.innerHTML = '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Сводка новостей появится в течение дня</div>';
-      return;
-    }
-    list.innerHTML = _renderDiscussingSection() +
-      '<div class="news-load-more" id="news-load-more" style="display:none">Загрузка…</div>';
-    _renderMoreNews();
+    _renderNewsFromCache();
     _initNewsInfiniteScroll();
     _markFeedRead('news');
   } catch (e) {
@@ -822,6 +971,32 @@ function _clearFeedCommentReply(kind) {
     bar.innerHTML = '';
   }
   if (input) input.placeholder = 'Добавить комментарий…';
+}
+
+function _insertFeedQuickReaction(kind, emoji, btn) {
+  const prefix = _commentPrefix(kind);
+  const input = document.getElementById(`${prefix}-comment-input`);
+  if (!input || !emoji) return;
+
+  const start = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+  const end = typeof input.selectionEnd === 'number' ? input.selectionEnd : start;
+  const before = input.value.slice(0, start);
+  const after = input.value.slice(end);
+  const leftGap = before && !/\s$/.test(before) ? ' ' : '';
+  const rightGap = after && !/^\s/.test(after) ? ' ' : '';
+  const insert = `${leftGap}${emoji}${rightGap}`;
+
+  input.value = before + insert + after;
+  const cursor = before.length + insert.length;
+  input.focus();
+  requestAnimationFrame(() => {
+    try { input.setSelectionRange(cursor, cursor); } catch (e) {}
+  });
+  if (btn) {
+    btn.classList.add('pc-quick-reaction-hit');
+    setTimeout(() => btn.classList.remove('pc-quick-reaction-hit'), 160);
+  }
+  hapticImpact('light');
 }
 
 async function _renderNewsCommentsList() {
@@ -1022,6 +1197,7 @@ function initFeedTabs() {
   if (active === 'news') loadNewsFeed();
   if (active === 'photos') loadFeedPhotos();
   _initFeedSwitch();
+  _initFeedSavedFilters();
   _initFeedSwipe();
   _loadFeedTabBadges();
 }
@@ -1229,6 +1405,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // Раунд 5 §8: комментарии к новости — те же обработчики (закрытие/отправка), что фото.
   document.getElementById('nc-back-btn')?.addEventListener('click', closeNewsComments);
   document.getElementById('nc-comment-send-btn')?.addEventListener('click', _sendNewsComment);
+  document.querySelectorAll('.pc-quick-reactions').forEach(row => {
+    row.addEventListener('click', (e) => {
+      const target = e.target instanceof Element ? e.target : null;
+      const btn = target?.closest('.pc-quick-reaction');
+      if (!btn) return;
+      _insertFeedQuickReaction(row.dataset.commentKind || 'photo', btn.dataset.emoji || btn.textContent.trim(), btn);
+    });
+  });
 
   // 25.07: карусель показывала счётчик/точки/стрелки как настоящая карусель, но пальцем
   // не свайпалась вообще -- только click по стрелкам. Threshold-свайп поверх той же
@@ -1287,7 +1471,12 @@ function _openCommentActions({ sourceType, sourceId, comment, canDelete, onDelet
       _commentActionOverlayUnregister = null;
     });
   }
+  backdrop.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    close();
+  });
   backdrop.addEventListener('click', close);
+  sheet.addEventListener('pointerdown', e => e.stopPropagation());
   sheet.querySelectorAll('.comment-action-item').forEach(btn => {
     btn.addEventListener('click', () => {
       const act = btn.dataset.act;
@@ -1318,7 +1507,12 @@ async function _openCommentForwardPicker(sourceType, sourceId, commentId) {
     if (unregister) { unregister(); unregister = null; }
   };
   if (typeof NavigationManager !== 'undefined') unregister = NavigationManager.registerOverlay(close);
+  backdrop.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    close();
+  });
   backdrop.addEventListener('click', close);
+  modal.addEventListener('pointerdown', e => e.stopPropagation());
 
   const destinations = [{ id: null, thread_key: null, title: 'Общий чат' }];
   try {

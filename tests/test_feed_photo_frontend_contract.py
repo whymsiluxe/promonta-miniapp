@@ -49,12 +49,23 @@ def test_comment_modal_is_bottom_sheet_not_route_page():
 
     assert '<div id="photo-comments-modal" class="photo-comments-modal" style="display:none;">' in src
     assert '<div class="pc-sheet">' in src
+    assert "height: var(--tg-fullscreen-height, 100dvh)" in src
+    assert "min-height: 100dvh" in src
+    assert "var(--keyboard-inset, 0px)" in src
+    assert "translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0)" in src
     assert '<div id="pc-reply-bar" class="pc-reply-bar" style="display:none;"></div>' in src
     assert '<div class="pc-sheet pc-news-sheet">' in src
     assert '<div id="nc-reply-bar" class="pc-reply-bar" style="display:none;"></div>' in src
+    assert 'data-comment-kind="photo"' in src
+    assert 'data-comment-kind="news"' in src
+    assert 'class="pc-quick-reaction"' in src
+    assert "pc-quick-reaction-hit" in src
     assert ".comment-action-sheet" in src
     assert "z-index: 6001" in src
+    assert "touch-action: none" in src
     assert "_renderUnifiedFeedComment" in feed_src
+    assert "_insertFeedQuickReaction" in feed_src
+    assert "pointerdown" in feed_src
     assert "_setFeedCommentReply('photo'" in feed_src
     assert "_setFeedCommentReply('news'" in feed_src
 
@@ -70,6 +81,27 @@ def test_feed_uses_unified_instagram_style_icons():
     assert ".wx-act svg" in css
     assert ".news-react-btn svg" in css
     assert ".news-like-btn.active svg" in css
+
+
+def test_feed_saved_filters_are_per_tab_not_mixed_tab():
+    src = _source(APP_HTML)
+    feed_src = _source(FEED_JS)
+
+    assert 'data-feed="weather">Погода' in src
+    assert 'data-feed="saved"' not in src
+    assert 'data-feed-saved-kind="photos"' in src
+    assert 'data-feed-saved-kind="news"' in src
+    assert 'data-feed-saved-kind="weather"' in src
+    assert 'id="feed-saved-count-photos"' in src
+    assert 'id="feed-saved-count-news"' in src
+    assert 'id="feed-saved-count-weather"' in src
+    assert "toggleFeedSave" in feed_src
+    assert "'/api/feed/saved'" in feed_src
+    assert "FEED_SAVED_FILTERS = { photos: 'all', news: 'all', weather: 'all' }" in feed_src
+    assert "news-save-btn" in feed_src
+    assert "wx-save-btn" in feed_src
+    assert "_renderFeedPhotosFromCache" in feed_src
+    assert "_renderNewsFromCache" in feed_src
 
 
 def test_ios_input_zoom_and_ai_composer_visibility_contracts():

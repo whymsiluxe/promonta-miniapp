@@ -187,6 +187,7 @@ try:
         CRITICAL_ALERT_PHOTO_DIR,
         CRITICAL_ALERTS_FILE,
         FEED_READS_FILE,
+        FEED_SAVED_FILE,
         CHAT_REACTIONS_FILE,
         PLAN_SYNC_STATE_FILE,
         MANGEL_PHOTO_DIR,
@@ -237,6 +238,7 @@ except ImportError:
         CRITICAL_ALERT_PHOTO_DIR,
         CRITICAL_ALERTS_FILE,
         FEED_READS_FILE,
+        FEED_SAVED_FILE,
         CHAT_REACTIONS_FILE,
         PLAN_SYNC_STATE_FILE,
         MANGEL_PHOTO_DIR,
@@ -3620,6 +3622,47 @@ def _save_weather_reactions(data: dict):
     _atomic_write_json(WEATHER_REACTIONS_FILE, data)
 
 
+FEED_SAVE_TYPES = {'photo', 'news', 'weather'}
+
+
+def _load_feed_saved() -> dict:
+    return _safe_load_json(FEED_SAVED_FILE, {})
+
+
+def _feed_saved_bucket(saved: dict, uid: str, item_type: str) -> dict:
+    user_saved = saved.get(str(uid), {})
+    if not isinstance(user_saved, dict):
+        return {}
+    bucket = user_saved.get(item_type, {})
+    return bucket if isinstance(bucket, dict) else {}
+
+
+def _is_feed_saved(saved: dict, uid: str, item_type: str, item_id: str) -> bool:
+    return str(item_id) in _feed_saved_bucket(saved, uid, item_type)
+
+
+def _feed_item_exists(item_type: str, item_id: str) -> bool:
+    if item_type == 'photo':
+        return any(str(p.get('id')) == item_id for p in _load_photo_meta())
+    if item_type == 'news':
+        if not os.path.exists(NEWS_FEED_FILE):
+            return False
+        try:
+            with open(NEWS_FEED_FILE, encoding='utf-8') as f:
+                return any(str(p.get('id')) == item_id for p in json.load(f))
+        except Exception:
+            return False
+    if item_type == 'weather':
+        if not os.path.exists(WEATHER_FEED_FILE):
+            return False
+        try:
+            with open(WEATHER_FEED_FILE, encoding='utf-8') as f:
+                return any(_weather_entry_key(e) == item_id for e in json.load(f))
+        except Exception:
+            return False
+    return False
+
+
 @app.get("/api/feed/weather")
 def get_weather_feed(user: dict = Depends(get_current_user)):
     if not os.path.exists(WEATHER_FEED_FILE):
@@ -3627,12 +3670,14 @@ def get_weather_feed(user: dict = Depends(get_current_user)):
     with open(WEATHER_FEED_FILE, encoding='utf-8') as f:
         feed = json.load(f)
     reactions = _load_weather_reactions()
+    saved = _load_feed_saved()
     uid = str(user['id'])
     for entry in feed:
         key = _weather_entry_key(entry)
         entry_reactions = reactions.get(key, {})
         entry['likes'] = len(entry_reactions)
         entry['liked_by_me'] = uid in entry_reactions
+        entry['saved_by_me'] = _is_feed_saved(saved, uid, 'weather', key)
     return {"feed": feed}
 
 
@@ -3753,9 +3798,11 @@ def get_news_feed(user: dict = Depends(get_current_user)):
         feed = json.load(f)
     reactions = _load_news_reactions()
     comments = _load_news_comments()
+    saved = _load_feed_saved()
     uid = str(user['id'])
     for post in feed:
         post['my_reaction'] = reactions.get(post['id'], {}).get(uid)
+        post['saved_by_me'] = _is_feed_saved(saved, uid, 'news', post['id'])
         pc = comments.get(post['id'], [])
         post['comment_count'] = len(pc)
         post['last_comment_at'] = max((c.get('ts', 0) for c in pc), default=0)
@@ -3894,6 +3941,12 @@ class FeedReadBody(BaseModel):
     tab: str  # "news" | "photos" | "info"
 
 
+class FeedSavedBody(BaseModel):
+    item_type: str  # "photo" | "news" | "weather"
+    item_id: str
+    saved: bool
+
+
 @app.post("/api/feed/read")
 def mark_feed_read(body: FeedReadBody, user: dict = Depends(get_current_user)):
     if body.tab not in ('news', 'photos', 'info'):
@@ -3905,16 +3958,47 @@ def mark_feed_read(body: FeedReadBody, user: dict = Depends(get_current_user)):
     return {"ok": True, "tab": body.tab, "read_at": urec[f'last_{body.tab}_read_at']}
 
 
+@app.post("/api/feed/saved")
+def set_feed_saved(body: FeedSavedBody, user: dict = Depends(get_current_user)):
+    item_type = (body.item_type or '').strip()
+    item_id = (body.item_id or '').strip()
+    if item_type not in FEED_SAVE_TYPES:
+        raise HTTPException(400, "item_type должен быть photo/news/weather")
+    if not item_id:
+        raise HTTPException(400, "item_id обязателен")
+    if not _feed_item_exists(item_type, item_id):
+        raise HTTPException(404, "Пост не найден")
+
+    uid = str(user['id'])
+
+    def _mutate(saved: dict):
+        user_saved = saved.setdefault(uid, {})
+        if not isinstance(user_saved, dict):
+            user_saved = {}
+            saved[uid] = user_saved
+        bucket = user_saved.setdefault(item_type, {})
+        if not isinstance(bucket, dict):
+            bucket = {}
+            user_saved[item_type] = bucket
+        if body.saved:
+            bucket[item_id] = int(time.time())
+        else:
+            bucket.pop(item_id, None)
+        return {"ok": True, "item_type": item_type, "item_id": item_id, "saved_by_me": item_id in bucket}
+
+    return update_json_transaction(FEED_SAVED_FILE, {}, _mutate)
+
+
 @app.get("/api/feed/unread")
 def get_feed_unread(user: dict = Depends(get_current_user)):
     """Счётчики НЕПРОЧИТАННОГО (не общее число). Новость непрочитана, если она
     опубликована позже отметки ИЛИ получила новый комментарий позже отметки. Фото —
-    по ts. Инфо — по погодным/др. записям (пока по кол-ву новее отметки нет ts-поля →
-    считаем 0, если механизм появится). >99 фронт покажет как «99+»."""
+    по ts. Погода — по created погодной записи. >99 фронт покажет как «99+»."""
     uid = str(user['id'])
     urec = _load_feed_reads().get(uid, {})
     news_read = urec.get('last_news_read_at', 0)
     photos_read = urec.get('last_photos_read_at', 0)
+    info_read = urec.get('last_info_read_at', 0)
 
     news_unread = 0
     if os.path.exists(NEWS_FEED_FILE):
@@ -3939,7 +4023,27 @@ def get_feed_unread(user: dict = Depends(get_current_user)):
     except Exception:
         pass
 
-    return {"news": news_unread, "photos": photos_unread, "info": 0}
+    info_unread = 0
+    if os.path.exists(WEATHER_FEED_FILE):
+        try:
+            with open(WEATHER_FEED_FILE, encoding='utf-8') as f:
+                weather_feed = json.load(f)
+            for entry in weather_feed:
+                created = entry.get('created', 0)
+                if isinstance(created, (int, float)):
+                    created_ts = int(created)
+                else:
+                    raw = str(created or '').strip()
+                    if raw.isdigit():
+                        created_ts = int(raw)
+                    else:
+                        created_ts = int(datetime.fromisoformat(raw.replace('Z', '+00:00')).timestamp()) if raw else 0
+                if created_ts > info_read:
+                    info_unread += 1
+        except Exception:
+            info_unread = 0
+
+    return {"news": news_unread, "photos": photos_unread, "info": info_unread}
 
 
 # ---------- Photo feed ----------
@@ -4037,6 +4141,7 @@ def list_feed_photos(user: dict = Depends(get_current_user)):
     with _photo_lock:
         items = _load_photo_meta()
     reactions = _load_photo_reactions()
+    saved = _load_feed_saved()
     uid = str(user['id'])
     photos = []
     for p in reversed(items):
@@ -4044,6 +4149,7 @@ def list_feed_photos(user: dict = Depends(get_current_user)):
         photo_reactions = reactions.get(p.get('id'), {})
         p['likes'] = len(photo_reactions)
         p['liked_by_me'] = uid in photo_reactions
+        p['saved_by_me'] = _is_feed_saved(saved, uid, 'photo', p.get('id'))
         p['comment_count'] = len(p.pop('comments', []))
         # 24.07: мультифото — старые записи (до этой правки) хранили один 'file',
         # новые хранят 'files' (список). Нормализуем на чтение, не трогаем сами
