@@ -18,7 +18,7 @@ Preparation note: the autonomous runner is prepared, but must stay disabled unti
 - Before changing code, inspect the exact existing implementation and nearby tests.
 - Keep commits small and logical. Do not mix unrelated refactors with product work.
 - Never print secrets, tokens, auth files, SSH keys, `.env` values, or Telegram/OpenAI credentials.
-- Do not run two agents against the same dirty worktree. If a lock or active run exists, stop.
+- Do not run two agents against the same dirty worktree. When this plan is executed by `scripts/autonomous_codex_runner.sh`, `/home/promonta/agent/.codex-autonomous-miniapp.lock` and the parent runner/Codex processes are expected and belong to the current run; do not stop merely because they exist. Stop only if you find a second independent Codex/autonomous process or unrelated dirty worktree changes.
 - Prefer existing architecture and helper APIs. Avoid large rewrites unless the local code already points that way.
 - Use `rg` for search and patch-style edits for manual changes.
 - After each meaningful code change, run focused tests first, then broader tests when practical.

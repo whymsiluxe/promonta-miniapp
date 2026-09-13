@@ -84,7 +84,7 @@ if [ -s "$THREAD_FILE" ]; then
   cat > "$RESUME_PROMPT_FILE" <<'PROMPT'
 Continue the existing autonomous Promonta miniapp run from exactly where it paused.
 
-Use current git status and docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md as source of truth. Do not restart completed work. Inspect what is already committed/deployed, continue the next unfinished checklist item, then test, commit, push, deploy, update /home/promonta/agent/FILESYSTEM_MAP.md, and keep going until AUTONOMOUS_STATUS is DONE or this session hits a limit.
+Use current git status and docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md as source of truth. Do not restart completed work. The runner-created /home/promonta/agent/.codex-autonomous-miniapp.lock and parent runner/Codex processes belong to this current run; do not stop merely because they exist. Stop only for a second independent active agent or unrelated dirty worktree changes. Inspect what is already committed/deployed, continue the next unfinished checklist item, then test, commit, push, deploy, update /home/promonta/agent/FILESYSTEM_MAP.md, and keep going until AUTONOMOUS_STATUS is DONE or this session hits a limit.
 PROMPT
   RESUME_CMD=(codex exec resume --json --dangerously-bypass-approvals-and-sandbox --output-last-message "$LAST_MESSAGE")
   if [ -n "${CODEX_MODEL:-}" ]; then
