@@ -1,5 +1,34 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-14 Team/Control iOS cockpit polish handoff
+
+Current autonomous slice: Stage 1 Team/Control premium UI polish from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `frontend/app.html`: marked `view-working-objects` as an `ios-page`, converted
+  the summary/plan mode switch to button-based `ios-segmented` controls, and
+  added a scoped iOS bridge for Team stat tiles, list rows, status pills, plan
+  chips, object/plan list groups, and assignment bottom sheets.
+- `frontend/js/home.js`: added a local `WO_ICONS` SVG set for plan date picking,
+  Control Day, and collapsible chevrons; replaced Team plan emoji controls and
+  tagged existing Team render output with `ios-stat-tile`, `ios-list-row`,
+  `ios-status-pill`, `ios-action-button`, and `ios-bottom-sheet` classes.
+- `tests/test_team_ios_frontend_contract.py`: new static contract for the Team
+  iOS page markup, shared primitives, SVG controls, status pills, assignment
+  sheet, and no-emoji Team controls.
+
+Verification:
+- `node --check frontend/js/home.js`.
+- `git diff --check`.
+- Focused Team/Home/team-hours checks: `15 passed`.
+- Adjacent premium frontend contracts: `42 passed`.
+- Full suite: `773 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended Stage 1 slice:
+- Continue with Splash/Feed/Objects polish, then move into Stage 2
+  start/finish evidence, geo, retry/offline, and DailyPlan validation.
+
 ## 2026-09-14 Alerts iOS sheet polish handoff
 
 Current autonomous slice: Stage 1 Alerts sheet premium UI polish from

@@ -5773,6 +5773,289 @@ body {
   line-height: 1.45;
 }
 
+#view-working-objects {
+  background: var(--ios-page-bg, var(--bg-app));
+}
+#view-working-objects header h1 {
+  color: var(--ios-text, var(--text-main));
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+#view-working-objects .wo-mode-switch {
+  margin: 0 0.9rem 0.75rem;
+}
+#view-working-objects .wo-mode-switch .doc-type-opt {
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: var(--font-family-body);
+}
+#working-objects-slot,
+#working-objects-plan-slot {
+  padding-bottom: calc(var(--bottom-nav-safe-pad, var(--app-bottom-nav-height, 70px)) + 16px);
+}
+#view-working-objects .wo-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0 0.9rem 0.8rem;
+  border-bottom: none;
+}
+#view-working-objects .wo-summary-tile,
+#view-working-objects .wo-th-total {
+  min-width: 0;
+  min-height: 66px;
+  padding: 0.55rem 0.35rem;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+  transform: none;
+}
+#view-working-objects .wo-summary-tile:active {
+  transform: none;
+  background: var(--ios-grouped-surface, var(--bg-card));
+}
+#view-working-objects .wo-summary-num,
+#view-working-objects .wo-th-total-num {
+  color: var(--ios-text, var(--text-main));
+  font-size: 22px;
+  font-weight: 750;
+  line-height: 1;
+}
+#view-working-objects .wo-summary-label,
+#view-working-objects .wo-th-total-label {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.1;
+  text-transform: none;
+  letter-spacing: 0;
+}
+#view-working-objects .wo-section {
+  margin: 0;
+  padding: 0.45rem 0.9rem 1rem;
+  border-bottom: none;
+}
+#view-working-objects .wo-section-title {
+  margin: 0 0 0.5rem;
+  color: var(--ios-text, var(--text-main));
+  font-family: var(--font-family-body);
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: none;
+}
+#view-working-objects .wo-team-block-title {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+#view-working-objects .wo-team-card,
+#view-working-objects .wo-worker-row,
+#view-working-objects .wo-th-row,
+#view-working-objects .wo-plan-row,
+#view-working-objects .wo-assign-sheet-opt,
+.wo-assign-sheet .wo-assign-sheet-opt {
+  min-height: 48px;
+  margin-bottom: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-working-objects .wo-team-card-name,
+#view-working-objects .wo-worker-name,
+#view-working-objects .wo-th-row-name,
+#view-working-objects .wo-plan-row-name,
+#view-working-objects .wo-object-name,
+#view-working-objects .wo-plan-object-name {
+  color: var(--ios-text, var(--text-main));
+  font-family: var(--font-family-body);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+#view-working-objects .wo-team-card-detail,
+#view-working-objects .wo-th-range,
+#view-working-objects .wo-th-row-object,
+#view-working-objects .wo-th-row-meta,
+#view-working-objects .wo-plan-row-stage,
+#view-working-objects .wo-plan-row-detail,
+#view-working-objects .wo-plan-status-shift,
+#view-working-objects .wo-empty {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 14px;
+  line-height: 1.3;
+}
+#view-working-objects .wo-team-card-status {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 26px;
+  margin-top: 0.45rem;
+  padding: 0 0.55rem;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+#view-working-objects .wo-status-idle,
+#view-working-objects .wo-plan-status-pending {
+  background: color-mix(in srgb, var(--warning, #d6a11d) 14%, var(--ios-surface, #fff));
+  color: var(--warning-text, #a16207);
+}
+#view-working-objects .wo-status-active,
+#view-working-objects .wo-plan-status-accepted {
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 12%, var(--ios-surface, #fff));
+  color: var(--ios-accent, var(--accent));
+}
+#view-working-objects .wo-status-problem,
+#view-working-objects .wo-plan-status-declined {
+  background: color-mix(in srgb, var(--red, #b3403a) 12%, var(--ios-surface, #fff));
+  color: var(--red, #b3403a);
+}
+#view-working-objects .wo-blocker-resolve-btn,
+#view-working-objects .wo-assign-btn,
+#view-working-objects .wo-plan-add-btn,
+#view-working-objects .wo-plan-control-btn,
+.wo-assign-sheet .wo-assign-sheet-cancel {
+  min-height: 40px;
+  border: none;
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-accent, var(--accent));
+  color: white;
+  font-size: 15px;
+  font-weight: 650;
+  box-shadow: none;
+}
+#view-working-objects .wo-blocker-resolve-btn {
+  margin-top: 0.55rem;
+}
+#view-working-objects .wo-th-totals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+#view-working-objects .wo-week-progress {
+  height: 5px;
+  background: var(--ios-grouped-surface, var(--border-color));
+}
+#view-working-objects .wo-week-progress-fill {
+  background: var(--ios-accent, var(--accent));
+}
+#view-working-objects .wo-collapsible-header {
+  min-height: 44px;
+}
+#view-working-objects .wo-collapsible-chevron {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ios-muted, var(--text-light));
+}
+#view-working-objects .wo-collapsible-chevron svg,
+#view-working-objects .wo-plan-date-picker svg,
+#view-working-objects .wo-plan-control-btn svg {
+  display: block;
+}
+#view-working-objects .wo-object-block,
+#view-working-objects .wo-plan-object-block {
+  margin: 0 0 0.6rem;
+  padding: 0.75rem;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-working-objects .wo-worker-row-nested {
+  margin-left: 0;
+  background: var(--ios-grouped-surface, var(--bg-card));
+  box-shadow: none;
+}
+#view-working-objects .wo-plan-dates {
+  gap: 0.45rem;
+  padding: 0 0.9rem 0.75rem;
+  scrollbar-width: none;
+}
+#view-working-objects .wo-plan-dates::-webkit-scrollbar {
+  display: none;
+}
+#view-working-objects .wo-plan-date-opt {
+  min-height: 34px;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 999px;
+  background: var(--ios-surface, var(--bg-card-raised));
+  color: var(--ios-muted, var(--text-light));
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+#view-working-objects .wo-plan-date-opt.active {
+  background: var(--ios-accent, var(--accent));
+  border-color: var(--ios-accent, var(--accent));
+  color: white;
+}
+#view-working-objects .wo-plan-date-picker {
+  width: 38px;
+  padding: 0;
+}
+#view-working-objects .wo-plan-add-btn,
+#view-working-objects .wo-plan-control-btn {
+  width: calc(100% - 1.8rem);
+  margin: 0 0.9rem 0.65rem;
+}
+#view-working-objects .wo-plan-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 12%, var(--ios-surface, #fff));
+  color: var(--ios-accent, var(--accent));
+}
+#view-working-objects .wo-plan-status {
+  min-height: 24px;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+.wo-assign-sheet {
+  background: rgba(33, 30, 23, 0.28);
+  backdrop-filter: blur(8px);
+}
+.wo-assign-sheet .wo-assign-sheet-inner {
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-bottom: none;
+  border-radius: var(--ios-radius-sheet, 22px) var(--ios-radius-sheet, 22px) 0 0;
+  box-shadow: 0 -12px 34px rgba(33, 30, 23, 0.18);
+}
+.wo-assign-sheet .wo-assign-sheet-title {
+  color: var(--ios-text, var(--text-main));
+  font-family: var(--font-family-body);
+  font-size: 20px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+.wo-assign-sheet .wo-assign-sheet-opt {
+  color: var(--ios-text, var(--text-main));
+}
+.wo-assign-sheet .wo-assign-sheet-cancel {
+  width: 100%;
+  margin-top: 0.6rem;
+}
+@media (max-width: 380px) {
+  #view-working-objects .wo-summary-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 #alerts-modal {
   background: rgba(33, 30, 23, 0.28);
   backdrop-filter: blur(8px);
@@ -7325,14 +7608,14 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 <!-- ═══════════ КОМАНДА (10.32 "Объекты рабочие" → 30.07 v3 переименовано в "Команда" по спеку:
      существующий блок/показатель "Работники" -- это и есть главный оперативный экран,
      не новый блок посреди Home-ленты) ═══════════ -->
-<div class="view" id="view-working-objects">
+<div class="view ios-page" id="view-working-objects">
   <header>
     <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
     <h1>Команда</h1>
   </header>
-  <div class="doc-type-switch wo-mode-switch" id="wo-mode-switch">
-    <div class="doc-type-opt active" data-wo-mode="summary">Сводка</div>
-    <div class="doc-type-opt" data-wo-mode="plan">План</div>
+  <div class="doc-type-switch wo-mode-switch ios-segmented" id="wo-mode-switch">
+    <button type="button" class="doc-type-opt active" data-wo-mode="summary">Сводка</button>
+    <button type="button" class="doc-type-opt" data-wo-mode="plan">План</button>
   </div>
   <div id="working-objects-slot"><!-- Сводка: Требует внимания / Активные смены / Часы команды / без объекта / по объектам / отсутствуют --></div>
   <div id="working-objects-plan-slot" style="display:none"><!-- План: даты + назначения по объектам на дату --></div>

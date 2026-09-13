@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-14 (Team/Control iOS cockpit polish)
+
+Tests: 773 passed, 1 skipped.
+
+### Frontend
+- Restyled the `Команда` operational screen with the shared iOS page shell,
+  segmented mode switch, compact stat tiles, list-row cards, status pills, and
+  bottom-nav-safe spacing.
+- Brought the Team summary, active shifts, attention rows, weekly hours, no-object
+  list, absence/object collapsibles, plan tab, and assignment sheets onto the same
+  premium surface language without changing the existing data endpoints or click
+  behavior.
+- Replaced Team plan date/control emoji affordances and collapsible chevrons with
+  local inline SVG icons.
+
+### Tests
+- Added `tests/test_team_ios_frontend_contract.py` to lock the Team iOS page
+  markup, shared primitives, SVG plan controls, status pills, assignment sheet,
+  and no-emoji Team controls.
+- Verified `node --check frontend/js/home.js`, `git diff --check`, focused
+  Team/Home/team-hours contracts, adjacent premium frontend contracts, and the
+  full suite.
+
 ## 2026-09-14 (Alerts iOS sheet polish)
 
 Tests: 770 passed, 1 skipped.

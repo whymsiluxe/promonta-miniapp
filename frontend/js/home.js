@@ -1223,7 +1223,7 @@ function _renderTeamHoursSection(data, workersByUid) {
     const initials = (_name(w) || '?').trim().charAt(0).toUpperCase();
     const avatar = `<span class="wo-th-avatar${w.is_working_now ? ' wo-th-avatar-active' : ''}" style="background:hsl(${_chatAvatarHue(w.user_id)} 42% 40%)">${esc(initials)}</span>`;
     return `
-      <div class="wo-th-row" data-uid="${esc(w.user_id)}" role="button" tabindex="0" aria-label="Карточка сотрудника ${esc(_name(w))}">
+      <div class="wo-th-row ios-list-row" data-uid="${esc(w.user_id)}" role="button" tabindex="0" aria-label="Карточка сотрудника ${esc(_name(w))}">
         <div class="wo-th-row-top">
           ${avatar}
           <div class="wo-th-row-main">
@@ -1243,9 +1243,9 @@ function _renderTeamHoursSection(data, workersByUid) {
       <div class="wo-section-title">Часы команды</div>
       ${range ? `<div class="wo-th-range">${esc(range)}</div>` : ''}
       <div class="wo-th-totals">
-        <div class="wo-th-total"><span class="wo-th-total-label">Всего</span><span class="wo-th-total-num">${_fmtHours(data.total_hours)} ч</span></div>
-        <div class="wo-th-total"><span class="wo-th-total-label">Сегодня</span><span class="wo-th-total-num">${_fmtHours(data.today_hours)} ч</span></div>
-        <div class="wo-th-total"><span class="wo-th-total-label">С часами</span><span class="wo-th-total-num">${data.workers_with_hours || 0}</span></div>
+        <div class="wo-th-total ios-stat-tile"><span class="wo-th-total-label">Всего</span><span class="wo-th-total-num">${_fmtHours(data.total_hours)} ч</span></div>
+        <div class="wo-th-total ios-stat-tile"><span class="wo-th-total-label">Сегодня</span><span class="wo-th-total-num">${_fmtHours(data.today_hours)} ч</span></div>
+        <div class="wo-th-total ios-stat-tile"><span class="wo-th-total-label">С часами</span><span class="wo-th-total-num">${data.workers_with_hours || 0}</span></div>
       </div>
       ${listHtml}
     </div>`;
@@ -1257,6 +1257,12 @@ function _renderTeamHoursSection(data, workersByUid) {
 // (кто запланирован на дату, по объектам). Данные из существующих /api/workers,
 // /api/objects, /api/abwesenheit/all, /api/dashboard/shifts-today, /api/profile/stats,
 // /api/dashboard/active-blockers + новый read-only /api/dashboard/team-plan.
+
+const WO_ICONS = {
+  calendar: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M7 3v3M17 3v3M4.5 9.5h15M6.5 5h11A2.5 2.5 0 0 1 20 7.5v10A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10A2.5 2.5 0 0 1 6.5 5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  kontrol: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><path d="M5 19V5M19 19H5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M8 16v-4M12 16V8M16 16v-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  chevronDown: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
 
 let _woMode = 'summary';
 
@@ -1325,10 +1331,10 @@ async function initWorkingObjectsView() {
       if (w.date_from || w.date_to) lines.push(`${esc(w.date_from || '')} — ${esc(w.date_to || '')}`);
       if (w.task_note) lines.push(esc(w.task_note));
       return `
-      <div class="wo-team-card" data-uid="${esc(w.user_id)}">
+      <div class="wo-team-card ios-list-row" data-uid="${esc(w.user_id)}">
         <div class="wo-team-card-name">${esc(w.worker_name)}</div>
         ${lines.length ? `<div class="wo-team-card-detail">${lines.join(' · ')}</div>` : ''}
-        <div class="wo-team-card-status wo-status-idle">Назначен сегодня · смена не начата</div>
+        <div class="wo-team-card-status wo-status-idle ios-status-pill">Назначен сегодня · смена не начата</div>
       </div>`;
     };
     const awaitingCard = w => {
@@ -1338,10 +1344,10 @@ async function initWorkingObjectsView() {
       if (w.date_from || w.date_to) lines.push(`${esc(w.date_from || '')} — ${esc(w.date_to || '')}`);
       if (w.task_note) lines.push(esc(w.task_note));
       return `
-      <div class="wo-team-card" data-uid="${esc(w.user_id)}">
+      <div class="wo-team-card ios-list-row" data-uid="${esc(w.user_id)}">
         <div class="wo-team-card-name">${esc(w.worker_name)}</div>
         ${lines.length ? `<div class="wo-team-card-detail">${lines.join(' · ')}</div>` : ''}
-        <div class="wo-team-card-status wo-status-idle">Ожидает подтверждения</div>
+        <div class="wo-team-card-status wo-status-idle ios-status-pill">Ожидает подтверждения</div>
       </div>`;
     };
     // 30.07 v5 (аудит): было stage_id||stage_name -- stage_id тут вид работ по
@@ -1353,11 +1359,11 @@ async function initWorkingObjectsView() {
       const mins = w.start_at ? Math.round((Date.now() / 1000 - w.start_at) / 60) : 0;
       const durationLabel = mins >= 60 ? `${Math.floor(mins / 60)} ч ${mins % 60} мин` : `${mins} мин`;
       return `
-      <div class="wo-team-card" data-uid="${esc(w.user_id)}">
+      <div class="wo-team-card ios-list-row" data-uid="${esc(w.user_id)}">
         <div class="wo-team-card-name">${esc(w.worker_name)}${w.specialty ? ` · ${esc(w.specialty)}` : ''}</div>
         ${objStage ? `<div class="wo-team-card-detail">${esc(objStage)}</div>` : ''}
         <div class="wo-team-card-detail">${startLabel ? `Начал в ${startLabel} · ` : ''}работает ${durationLabel}</div>
-        <div class="wo-team-card-status wo-status-active">● Смена идёт</div>
+        <div class="wo-team-card-status wo-status-active ios-status-pill">Смена идёт</div>
       </div>`;
     };
 
@@ -1371,21 +1377,21 @@ async function initWorkingObjectsView() {
       // плавная прокрутка к соответствующему блоку (спек: не отдельные фильтры/экраны).
       const summaryHtml = `
         <div class="wo-summary-bar">
-          <div class="wo-summary-tile" data-scroll-target="wo-anchor-working"><span class="wo-summary-num">${working.length}</span><span class="wo-summary-label">работают</span></div>
-          <div class="wo-summary-tile" data-scroll-target="${notStarted.length ? 'wo-anchor-not-started' : 'wo-anchor-attention'}"><span class="wo-summary-num">${notStarted.length}</span><span class="wo-summary-label">не вышли</span></div>
-          <div class="wo-summary-tile" data-scroll-target="${awaiting.length ? 'wo-anchor-awaiting' : 'wo-anchor-attention'}"><span class="wo-summary-num">${awaiting.length}</span><span class="wo-summary-label">ждут</span></div>
-          <div class="wo-summary-tile" data-scroll-target="wo-anchor-without-object"><span class="wo-summary-num">${withoutObject.length}</span><span class="wo-summary-label">без объекта</span></div>
+          <div class="wo-summary-tile ios-stat-tile" data-scroll-target="wo-anchor-working"><span class="wo-summary-num">${working.length}</span><span class="wo-summary-label">работают</span></div>
+          <div class="wo-summary-tile ios-stat-tile" data-scroll-target="${notStarted.length ? 'wo-anchor-not-started' : 'wo-anchor-attention'}"><span class="wo-summary-num">${notStarted.length}</span><span class="wo-summary-label">не вышли</span></div>
+          <div class="wo-summary-tile ios-stat-tile" data-scroll-target="${awaiting.length ? 'wo-anchor-awaiting' : 'wo-anchor-attention'}"><span class="wo-summary-num">${awaiting.length}</span><span class="wo-summary-label">ждут</span></div>
+          <div class="wo-summary-tile ios-stat-tile" data-scroll-target="wo-anchor-without-object"><span class="wo-summary-num">${withoutObject.length}</span><span class="wo-summary-label">без объекта</span></div>
         </div>`;
 
       // Требует внимания -- ЕДИНСТВЕННОЕ место, где рендерятся not_started/awaiting
       // карточками, + активные stage-blocker'ы ("Сообщил о проблеме").
       const blockers = (blockersData && blockersData.blockers) || [];
       const blockerCard = b => `
-        <div class="wo-team-card wo-blocker-card" data-object="${esc(b.object_id)}" data-row="${esc(b.row_num)}">
+        <div class="wo-team-card wo-blocker-card ios-list-row" data-object="${esc(b.object_id)}" data-row="${esc(b.row_num)}">
           <div class="wo-team-card-name">${esc(b.reported_by_name)}</div>
           <div class="wo-team-card-detail">${esc(b.object_name)}${b.stage_name ? ' · ' + esc(b.stage_name) : ''}${b.reason ? ' · ' + esc(b.reason) : ''}</div>
-          <div class="wo-team-card-status wo-status-problem">Сообщил о проблеме</div>
-          <button type="button" class="wo-blocker-resolve-btn" data-object="${esc(b.object_id)}" data-row="${esc(b.row_num)}">Проблема решена</button>
+          <div class="wo-team-card-status wo-status-problem ios-status-pill">Сообщил о проблеме</div>
+          <button type="button" class="wo-blocker-resolve-btn ios-action-button" data-object="${esc(b.object_id)}" data-row="${esc(b.row_num)}">Проблема решена</button>
         </div>`;
       const attentionCount = notStarted.length + awaiting.length + blockers.length;
       // Cleanup-commit (спек): счётчики "Не вышли"/"Ждут" должны прокручивать к СВОИМ
@@ -1433,20 +1439,20 @@ async function initWorkingObjectsView() {
       <div class="wo-section" id="wo-anchor-without-object">
         <div class="wo-section-title">Без объекта${withoutObject.length ? ` (${withoutObject.length})` : ''}</div>
         ${withoutObject.length ? withoutObject.map(w => `
-          <div class="wo-worker-row" data-uid="${esc(w.user_id)}">
+          <div class="wo-worker-row ios-list-row" data-uid="${esc(w.user_id)}">
             <span class="wo-worker-name">${esc(w.name)}</span>
-            <button class="submit-btn wo-assign-btn" data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}">Назначить</button>
+            <button class="submit-btn wo-assign-btn ios-action-button" data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}">Назначить</button>
           </div>`).join('') : '<div class="wo-empty">Все назначены на объекты</div>'}
       </div>
 
       <div class="wo-section">
         <div class="wo-collapsible-header" data-collapsible="absent">
           <div class="wo-section-title">Отсутствуют сегодня${absentToday.length ? ` · ${absentToday.length}` : ''}</div>
-          <span class="wo-collapsible-chevron">▾</span>
+          <span class="wo-collapsible-chevron">${WO_ICONS.chevronDown}</span>
         </div>
         <div class="wo-collapsible-body">
           ${absentToday.length ? absentToday.map(e => `
-            <div class="wo-worker-row">
+            <div class="wo-worker-row ios-list-row">
               <span class="wo-worker-name">${esc(e.name)}</span>
               <span class="wo-absence-reason">${esc(e.reason || '')}${e.date_from ? ` · ${esc(e.date_from)} — ${esc(e.date_to || '')}` : ''}</span>
             </div>`).join('') : '<div class="wo-empty">Все на месте</div>'}
@@ -1456,13 +1462,13 @@ async function initWorkingObjectsView() {
       <div class="wo-section">
         <div class="wo-collapsible-header" data-collapsible="by-object">
           <div class="wo-section-title">Распределение по объектам</div>
-          <span class="wo-collapsible-chevron">▾</span>
+          <span class="wo-collapsible-chevron">${WO_ICONS.chevronDown}</span>
         </div>
         <div class="wo-collapsible-body">
           ${activeObjects.length ? activeObjects.map(o => `
-            <div class="wo-object-block">
+            <div class="wo-object-block ios-list">
               <div class="wo-object-name">${esc(o['Объект'] || '')}</div>
-              ${(o.assigned_users || []).map(u => `<div class="wo-worker-row wo-worker-row-nested"><span class="wo-worker-name">${esc(u.name)}</span></div>`).join('')}
+              ${(o.assigned_users || []).map(u => `<div class="wo-worker-row wo-worker-row-nested ios-list-row"><span class="wo-worker-name">${esc(u.name)}</span></div>`).join('')}
             </div>`).join('') : '<div class="wo-empty">Нет назначений</div>'}
         </div>
       </div>
@@ -1533,12 +1539,12 @@ function _openWorkingObjectsAssignSheet(userId, userName, objects) {
   sheet.id = 'wo-assign-sheet';
   sheet.className = 'wo-assign-sheet';
   sheet.innerHTML = `
-    <div class="wo-assign-sheet-inner">
+    <div class="wo-assign-sheet-inner ios-bottom-sheet">
       <div class="wo-assign-sheet-title">Назначить ${esc(userName)}</div>
       ${activeObjects.length ? activeObjects.map(o => `
-        <div class="wo-assign-sheet-opt" data-oid="${esc(o['ID объекта'])}">${esc(o['Объект'] || '')}</div>
+        <div class="wo-assign-sheet-opt ios-list-row" data-oid="${esc(o['ID объекта'])}">${esc(o['Объект'] || '')}</div>
       `).join('') : '<div class="wo-empty">Нет активных объектов</div>'}
-      <button class="submit-btn wo-assign-sheet-cancel" type="button">Отмена</button>
+      <button class="submit-btn wo-assign-sheet-cancel ios-action-button" type="button">Отмена</button>
     </div>
   `;
   document.body.appendChild(sheet);
@@ -1602,12 +1608,12 @@ async function _initWorkingObjectsPlanTab() {
   const dateOpts = _woPlanDateOptions();
   slot.innerHTML = `
     <div class="wo-plan-dates" id="wo-plan-dates">
-      ${dateOpts.map(o => `<div class="wo-plan-date-opt${o.date === _woPlanDate ? ' active' : ''}" data-date="${esc(o.date)}">${esc(o.label)}</div>`).join('')}
-      <div class="wo-plan-date-opt" data-date-picker="1">📅</div>
+      ${dateOpts.map(o => `<button type="button" class="wo-plan-date-opt${o.date === _woPlanDate ? ' active' : ''}" data-date="${esc(o.date)}">${esc(o.label)}</button>`).join('')}
+      <button type="button" class="wo-plan-date-opt wo-plan-date-picker" data-date-picker="1" aria-label="Выбрать дату">${WO_ICONS.calendar}</button>
     </div>
     <input type="date" id="wo-plan-date-input" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;">
-    <button class="submit-btn wo-plan-add-btn" id="wo-plan-add-btn" type="button">Добавить назначение</button>
-    <button class="submit-btn" style="margin:0 0.75rem 0.75rem;width:calc(100% - 1.5rem);background:color-mix(in srgb,var(--accent) 12%,var(--bg-card));color:var(--accent)" type="button" onclick="switchView('kontrol-day')">📊 Контроль дня (сводка)</button>
+    <button class="submit-btn wo-plan-add-btn ios-action-button" id="wo-plan-add-btn" type="button">Добавить назначение</button>
+    <button class="submit-btn wo-plan-control-btn ios-action-button" type="button" onclick="switchView('kontrol-day')">${WO_ICONS.kontrol}<span>Контроль дня</span></button>
     <div id="wo-plan-content"></div>
   `;
 
@@ -1632,9 +1638,9 @@ function _woPlanSelectDate(date, isCustom) {
   const container = document.getElementById('wo-plan-dates');
   if (container) {
     if (isCustom && !isKnown) {
-      container.innerHTML = dateOpts.map(o => `<div class="wo-plan-date-opt" data-date="${esc(o.date)}">${esc(o.label)}</div>`).join('')
-        + `<div class="wo-plan-date-opt active" data-date="${esc(date)}">${esc(date)}</div>`
-        + `<div class="wo-plan-date-opt" data-date-picker="1">📅</div>`;
+      container.innerHTML = dateOpts.map(o => `<button type="button" class="wo-plan-date-opt" data-date="${esc(o.date)}">${esc(o.label)}</button>`).join('')
+        + `<button type="button" class="wo-plan-date-opt active" data-date="${esc(date)}">${esc(date)}</button>`
+        + `<button type="button" class="wo-plan-date-opt wo-plan-date-picker" data-date-picker="1" aria-label="Выбрать дату">${WO_ICONS.calendar}</button>`;
       container.querySelectorAll('.wo-plan-date-opt[data-date]').forEach(opt => {
         opt.addEventListener('click', () => _woPlanSelectDate(opt.dataset.date));
       });
@@ -1665,13 +1671,13 @@ async function _loadWorkingObjectsPlanContent() {
       return;
     }
     content.innerHTML = objects.map(o => `
-      <div class="wo-plan-object-block">
+      <div class="wo-plan-object-block ios-list">
         <div class="wo-plan-object-name">${esc(o.object_name)}</div>
         ${o.assignments.map(a => `
-          <div class="wo-plan-row" data-uid="${esc(a.user_id)}">
+          <div class="wo-plan-row ios-list-row" data-uid="${esc(a.user_id)}">
             <div class="wo-plan-row-top">
               <span class="wo-plan-row-name">${esc(a.worker_name)}${(a.stage_name || a.stage_id) ? ` — <span class="wo-plan-row-stage">${esc(a.stage_name || a.stage_id)}</span>` : ''}</span>
-              <span class="wo-plan-status wo-plan-status-${a.assignment_status}">${esc(WO_PLAN_STATUS_LABEL[a.assignment_status] || a.assignment_status)}</span>
+              <span class="wo-plan-status wo-plan-status-${a.assignment_status} ios-status-pill">${esc(WO_PLAN_STATUS_LABEL[a.assignment_status] || a.assignment_status)}</span>
             </div>
             ${a.task_note ? `<div class="wo-plan-row-detail">${esc(a.task_note)}</div>` : ''}
             <div class="wo-plan-row-detail">${esc(a.date_from)} — ${esc(a.date_to)}</div>
@@ -1707,12 +1713,12 @@ async function _openWorkingObjectsPlanAddSheet() {
   sheet.id = 'wo-assign-sheet';
   sheet.className = 'wo-assign-sheet';
   sheet.innerHTML = `
-    <div class="wo-assign-sheet-inner">
+    <div class="wo-assign-sheet-inner ios-bottom-sheet">
       <div class="wo-assign-sheet-title">Выберите работника</div>
       ${workers.length ? workers.map(w => `
-        <div class="wo-assign-sheet-opt" data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}">${esc(w.name)}</div>
+        <div class="wo-assign-sheet-opt ios-list-row" data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}">${esc(w.name)}</div>
       `).join('') : '<div class="wo-empty">Нет работников</div>'}
-      <button class="submit-btn wo-assign-sheet-cancel" type="button">Отмена</button>
+      <button class="submit-btn wo-assign-sheet-cancel ios-action-button" type="button">Отмена</button>
     </div>
   `;
   document.body.appendChild(sheet);
