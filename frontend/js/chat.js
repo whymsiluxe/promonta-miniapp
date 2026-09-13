@@ -19,6 +19,7 @@ let _chatMyId = null;
 let _chatIsOwner = false;
 let _chatActiveThread = null; // null = группа, иначе user_id собеседника (DM)
 let _chatActiveThreadKey = null; // 10.36: чат объекта/дефекта (obj:OBJ-001 / mangel:ticket_id) — приоритет над _chatActiveThread
+let _chatThreadLoadSeq = 0;
 let _chatWorkers = [];
 // 09.09: owner попросил -- вкладка Чат -> Объекты должна показывать ВСЕ объекты
 // сразу (как личные чаты показывают ВСЕХ работников), не только те где уже была
@@ -548,6 +549,42 @@ function _openChatBubbleMenu(bubble, msgId, canDelete) {
   }
 }
 
+function _insertChatQuickEmoji(emoji, btn) {
+  const input = document.getElementById('chat-input');
+  if (!input || !emoji) return;
+  const start = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+  const end = typeof input.selectionEnd === 'number' ? input.selectionEnd : start;
+  const before = input.value.slice(0, start);
+  const after = input.value.slice(end);
+  const leftGap = before && !/\s$/.test(before) ? ' ' : '';
+  const rightGap = after && !/^\s/.test(after) ? ' ' : '';
+  const insert = `${leftGap}${emoji}${rightGap}`;
+  input.value = before + insert + after;
+  const cursor = before.length + insert.length;
+  input.focus({ preventScroll: true });
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  requestAnimationFrame(() => {
+    try { input.setSelectionRange(cursor, cursor); } catch (e) {}
+  });
+  if (btn) {
+    btn.classList.add('chat-quick-reaction-hit');
+    setTimeout(() => btn.classList.remove('chat-quick-reaction-hit'), 160);
+  }
+  hapticImpact('light');
+}
+
+function _bindChatQuickEmojiRow() {
+  const row = document.getElementById('chat-quick-reactions');
+  if (!row || row.dataset.wired) return;
+  row.dataset.wired = '1';
+  row.addEventListener('pointerdown', e => e.preventDefault());
+  row.addEventListener('click', e => {
+    const btn = e.target?.closest?.('.chat-quick-reaction');
+    if (!btn) return;
+    _insertChatQuickEmoji(btn.dataset.emoji || btn.textContent.trim(), btn);
+  });
+}
+
 // Копирование полного НЕэкранированного текста -- msg.text из данных, не textContent
 // пузыря, иначе в буфер попал бы HTML-экранированный вариант (пункт 2 задачи).
 async function _copyChatMessageText(msgId) {
@@ -698,21 +735,60 @@ async function _openChatForwardDialog(msgId) {
 }
 
 async function _confirmDeleteChatMessage(msgId, bubbleEl) {
-  if (!confirm('Удалить сообщение?')) return;
-  try {
-    await api(`/api/chat/messages/${msgId}`, { method: 'DELETE' });
-    bubbleEl.remove();
-    hapticImpact('light');
-  } catch (e) {
-    showToast('Ошибка удаления: ' + e.message, 'error');
-  }
+  _closeChatMessageOverlays();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'chat-bubble-menu-backdrop';
+  const sheet = document.createElement('div');
+  sheet.className = 'chat-bubble-menu chat-action-sheet';
+  sheet.innerHTML = `
+    <div class="chat-action-sheet-handle"></div>
+    <div class="chat-delete-confirm-title">Удалить сообщение?</div>
+    <div class="chat-delete-confirm-note">Оно исчезнет из текущего чата. История останется в архиве сервера.</div>
+    <div class="chat-delete-confirm-row">
+      <button type="button" class="comment-action-item" data-act="cancel">Отмена</button>
+      <button type="button" class="comment-action-item comment-action-danger" data-act="delete">Удалить</button>
+    </div>`;
+  document.body.appendChild(backdrop);
+  document.body.appendChild(sheet);
+
+  let unregister = null;
+  const close = () => {
+    backdrop.remove();
+    sheet.remove();
+    if (unregister) { unregister(); unregister = null; }
+    if (_chatMessageOverlayUnregister === unregisterHandle) _chatMessageOverlayUnregister = null;
+  };
+  const unregisterHandle = () => close();
+  if (typeof NavigationManager !== 'undefined') unregister = NavigationManager.registerOverlay(close);
+  _chatMessageOverlayUnregister = unregisterHandle;
+
+  backdrop.addEventListener('pointerdown', e => { e.preventDefault(); close(); });
+  sheet.addEventListener('pointerdown', e => e.stopPropagation());
+  sheet.querySelectorAll('[data-act]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const act = btn.dataset.act;
+      close();
+      if (act !== 'delete') return;
+      try {
+        await api(`/api/chat/messages/${msgId}`, { method: 'DELETE' });
+        bubbleEl.remove();
+        hapticImpact('light');
+      } catch (e) {
+        showToast('Ошибка удаления: ' + e.message, 'error');
+      }
+    });
+  });
 }
 
 async function _loadChatMessages(forceScroll, signal) {
+  const requestUser = _chatActiveThread;
+  const requestKey = _chatActiveThreadKey;
+  const requestSeq = _chatThreadLoadSeq;
   try {
-    const path = _chatActiveThreadKey ? `/api/chat/messages?thread_key=${encodeURIComponent(_chatActiveThreadKey)}`
-      : _chatActiveThread ? `/api/chat/messages?with_=${_chatActiveThread}` : '/api/chat/messages';
+    const path = requestKey ? `/api/chat/messages?thread_key=${encodeURIComponent(requestKey)}`
+      : requestUser ? `/api/chat/messages?with_=${requestUser}` : '/api/chat/messages';
     const data = await api(path, signal ? { signal } : {});
+    if (requestSeq !== _chatThreadLoadSeq || requestUser !== _chatActiveThread || requestKey !== _chatActiveThreadKey) return;
     _renderChatMessages(data.messages || []);
     if (forceScroll) {
       const c = document.getElementById('chat-messages');
@@ -721,6 +797,27 @@ async function _loadChatMessages(forceScroll, signal) {
   } catch (e) {
     if (e.name === 'AbortError') return;
     console.error('Chat poll error:', e.message);
+  }
+}
+
+function _prepareChatThreadSurface(title) {
+  _chatThreadLoadSeq += 1;
+  _chatLastRenderSig = null;
+  _chatLastRenderedIds = [];
+  _chatMessagesById = {};
+  _revokeAllChatBlobUrls();
+  _clearChatReplyTarget();
+  const titleEl = document.getElementById('chat-thread-title');
+  const messagesEl = document.getElementById('chat-messages');
+  const input = document.getElementById('chat-input');
+  if (titleEl) titleEl.textContent = title || 'Чат';
+  if (messagesEl) {
+    messagesEl.scrollTop = 0;
+    messagesEl.innerHTML = '<div class="chat-empty">Загрузка...</div>';
+  }
+  if (input) {
+    input.value = '';
+    input.style.height = 'auto';
   }
 }
 
@@ -1419,16 +1516,11 @@ function openChatThread(threadUserId, title) {
   _closeChatMessageOverlays(); // не тащить меню/forward-модалку предыдущего треда в новый
   _chatActiveThread = threadUserId;
   _chatActiveThreadKey = null;
-  document.getElementById('chat-thread-title').textContent = title;
+  _prepareChatThreadSurface(title);
   document.getElementById('chat-thread-list-view').style.display = 'none';
   document.getElementById('chat-thread-detail-view').style.display = 'flex';
   document.body.classList.add('chat-dialog-open'); // единственный источник для body.chat-dialog-open .bottom-nav{display:none}
   _registerChatThreadOverlay(); // 03.08 v2: диалог — отдельный уровень Back, не смешан с message-popup
-  _chatLastRenderSig = null;
-  // 09.09 v10: сбрасываем и на переключении треда -- append-only fast path
-  // (_renderChatMessages) иначе мог бы теоретически спутать ID из другого,
-  // только что закрытого треда со "старым состоянием" нового.
-  _chatLastRenderedIds = [];
   _loadChatMessages(true);
   _refreshChatThreadCloseState();
   markChatRead(threadUserId); // per-thread — сбрасываем badge только этого треда (10.29)
@@ -1440,14 +1532,12 @@ function openObjectOrMangelChat(threadKey, title, returnToView) {
   _chatActiveThreadKey = threadKey;
   _chatReturnToView = returnToView || null;
   switchView('chat');
-  document.getElementById('chat-thread-title').textContent = title;
+  _prepareChatThreadSurface(title);
   document.getElementById('chat-thread-list-view').style.display = 'none';
   document.getElementById('chat-thread-detail-view').style.display = 'flex';
   document.body.classList.add('chat-dialog-open');
   _registerChatThreadOverlay(); // 03.08 v2
   document.getElementById('chat-close-thread-btn').style.display = 'none'; // закрытие тредов не поддержано для obj:/mangel:
-  _chatLastRenderSig = null;
-  _chatLastRenderedIds = []; // 09.09 v10: см. openChatThread
   _loadChatMessages(true);
   markChatRead(null, threadKey); // 25.07: obj:/mangel:/task: треды раньше никогда не отмечались прочитанными
 }
@@ -1457,6 +1547,7 @@ async function _refreshChatThreadCloseState() {
   const banner = document.getElementById('chat-closed-banner');
   const reopenBtn = document.getElementById('chat-reopen-btn');
   const inputBar = document.getElementById('chat-input-bar');
+  const quickBar = document.getElementById('chat-quick-reactions');
   if (closeBtn) closeBtn.style.display = _chatIsOwner ? 'flex' : 'none';
 
   let closed = false;
@@ -1468,6 +1559,7 @@ async function _refreshChatThreadCloseState() {
   if (banner) banner.style.display = closed ? 'flex' : 'none';
   if (reopenBtn) reopenBtn.style.display = closed && _chatIsOwner ? 'inline-block' : 'none';
   if (inputBar) inputBar.style.display = closed && !_chatIsOwner ? 'none' : 'flex';
+  if (quickBar) quickBar.style.display = closed && !_chatIsOwner ? 'none' : 'flex';
   // 24.07: closeBtn.textContent больше не перезаписывается — стирал SVG-иконку замка
   // (была в статичной разметке app.html). Видимость уже полностью управляется display.
   if (closeBtn) closeBtn.style.display = _chatIsOwner && !closed ? 'flex' : 'none';
@@ -1508,6 +1600,7 @@ function closeChatThread() {
   // все шаги ниже безопасны при уже закрытом состоянии (querySelectorAll на пусто,
   // classList.remove на отсутствующий класс, unregister === null проверяется).
   _closeChatMessageOverlays();
+  _chatThreadLoadSeq += 1;
 
   document.getElementById('chat-thread-detail-view').style.display = 'none';
   document.getElementById('chat-thread-list-view').style.display = 'flex';
@@ -1633,6 +1726,7 @@ async function initChatView() {
   _watchChatDialogClose();
   _revokeAllChatBlobUrls();
   _observeChatComposerHeight(document.getElementById('chat-input-bar'));
+  _bindChatQuickEmojiRow();
   if (!_chatMyId) {
     try {
       const me = await api('/api/me');
@@ -1767,6 +1861,7 @@ async function _startVoiceRecording() {
     return;
   }
   const inputBar = document.getElementById('chat-input-bar');
+  const quickBar = document.getElementById('chat-quick-reactions');
   const recordingBar = document.getElementById('chat-voice-recording-bar');
   const timerEl = document.getElementById('chat-voice-rec-timer');
   if (!inputBar || !recordingBar || !timerEl) {
@@ -1785,6 +1880,7 @@ async function _startVoiceRecording() {
     _voiceRecorder.start();
     _voiceStartTs = Date.now();
     inputBar.style.display = 'none';
+    if (quickBar) quickBar.style.display = 'none';
     recordingBar.style.display = 'flex';
     _voiceTimerInterval = setInterval(() => {
       const sec = Math.floor((Date.now() - _voiceStartTs) / 1000);
@@ -1800,8 +1896,10 @@ function _stopVoiceRecording(send) {
   if (!_voiceRecorder) return;
   clearInterval(_voiceTimerInterval);
   const inputBar = document.getElementById('chat-input-bar');
+  const quickBar = document.getElementById('chat-quick-reactions');
   const recordingBar = document.getElementById('chat-voice-recording-bar');
   if (inputBar) inputBar.style.display = 'flex';
+  if (quickBar) quickBar.style.display = 'flex';
   if (recordingBar) recordingBar.style.display = 'none';
 
   const recorder = _voiceRecorder;

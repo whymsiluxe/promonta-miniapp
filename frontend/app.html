@@ -2161,11 +2161,17 @@ header h1 {
   align-items: flex-end; justify-content: flex-end;
   height: var(--tg-fullscreen-height, 100dvh);
   min-height: 100dvh;
-  background: rgba(2, 4, 8, 0.58);
+  background: rgba(2, 4, 8, 0);
   color: #f7f7f8;
   overflow: hidden;
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 170ms ease, background-color 170ms ease;
+}
+.photo-comments-modal.pc-modal-open {
+  background: rgba(2, 4, 8, 0.64);
+  opacity: 1;
+  pointer-events: auto;
 }
 .pc-sheet {
   position: relative;
@@ -2173,19 +2179,25 @@ header h1 {
   width: 100%;
   max-width: 480px;
   min-height: 58vh;
-  max-height: min(78vh, calc(var(--tg-fullscreen-height, 100dvh) - var(--keyboard-inset, 0px) - 56px));
+  max-height: min(78vh, calc(var(--tg-fullscreen-height, 100dvh) - var(--comment-keyboard-inset, 0px) - 56px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border-radius: 28px 28px 0 0;
   background: #111418;
   box-shadow: 0 -18px 48px rgba(0,0,0,0.38);
-  transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0);
-  transition: transform 180ms ease, max-height 180ms ease;
+  opacity: 0.96;
+  transform: translate3d(0, calc(18px - var(--comment-keyboard-inset, 0px)), 0);
+  transition: transform 220ms cubic-bezier(.22,1,.36,1), opacity 170ms ease, max-height 180ms ease;
+  will-change: transform, opacity;
+}
+.photo-comments-modal.pc-modal-open .pc-sheet {
+  opacity: 1;
+  transform: translate3d(0, calc(-1 * var(--comment-keyboard-inset, 0px)), 0);
 }
 .pc-news-sheet {
   min-height: 78vh;
-  max-height: min(88vh, calc(var(--tg-fullscreen-height, 100dvh) - var(--keyboard-inset, 0px) - 24px));
+  max-height: min(88vh, calc(var(--tg-fullscreen-height, 100dvh) - var(--comment-keyboard-inset, 0px) - 24px));
 }
 .pc-sheet-handle {
   width: 44px;
@@ -2410,8 +2422,9 @@ header h1 {
   flex: 1;
   min-width: 0;
   resize: none;
-  margin: 0;
+  margin: 0 !important;
   min-height: 44px;
+  height: 44px;
   max-height: 110px;
   padding: 0.68rem 0.95rem;
   border-radius: 999px;
@@ -2819,8 +2832,8 @@ body.tg-native-back #chat-thread-back-btn { display: none; }
 .chat-messages::after, .ai-messages::after {
   content: '';
   display: block;
-  flex: 0 0 calc(var(--chat-composer-height, 64px) + var(--chat-keyboard-inset, 0px) + 0.75rem);
-  min-height: calc(var(--chat-composer-height, 64px) + var(--chat-keyboard-inset, 0px) + 0.75rem);
+  flex: 0 0 calc(var(--chat-composer-height, 64px) + var(--chat-quick-height, 0px) + var(--chat-keyboard-inset, 0px) + 0.75rem);
+  min-height: calc(var(--chat-composer-height, 64px) + var(--chat-quick-height, 0px) + var(--chat-keyboard-inset, 0px) + 0.75rem);
   pointer-events: none;
 }
 
@@ -2864,6 +2877,7 @@ body.view-locked {
 body.chat-keyboard-transitioning .chat-input-bar,
 body.chat-keyboard-transitioning .ai-input-bar,
 body.chat-keyboard-transitioning .chat-reply-bar,
+body.chat-keyboard-transitioning .chat-quick-reactions,
 body.chat-keyboard-transitioning #chat-voice-recording-bar {
   transition: transform 220ms ease-out;
 }
@@ -3176,6 +3190,11 @@ body.chat-composer-focused .chat-input-bar, body.chat-composer-focused .ai-input
   color: #f7f7f8;
 }
 .chat-action-sheet .chat-bubble-menu-delete { color: #ff6b6b; border-top: none; border-bottom: none; }
+.chat-delete-confirm-title { text-align: center; color: #fff; font-size: 1.05rem; font-weight: 800; padding: 0.3rem 0 0.25rem; }
+.chat-delete-confirm-note { text-align: center; color: rgba(255,255,255,0.58); font-size: 0.9rem; line-height: 1.35; padding: 0 0.6rem 0.8rem; }
+.chat-delete-confirm-row { display: flex; gap: 0.6rem; padding-top: 0.35rem; }
+.chat-delete-confirm-row .comment-action-item { border-bottom: none; border-radius: 16px; background: rgba(255,255,255,0.08); }
+.chat-delete-confirm-row .comment-action-danger { background: rgba(255,107,107,0.14); }
 .chat-forward-sheet {
   left: 0; right: 0; top: auto; bottom: 0; transform: none;
   width: auto; max-width: 480px; margin: 0 auto; max-height: 70vh;
@@ -3221,7 +3240,7 @@ body.chat-composer-focused .chat-input-bar, body.chat-composer-focused .ai-input
    прямо над input-bar через bottom: var(--chat-composer-height). */
 .chat-reply-bar {
   position: absolute; left: 0; right: 0;
-  bottom: var(--chat-composer-height, 64px);
+  bottom: calc(var(--chat-composer-height, 64px) + var(--chat-quick-height, 0px));
   z-index: 3;
   transform: translate3d(0, calc(-1 * var(--chat-keyboard-inset, 0px)), 0);
   will-change: transform;
@@ -3232,7 +3251,7 @@ body.chat-composer-focused .chat-input-bar, body.chat-composer-focused .ai-input
 /* 09.09 v11b: keyboard-aware отступ возвращён (та же chat-specific переменная,
    что у .chat-messages выше) -- см. комментарий там же для полного контекста. */
 body.chat-reply-active .chat-messages {
-  padding-bottom: calc(var(--chat-composer-height, 64px) + 48px + var(--chat-keyboard-inset, 0px) + 0.75rem);
+  padding-bottom: calc(var(--chat-composer-height, 64px) + var(--chat-quick-height, 0px) + 48px + var(--chat-keyboard-inset, 0px) + 0.75rem);
 }
 .chat-reply-bar-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .chat-reply-bar-name { font-size: 0.78rem; font-weight: 600; color: var(--chat-forest-light, var(--c-accent)); }
@@ -3333,6 +3352,7 @@ body.chat-reply-active .chat-messages {
 }
 
 #view-chat.active { background: var(--chat-bg); }
+#view-chat.active { --chat-quick-height: 52px; }
 #view-chat header { background: var(--chat-bg); }
 #view-chat header h1, #view-chat #chat-thread-title { color: var(--chat-text); }
 #view-chat .chat-back-btn { color: var(--chat-text-secondary); }
@@ -3457,6 +3477,22 @@ body.chat-reply-active .chat-messages {
 #view-chat .chat-empty { color: var(--chat-text-tertiary); }
 
 #view-chat .chat-input-bar { background: var(--chat-surface); border-top: 1px solid var(--chat-border); }
+#view-chat .chat-quick-reactions {
+  position: absolute; left: 0; right: 0; bottom: var(--chat-composer-height, 64px);
+  z-index: 2; display: flex; align-items: center; justify-content: space-between;
+  gap: 0.35rem; padding: 0.45rem 0.9rem;
+  background: rgba(17,20,24,0.96); border-top: 1px solid rgba(255,255,255,0.08);
+  transform: translate3d(0, calc(-1 * var(--chat-keyboard-inset, 0px)), 0);
+  will-change: transform;
+}
+#view-chat .chat-quick-reaction {
+  width: 38px; height: 38px; flex: 0 0 auto; border: none; border-radius: 50%;
+  background: transparent; color: #fff; font-size: 1.38rem; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease; -webkit-tap-highlight-color: transparent;
+}
+#view-chat .chat-quick-reaction:active,
+#view-chat .chat-quick-reaction.chat-quick-reaction-hit { transform: scale(1.22); background: rgba(255,255,255,0.12); }
 #view-chat .chat-input { background: var(--chat-surface-hover); color: var(--chat-text); }
 #view-chat .chat-input::placeholder { color: var(--chat-text-tertiary); }
 #view-chat .chat-attach-btn { color: var(--chat-text-secondary); }
@@ -6268,6 +6304,16 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     <div id="chat-error" class="error-banner" style="display:none;margin:0 0.75rem;"></div>
     <input type="file" id="chat-file-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none;">
     <div id="chat-reply-bar" class="chat-reply-bar" style="display:none;"></div>
+    <div id="chat-quick-reactions" class="chat-quick-reactions" aria-label="Быстрые эмодзи">
+      <button class="chat-quick-reaction" type="button" data-emoji="❤️" aria-label="Добавить ❤️">❤️</button>
+      <button class="chat-quick-reaction" type="button" data-emoji="🙌" aria-label="Добавить 🙌">🙌</button>
+      <button class="chat-quick-reaction" type="button" data-emoji="🔥" aria-label="Добавить 🔥">🔥</button>
+      <button class="chat-quick-reaction" type="button" data-emoji="👏" aria-label="Добавить 👏">👏</button>
+      <button class="chat-quick-reaction" type="button" data-emoji="🥲" aria-label="Добавить 🥲">🥲</button>
+      <button class="chat-quick-reaction" type="button" data-emoji="😍" aria-label="Добавить 😍">😍</button>
+      <button class="chat-quick-reaction" type="button" data-emoji="😮" aria-label="Добавить 😮">😮</button>
+      <button class="chat-quick-reaction" type="button" data-emoji="😂" aria-label="Добавить 😂">😂</button>
+    </div>
     <div class="chat-input-bar" id="chat-input-bar">
       <button id="chat-attach-btn" class="chat-attach-btn" aria-label="Прикрепить файл" type="button"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a1.5 1.5 0 0 1-2.12-2.12l8.49-8.48"/></svg></button>
       <button id="chat-voice-btn" class="chat-attach-btn" aria-label="Голосовое сообщение" type="button"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg></button>
@@ -6757,6 +6803,7 @@ function _applyViewportHeightNow() {
     // visualViewport measurement is only ever fed INTO that state machine as
     // one input, which decides whether to trust it or ignore it as stale.
     if (typeof _chatKeyboardReconcile === 'function') _chatKeyboardReconcile(actualInset);
+    if (typeof _commentKeyboardReconcile === 'function') _commentKeyboardReconcile(actualInset);
   } else {
     document.documentElement.style.setProperty('--tg-fullscreen-height', h + 'px');
   }
@@ -6874,6 +6921,41 @@ function _chatKeyboardReconcile(actualInset) {
   // 'closed': nothing to reconcile, stays at 0.
 }
 
+let _commentKeyboardState = 'closed';
+function _isCommentComposerField(el) {
+  return el instanceof HTMLElement && !!el.closest('.photo-comments-modal .pc-input-row');
+}
+function _applyCommentKeyboardInset(px) {
+  document.documentElement.style.setProperty('--comment-keyboard-inset', px + 'px');
+}
+function _commentKeyboardOpen() {
+  _commentKeyboardState = 'opening';
+  const cached = _chatKeyboardCachedInset();
+  const predicted = cached > 0 ? cached : Math.min(380, Math.max(280, Math.round(_fullViewportHeight * 0.41)));
+  _applyCommentKeyboardInset(predicted);
+}
+function _commentKeyboardClose() {
+  _commentKeyboardState = 'closing';
+  _applyCommentKeyboardInset(0);
+}
+function _commentKeyboardReconcile(actualInset) {
+  const keyboardOpen = actualInset > 120;
+  if (_commentKeyboardState === 'opening') {
+    if (!keyboardOpen) return;
+    _commentKeyboardState = 'open';
+    _chatKeyboardCacheStore(actualInset);
+    _applyCommentKeyboardInset(actualInset);
+  } else if (_commentKeyboardState === 'open') {
+    if (!keyboardOpen) return;
+    _chatKeyboardCacheStore(actualInset);
+    _applyCommentKeyboardInset(actualInset);
+  } else if (_commentKeyboardState === 'closing') {
+    if (keyboardOpen) return;
+    _commentKeyboardState = 'closed';
+    _applyCommentKeyboardInset(0);
+  }
+}
+
 document.addEventListener('focusin', (e) => {
   if (!_isChatComposerField(e.target)) return;
   _chatKeyboardOpen();
@@ -6893,6 +6975,18 @@ document.addEventListener('focusout', (e) => {
   // чем дойдёт до этого хендлера.
   if (_chatKeyboardState === 'closed') return;
   _chatKeyboardClose();
+}, true);
+
+document.addEventListener('focusin', (e) => {
+  if (!_isCommentComposerField(e.target)) return;
+  _commentKeyboardOpen();
+}, true);
+
+document.addEventListener('focusout', (e) => {
+  if (!_isCommentComposerField(e.target)) return;
+  if (document.activeElement && _isCommentComposerField(document.activeElement)) return;
+  if (_commentKeyboardState === 'closed') return;
+  _commentKeyboardClose();
 }, true);
 
 // Любой input/textarea в фокусе — прокручиваем в видимую часть экрана (над клавиатурой),
@@ -6919,7 +7013,7 @@ document.addEventListener('focusin', (e) => {
   // при фокусе улетело почти наверх экрана": scrollIntoView двигал ВЕСЬ скролл-контейнер
   // чата, пытаясь отцентрировать поле, поверх уже корректного transform-позиционирования
   // самого composer'а -- два независимых механизма двигали одно и то же одновременно.
-  if (el.closest('.chat-input-bar, .ai-input-bar')) return;
+  if (el.closest('.chat-input-bar, .ai-input-bar, .photo-comments-modal .pc-input-row')) return;
 
   const accordionBody = el.closest('.accordion-body');
   let settleDelay = 320; // fallback ожидание, чуть больше времени клавиатуры

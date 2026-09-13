@@ -90,6 +90,15 @@ class ReactionSummaryTests(unittest.TestCase):
         summary = backend._reactions_summary_for_message(reactions, 'm1', 'u1')
         self.assertEqual([s['reaction'] for s in summary], ['👍', '❗'])
 
+    def test_instagram_style_reactions_are_ordered_first(self):
+        reactions = [
+            {'message_id': 'm1', 'user_id': 'u1', 'reaction': '👍', 'created_at': 1},
+            {'message_id': 'm1', 'user_id': 'u1', 'reaction': '🔥', 'created_at': 2},
+            {'message_id': 'm1', 'user_id': 'u1', 'reaction': '❤️', 'created_at': 3},
+        ]
+        summary = backend._reactions_summary_for_message(reactions, 'm1', 'u1')
+        self.assertEqual([s['reaction'] for s in summary], ['❤️', '🔥', '👍'])
+
 
 class ThreadPrefsTests(unittest.TestCase):
     def test_defaults_when_no_prefs_stored(self):

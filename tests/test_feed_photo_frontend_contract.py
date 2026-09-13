@@ -51,8 +51,9 @@ def test_comment_modal_is_bottom_sheet_not_route_page():
     assert '<div class="pc-sheet">' in src
     assert "height: var(--tg-fullscreen-height, 100dvh)" in src
     assert "min-height: 100dvh" in src
-    assert "var(--keyboard-inset, 0px)" in src
-    assert "translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0)" in src
+    assert "pc-modal-open" in src
+    assert "var(--comment-keyboard-inset, 0px)" in src
+    assert "translate3d(0, calc(-1 * var(--comment-keyboard-inset, 0px)), 0)" in src
     assert '<div id="pc-reply-bar" class="pc-reply-bar" style="display:none;"></div>' in src
     assert '<div class="pc-sheet pc-news-sheet">' in src
     assert '<div id="nc-reply-bar" class="pc-reply-bar" style="display:none;"></div>' in src
@@ -65,6 +66,8 @@ def test_comment_modal_is_bottom_sheet_not_route_page():
     assert "touch-action: none" in src
     assert "_renderUnifiedFeedComment" in feed_src
     assert "_insertFeedQuickReaction" in feed_src
+    assert "_openFeedCommentModal" in feed_src
+    assert "_hideFeedCommentModal" in feed_src
     assert "_bindFeedCommentBackdropClose" in feed_src
     assert "target.closest('.pc-sheet, .pc-photo-nav')" in feed_src
     assert "pointerup" in feed_src
@@ -73,6 +76,7 @@ def test_comment_modal_is_bottom_sheet_not_route_page():
     assert "_scrollFeedCommentsToBottom('pc-list')" in feed_src
     assert "_scrollFeedCommentsToBottom('nc-list')" in feed_src
     assert "pointerdown" in feed_src
+    assert "preventDefault()" in feed_src
     assert "_setFeedCommentReply('photo'" in feed_src
     assert "_setFeedCommentReply('news'" in feed_src
     assert feed_src.count("canDelete: String(c.user_id) === String(_feedMyId) || currentRole === 'owner'") == 2

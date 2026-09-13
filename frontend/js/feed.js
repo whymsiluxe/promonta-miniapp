@@ -1003,7 +1003,8 @@ function _insertFeedQuickReaction(kind, emoji, btn) {
 
   input.value = before + insert + after;
   const cursor = before.length + insert.length;
-  input.focus();
+  input.focus({ preventScroll: true });
+  input.dispatchEvent(new Event('input', { bubbles: true }));
   requestAnimationFrame(() => {
     try { input.setSelectionRange(cursor, cursor); } catch (e) {}
   });
@@ -1012,6 +1013,28 @@ function _insertFeedQuickReaction(kind, emoji, btn) {
     setTimeout(() => btn.classList.remove('pc-quick-reaction-hit'), 160);
   }
   hapticImpact('light');
+}
+
+function _openFeedCommentModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (!modal) return null;
+  modal.classList.remove('pc-modal-open');
+  modal.style.display = 'flex';
+  document.documentElement.style.setProperty('--comment-keyboard-inset', '0px');
+  requestAnimationFrame(() => {
+    if (modal.style.display !== 'none') modal.classList.add('pc-modal-open');
+  });
+  return modal;
+}
+
+function _hideFeedCommentModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+  modal.classList.remove('pc-modal-open');
+  document.documentElement.style.setProperty('--comment-keyboard-inset', '0px');
+  setTimeout(() => {
+    if (!modal.classList.contains('pc-modal-open')) modal.style.display = 'none';
+  }, 180);
 }
 
 function _bindFeedCommentBackdropClose(modalId, closeFn) {
@@ -1093,8 +1116,7 @@ async function openNewsComments(postId) {
   _ncCurrentPostId = postId;
   _clearFeedCommentReply('news');
   _markCommentActivityRead('news_comment', postId); // §5.2/§5.3: открытие обсуждения = прочитано
-  const modal = document.getElementById('news-comments-modal');
-  modal.style.display = 'flex';
+  const modal = _openFeedCommentModal('news-comments-modal');
   const post = _newsItems.find(n => n.id === postId);
   document.getElementById('nc-title').textContent = post ? post.title : 'Обсуждение';
   if (typeof NavigationManager !== 'undefined' && !_ncOverlayUnregister) {
@@ -1111,7 +1133,7 @@ async function openNewsComments(postId) {
 }
 
 function _closeNewsCommentsInternal() {
-  document.getElementById('news-comments-modal').style.display = 'none';
+  _hideFeedCommentModal('news-comments-modal');
   _ncCurrentPostId = null;
   _clearFeedCommentReply('news');
   _ncOverlayUnregister = null;
@@ -1119,7 +1141,7 @@ function _closeNewsCommentsInternal() {
 
 function closeNewsComments() {
   if (_ncOverlayUnregister) { _ncOverlayUnregister(); _ncOverlayUnregister = null; }
-  document.getElementById('news-comments-modal').style.display = 'none';
+  _hideFeedCommentModal('news-comments-modal');
   _ncCurrentPostId = null;
   _clearFeedCommentReply('news');
 }
@@ -1380,8 +1402,7 @@ async function openPhotoComments(photoId, fileCount) {
   _pcFileCount = fileCount || 1;
   _clearFeedCommentReply('photo');
   _markCommentActivityRead('photo_comment', photoId); // §5.2/§5.3
-  const modal = document.getElementById('photo-comments-modal');
-  modal.style.display = 'flex';
+  const modal = _openFeedCommentModal('photo-comments-modal');
   // 25.07: модалка теперь зарегистрирована в NavigationManager.overlayStack -- раньше
   // Telegram BackButton её не видел (display-toggle вне навигации), при нажатии "назад"
   // NavigationManager.back() падал сразу на pop реального route-стека, закрывая не эту
@@ -1403,7 +1424,7 @@ async function openPhotoComments(photoId, fileCount) {
 // Вызывается ТОЛЬКО из NavigationManager (top.close()) — модалка уже popped из
 // overlayStack на этот момент, повторный unregister тут не нужен и не должен вызываться.
 function _closePhotoCommentsInternal() {
-  document.getElementById('photo-comments-modal').style.display = 'none';
+  _hideFeedCommentModal('photo-comments-modal');
   _pcCurrentPhotoId = null;
   _clearFeedCommentReply('photo');
   _pcOverlayUnregister = null;
@@ -1413,7 +1434,7 @@ function _closePhotoCommentsInternal() {
 // нужно явно её оттуда снять, иначе следующий Back попытается закрыть уже закрытую модалку.
 function closePhotoComments() {
   if (_pcOverlayUnregister) { _pcOverlayUnregister(); _pcOverlayUnregister = null; }
-  document.getElementById('photo-comments-modal').style.display = 'none';
+  _hideFeedCommentModal('photo-comments-modal');
   _pcCurrentPhotoId = null;
   _clearFeedCommentReply('photo');
 }
@@ -1472,6 +1493,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   _bindFeedCommentBackdropClose('news-comments-modal', closeNewsComments);
   document.querySelectorAll('.pc-quick-reactions').forEach(row => {
+    row.addEventListener('pointerdown', e => e.preventDefault());
     row.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
       const btn = target?.closest('.pc-quick-reaction');
