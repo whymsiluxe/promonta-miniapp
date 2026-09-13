@@ -61,7 +61,16 @@ Root cause: the app currently mixes several visual systems:
 - huge bold dashboard typography;
 - unrelated pill, tab, chip, card, and button styles.
 
-Decision: move the whole app toward one premium iPhone-style operational UI. Keep Instagram-like patterns only where they are natural: feed media, comments, reactions, saved/share actions, and chat-like conversation surfaces.
+Decision: move the whole app toward one premium iPhone-style operational UI. Keep Instagram-like patterns only where they are natural: feed media, comments, reactions, saved/share actions, and chat-adjacent action sheets.
+
+Explicit chat style rule:
+
+- Feed photo cards and all feed comments stay Instagram-like.
+- Comments stay as a dark Instagram-style bottom sheet with emoji row, reply/delete/actions, and media-first context.
+- Chat list becomes premium iOS/Apple Messages-like: compact rows, search, avatars, last message, unread/status, and no oversized empty top space.
+- Chat threads become premium iOS/Telegram messenger style, not full Instagram comments style: clean bubbles, current user on the right, other users on the left, light working background, stable iOS composer with attach/mic/location/send.
+- Chat actions, delete/reply sheets, quick reactions, and visual polish should reuse the same quality and behavior language as the Instagram-style comments.
+- Object chat should be a calm light work messenger. Do not make object chat a dark Instagram comment sheet.
 
 ### Global Design Rules
 
@@ -160,7 +169,7 @@ Goal: the app should feel like a polished iPhone Telegram miniapp, with stable s
 ### Chat
 
 - Chat list should become Apple Messages-like: compact list, inline search, no giant empty top area.
-- Object/general chat should share the polished composer/comment style.
+- Object/general chat should share the polished composer/action-sheet behavior from comments, but keep a light iOS/Telegram messenger surface.
 - Switching from one chat to another must not show the previous chat while the new chat loads.
 - Add or polish swipe-to-reply after the core stale-chat/flicker issue is fixed.
 - Chat location send button should be available when Stage 2 location work is wired.
