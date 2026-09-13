@@ -2,6 +2,17 @@
 
 Vanilla HTML/CSS/JS, no design-system framework. Telegram Mini App — must respect Telegram's WebView constraints (safe-area, dynamic viewport, host header).
 
+## Current Direction (2026-09-13)
+
+The latest owner direction is to move the whole miniapp toward a premium
+iPhone/Apple-style operational UI, while keeping Instagram-like feed/comment
+patterns where they are natural. The older "Old Money" and dark/weather-card
+notes below are historical context, not a license to keep mixing visual systems.
+
+Use [UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md](UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md)
+as the working source of truth for broad UI changes. The detailed visual audit
+also remains available in [PREMIUM_UI_DIRECTION_13sep2026.md](PREMIUM_UI_DIRECTION_13sep2026.md).
+
 ## Navigation
 
 Role-based bottom nav, two parallel DOM blocks (`#bottom-nav-owner` / `#bottom-nav-worker`) switched by `applyRoleNav()` in `app.html`, not one nav with conditionally-hidden items.

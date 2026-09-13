@@ -9,7 +9,7 @@ set -euo pipefail
 
 REPO="${PROMONTA_MINIAPP_REPO:-/home/promonta/agent/miniapp-repo}"
 AGENT_ROOT="${PROMONTA_AGENT_ROOT:-/home/promonta/agent}"
-PLAN_FILE="${PROMONTA_AUTONOMOUS_PLAN:-$REPO/docs/AUTONOMOUS_3_STAGES_13sep2026.md}"
+PLAN_FILE="${PROMONTA_AUTONOMOUS_PLAN:-$REPO/docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md}"
 LOCKFILE="${PROMONTA_AUTONOMOUS_LOCK:-$AGENT_ROOT/.codex-autonomous-miniapp.lock}"
 LOGFILE="${PROMONTA_AUTONOMOUS_LOG:-$AGENT_ROOT/codex-autonomous-miniapp.log}"
 LAST_MESSAGE="${PROMONTA_AUTONOMOUS_LAST_MESSAGE:-$AGENT_ROOT/codex-autonomous-miniapp.last.md}"
@@ -84,7 +84,7 @@ if [ -s "$THREAD_FILE" ]; then
   cat > "$RESUME_PROMPT_FILE" <<'PROMPT'
 Continue the existing autonomous Promonta miniapp run from exactly where it paused.
 
-Use current git status and docs/AUTONOMOUS_3_STAGES_13sep2026.md as source of truth. Do not restart completed work. Inspect what is already committed/deployed, continue the next unfinished checklist item, then test, commit, push, deploy, update /home/promonta/agent/FILESYSTEM_MAP.md, and keep going until AUTONOMOUS_STATUS is DONE or this session hits a limit.
+Use current git status and docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md as source of truth. Do not restart completed work. Inspect what is already committed/deployed, continue the next unfinished checklist item, then test, commit, push, deploy, update /home/promonta/agent/FILESYSTEM_MAP.md, and keep going until AUTONOMOUS_STATUS is DONE or this session hits a limit.
 PROMPT
   RESUME_CMD=(codex exec resume --json --dangerously-bypass-approvals-and-sandbox --output-last-message "$LAST_MESSAGE")
   if [ -n "${CODEX_MODEL:-}" ]; then

@@ -29,6 +29,30 @@ After deploy, update the server-side structure file (`server-structure.md` per
 repo references) with this same change summary if it is not part of the git
 repo.
 
+## 2026-09-13 Premium UI direction pause
+
+Owner paused autonomous execution before a large UI pass and asked to send fresh
+screenshots first. Do not start `autonomous-miniapp.timer` until explicitly
+requested.
+
+Prepared:
+- `docs/PREMIUM_UI_DIRECTION_13sep2026.md`: Apple/iPhone premium design brief
+  derived from static code audit. It identifies the current mixed visual systems
+  (Old Money, Instagram, Telegram, Connecteam, dark chat) as the main reason the
+  app feels raw. After the screenshot batch, it now includes screen-by-screen
+  findings for Home, worker card, Feed, Comments, Chat, Object Detail, Profile,
+  Tools, Calendar, Team, Needs and Alerts.
+- `docs/PRODUCT_GAP_BACKLOG_13sep2026.md`: owner-pasted product gaps split into
+  P1 daily-use gaps, P2 product UI, and P3 architecture/platform work.
+- `docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`: single source of truth
+  combining the premium screenshot audit, previous 3 large autonomous stages,
+  owner-pasted product backlog, and deploy/verification rules.
+- `docs/AUTONOMOUS_3_STAGES_13sep2026.md`: superseded compatibility pointer to
+  the unified master plan.
+
+Server state at pause: Codex runner installed and resumable, but timer disabled
+and inactive.
+
 ## Status
 
 **Phase 0** (test isolation + incident root cause fix): COMPLETE  
