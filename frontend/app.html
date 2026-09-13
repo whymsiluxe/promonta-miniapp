@@ -5772,6 +5772,208 @@ body {
   line-height: 1.45;
 }
 
+#view-profile {
+  background: var(--ios-page-bg, var(--bg-app));
+}
+#view-profile header h1 {
+  color: var(--ios-text, var(--text-main));
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+#profile-content {
+  padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+}
+#view-profile .profile-header-card {
+  margin: 0.75rem 0.75rem 0.65rem;
+  padding: 0.85rem;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-profile .profile-avatar-wrap {
+  width: 64px;
+  height: 64px;
+  border: 1px solid color-mix(in srgb, var(--ios-accent, var(--accent)) 30%, var(--ios-border));
+  background: var(--ios-grouped-surface, var(--bg-card));
+}
+#view-profile .profile-avatar-edit {
+  width: 24px;
+  height: 24px;
+  background: var(--ios-accent, var(--accent));
+  color: white;
+  box-shadow: 0 4px 12px -8px rgba(33, 30, 23, 0.5);
+}
+#view-profile .profile-name {
+  color: var(--ios-text, var(--text-main));
+  font-size: 20px;
+  font-weight: 750;
+}
+#view-profile .profile-role-badge {
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 12%, var(--ios-surface));
+  color: var(--ios-accent, var(--accent));
+  font-size: var(--font-meta, 14px);
+  font-weight: 650;
+  letter-spacing: 0;
+}
+#view-profile .profile-secondary-id {
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-meta, 14px);
+}
+#view-profile .profile-tabs {
+  margin: 0 0.75rem 0.65rem;
+  padding: 3px;
+}
+#view-profile .profile-tab {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.8rem;
+  border-radius: calc(var(--ios-radius-control, 11px) - 3px);
+  color: var(--ios-muted, var(--text-light));
+  background: transparent;
+  font-size: var(--font-meta, 14px);
+  font-weight: 650;
+}
+#view-profile .profile-tab.active {
+  background: var(--ios-surface, var(--bg-card-raised));
+  color: var(--ios-text, var(--text-main));
+  box-shadow: 0 1px 3px rgba(33, 30, 23, 0.12);
+}
+#view-profile .profile-tab-panel > .card,
+#view-profile .profile-tab-panel > .accordion-section,
+#view-profile .profile-settings-list {
+  margin: 0 0.75rem 0.75rem;
+  padding: 0;
+  overflow: hidden;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-profile .profile-week-card,
+#view-profile .profile-urlaub-card,
+#view-profile .profile-speed-card {
+  padding: 0.85rem;
+}
+#view-profile .profile-owner-actions {
+  flex-direction: column;
+  gap: 0;
+}
+#view-profile .profile-owner-action-btn,
+#view-profile .profile-app-status-row,
+#view-profile .profile-team-row,
+#view-profile .accordion-header {
+  min-height: var(--ios-touch-target, 44px);
+  padding: 0.62rem 0.78rem;
+  border: none;
+  border-bottom: 1px solid var(--ios-separator, var(--border-color));
+  border-radius: 0;
+  background: transparent;
+  color: var(--ios-text, var(--text-main));
+}
+#view-profile .profile-owner-action-btn:last-child,
+#view-profile .profile-app-status-row:last-child,
+#view-profile .profile-team-row:last-child {
+  border-bottom: none;
+}
+#view-profile .profile-owner-action-btn {
+  justify-content: flex-start;
+  font-size: 16px;
+  font-weight: 650;
+}
+#view-profile .profile-owner-action-btn svg,
+#view-profile .accordion-icon svg {
+  color: var(--ios-accent, var(--accent));
+}
+#view-profile .profile-app-status {
+  font-size: 15px;
+}
+#view-profile .profile-app-status-row {
+  align-items: center;
+  color: var(--ios-text, var(--text-main));
+}
+#view-profile .profile-app-status-row span:first-child {
+  color: var(--ios-muted, var(--text-light));
+}
+#view-profile .profile-system-list .home-section-header {
+  padding: 0.65rem 0.78rem 0.25rem !important;
+}
+#view-profile #profile-system-status-btn,
+#view-profile .profile-inline-btn {
+  min-height: 44px;
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-accent, var(--accent));
+  color: white;
+  border: none;
+  font-size: 16px;
+  font-weight: 650;
+}
+#view-profile #profile-system-status-btn {
+  width: calc(100% - 1.56rem);
+  margin: 0.2rem 0.78rem 0.78rem !important;
+}
+#view-profile .accordion-header {
+  gap: 0.65rem;
+}
+#view-profile .accordion-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--ios-accent, var(--accent));
+  font-size: 0;
+}
+#view-profile .accordion-title {
+  color: var(--ios-text, var(--text-main));
+  font-size: 16px;
+  font-weight: 650;
+}
+#view-profile .accordion-chevron {
+  color: var(--ios-muted, var(--text-light));
+}
+#view-profile .accordion-body-inner {
+  padding: 0.75rem 0.78rem 0.85rem;
+}
+#view-profile .profile-team-group-title {
+  margin: 0.8rem 0.75rem 0.3rem;
+  color: var(--ios-muted, var(--text-light));
+  font-size: var(--font-meta, 14px);
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
+}
+#view-profile .profile-team-row {
+  padding-left: 0.78rem;
+  padding-right: 0.78rem;
+}
+#view-profile .profile-team-revoke-btn,
+#view-profile .profile-team-grant-btn {
+  border-radius: 999px;
+  min-height: 36px;
+  background: var(--ios-grouped-surface, var(--bg-card));
+  border-color: var(--ios-border, var(--border-color));
+  color: var(--ios-muted, var(--text-light));
+  font-weight: 650;
+}
+#view-profile .profile-team-grant-btn {
+  color: var(--ios-accent, var(--accent));
+  border-color: color-mix(in srgb, var(--ios-accent, var(--accent)) 35%, var(--ios-border));
+}
+#view-profile .mangel-select {
+  min-height: 44px;
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-grouped-surface, var(--bg-card));
+  border-color: var(--ios-border, var(--border-color));
+  font-size: 16px;
+}
+#view-profile .profile-csv-link-secondary {
+  color: var(--ios-accent, var(--accent));
+  text-decoration: none;
+  font-weight: 650;
+}
+
 #view-chat .chat-list-header {
   padding-bottom: 0.45rem;
   background: var(--ios-bg, var(--bg-app));

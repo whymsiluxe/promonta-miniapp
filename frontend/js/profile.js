@@ -9,6 +9,15 @@
 
 const WEEKDAY_LETTERS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const PROFILE_DAY_NORM_HOURS = 10; // 100% кольца = 10ч в день
+const PROFILE_ICONS = {
+  camera: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>',
+  calendar: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>',
+  object: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><path d="M5 21V7l8-4v18"></path><path d="M19 21V11l-6-4"></path><path d="M9 9h1M9 13h1M9 17h1"></path></svg>',
+  edit: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>',
+  birthday: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"></path><path d="M8 6h8"></path><path d="M4 14h16"></path><path d="M5 14v6h14v-6"></path><path d="M6 14c0-3.3 2.7-6 6-6s6 2.7 6 6"></path></svg>',
+  skills: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.1-3.1a6 6 0 0 1-7.9 7.9l-5.6 5.6a2.1 2.1 0 0 1-3-3l5.6-5.6a6 6 0 0 1 7.9-7.9z"></path></svg>',
+  sizes: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l5 3-2 5-3-1v11H8V10l-3 1-2-5 5-3a4 4 0 0 0 8 0z"></path></svg>',
+};
 
 let _profileStatsUserId = ''; // пусто = я сам (worker-self). Owner-self НЕ смотрит чужих тут.
 let _profilePeriod = 'week'; // period-pills worker-self — week/month/3months/year
@@ -36,7 +45,7 @@ function _renderOwnerSelfProfile(slot) {
       <div class="profile-avatar-wrap" id="profile-avatar-wrap" title="Сменить фото">
         <img id="profile-avatar-img" alt="" style="display:none">
         <span id="profile-avatar-fallback"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"></path></svg></span>
-        <span class="profile-avatar-edit"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
+        <span class="profile-avatar-edit">${PROFILE_ICONS.camera}</span>
       </div>
       <input type="file" id="profile-avatar-input" accept="image/*" style="display:none">
       <div class="profile-header-info">
@@ -52,7 +61,7 @@ function _renderOwnerSelfProfile(slot) {
     </div>
 
     <div class="profile-tab-panel" data-panel="me">
-      <div class="card">
+      <div class="card ios-list profile-settings-list profile-actions-list">
         <div class="profile-owner-actions">
           <button class="profile-owner-action-btn" id="profile-owner-edit-name" type="button">
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
@@ -69,7 +78,7 @@ function _renderOwnerSelfProfile(slot) {
           <div id="profile-name-status" style="font-size:0.8rem;color:var(--accent);margin-top:0.4rem"></div>
         </div>
       </div>
-      <div class="card">
+      <div class="card ios-list profile-settings-list profile-system-list">
         <div class="home-section-header" style="padding:0 0 0.5rem;">
           <span class="home-section-title">Приложение</span>
         </div>
@@ -82,7 +91,7 @@ function _renderOwnerSelfProfile(slot) {
     </div>
 
     <div class="profile-tab-panel" data-panel="team" style="display:none">
-      <div class="accordion-section" style="display:block">
+      <div class="accordion-section ios-list profile-settings-list profile-access-list" style="display:block">
         <div id="profile-team-list" style="font-size:0.85rem;color:var(--text-light);padding:0.75rem 0">Загрузка…</div>
       </div>
     </div>
@@ -174,7 +183,7 @@ function _renderWorkerSelfProfile(slot) {
       <div class="profile-avatar-wrap" id="profile-avatar-wrap" title="Сменить фото">
         <img id="profile-avatar-img" alt="" style="display:none">
         <span id="profile-avatar-fallback"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"></path></svg></span>
-        <span class="profile-avatar-edit">📷</span>
+        <span class="profile-avatar-edit">${PROFILE_ICONS.camera}</span>
       </div>
       <input type="file" id="profile-avatar-input" accept="image/*" style="display:none">
       <div class="profile-header-info">
@@ -189,7 +198,7 @@ function _renderWorkerSelfProfile(slot) {
     </div>
 
     <div class="profile-tab-panel" data-panel="me">
-      <div class="card profile-week-card">
+      <div class="card ios-card profile-week-card">
         <div class="profile-period-pills" id="profile-period-pills">
           ${Object.keys(PROFILE_PERIOD_LABEL).map(p =>
             `<div class="profile-period-pill${p === _profilePeriod ? ' active' : ''}" data-period="${p}">${PROFILE_PERIOD_LABEL[p]}</div>`
@@ -205,7 +214,7 @@ function _renderWorkerSelfProfile(slot) {
         <a class="profile-csv-link-secondary" id="profile-export-stundenzettel-btn">Скачать табель (CSV)</a>
       </div>
 
-      <div class="card profile-urlaub-card" id="profile-urlaub-card" style="display:none;">
+      <div class="card ios-card profile-urlaub-card" id="profile-urlaub-card" style="display:none;">
         <div class="home-section-header" style="padding:0 0 0.5rem;">
           <span class="home-section-title">Отпуск</span>
           <span class="profile-week-total" id="profile-urlaub-remaining">—</span>
@@ -214,35 +223,35 @@ function _renderWorkerSelfProfile(slot) {
         <div class="profile-urlaub-caption" id="profile-urlaub-caption"></div>
       </div>
 
-      <div class="card profile-speed-card" id="profile-speed-card" style="display:none"></div>
+      <div class="card ios-card profile-speed-card" id="profile-speed-card" style="display:none"></div>
 
-      <div class="accordion-section" id="profile-availability-section" style="display:none">
-        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-2)">📅</span><span class="accordion-title">Доступность</span><span class="accordion-chevron">▾</span></div>
+      <div class="accordion-section profile-settings-list" id="profile-availability-section" style="display:none">
+        <div class="accordion-header"><span class="accordion-icon profile-icon-calendar" style="background:var(--icon-bg-2)">${PROFILE_ICONS.calendar}</span><span class="accordion-title">Доступность</span><span class="accordion-chevron">▾</span></div>
         <div class="accordion-body collapsed"><div class="accordion-body-inner">
           <div id="profile-availability-summary" style="font-size:0.85rem;color:var(--text-light)">—</div>
           <button class="submit-btn profile-inline-btn" id="profile-availability-link-btn" type="button" onclick="switchView('abwesenheit')">Открыть календарь →</button>
         </div></div>
       </div>
 
-      <div class="accordion-section">
-        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-5)">🏗️</span><span class="accordion-title">Объекты</span><span class="accordion-chevron">▾</span></div>
+      <div class="accordion-section profile-settings-list">
+        <div class="accordion-header"><span class="accordion-icon profile-icon-object" style="background:var(--icon-bg-5)">${PROFILE_ICONS.object}</span><span class="accordion-title">Объекты</span><span class="accordion-chevron">▾</span></div>
         <div class="accordion-body collapsed"><div class="accordion-body-inner"><div id="profile-objects-list"></div></div></div>
       </div>
     </div>
 
     <div class="profile-tab-panel" data-panel="settings" style="display:none">
-      <div class="accordion-section">
-        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-4)">✎</span><span class="accordion-title">Имя</span><span class="accordion-chevron">▾</span></div>
+      <div class="accordion-section profile-settings-list">
+        <div class="accordion-header"><span class="accordion-icon profile-icon-edit" style="background:var(--icon-bg-4)">${PROFILE_ICONS.edit}</span><span class="accordion-title">Имя</span><span class="accordion-chevron">▾</span></div>
         <div class="accordion-body collapsed"><div class="accordion-body-inner">
-          <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.5rem">Telegram молчит о твоём имени? Представься тут 👋</div>
+          <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.5rem">Имя будет видно в чате, задачах и отчётах.</div>
           <input type="text" id="profile-name-input" class="mangel-select" placeholder="Например: Иван" maxlength="100">
           <button class="submit-btn profile-inline-btn" id="profile-name-save-btn" type="button" style="margin-top:0.5rem">Сохранить имя</button>
           <div id="profile-name-status" style="font-size:0.8rem;color:var(--accent);margin-top:0.4rem"></div>
         </div></div>
       </div>
 
-      <div class="accordion-section">
-        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-3)">🎂</span><span class="accordion-title">Дата рождения</span><span class="accordion-chevron">▾</span></div>
+      <div class="accordion-section profile-settings-list">
+        <div class="accordion-header"><span class="accordion-icon profile-icon-birthday" style="background:var(--icon-bg-3)">${PROFILE_ICONS.birthday}</span><span class="accordion-title">Дата рождения</span><span class="accordion-chevron">▾</span></div>
         <div class="accordion-body collapsed"><div class="accordion-body-inner">
           <div style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.5rem">Нужна для календаря и напоминаний руководителю. Видна только тебе и руководителю.</div>
           <input type="date" id="profile-birthday-input" class="mangel-select" max="${_profileTodayIso()}">
@@ -251,8 +260,8 @@ function _renderWorkerSelfProfile(slot) {
         </div></div>
       </div>
 
-      <div class="accordion-section">
-        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-1)">🛠</span><span class="accordion-title">Навыки</span><span class="accordion-chevron">▾</span></div>
+      <div class="accordion-section profile-settings-list">
+        <div class="accordion-header"><span class="accordion-icon profile-icon-skills" style="background:var(--icon-bg-1)">${PROFILE_ICONS.skills}</span><span class="accordion-title">Навыки</span><span class="accordion-chevron">▾</span></div>
         <div class="accordion-body collapsed"><div class="accordion-body-inner">
           <div id="profile-skills-chips" class="profile-skills-chips"></div>
           <div id="profile-skills-edit" style="display:none"></div>
@@ -260,8 +269,8 @@ function _renderWorkerSelfProfile(slot) {
         </div></div>
       </div>
 
-      <div class="accordion-section">
-        <div class="accordion-header"><span class="accordion-icon" style="background:var(--icon-bg-2)">👕</span><span class="accordion-title">Размеры одежды</span><span class="accordion-chevron">▾</span></div>
+      <div class="accordion-section profile-settings-list">
+        <div class="accordion-header"><span class="accordion-icon profile-icon-sizes" style="background:var(--icon-bg-2)">${PROFILE_ICONS.sizes}</span><span class="accordion-title">Размеры одежды</span><span class="accordion-chevron">▾</span></div>
         <div class="accordion-body collapsed"><div class="accordion-body-inner">
           <div class="profile-sizes-grid">
             <label>Штаны<input id="profile-size-pants" class="mangel-select" placeholder="напр. 52 / L"></label>

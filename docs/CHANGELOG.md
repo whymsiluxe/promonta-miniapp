@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-14 (Profile iOS Settings polish)
+
+Tests: 756 passed, 1 skipped.
+
+### Frontend
+- Restyled Profile around iOS Settings-like grouped lists: compact identity card,
+  segmented tabs, small app/status rows, access rows, worker settings accordions,
+  and consistent form/button sizing.
+- Replaced Profile's emoji-style edit/accordion controls with inline SVG icons
+  from a local `PROFILE_ICONS` set.
+- Tagged owner action, app status, and access surfaces as `profile-settings-list`
+  groups so Profile shares the premium iOS surface, separator, radius, and
+  typography language.
+- Removed uppercase/letter-spaced Profile group labels through the late iOS
+  bridge.
+
+### Tests
+- Added `tests/test_profile_ios_settings_contract.py` to lock the settings-list
+  markup, SVG icon usage, Profile CSS bridge selectors, compact rows, and
+  no-emoji control regression checks.
+- Verified `node --check frontend/js/profile.js`, focused Profile contracts, and
+  adjacent frontend/profile tests.
+
 ## 2026-09-13 (Chat list and stale-load polish)
 
 Tests: 754 passed, 1 skipped.
