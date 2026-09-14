@@ -1,5 +1,42 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-14 Assignment confirmation escalation handoff
+
+Current autonomous slice: Stage 3 task confirmation escalation from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `backend/main.py`: added `pending_since` for newly created pending assignments
+  and for accepted assignments reset to pending after a meaningful owner edit.
+- `backend/main.py`: added pending-assignment escalation helpers with the product
+  thresholds: yellow warning after 2h, red unconfirmed alert after 4h.
+- `backend/main.py`: `/api/dashboard/shifts-today` now returns `assignment_id`,
+  `pending_since`, `response_wait_seconds`, `response_escalation`, and
+  `response_alert_type` on `awaiting_response` rows.
+- `backend/main.py`: `/api/alerts` now emits owner assignment-confirmation alerts
+  with worker/object context and stable yellow/red IDs.
+- `tests/test_assignment_confirmation_escalation.py`: new coverage for threshold
+  calculation, owner alert generation, role-aware alerts integration, and the
+  dashboard payload contract.
+
+Verification:
+- `python3 -m py_compile backend/main.py`.
+- `git diff --check`.
+- Focused assignment/needs alert checks: `39 passed`.
+- Full suite: `798 passed, 1 skipped` with only existing deprecation warnings.
+
+Known follow-up:
+- `frontend/js/home.js` is currently root-owned (`root:root`, `0644`) in this
+  repo checkout, so the owner cockpit renderer polish for distinct 2h/4h labels
+  could not be patched by the `promonta` user in this slice. The backend API and
+  alerts are ready for that UI pass once file ownership is corrected or the edit
+  is run by an owner-capable process.
+
+Next recommended slice:
+- Continue Stage 3 with broadcast controls or human-readable object history,
+  unless the frontend ownership issue is fixed first and the cockpit renderer can
+  be updated to use `response_escalation` directly.
+
 ## 2026-09-14 Manager command parser draft handoff
 
 Current autonomous slice: Stage 3 Russian management command parser from

@@ -14,7 +14,7 @@ import re
 import sys
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, quote
 
 from fastapi import FastAPI, Header, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form, Query
@@ -2157,6 +2157,7 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
                         f"Этот работник уже назначен на объект {other_oid} "
                         f"на период {a.get('date_from') or '(без даты)'} — {a.get('date_to') or '(без даты)'}"
                     )
+        assigned_at = _utcnow_iso()
         assignments[key].append({
             # 29.07 (аудит): уникальный assignment_id -- respond-endpoint раньше искал
             # "первый pending этого worker'а на объект", что ломалось при нескольких
@@ -2167,7 +2168,8 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
             'work_type_id': body.work_type_id,
             'date_from': body.date_from,
             'date_to': body.date_to,
-            'assigned_at': datetime.utcnow().isoformat(),
+            'assigned_at': assigned_at,
+            'pending_since': assigned_at,
             # 29.07 ТЗ п.9: назначение теперь требует подтверждения worker'а -- новые
             # назначения стартуют pending, worker явно принимает/отклоняет. Старые записи
             # без этого поля (созданные до этой правки) трактуются как 'accepted' везде,
@@ -2343,12 +2345,14 @@ def update_assignment(object_id: str, assignment_id: str, body: AssignmentUpdate
             merged_date_to != target.get('date_to', '') or
             ('task_note' in updates and updates['task_note'] != target.get('task_note', ''))
         )
+        updated_at = _utcnow_iso()
         target.update({k: v for k, v in updates.items() if v is not None})
         if was_accepted and significant_change:
             target['status'] = 'pending'
             target['decline_reason'] = ''
             target['responded_at'] = ''
-        target['updated_at'] = datetime.utcnow().isoformat()
+            target['pending_since'] = updated_at
+        target['updated_at'] = updated_at
 
     update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
     if result_holder.get('not_found'):
@@ -2385,6 +2389,52 @@ def _assignment_status(a: dict) -> str:
     трактуются как уже принятые -- иначе Worker Home у всех существующих объектов
     внезапно показал бы "ожидает подтверждения" для того, что реально уже идёт."""
     return a.get('status') or 'accepted'
+
+
+ASSIGNMENT_CONFIRM_WARNING_SECONDS = 2 * 60 * 60
+ASSIGNMENT_CONFIRM_DANGER_SECONDS = 4 * 60 * 60
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+
+
+def _parse_assignment_timestamp(value) -> int | None:
+    if value in (None, ''):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        if raw.endswith('Z'):
+            raw = raw[:-1] + '+00:00'
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
+
+
+def _assignment_pending_escalation(a: dict, now_ts: int | None = None) -> dict:
+    if _assignment_status(a) != 'pending':
+        return {"level": "", "type": "", "age_seconds": 0}
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    start_ts = (
+        _parse_assignment_timestamp(a.get('pending_since')) or
+        _parse_assignment_timestamp(a.get('updated_at')) or
+        _parse_assignment_timestamp(a.get('assigned_at'))
+    )
+    if not start_ts:
+        return {"level": "", "type": "", "age_seconds": 0}
+    age = max(0, now_ts - start_ts)
+    if age >= ASSIGNMENT_CONFIRM_DANGER_SECONDS:
+        return {"level": "danger", "type": "red", "age_seconds": age}
+    if age >= ASSIGNMENT_CONFIRM_WARNING_SECONDS:
+        return {"level": "warning", "type": "yellow", "age_seconds": age}
+    return {"level": "", "type": "", "age_seconds": age}
 
 
 class AssignmentRespondBody(BaseModel):
@@ -2583,6 +2633,7 @@ def batch_assign(object_id: str, body: BatchAssignBody,
                     skipped.append({"user_id": uid, "work_type_id": wtid, "reason": "overlap"})
                     continue
                 assignment_id = uuid.uuid4().hex
+                assigned_at = _utcnow_iso()
                 assignments[key].append({
                     'id': assignment_id,
                     'user_id': uid,
@@ -2590,7 +2641,8 @@ def batch_assign(object_id: str, body: BatchAssignBody,
                     'work_type_id': wtid,
                     'date_from': body.date_from,
                     'date_to': body.date_to,
-                    'assigned_at': datetime.utcnow().isoformat(),
+                    'assigned_at': assigned_at,
+                    'pending_since': assigned_at,
                     'status': 'pending',
                     'decline_reason': '',
                     'responded_at': '',
@@ -2668,13 +2720,22 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
                 continue
             by_uid.setdefault(uid, []).append((oid, a))
 
+    now_ts = int(time.time())
+
     def _entry(uid, oid, a):
+        escalation = _assignment_pending_escalation(a, now_ts)
         return {
             "user_id": uid, "worker_name": _worker_name(uid), "specialty": _worker_specialty(uid),
             "object_id": oid, "object_name": object_names.get(oid, oid),
             "stage_id": a.get('stage_id', ''), "date_from": a.get('date_from', ''),
             "date_to": a.get('date_to', ''), "task_note": a.get('task_note', ''),
             "assignment_status": _assignment_status(a),
+            "assignment_id": a.get('id', ''),
+            "assigned_at": a.get('assigned_at', ''),
+            "pending_since": a.get('pending_since') or a.get('updated_at') or a.get('assigned_at', ''),
+            "response_wait_seconds": escalation["age_seconds"],
+            "response_escalation": escalation["level"],
+            "response_alert_type": escalation["type"],
         }
 
     not_started = []
@@ -2857,6 +2918,62 @@ def get_team_plan(date: str = '', user: dict = Depends(get_current_user), _: Non
     return {"date": target_date, "objects": objects_plan}
 
 
+def _format_assignment_wait(age_seconds: int) -> str:
+    minutes = max(0, int(age_seconds) // 60)
+    hours, mins = divmod(minutes, 60)
+    if hours:
+        return f"{hours} ч {mins} мин"
+    return f"{mins} мин"
+
+
+def _assignment_confirmation_alerts(now_ts: int | None = None) -> list:
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    profiles = _load_worker_profiles()
+    object_names = {}
+    try:
+        rows = _cached_get_used_range('Объекты')
+    except Exception:
+        rows = None
+    if rows:
+        header, data = rows[0], rows[1:]
+        for r in data:
+            obj = dict(zip(header, r))
+            oid = str(obj.get('ID объекта', '')).strip()
+            if oid:
+                object_names[oid] = obj.get('Объект') or obj.get('Название') or obj.get('Адрес') or oid
+
+    result = []
+    for oid, assigned_list in _load_assignments().items():
+        for a in assigned_list:
+            if _assignment_status(a) != 'pending':
+                continue
+            escalation = _assignment_pending_escalation(a, now_ts)
+            if not escalation["level"]:
+                continue
+            uid = str(a.get('user_id', ''))
+            worker_name = _sanitize_display_name(profiles.get(uid, {}).get('name'), uid)
+            object_name = object_names.get(str(oid), str(oid))
+            work_label = pskills.skill_display_name(a.get('work_type_id', '')) if a.get('work_type_id') else a.get('stage_id', '')
+            wait_label = _format_assignment_wait(escalation["age_seconds"])
+            parts = [p for p in (object_name, work_label, f"ждёт {wait_label}") if p]
+            alert_id = a.get('id') or f"{uid}-{a.get('stage_id', '')}"
+            result.append({
+                'id': f'assignment-confirm-{escalation["level"]}-{oid}-{alert_id}',
+                'type': escalation["type"],
+                'role_filter': 'owner',
+                'title': ('Не подтверждена задача' if escalation["level"] == 'danger' else 'Ждёт подтверждения') + f': {worker_name}',
+                'subtitle': ' · '.join(parts),
+                'at': a.get('pending_since') or a.get('updated_at') or a.get('assigned_at'),
+                'assignment_confirmation': True,
+                'assignment_id': a.get('id', ''),
+                'assignment_object_id': str(oid),
+                'assignment_worker_id': uid,
+                'response_wait_seconds': escalation["age_seconds"],
+                'response_escalation': escalation["level"],
+            })
+    return result
+
+
 # ---------- Alerts inbox — role-aware агрегация (Фаза 2g, восстановлено после инцидента Фазы 3) ----------
 @app.get("/api/alerts")
 def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_role)):
@@ -2931,6 +3048,7 @@ def get_alerts(user: dict = Depends(get_current_user), role: str = Depends(get_r
                     'at': e.get('created_at')
                 })
 
+        alerts.extend(_assignment_confirmation_alerts())
         alerts.extend(_overdue_task_alerts())
 
     # Persisted critical alerts (Фаза 10.16 — global critical alert popup)

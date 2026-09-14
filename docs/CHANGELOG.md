@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-14 (Assignment confirmation escalation)
+
+Tests: 798 passed, 1 skipped.
+
+### Backend
+- Added pending-assignment escalation timing for the existing worker
+  accept/decline flow: 2h without response becomes a yellow warning, 4h becomes
+  a red unconfirmed alert.
+- New and reset-to-pending assignments now record `pending_since` so the
+  escalation clock starts from assignment creation or a meaningful owner edit.
+- `/api/dashboard/shifts-today` now includes assignment id, pending age, and
+  escalation fields on `awaiting_response` rows for the owner cockpit.
+- `/api/alerts` now includes owner assignment-confirmation alerts with stable
+  yellow/red IDs, worker/object context, and response age metadata.
+
+### Tests
+- Added `tests/test_assignment_confirmation_escalation.py` for threshold logic,
+  owner alert generation, role-aware alerts integration, and dashboard payloads.
+- Verified `python3 -m py_compile backend/main.py`, `git diff --check`,
+  focused assignment/needs alert checks, and the full suite.
+
 ## 2026-09-14 (Manager command parser draft)
 
 Tests: 794 passed, 1 skipped.
