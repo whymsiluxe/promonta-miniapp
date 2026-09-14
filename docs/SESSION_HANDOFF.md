@@ -1,5 +1,33 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-14 Splash iOS markup cleanup handoff
+
+Current autonomous slice: Stage 1 Splash visual alignment follow-up from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`, continued after deployed
+commit `afc64c0` already carried the light splash CSS.
+
+Implemented in this slice:
+- `frontend/app.html`: replaced the old black/gold splash SVG scene and
+  astronaut placeholder with a compact light Promonta worksite mark that matches
+  the iOS splash styling.
+- `frontend/app.html`: removed unused legacy splash scene/star/hook CSS while
+  keeping the existing splash bootstrap IDs and retry/error behavior intact.
+- `tests/test_splash_ios_frontend_contract.py`: new static contract for the
+  light splash markup, iOS token styling, reduced-motion guard, bootstrap ID
+  wiring, and no-legacy-scene regression checks.
+
+Verification:
+- `git diff --check`.
+- Focused Splash/feed/home/object/profile checks: `18 passed`.
+- Adjacent premium frontend contracts: `48 passed`.
+- Full suite: `779 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended slice:
+- Continue Stage 2 worker start/finish evidence, geolocation, retry/offline, and
+  DailyPlan validation, since Stage 1 visual polish is now substantially covered
+  by the recent Team/Control, Alerts, Needs, Calendar, Tools, Profile, Dashboard,
+  Feed/Object, and Splash passes.
+
 ## 2026-09-14 Team/Control iOS cockpit polish handoff
 
 Current autonomous slice: Stage 1 Team/Control premium UI polish from

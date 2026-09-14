@@ -4552,15 +4552,6 @@ body.chat-reply-active .chat-messages {
 .profile-sizes-grid { display: flex; flex-direction: column; gap: 0.5rem; }
 .profile-sizes-grid label { font-size: 0.8rem; color: var(--text-light); display: flex; flex-direction: column; gap: 0.25rem; }
 
-/* ── Splash: SVG-сцена (кран, звёзды, здание) ── */
-.splash-scene { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; }
-.splash-star { animation: splash-twinkle 2.6s ease-in-out infinite; }
-.splash-star:nth-child(2n) { animation-delay: 0.9s; }
-.splash-star:nth-child(3n) { animation-delay: 1.6s; }
-@keyframes splash-twinkle { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.95; } }
-.splash-crane-hook { animation: splash-hook-swing 5.5s ease-in-out infinite; transform-origin: 230px 152px; }
-@keyframes splash-hook-swing { 0%, 100% { transform: rotate(-2.4deg); } 50% { transform: rotate(2.4deg); } }
-
 /* ── Weather-alert Instagram-посты (Погода суб-таб, референс "Stormy Monday"/"Brooklyn") ── */
 .wx-city-tabs { display: flex; gap: 1.1rem; padding: 0 0.9rem 0.7rem; overflow-x: auto; }
 .wx-city-tab { font-size: 0.85rem; color: var(--text-light); font-weight: 600; cursor: pointer; padding-bottom: 0.3rem; white-space: nowrap; }
@@ -7409,53 +7400,16 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 </head>
 <body>
 
-<!-- ═══════════ SPLASH (cinematic loading screen, показывается пока грузятся Sheets-данные) ═══════════ -->
+<!-- ═══════════ SPLASH (premium iOS loading screen, показывается пока грузятся Sheets-данные) ═══════════ -->
 <div id="splash-screen" class="splash-screen">
-  <div class="splash-visual">
-    <svg class="splash-scene" viewBox="0 0 390 480" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-      <g fill="#EAD9AE" opacity="0.5">
-        <circle class="splash-star" cx="40" cy="60" r="1.4"/>
-        <circle class="splash-star" cx="120" cy="34" r="1"/>
-        <circle class="splash-star" cx="205" cy="70" r="1.6"/>
-        <circle class="splash-star" cx="280" cy="40" r="1.1"/>
-        <circle class="splash-star" cx="350" cy="86" r="1.3"/>
-        <circle class="splash-star" cx="75" cy="130" r="1"/>
-        <circle class="splash-star" cx="330" cy="150" r="1"/>
-        <circle class="splash-star" cx="160" cy="110" r="0.9"/>
-        <circle class="splash-star" cx="250" cy="128" r="1.2"/>
-        <circle class="splash-star" cx="30" cy="200" r="1"/>
-        <circle class="splash-star" cx="370" cy="210" r="1.1"/>
-      </g>
-      <!-- Башенный кран: силуэт на золотисто-чёрном фоне -->
-      <g stroke="#1a1712" stroke-width="5" fill="none" stroke-linecap="round">
-        <line x1="300" y1="150" x2="300" y2="420"/>
-        <line x1="196" y1="152" x2="352" y2="152"/>
-        <line x1="300" y1="118" x2="300" y2="150"/>
-        <line x1="300" y1="118" x2="200" y2="152"/>
-        <line x1="300" y1="118" x2="348" y2="152"/>
-        <line x1="336" y1="152" x2="336" y2="170"/>
-        <rect x="326" y="166" width="22" height="14" fill="#1a1712" stroke="none"/>
-      </g>
-      <g class="splash-crane-hook" stroke="#2a241a" stroke-width="3" fill="none">
-        <line x1="230" y1="152" x2="230" y2="238"/>
-        <path d="M230 238 q0 10 8 10" stroke-linecap="round"/>
-        <rect x="204" y="248" width="52" height="12" rx="2" fill="#2a241a" stroke="none"/>
-      </g>
-      <!-- Каркас здания со светящимися золотыми окнами (было зелёное) -->
-      <g fill="#12100a">
-        <rect x="36" y="330" width="118" height="150" rx="3"/>
-      </g>
-      <g fill="#D4AF5A" opacity="0.6">
-        <rect x="52" y="348" width="14" height="10" rx="1"/>
-        <rect x="90" y="348" width="14" height="10" rx="1"/>
-        <rect x="124" y="348" width="14" height="10" rx="1"/>
-        <rect x="52" y="382" width="14" height="10" rx="1" opacity="0.35"/>
-        <rect x="124" y="382" width="14" height="10" rx="1"/>
-        <rect x="90" y="416" width="14" height="10" rx="1" opacity="0.5"/>
-        <rect x="52" y="450" width="14" height="10" rx="1"/>
-      </g>
+  <div class="splash-visual" aria-hidden="true">
+    <svg class="splash-mark" viewBox="0 0 64 64">
+      <rect class="splash-mark-surface" x="8" y="18" width="20" height="30" rx="4"/>
+      <rect class="splash-mark-surface" x="34" y="30" width="20" height="18" rx="4"/>
+      <path class="splash-mark-line" d="M14 26h8M14 34h8M14 42h8M40 37h8M40 43h8M12 48h44"/>
+      <path class="splash-mark-line" d="M30 18V9M30 9h18M30 9 18 18M48 9l6 6"/>
+      <rect class="splash-mark-accent" x="45" y="14" width="10" height="5" rx="1.5"/>
     </svg>
-    <div class="splash-astronaut"></div>
   </div>
   <div class="splash-brand">PROMONTA</div>
   <div class="splash-spinner"><span></span><span></span><span></span></div>

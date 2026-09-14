@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-14 (Splash iOS markup cleanup)
+
+Tests: 779 passed, 1 skipped.
+
+### Frontend
+- Completed the light iOS splash transition by replacing the old black/gold
+  crane scene and astronaut markup with the new compact Promonta worksite SVG
+  mark used by the deployed light splash CSS.
+- Removed the unused legacy splash scene/star/hook CSS while keeping
+  `splash-screen`, `splash-progress`, `splash-error`, and retry bootstrap IDs
+  unchanged.
+
+### Tests
+- Added `tests/test_splash_ios_frontend_contract.py` to lock the light splash
+  markup, iOS token styling, reduced-motion guard, bootstrap ID wiring, and
+  no-legacy-scene regression checks.
+- Verified `git diff --check`, focused Splash/feed/home/object/profile checks,
+  adjacent premium frontend contracts, and the full suite.
+
 ## 2026-09-14 (Team/Control iOS cockpit polish)
 
 Tests: 773 passed, 1 skipped.
