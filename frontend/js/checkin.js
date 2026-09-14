@@ -284,17 +284,21 @@ async function runCheckinAnalysis() {
   }
 }
 
-async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey) {
-  const geo = await _getGeolocation();
+function _appendCheckinGeo(formData, geo) {
+  formData.append('lat', geo.lat);
+  formData.append('lon', geo.lon);
+  if (geo.accuracy) formData.append('accuracy', geo.accuracy);
+  if (geo.timestamp) formData.append('geo_timestamp', geo.timestamp);
+}
+
+async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey, geoOverride) {
+  const geo = geoOverride || await _getGeolocation();
   if (!geo.lat || !geo.lon) {
     throw new Error('Включи геолокацию, чтобы начать/завершить смену');
   }
   const formData = new FormData();
   formData.append('object_id', _stagesCurrentObjectId);
-  formData.append('lat', geo.lat);
-  formData.append('lon', geo.lon);
-  if (geo.accuracy) formData.append('accuracy', geo.accuracy);
-  if (geo.timestamp) formData.append('geo_timestamp', geo.timestamp);
+  _appendCheckinGeo(formData, geo);
   if (extraFields) {
     Object.entries(extraFields).forEach(([k, v]) => formData.append(k, v || ''));
   }
@@ -312,6 +316,85 @@ async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey) {
   return res.json();
 }
 
+function _checkinStartOutboxId(idempotencyKey) {
+  return `checkin-start:${idempotencyKey}`;
+}
+
+function _buildCheckinStartFields() {
+  const startFields = {};
+  if (_checkinSelectedStageName) startFields.stage_name = _checkinSelectedStageName;
+  if (window._dailyPlanCheckinFields) Object.assign(startFields, window._dailyPlanCheckinFields);
+  return startFields;
+}
+
+function _isTransientCheckinUploadError(err) {
+  const msg = String(err?.message || '');
+  return !navigator.onLine || err?.name === 'TypeError' || err?.name === 'TimeoutError' || /Failed to fetch|NetworkError/i.test(msg);
+}
+
+async function _queueCheckinStartOutbox(files, extraFields, idempotencyKey) {
+  const geo = await _getGeolocation();
+  if (!geo.lat || !geo.lon) throw new Error('Включи геолокацию, чтобы сохранить старт в очередь');
+  return promontaOutboxPut({
+    id: _checkinStartOutboxId(idempotencyKey),
+    kind: CHECKIN_OUTBOX_KIND_START,
+    objectId: _stagesCurrentObjectId,
+    url: '/api/checkin/start',
+    files: Array.from(files),
+    extraFields: { ...(extraFields || {}) },
+    geo,
+    idempotencyKey,
+  });
+}
+
+async function _sendCheckinStartOutboxRecord(record) {
+  const previousObjectId = _stagesCurrentObjectId;
+  const shouldRefreshCurrentObject = previousObjectId === record.objectId;
+  _stagesCurrentObjectId = record.objectId;
+  try {
+    const session = await _uploadCheckinPhotos(
+      record.url || '/api/checkin/start',
+      record.files || [],
+      record.extraFields || null,
+      record.idempotencyKey,
+      record.geo
+    );
+    await promontaOutboxDelete(record.id);
+    _setActiveCheckinSession(record.objectId, { id: session.id, finished: false });
+    if (shouldRefreshCurrentObject && typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
+    if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
+      _loadWorkerShiftCta();
+    }
+    return session;
+  } finally {
+    _stagesCurrentObjectId = previousObjectId;
+  }
+}
+
+async function _retryCheckinOutbox() {
+  if (_checkinOutboxRetrying || !navigator.onLine || typeof promontaOutboxList !== 'function') return;
+  _checkinOutboxRetrying = true;
+  try {
+    const startRecords = await promontaOutboxList(CHECKIN_OUTBOX_KIND_START).catch(() => []);
+    for (const record of startRecords) {
+      await promontaOutboxPatch(record.id, {
+        state: 'sending',
+        attempts: (record.attempts || 0) + 1,
+        lastError: null,
+      });
+      try {
+        await _sendCheckinStartOutboxRecord(record);
+        showToast('Отложенный старт смены отправлен', 'success');
+      } catch (e) {
+        await promontaOutboxPatch(record.id, { state: 'queued', lastError: e.message || String(e) });
+      }
+    }
+    if (typeof _retryFinishOutboxRecords === 'function') await _retryFinishOutboxRecords();
+  } finally {
+    _checkinOutboxRetrying = false;
+  }
+}
+
 // 10.31: раньше выбранные фото сразу загружались без предпросмотра — если один
 // кадр вышел смазанным, нельзя было переснять именно его, только всю партию заново.
 // Теперь фото сначала попадают в _checkinPreviewFiles (превью-грид с крестиком-удалить
@@ -319,6 +402,8 @@ async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey) {
 let _checkinPreviewFiles = [];
 let _checkinIdempotencyKey = null;
 let _checkinPreviewPhotoUrls = new WeakMap();
+const CHECKIN_OUTBOX_KIND_START = 'checkin-start';
+let _checkinOutboxRetrying = false;
 
 function _getCheckinPreviewPhotoUrl(file) {
   let url = _checkinPreviewPhotoUrls.get(file);
@@ -408,11 +493,10 @@ function _renderCheckinPreview() {
     ? `Подтвердить (${_checkinPreviewFiles.length} фото)` : 'Подтвердить';
 }
 
-// 21.07: offline-aware retry — плохая связь на объекте не должна терять фото/данные смены.
-// Файлы и idempotency-key уже сохранены в памяти (не сброшены при неудаче), поэтому повтор
-// отправки — не заново фотографировать, а просто "Повторить" с тем же ключом (сервер
-// дедуплицирует по Idempotency-Key). Настоящая бинарная offline-очередь (IndexedDB) избыточна
-// для соло-приложения — retry-friendly UI даёт 90% пользы за 10% сложности.
+// Offline-aware retry — плохая связь на объекте не должна терять фото/данные смены.
+// Пока модалка открыта, повтор использует те же File objects и idempotency-key.
+// Если связи нет или fetch сорвался, бинарные File objects сохраняются в IndexedDB
+// outbox и отправляются автоматически при reconnect с тем же Idempotency-Key.
 let _checkinSyncStatusEl = null;
 
 function _setCheckinSyncStatus(text, isError) {
@@ -437,25 +521,32 @@ async function _confirmCheckinPreview() {
   const confirmBtn = document.getElementById('checkin-preview-confirm-btn');
   confirmBtn.disabled = true;
 
-  if (!navigator.onLine) {
-    confirmBtn.disabled = false;
-    _setCheckinSyncStatus('Нет связи — фото сохранены, нажми "Подтвердить" когда появится интернет', true);
-    return;
-  }
-
   confirmBtn.textContent = 'Отправка…';
   _setCheckinSyncStatus('Отправка…');
   if (!_checkinIdempotencyKey) _checkinIdempotencyKey = crypto.randomUUID();
-  try {
-    const startFields = {};
-    if (_checkinSelectedStageName) startFields.stage_name = _checkinSelectedStageName;
-    // DailyPlan link — set by today-plan.js after acceptance, consumed once
-    if (window._dailyPlanCheckinFields) {
-      Object.assign(startFields, window._dailyPlanCheckinFields);
+  const startFields = _buildCheckinStartFields();
+  const startFieldsOrNull = Object.keys(startFields).length ? startFields : null;
+
+  if (!navigator.onLine) {
+    try {
+      await _queueCheckinStartOutbox(_checkinPreviewFiles, startFieldsOrNull, _checkinIdempotencyKey);
       window._dailyPlanCheckinFields = null;
+      _checkinSelectedStageName = null;
+      _setCheckinSyncStatus('Нет связи — старт сохранён в очередь и отправится автоматически', false);
+      showToast('Старт сохранён в офлайн-очередь', 'success');
+      _closeCheckinPreviewModal();
+    } catch (e) {
+      _setCheckinSyncStatus('Не удалось сохранить офлайн: ' + e.message, true);
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = `Подтвердить (${_checkinPreviewFiles.length} фото)`;
     }
+    return;
+  }
+
+  try {
     const session = await _uploadCheckinPhotos('/api/checkin/start', _checkinPreviewFiles,
-      Object.keys(startFields).length ? startFields : null, _checkinIdempotencyKey);
+      startFieldsOrNull, _checkinIdempotencyKey);
+    window._dailyPlanCheckinFields = null;
     _setActiveCheckinSession(_stagesCurrentObjectId, { id: session.id, finished: false });
     _checkinSelectedStageName = null;
     hapticImpact('light');
@@ -475,6 +566,19 @@ async function _confirmCheckinPreview() {
     // не нужно переснимать фото заново при плохой связи. Geo-ошибка — отдельный случай:
     // повтор не поможет, пока юзер физически не включит геолокацию (не временный network-сбой).
     const isGeoError = /геолокац/i.test(e.message || '');
+    if (!isGeoError && _isTransientCheckinUploadError(e)) {
+      try {
+        await _queueCheckinStartOutbox(_checkinPreviewFiles, startFieldsOrNull, _checkinIdempotencyKey);
+        window._dailyPlanCheckinFields = null;
+        _checkinSelectedStageName = null;
+        _setCheckinSyncStatus('Связь сорвалась — старт сохранён в очередь', false);
+        showToast('Старт сохранён в офлайн-очередь', 'success');
+        _closeCheckinPreviewModal();
+        return;
+      } catch (queueErr) {
+        _setCheckinSyncStatus('Не удалось сохранить офлайн: ' + queueErr.message, true);
+      }
+    }
     _setCheckinSyncStatus(
       isGeoError
         ? 'Включи геолокацию в настройках и нажми "Подтвердить" ещё раз'
@@ -538,6 +642,7 @@ function initCheckinControls() {
   // 21.07: связь восстановилась, модалка с несинхронизированными фото ещё открыта — авто-retry
   // без ожидания что worker сам заметит и тапнет ещё раз (может отвлечься на работу на объекте).
   window.addEventListener('online', () => {
+    _retryCheckinOutbox();
     const modal = document.getElementById('checkin-preview-modal');
     const confirmBtn = document.getElementById('checkin-preview-confirm-btn');
     if (modal.style.display === 'flex' && _checkinPreviewFiles.length && !confirmBtn.disabled) {
@@ -599,3 +704,6 @@ function initCheckinControls() {
     _updateCheckinPauseDisplay();
   });
 }
+
+window.addEventListener('online', _retryCheckinOutbox);
+setTimeout(_retryCheckinOutbox, 1500);

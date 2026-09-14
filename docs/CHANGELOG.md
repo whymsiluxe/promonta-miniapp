@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-09-14 (Check-in offline evidence outbox)
+
+Tests: 790 passed, 1 skipped.
+
+### Frontend
+- Added a shared IndexedDB outbox for durable offline evidence records, including
+  binary `File` objects.
+- Start-shift photo confirmation now stores photos, geo metadata, DailyPlan/start
+  fields, and the existing idempotency key when offline or when upload fails
+  transiently.
+- Finish-shift wizard now stores photos, summary/report fields, DailyPlan report,
+  needs/defects payloads, geo metadata, and the existing idempotency key when
+  offline or when finish upload fails transiently.
+- Added reconnect/startup retry hooks for queued start and finish records. Replays
+  use the original `Idempotency-Key`; writes are deleted from the outbox only after
+  backend confirmation.
+
+### Tests
+- Added `tests/test_checkin_offline_outbox_frontend_contract.py` for IndexedDB
+  store setup, start/finish queue payloads, reconnect retry, and idempotency-key
+  reuse.
+- Updated finish wizard geo payload contracts for the replayable record builder.
+- Verified JS syntax, `git diff --check`, focused offline/check-in contracts,
+  adjacent check-in/photo/DailyPlan tests, and the full suite.
+
 ## 2026-09-14 (Shared API timeout/retry layer)
 
 Tests: 785 passed, 1 skipped.

@@ -1,5 +1,42 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-14 Check-in offline evidence outbox handoff
+
+Current autonomous slice: Stage 2 durable offline finish/check-in outbox from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `frontend/js/shared.js`: added `promonta-offline-outbox` IndexedDB helpers for
+  durable records with binary `File` objects, indexed by kind/state.
+- `frontend/js/checkin.js`: start-shift confirmation queues photos, geo metadata,
+  start/DailyPlan fields, and the persistent idempotency key when offline or when
+  a transient upload failure occurs; reconnect/startup retries replay the same
+  payload and delete only after backend confirmation.
+- `frontend/js/finish-wizard.js`: finish submission now builds a replayable record
+  containing finish photos, summary/report fields, DailyPlan execution report,
+  needs/defects payloads, geo metadata, and the persistent idempotency key; queued
+  records retry on reconnect and preserve the existing post-finish task/defect
+  best-effort behavior.
+- `tests/test_checkin_offline_outbox_frontend_contract.py`: new frontend contract
+  locks IndexedDB store setup, start/finish queue payloads, reconnect retry hooks,
+  and idempotency-key reuse.
+- `docs/DATA_PROTECTION.md`: noted temporary browser IndexedDB outbox storage for
+  queued GPS/photo evidence before server sync.
+
+Verification:
+- `node --check frontend/js/shared.js`.
+- `node --check frontend/js/checkin.js`.
+- `node --check frontend/js/finish-wizard.js`.
+- `git diff --check`.
+- Focused offline/check-in contracts: `17 passed`.
+- Adjacent check-in/photo/DailyPlan tests: `79 passed, 1 skipped`.
+- Full suite: `790 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended slice:
+- Continue Stage 2 by surfacing visible outbox status/counts in worker Home or
+  Finish UI, then move to the remaining Stage 3 manager cockpit/voice/broadcast
+  work once the owner-visible offline status is in place.
+
 ## 2026-09-14 Shared API timeout/retry layer handoff
 
 Current autonomous slice: Stage 2 shared frontend API timeout/retry/abort layer

@@ -79,5 +79,6 @@ def test_finish_wizard_sends_geo_accuracy_metadata():
     src = _source(FINISH_WIZARD)
 
     assert "let _fwFinishGeo = null; // {lat, lon, accuracy, timestamp}" in src
-    assert "formData.append('accuracy', _fwFinishGeo.accuracy)" in src
-    assert "formData.append('geo_timestamp', _fwFinishGeo.timestamp)" in src
+    assert "if (_fwFinishGeo.accuracy) fields.accuracy = _fwFinishGeo.accuracy;" in src
+    assert "if (_fwFinishGeo.timestamp) fields.geo_timestamp = _fwFinishGeo.timestamp;" in src
+    assert "Object.entries(record.fields || {}).forEach(([key, value]) => formData.append(key, value || ''))" in src

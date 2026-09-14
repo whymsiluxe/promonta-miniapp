@@ -22,6 +22,8 @@ let _fwOverlayUnregister = null;
 // генерировался заново на КАЖДЫЙ вызов _fwSubmitFinish(), так что retry после сетевой
 // ошибки/таймаута слал НОВЫЙ ключ и backend не мог распознать повтор того же запроса.
 let _fwIdempotencyKey = null;
+const CHECKIN_OUTBOX_KIND_FINISH = 'checkin-finish';
+let _finishOutboxRetrying = false;
 
 // Round 3: daily plan state for this shift
 let _fwDailyPlanId = '';
@@ -680,6 +682,135 @@ function _fwWireStep6() {
   document.getElementById('fw-submit-finish')?.addEventListener('click', _fwSubmitFinish);
 }
 
+function _fwFinishOutboxId(idempotencyKey) {
+  return `checkin-finish:${idempotencyKey}`;
+}
+
+function _fwBuildFinishOutboxRecord() {
+  _fwIdempotencyKey = _fwIdempotencyKey || crypto.randomUUID();
+  const fields = {
+    lat: _fwFinishGeo.lat,
+    lon: _fwFinishGeo.lon,
+    done_summary: _fwWorkSummary,
+    extra_works: JSON.stringify(_fwExtraWorks),
+    needs: JSON.stringify(_fwNeeds),
+    defects: JSON.stringify(_fwDefects),
+    pause_minutes: String(_fwPauseMinutes),
+  };
+  if (_fwFinishGeo.accuracy) fields.accuracy = _fwFinishGeo.accuracy;
+  if (_fwFinishGeo.timestamp) fields.geo_timestamp = _fwFinishGeo.timestamp;
+  if (_fwVoiceNoteFileId) fields.voice_note_file_id = _fwVoiceNoteFileId;
+  if (_fwItemResults.length > 0 && _fwDailyPlanId) {
+    fields.daily_plan_report = JSON.stringify({
+      plan_id: _fwDailyPlanId,
+      plan_version: _fwDailyPlanVersion,
+      item_results: _fwItemResults,
+      tomorrow_issues: _fwTomorrowIssues,
+      tomorrow_comment: _fwTomorrowComment,
+    });
+  }
+  return {
+    id: _fwFinishOutboxId(_fwIdempotencyKey),
+    kind: CHECKIN_OUTBOX_KIND_FINISH,
+    sessionId: _fwSessionId,
+    objectId: _fwObjectId,
+    fields,
+    files: Array.from(_fwPhotos),
+    needs: _fwNeeds,
+    defects: _fwDefects,
+    idempotencyKey: _fwIdempotencyKey,
+  };
+}
+
+function _fwAppendFinishRecordFormData(record) {
+  const formData = new FormData();
+  Object.entries(record.fields || {}).forEach(([key, value]) => formData.append(key, value || ''));
+  (record.files || []).forEach(f => formData.append('files', f));
+  return formData;
+}
+
+async function _fwCreatePostFinishTickets(objectId, needs, defects) {
+  for (const need of needs || []) {
+    try {
+      await api('/api/tasks', {
+        method: 'POST',
+        body: JSON.stringify({ title: need.description, object_id: objectId }),
+      });
+    } catch (e) { console.warn('need creation failed', e); }
+  }
+  for (const defect of defects || []) {
+    try {
+      const fd = new FormData();
+      fd.append('object_id', objectId);
+      fd.append('description', defect.description);
+      await fetch(`${API_BASE}/api/mangel`, {
+        method: 'POST',
+        headers: { ..._authHeaders() },
+        body: fd,
+      });
+    } catch (e) { console.warn('defect creation failed', e); }
+  }
+}
+
+function _fwIsTransientFinishError(err) {
+  const msg = String(err?.message || '');
+  return !navigator.onLine || err?.name === 'TypeError' || err?.name === 'TimeoutError' || /Failed to fetch|NetworkError/i.test(msg);
+}
+
+async function _fwSendFinishOutboxRecord(record, { fromOutbox = false } = {}) {
+  const res = await fetch(`${API_BASE}/api/checkin/${record.sessionId}/finish`, {
+    method: 'POST',
+    headers: { ..._authHeaders(), 'Idempotency-Key': record.idempotencyKey },
+    body: _fwAppendFinishRecordFormData(record),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+  const session = await res.json();
+  await _fwCreatePostFinishTickets(record.objectId, record.needs, record.defects);
+  if (fromOutbox) await promontaOutboxDelete(record.id);
+  return session;
+}
+
+async function _fwQueueFinishOutbox(record) {
+  return promontaOutboxPut(record);
+}
+
+function _fwMarkFinishConfirmed(record, notify) {
+  _setActiveCheckinSession(record.objectId, { id: record.sessionId, finished: true });
+  if (typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
+  if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
+    _loadWorkerShiftCta();
+  }
+  if (typeof _updateTodayPlanBar === 'function') {
+    _updateTodayPlanBar({ has_plan: false });
+    window._todayPlanState = null;
+  }
+  if (notify) showToast('Смена завершена', 'success');
+}
+
+async function _retryFinishOutboxRecords() {
+  if (_finishOutboxRetrying || !navigator.onLine || typeof promontaOutboxList !== 'function') return;
+  _finishOutboxRetrying = true;
+  try {
+    const records = await promontaOutboxList(CHECKIN_OUTBOX_KIND_FINISH).catch(() => []);
+    for (const record of records) {
+      await promontaOutboxPatch(record.id, {
+        state: 'sending',
+        attempts: (record.attempts || 0) + 1,
+        lastError: null,
+      });
+      try {
+        await _fwSendFinishOutboxRecord(record, { fromOutbox: true });
+        _fwMarkFinishConfirmed(record, false);
+        showToast('Отложенный финиш смены отправлен', 'success');
+      } catch (e) {
+        await promontaOutboxPatch(record.id, { state: 'queued', lastError: e.message || String(e) });
+      }
+    }
+  } finally {
+    _finishOutboxRetrying = false;
+  }
+}
+
 async function _fwSubmitFinish() {
   const btn = document.getElementById('fw-submit-finish');
   const statusEl = document.getElementById('fw-submit-status');
@@ -702,80 +833,34 @@ async function _fwSubmitFinish() {
   btn.textContent = 'Отправка…';
   statusEl.textContent = '';
 
+  let finishRecord = null;
   try {
-    const formData = new FormData();
-    formData.append('lat', _fwFinishGeo.lat);
-    formData.append('lon', _fwFinishGeo.lon);
-    if (_fwFinishGeo.accuracy) formData.append('accuracy', _fwFinishGeo.accuracy);
-    if (_fwFinishGeo.timestamp) formData.append('geo_timestamp', _fwFinishGeo.timestamp);
-    formData.append('done_summary', _fwWorkSummary);
-    formData.append('extra_works', JSON.stringify(_fwExtraWorks));
-    formData.append('needs', JSON.stringify(_fwNeeds));
-    formData.append('defects', JSON.stringify(_fwDefects));
-    formData.append('pause_minutes', String(_fwPauseMinutes));
-    if (_fwVoiceNoteFileId) formData.append('voice_note_file_id', _fwVoiceNoteFileId);
-    _fwPhotos.forEach(f => formData.append('files', f));
-
-    // Round 3: attach plan execution report if worker filled in item results
-    if (_fwItemResults.length > 0 && _fwDailyPlanId) {
-      formData.append('daily_plan_report', JSON.stringify({
-        plan_id: _fwDailyPlanId,
-        plan_version: _fwDailyPlanVersion,
-        item_results: _fwItemResults,
-        tomorrow_issues: _fwTomorrowIssues,
-        tomorrow_comment: _fwTomorrowComment,
-      }));
+    finishRecord = _fwBuildFinishOutboxRecord();
+    if (!navigator.onLine) {
+      await _fwQueueFinishOutbox(finishRecord);
+      _fwCloseWizardAfterSuccess();
+      showToast('Финиш сохранён в офлайн-очередь', 'success');
+      return;
     }
-
-    // 03.08 (ТЗ Задача 1): переиспользуем ключ, если он уже был создан прошлой попыткой
-    _fwIdempotencyKey = _fwIdempotencyKey || crypto.randomUUID();
-    const res = await fetch(`${API_BASE}/api/checkin/${_fwSessionId}/finish`, {
-      method: 'POST',
-      headers: { ..._authHeaders(), 'Idempotency-Key': _fwIdempotencyKey },
-      body: formData,
-    });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
-
-    // Реальное создание Need/Mangel тикетов -- только после успешного finish.
-    // Best-effort: сбой создания тикета не должен ломать успешно завершённую смену.
-    for (const need of _fwNeeds) {
-      try {
-        await api('/api/tasks', {
-          method: 'POST',
-          body: JSON.stringify({ title: need.description, object_id: _fwObjectId }),
-        });
-      } catch (e) { console.warn('need creation failed', e); }
-    }
-    for (const defect of _fwDefects) {
-      try {
-        const fd = new FormData();
-        fd.append('object_id', _fwObjectId);
-        fd.append('description', defect.description);
-        await fetch(`${API_BASE}/api/mangel`, {
-          method: 'POST',
-          headers: { ..._authHeaders() },
-          body: fd,
-        });
-      } catch (e) { console.warn('defect creation failed', e); }
-    }
+    await _fwSendFinishOutboxRecord(finishRecord);
 
     hapticImpact('medium');
-    _setActiveCheckinSession(_fwObjectId, { id: _fwSessionId, finished: true });
+    _fwMarkFinishConfirmed(finishRecord, false);
     _fwCloseWizardAfterSuccess();
     showToast('Смена завершена', 'success');
-    if (typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
-    // 28.07: owner report -- завершил смену через finish-wizard, но Home-карточка
-    // "Смена идёт" оставалась устаревшей. Тот же паттерн, что уже есть в checkin.js.
-    if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
-      _loadWorkerShiftCta();
-    }
-    // Round 3: clear today-plan bar after plan is executed
-    if (typeof _updateTodayPlanBar === 'function') {
-      _updateTodayPlanBar({ has_plan: false });
-      window._todayPlanState = null;
-    }
   } catch (e) {
-    statusEl.textContent = 'Ошибка: ' + e.message;
+    if (finishRecord && _fwIsTransientFinishError(e)) {
+      try {
+        await _fwQueueFinishOutbox(finishRecord);
+        _fwCloseWizardAfterSuccess();
+        showToast('Связь сорвалась — финиш сохранён в офлайн-очередь', 'success');
+        return;
+      } catch (queueErr) {
+        statusEl.textContent = 'Не удалось сохранить офлайн: ' + queueErr.message;
+      }
+    } else {
+      statusEl.textContent = 'Ошибка: ' + e.message;
+    }
     statusEl.classList.add('fw-submit-error');
     btn.disabled = false;
     btn.textContent = 'Завершить смену';
@@ -895,6 +980,9 @@ function _fwWireStep() {
   else if (key === 'geo') _fwWireStep5();
   else if (key === 'review') _fwWireStep6();
 }
+
+window.addEventListener('online', _retryFinishOutboxRecords);
+setTimeout(_retryFinishOutboxRecords, 1800);
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('finish-wizard-close')?.addEventListener('click', _fwCloseWizard);

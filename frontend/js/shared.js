@@ -377,6 +377,92 @@ function prefetchTracked(path) {
   return p.catch(() => null); // splash ждёт через Promise.allSettled — сетевой сбой не должен его подвесить
 }
 
+// Durable client-side outbox for evidence uploads (check-in start / finish).
+// IndexedDB can persist File/Blob objects; localStorage cannot, so we fail loudly
+// if WebView storage is unavailable instead of pretending the evidence is safe.
+const PROMONTA_OUTBOX_DB = 'promonta-offline-outbox';
+const PROMONTA_OUTBOX_STORE = 'records';
+const PROMONTA_OUTBOX_VERSION = 1;
+let _promontaOutboxDbPromise = null;
+
+function promontaOutboxSupported() {
+  return typeof indexedDB !== 'undefined';
+}
+
+function _promontaOpenOutboxDb() {
+  if (!promontaOutboxSupported()) return Promise.reject(new Error('Офлайн-очередь недоступна в этом WebView'));
+  if (_promontaOutboxDbPromise) return _promontaOutboxDbPromise;
+  _promontaOutboxDbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(PROMONTA_OUTBOX_DB, PROMONTA_OUTBOX_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(PROMONTA_OUTBOX_STORE)) {
+        const store = db.createObjectStore(PROMONTA_OUTBOX_STORE, { keyPath: 'id' });
+        store.createIndex('kind', 'kind', { unique: false });
+        store.createIndex('state', 'state', { unique: false });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('Не удалось открыть офлайн-очередь'));
+  });
+  return _promontaOutboxDbPromise;
+}
+
+async function promontaOutboxPut(record) {
+  const db = await _promontaOpenOutboxDb();
+  const now = Date.now();
+  const entry = {
+    attempts: 0,
+    createdAt: now,
+    updatedAt: now,
+    state: 'queued',
+    ...record,
+  };
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PROMONTA_OUTBOX_STORE, 'readwrite');
+    tx.objectStore(PROMONTA_OUTBOX_STORE).put(entry);
+    tx.oncomplete = () => resolve(entry);
+    tx.onerror = () => reject(tx.error || new Error('Не удалось сохранить офлайн-запись'));
+  });
+}
+
+async function promontaOutboxPatch(id, updates) {
+  const db = await _promontaOpenOutboxDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PROMONTA_OUTBOX_STORE, 'readwrite');
+    const store = tx.objectStore(PROMONTA_OUTBOX_STORE);
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const current = getReq.result;
+      if (!current) { resolve(null); return; }
+      store.put({ ...current, ...updates, updatedAt: Date.now() });
+    };
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error || new Error('Не удалось обновить офлайн-запись'));
+  });
+}
+
+async function promontaOutboxDelete(id) {
+  const db = await _promontaOpenOutboxDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PROMONTA_OUTBOX_STORE, 'readwrite');
+    tx.objectStore(PROMONTA_OUTBOX_STORE).delete(id);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error || new Error('Не удалось удалить офлайн-запись'));
+  });
+}
+
+async function promontaOutboxList(kind) {
+  const db = await _promontaOpenOutboxDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PROMONTA_OUTBOX_STORE, 'readonly');
+    const store = tx.objectStore(PROMONTA_OUTBOX_STORE);
+    const req = kind ? store.index('kind').getAll(kind) : store.getAll();
+    req.onsuccess = () => resolve((req.result || []).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)));
+    req.onerror = () => reject(req.error || new Error('Не удалось прочитать офлайн-очередь'));
+  });
+}
+
 function hapticImpact(style) {
   try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(style); } catch (e) {}
   if (window.navigator.vibrate) window.navigator.vibrate(style === 'medium' ? 15 : 8);
