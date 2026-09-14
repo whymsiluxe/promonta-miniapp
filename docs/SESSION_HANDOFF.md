@@ -1,5 +1,33 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-14 Manager command parser draft handoff
+
+Current autonomous slice: Stage 3 Russian management command parser from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `backend/main.py`: added `parse_management_command()` and supporting lookup
+  helpers for Russian owner commands that assign work to a worker on a date for
+  an object with an optional comment.
+- `backend/main.py`: added owner-only `/api/manager/command/parse`, returning a
+  safe draft with `requires_confirmation: true` instead of creating tasks or
+  assignments directly.
+- `tests/test_management_command_parser.py`: new unit/route contract covers the
+  target command, relative dates, unresolved names, worker/object resolution,
+  route registration, and worker access denial.
+- `tests/test_assignment_lifecycle.py`: updated the production route-count
+  assertion for the new parse endpoint.
+
+Verification:
+- `python3 -m py_compile backend/main.py`.
+- `git diff --check`.
+- Focused parser/route-count checks: `5 passed`.
+- Full suite: `794 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended slice:
+- Continue Stage 3 with task confirmation escalation: worker accept/confirm
+  state, 2h yellow warning, 4h red/unconfirmed alert, and owner cockpit surfacing.
+
 ## 2026-09-14 Check-in offline evidence outbox handoff
 
 Current autonomous slice: Stage 2 durable offline finish/check-in outbox from

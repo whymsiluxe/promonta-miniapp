@@ -5180,6 +5180,171 @@ class ExtractTaskBody(BaseModel):
     object_id: str = ''
 
 
+class ManagementCommandBody(BaseModel):
+    text: str
+
+
+def _normalize_ru_lookup(s: str) -> str:
+    return re.sub(r'[^a-zа-я0-9]+', '', str(s or '').lower().replace('ё', 'е'))
+
+
+def _normalize_ru_name_hint(s: str) -> str:
+    value = str(s or '').strip()
+    if len(value) > 3 and value[-1:].lower() in ('у', 'ю'):
+        return value[:-1]
+    return value
+
+
+def _management_command_date(label: str, base_dt: datetime | None = None) -> str:
+    base = base_dt or business_now()
+    key = str(label or '').strip().lower()
+    if key == 'сегодня':
+        return base.date().isoformat()
+    if key == 'завтра':
+        return (base.date() + timedelta(days=1)).isoformat()
+    if key == 'послезавтра':
+        return (base.date() + timedelta(days=2)).isoformat()
+    m = re.match(r'^(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?$', key)
+    if not m:
+        return ''
+    day, month = int(m.group(1)), int(m.group(2))
+    year = int(m.group(3)) if m.group(3) else base.year
+    if year < 100:
+        year += 2000
+    try:
+        return datetime(year, month, day).date().isoformat()
+    except ValueError:
+        return ''
+
+
+def _resolve_management_worker(worker_query: str, workers: list[dict] | None = None) -> dict:
+    workers = workers or []
+    query_norm = _normalize_ru_lookup(_normalize_ru_name_hint(worker_query))
+    for w in workers:
+        name = str(w.get('name') or w.get('first_name') or '').strip()
+        if query_norm and query_norm in _normalize_ru_lookup(name):
+            return {"id": str(w.get('user_id') or w.get('id') or ''), "name": name}
+    return {"id": "", "name": _normalize_ru_name_hint(worker_query)}
+
+
+def _resolve_management_object(object_query: str, objects: list[dict] | None = None) -> dict:
+    objects = objects or []
+    query_norm = _normalize_ru_lookup(object_query)
+    for obj in objects:
+        name = str(obj.get('name') or obj.get('Объект') or '').strip()
+        oid = str(obj.get('id') or obj.get('ID объекта') or '').strip()
+        if query_norm and (query_norm in _normalize_ru_lookup(name) or query_norm in _normalize_ru_lookup(oid)):
+            return {"id": oid, "name": name or oid}
+    return {"id": "", "name": object_query.strip()}
+
+
+def parse_management_command(text: str, base_dt: datetime | None = None,
+                             workers: list[dict] | None = None,
+                             objects: list[dict] | None = None) -> dict:
+    """Parse an owner Russian management command into a safe draft.
+
+    This intentionally does not create assignments/tasks. The caller must show
+    the draft and confirm before any mutation.
+    """
+    raw = re.sub(r'\s+', ' ', str(text or '').strip().rstrip('.!?'))
+    if not raw:
+        raise ValueError("Пустая команда")
+    m = re.match(
+        r'(?i)^поставь\s+(?P<worker>.+?)\s+'
+        r'(?P<date>сегодня|завтра|послезавтра|\d{1,2}\.\d{1,2}(?:\.\d{2,4})?)\s+'
+        r'задач[ауи]\s+(?P<body>.+)$',
+        raw,
+    )
+    if not m:
+        raise ValueError("Не удалось разобрать команду управления")
+
+    body = m.group('body').strip()
+    comment = ''
+    comment_match = re.search(r'(?i)\s+и\s+скажи\s+ему\s+(?P<comment>.+)$', body)
+    if comment_match:
+        comment = comment_match.group('comment').strip()
+        body = body[:comment_match.start()].strip()
+
+    object_query = ''
+    task_text = body
+    object_match = re.search(r'(?i)\s+у\s+(?P<object>[^,]+)$', body)
+    if object_match:
+        object_query = object_match.group('object').strip()
+        task_text = body[:object_match.start()].strip()
+
+    worker = _resolve_management_worker(m.group('worker').strip(), workers)
+    obj = _resolve_management_object(object_query, objects) if object_query else {"id": "", "name": ""}
+    due_date = _management_command_date(m.group('date'), base_dt)
+
+    return {
+        "intent": "assign_task",
+        "worker_query": m.group('worker').strip(),
+        "worker_id": worker.get("id", ""),
+        "worker_name": worker.get("name", ""),
+        "date": due_date,
+        "date_text": m.group('date').strip(),
+        "object_query": object_query,
+        "object_id": obj.get("id", ""),
+        "object_name": obj.get("name", ""),
+        "task": task_text,
+        "comment": comment,
+        "requires_confirmation": True,
+    }
+
+
+def _management_workers_for_parse() -> list[dict]:
+    profiles = _load_worker_profiles()
+    roles = _load_roles()
+    result = []
+    for uid, role in roles.items():
+        if role == 'worker':
+            profile = profiles.get(str(uid), {})
+            result.append({
+                "user_id": str(uid),
+                "name": _sanitize_display_name(profile.get('name') or profile.get('first_name'), str(uid)),
+            })
+    return result
+
+
+def _management_objects_for_parse() -> list[dict]:
+    rows = _cached_get_used_range('Объекты')
+    if not rows:
+        return []
+    header, data = rows[0], rows[1:]
+    result = []
+    for row in data:
+        obj = dict(zip(header, row))
+        result.append({
+            "id": str(obj.get('ID объекта', '')).strip(),
+            "name": str(obj.get('Объект', '')).strip(),
+        })
+    return result
+
+
+@app.post("/api/manager/command/parse")
+def parse_manager_command(body: ManagementCommandBody,
+                          user: dict = Depends(get_current_user),
+                          role: str = Depends(get_role)):
+    if role != 'owner':
+        raise HTTPException(403, "Только для владельца")
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "Пустая команда")
+    try:
+        workers = _management_workers_for_parse()
+    except Exception:
+        workers = []
+    try:
+        objects = _management_objects_for_parse()
+    except Exception:
+        objects = []
+    try:
+        draft = parse_management_command(text, workers=workers, objects=objects)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"draft": draft, "requires_confirmation": True}
+
+
 @app.post("/api/tasks/extract")
 def extract_task_from_text(body: ExtractTaskBody, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     """10.37: AI разбирает транскрипт голосового (или любой текст) и предлагает

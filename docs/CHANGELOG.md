@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-14 (Manager command parser draft)
+
+Tests: 794 passed, 1 skipped.
+
+### Backend
+- Added an owner-only `/api/manager/command/parse` endpoint for the Stage 3
+  Russian voice/text management-command flow.
+- Added a safe draft parser for commands like
+  `Поставь Ивану завтра задачу закончить потолок у Мюллера и скажи ему взять лазер.`
+  The parser extracts worker, date, task, object, and comment fields.
+- Kept the command flow non-mutating: the endpoint returns
+  `requires_confirmation: true` and does not create assignments or tasks.
+
+### Tests
+- Added `tests/test_management_command_parser.py` for direct parser coverage,
+  owner-only endpoint access, route registration, relative dates, unresolved
+  names, and worker/object lookup.
+- Updated the production route-count contract for the new endpoint.
+- Verified `python3 -m py_compile backend/main.py`, `git diff --check`,
+  focused management parser checks, and the full suite.
+
 ## 2026-09-14 (Check-in offline evidence outbox)
 
 Tests: 790 passed, 1 skipped.
