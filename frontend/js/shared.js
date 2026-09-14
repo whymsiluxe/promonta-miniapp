@@ -68,8 +68,84 @@ function _isMultiConsumerPath(path) {
   return path === '/api/objects' || /^\/api\/objects\/[^/]+\/stages$/.test(path);
 }
 
+const API_DEFAULT_TIMEOUT_MS = 18000;
+const API_DEFAULT_SAFE_RETRIES = 1;
+const API_RETRY_BASE_DELAY_MS = 350;
+const API_SAFE_RETRY_METHODS = new Set(['GET', 'HEAD']);
+const API_RETRY_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+function _apiSleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function _apiTimeoutError(timeoutMs) {
+  const err = new Error(`Запрос не ответил за ${Math.round(timeoutMs / 1000)} с`);
+  err.name = 'TimeoutError';
+  err.code = 'timeout';
+  return err;
+}
+
+function _apiShouldRetry(err, attempt, maxRetries) {
+  if (attempt >= maxRetries) return false;
+  if (err?.name === 'AbortError') return false;
+  if (err?.name === 'TimeoutError') return true;
+  if (err?.status) return API_RETRY_STATUSES.has(err.status);
+  return true;
+}
+
+function _apiRetryDelay(attempt, baseDelayMs) {
+  return Math.min(2000, baseDelayMs * Math.pow(2, attempt));
+}
+
+async function _apiFetchOnce(path, fetchOptions, timeoutMs, externalSignal) {
+  let timeoutId = null;
+  let timedOut = false;
+  let onExternalAbort = null;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+
+  if (controller && externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      onExternalAbort = () => controller.abort();
+      externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+  }
+  if (controller && timeoutMs > 0) {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+  }
+
+  try {
+    const res = await fetch(API_BASE + path, {
+      ...fetchOptions,
+      signal: controller ? controller.signal : externalSignal,
+    });
+    if (!res.ok) {
+      if (res.status === 401 && _sessionToken) {
+        // Токен истёк/отозван (не первичная initData-проверка, у неё нет _sessionToken
+        // ещё) -- явное сообщение юзеру, не silent redirect/белый экран без объяснения.
+        _handleSessionExpired();
+      }
+      const err = new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    return res.json();
+  } catch (err) {
+    if (timedOut) throw _apiTimeoutError(timeoutMs);
+    throw err;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (externalSignal && onExternalAbort) externalSignal.removeEventListener('abort', onExternalAbort);
+  }
+}
+
 function api(path, options = {}) {
-  const isGet = !options.method || options.method === 'GET';
+  const method = String(options.method || 'GET').toUpperCase();
+  const isGet = method === 'GET';
   if (isGet && _prefetchCache[path]) {
     const cached = _prefetchCache[path];
     if (_isMultiConsumerPath(path)) {
@@ -89,6 +165,14 @@ function api(path, options = {}) {
   // это сломало бы multipart boundary, который браузер должен проставить сам. FormData
   // detection пропускает наш Content-Type override целиком.
   const isFormData = options.body instanceof FormData;
+  const {
+    timeoutMs = API_DEFAULT_TIMEOUT_MS,
+    retries,
+    retry,
+    retryDelayMs = API_RETRY_BASE_DELAY_MS,
+    signal,
+    ...fetchOptions
+  } = options;
   // 03.08 (ТЗ Задача 1): Authorization: Bearer <session token> -- приоритетный путь,
   // не требует свежего initData на каждый запрос (12ч vs 1ч TTL). X-Telegram-Init-Data
   // остаётся как fallback, только если токена ещё нет (напр. сетевой сбой при первом
@@ -98,22 +182,27 @@ function api(path, options = {}) {
   if (_sessionToken) headers['Authorization'] = `Bearer ${_sessionToken}`;
   else if (initData) headers['X-Telegram-Init-Data'] = initData;
   if (!isFormData) headers['Content-Type'] = 'application/json';
-  return fetch(API_BASE + path, {
-    ...options,
-    headers
-  }).then(async res => {
-    if (!res.ok) {
-      if (res.status === 401 && _sessionToken) {
-        // Токен истёк/отозван (не первичная initData-проверка, у неё нет _sessionToken
-        // ещё) -- явное сообщение юзеру, не silent redirect/белый экран без объяснения.
-        _handleSessionExpired();
+
+  const isSafeRetryMethod = API_SAFE_RETRY_METHODS.has(method);
+  const explicitRetry = retry === true;
+  const maxRetries = (isSafeRetryMethod || explicitRetry)
+    ? Math.max(0, Number.isFinite(Number(retries)) ? Number(retries) : API_DEFAULT_SAFE_RETRIES)
+    : 0;
+
+  return (async () => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await _apiFetchOnce(path, {
+          ...fetchOptions,
+          method,
+          headers,
+        }, timeoutMs, signal);
+      } catch (err) {
+        if (!_apiShouldRetry(err, attempt, maxRetries)) throw err;
+        await _apiSleep(_apiRetryDelay(attempt, retryDelayMs));
       }
-      const err = new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
-      err.status = res.status;
-      throw err;
     }
-    return res.json();
-  });
+  })();
 }
 
 // Экранирование пользовательского текста перед вставкой в innerHTML (описания Mängel-тикетов,

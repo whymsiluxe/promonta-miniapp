@@ -108,8 +108,9 @@ App is live, in active daily use. As of this pass:
   `/var/www/miniapp/` — Caddy no longer serves them (404 confirmed), but
   disk isn't cleaned. Left as-is per explicit prior owner decision; only
   remove on explicit request.
-- **No frontend request timeout** (AbortController) in `api()` — was
-  requested once, deferred as non-blocking UX polish, not yet done.
+- **Frontend request timeout/retry layer now exists** — `api()` has an
+  AbortController timeout, preserves caller abort signals, retries safe reads
+  only, and keeps writes non-retried unless explicitly opted in.
 
 ## Technical debt
 

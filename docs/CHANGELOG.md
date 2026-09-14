@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-14 (Shared API timeout/retry layer)
+
+Tests: 785 passed, 1 skipped.
+
+### Frontend
+- Added central `api()` timeout handling with `AbortController`, preserving
+  caller-provided abort signals for screens like Chat.
+- Added transient retry behavior for safe `GET`/`HEAD` requests only by default.
+- Kept mutation retries disabled unless a caller explicitly opts in with
+  `retry: true`, avoiding duplicate writes where idempotency is not guaranteed.
+- Retained existing session-expiry handling, FormData content-type behavior, and
+  prefetch cache semantics.
+
+### Tests
+- Added `tests/test_shared_api_frontend_contract.py` to lock timeout, abort,
+  retry-status, safe-method, and no-write-retry defaults.
+- Verified `node --check frontend/js/shared.js`, `git diff --check`, focused
+  shared/feed/needs/finish contracts, and the full suite.
+
 ## 2026-09-14 (Check-in geo evidence metadata)
 
 Tests: 783 passed, 1 skipped.

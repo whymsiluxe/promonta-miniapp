@@ -1,5 +1,35 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-14 Shared API timeout/retry layer handoff
+
+Current autonomous slice: Stage 2 shared frontend API timeout/retry/abort layer
+from `docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `frontend/js/shared.js`: `api()` now composes caller abort signals with a
+  default 18s timeout via `AbortController`.
+- `frontend/js/shared.js`: transient retries are enabled by default only for
+  safe `GET`/`HEAD` requests and only for timeout, network, 408/425/429, and
+  5xx-style failures.
+- `frontend/js/shared.js`: writes (`POST`, `PATCH`, `DELETE`, etc.) do not retry
+  unless a caller explicitly passes `retry: true`, preserving the existing
+  no-duplicate-write posture for non-idempotent mutations.
+- `tests/test_shared_api_frontend_contract.py`: new static contract locks the
+  timeout, abort, retry-status, safe-method, and no-write-retry behavior.
+- `docs/PROJECT_STATE.md`: removed the stale open-issue note that `api()` had no
+  frontend timeout.
+
+Verification:
+- `node --check frontend/js/shared.js`.
+- `git diff --check`.
+- Focused shared/feed/needs/finish contracts: `22 passed`.
+- Full suite: `785 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended slice:
+- Continue Stage 2 with durable offline finish/check-in outbox and persisted
+  retry states, building on the now-central request timeout and safe retry
+  foundation.
+
 ## 2026-09-14 Check-in geo evidence metadata handoff
 
 Current autonomous slice: Stage 2 worker start/finish evidence from
