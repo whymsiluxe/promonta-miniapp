@@ -105,17 +105,25 @@ def test_feed_saved_filters_are_per_tab_not_mixed_tab():
     assert 'data-feed="saved"' not in src
     assert 'data-feed-saved-kind="photos"' in src
     assert 'data-feed-saved-kind="news"' in src
-    assert 'data-feed-saved-kind="weather"' in src
     assert 'id="feed-saved-count-photos"' in src
     assert 'id="feed-saved-count-news"' in src
-    assert 'id="feed-saved-count-weather"' in src
+    assert 'data-feed-saved-kind="weather"' not in src
+    assert 'id="feed-saved-count-weather"' not in src
     assert "toggleFeedSave" in feed_src
     assert "'/api/feed/saved'" in feed_src
-    assert "FEED_SAVED_FILTERS = { photos: 'all', news: 'all', weather: 'all' }" in feed_src
+    assert "FEED_SAVED_FILTERS = { photos: 'all', news: 'all' }" in feed_src
     assert "news-save-btn" in feed_src
-    assert "wx-save-btn" in feed_src
+    assert "wx-save-btn" not in feed_src
     assert "_renderFeedPhotosFromCache" in feed_src
     assert "_renderNewsFromCache" in feed_src
+
+
+def test_news_cards_do_not_render_dislike_action():
+    feed_src = _source(FEED_JS)
+
+    assert "news-like-btn" in feed_src
+    assert "news-dislike-btn" not in feed_src
+    assert "data-news-reaction=\"dislike\"" not in feed_src
 
 
 def test_ios_input_zoom_and_ai_composer_visibility_contracts():

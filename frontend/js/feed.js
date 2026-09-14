@@ -92,14 +92,10 @@ const IG_ICONS = {
   thumbsDown: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>',
 };
 
-const FEED_SAVED_FILTERS = { photos: 'all', news: 'all', weather: 'all' };
+const FEED_SAVED_FILTERS = { photos: 'all', news: 'all' };
 
 function _feedJsString(value) {
   return JSON.stringify(String(value == null ? '' : value));
-}
-
-function _weatherSaveId(entry) {
-  return `${entry?.object || ''}::${entry?.created || ''}`;
 }
 
 function _feedKindForSaveType(itemType) {
@@ -197,8 +193,6 @@ let _wxEntries = [];
 function renderFeedCard(entry, idx, isActive) {
   const type = WX_TYPES[_dominantWxType(entry)];
   const liked = !!entry.liked_by_me;
-  const saved = !!entry.saved_by_me;
-  const saveId = _weatherSaveId(entry);
   const waveSvg = _buildWaveSvg(entry.wave, type.hue);
 
   // \u0420\u0435\u0444\u0435\u0440\u0435\u043D\u0441 "16\u00B0 / Stormy Monday": \u043A\u0440\u0443\u043F\u043D\u0430\u044F \u0442\u0435\u043C\u043F \u0441\u0435\u0433\u043E\u0434\u043D\u044F + \u0434\u0438\u0430\u043F\u0430\u0437\u043E\u043D \u043C\u0438\u043D/\u043C\u0430\u043A\u0441 + \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0441\u043E\u0431\u044B\u0442\u0438\u044F.
@@ -257,9 +251,6 @@ function renderFeedCard(entry, idx, isActive) {
       </button>
       <button class="wx-act" type="button" onclick="switchView('chat')" aria-label="Комментарии">${IG_ICONS.comment}</button>
       <button class="wx-act" type="button" onclick="shareWxPost(_wxEntries[${idx}])" aria-label="Поделиться">${IG_ICONS.share}</button>
-      <button class="wx-act wx-save-btn ${saved ? 'saved' : ''}" type="button"
-        onclick="toggleFeedSave(this, 'weather', ${_feedJsString(saveId)})"
-        aria-label="${saved ? 'Убрать из сохранённых' : 'Сохранить'}" aria-pressed="${saved ? 'true' : 'false'}">${IG_ICONS.bookmark}</button>
     </div>
     <div class="wx-post-caption">${caption}</div>
   </div>`;
@@ -307,23 +298,18 @@ function _renderCompactWeatherRow(entry, idx) {
 function _renderActiveWeatherCard() {
   const container = document.getElementById('feed-list');
   if (!_wxEntries.length) {
-    _updateFeedSavedCount('weather', 0);
     if (container) {
-      container.innerHTML = FEED_SAVED_FILTERS.weather === 'saved'
-        ? '<div class="empty-state">Сохранённой погоды пока нет</div>'
-        : '<div class="empty-state">Погодных рисков не обнаружено. Проверка каждый день в 18:00 и 6:30.</div>';
+      container.innerHTML = '<div class="empty-state">Погодных рисков не обнаружено. Проверка каждый день в 18:00 и 6:30.</div>';
     }
     return;
   }
-  _updateFeedSavedCount('weather', _wxEntries.filter(e => e.saved_by_me).length);
   // Раунд 5 §12: группировка Инфо-ленты по серьёзности (Критично/Предупреждения/
   // Информация). Секция рендерится только если в ней есть объекты; исходный индекс
   // сохраняется для expand-логики, чтобы клик по строке разворачивал нужную запись.
   const indexed = _wxEntries
-    .map((e, i) => ({ e, i, level: weatherSeverityLevel(e) }))
-    .filter(x => FEED_SAVED_FILTERS.weather !== 'saved' || x.e.saved_by_me);
+    .map((e, i) => ({ e, i, level: weatherSeverityLevel(e) }));
   if (!indexed.length) {
-    container.innerHTML = '<div class="empty-state">Сохранённой погоды пока нет</div>';
+    container.innerHTML = '<div class="empty-state">Погодных рисков не обнаружено. Проверка каждый день в 18:00 и 6:30.</div>';
     return;
   }
   container.innerHTML = WX_SEVERITY_SECTIONS.map(sec => {
@@ -514,7 +500,6 @@ function sharePhotoPost(photoId) {
 function _findFeedSavedItem(itemType, itemId) {
   if (itemType === 'photo') return _feedPhotosCache.find(p => String(p.id) === String(itemId));
   if (itemType === 'news') return _newsItems.find(n => String(n.id) === String(itemId));
-  if (itemType === 'weather') return _wxEntries.find(e => _weatherSaveId(e) === String(itemId));
   return null;
 }
 
@@ -527,7 +512,6 @@ function _rerenderFeedKind(kind) {
 function _refreshFeedSavedCounts() {
   _updateFeedSavedCount('photos', _feedPhotosCache.filter(p => p.saved_by_me).length);
   _updateFeedSavedCount('news', _newsItems.filter(n => n.saved_by_me).length);
-  _updateFeedSavedCount('weather', _wxEntries.filter(e => e.saved_by_me).length);
 }
 
 async function toggleFeedSave(btn, itemType, itemId) {
@@ -787,7 +771,6 @@ function toggleNewsSummary(i, btn) {
 function _newsCardHtml(n, i) {
   const catColor = NEWS_CAT_COLORS[n.category] || 'var(--accent)';
   const likeActive = n.my_reaction === 'like' ? 'active' : '';
-  const dislikeActive = n.my_reaction === 'dislike' ? 'active' : '';
   const saved = !!n.saved_by_me;
   const cc = n.comment_count || 0;
   const discussBadge = cc > 0 ? `<span class="news-discuss-badge">Обсуждают · ${cc}</span>` : '';
@@ -805,7 +788,6 @@ function _newsCardHtml(n, i) {
     <div class="news-actions">
       <button class="news-react-btn news-comment-btn" data-news-action="comment" onclick="event.stopPropagation();openNewsComments('${n.id}')">${IG_ICONS.comment} <span>${cc}</span></button>
       <button class="news-react-btn news-like-btn ${likeActive}" data-news-reaction="like" onclick="event.stopPropagation();reactNews('${n.id}','like',this)">${IG_ICONS.heart} <span>${n.likes || 0}</span></button>
-      <button class="news-react-btn news-dislike-btn ${dislikeActive}" data-news-reaction="dislike" onclick="event.stopPropagation();reactNews('${n.id}','dislike',this)">${IG_ICONS.thumbsDown} <span>${n.dislikes || 0}</span></button>
       ${n.url ? `<button class="news-react-btn" data-news-action="share" onclick="event.stopPropagation();shareNewsLink(${i})">${IG_ICONS.share}</button>` : ''}
       <button class="news-react-btn news-save-btn ${saved ? 'saved' : ''}" data-news-action="save"
         onclick="event.stopPropagation();toggleFeedSave(this, 'news', ${_feedJsString(n.id)})"
@@ -815,6 +797,7 @@ function _newsCardHtml(n, i) {
 }
 
 async function reactNews(postId, reaction, btnEl) {
+  if (reaction !== 'like') return;
   const post = _newsItems.find(n => n.id === postId);
   if (!post) return;
   const wasActive = btnEl.classList.contains('active');
@@ -830,11 +813,10 @@ async function reactNews(postId, reaction, btnEl) {
     post.my_reaction = res.my_reaction;
     const card = btnEl.closest('.news-card');
     const likeBtn = card.querySelector('[data-news-reaction="like"]');
-    const dislikeBtn = card.querySelector('[data-news-reaction="dislike"]');
-    likeBtn.querySelector('span').textContent = post.likes || 0;
-    dislikeBtn.querySelector('span').textContent = post.dislikes || 0;
-    likeBtn.classList.toggle('active', post.my_reaction === 'like');
-    dislikeBtn.classList.toggle('active', post.my_reaction === 'dislike');
+    if (likeBtn) {
+      likeBtn.querySelector('span').textContent = post.likes || 0;
+      likeBtn.classList.toggle('active', post.my_reaction === 'like');
+    }
   } catch (e) {
     showToast('Ошибка: ' + e.message, 'error');
   }

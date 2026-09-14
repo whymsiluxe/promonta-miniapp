@@ -14,14 +14,12 @@ async function renderObjectInfoTab(objectId) {
   // всегда показывала stock-фото fallback. Owner-only, тот же upload-паттерн что уже
   // используется для документов/дефектов (sniff_image валидация на бэкенде).
   const photoUploadHtml = currentRole === 'owner' ? `
-    <div class="obj-info-section">
-      <div class="obj-info-section-title">Фото объекта</div>
+    <div class="obj-info-section obj-info-section-compact obj-info-photo-upload-section">
       <input type="file" id="obj-info-photo-input" accept="image/*" style="display:none;">
-      <button class="obj-info-empty-action" id="obj-info-photo-upload-btn" type="button">+ Загрузить фото</button>
+      <button class="obj-info-line-action" id="obj-info-photo-upload-btn" type="button">+ Загрузить фото</button>
     </div>` : '';
   const statusEditorHtml = currentRole === 'owner' ? `
-    <div class="obj-info-section">
-      <div class="obj-info-section-title">Статус объекта</div>
+    <div class="obj-info-section obj-info-section-compact obj-info-status-section">
       <div class="status-switch" id="obj-detail-status-switch" data-current="${esc(_objDetailCurrentStatus)}">
         ${['В работе', 'Пауза', 'Завершён'].map(s =>
           `<div class="status-opt${s === _objDetailCurrentStatus ? ' active' : ''}" data-status="${s}">${s}</div>`
@@ -41,8 +39,7 @@ async function renderObjectInfoTab(objectId) {
     </div>` : '';
   const ownerControlCenterHtml = currentRole === 'owner' ? `
     <div class="obj-info-section obj-control-section">
-      <div class="obj-info-section-title-row">
-        <span class="obj-info-section-title" style="margin-bottom:0;">Центр управления</span>
+      <div class="obj-control-toolbar">
         <button type="button" class="obj-control-refresh-btn" id="obj-control-refresh-btn">Обновить</button>
       </div>
       <div id="obj-control-center" class="obj-control-center" aria-live="polite">
@@ -60,13 +57,11 @@ async function renderObjectInfoTab(objectId) {
     ${photoUploadHtml}
     ${statusEditorHtml}
     ${teamShiftsHtml}
-    <div class="obj-info-section">
-      <div class="obj-info-section-title">Описание</div>
+    <div class="obj-info-section obj-info-section-compact obj-info-description-section">
       <div id="obj-info-description-view"></div>
     </div>
-    <div class="obj-info-section">
-      <div class="obj-info-section-title-row">
-        <span class="obj-info-section-title" style="margin-bottom:0;">Работы</span>
+    <div class="obj-info-section obj-info-section-compact obj-info-works-section">
+      <div class="obj-info-section-title-row obj-info-section-title-row-controls">
         <div class="doc-type-switch obj-info-subtabs" id="obj-works-subtabs">
           <div class="doc-type-opt active" data-works-tab="volumes">Объёмы</div>
           <div class="doc-type-opt" data-works-tab="tasks">Задачи</div>
@@ -93,8 +88,7 @@ async function renderObjectInfoTab(objectId) {
          структура Object Detail -- ровно 3 таба Чат/Инфо/План работ, без отдельной вкладки
          Потребности). Разметка и вся логика ниже (_loadObjNeeds/_renderNeedRow) перенесены
          без изменений из бывшего renderObjectNeedsTab, только id панели/списка сменился. -->
-    <div class="obj-info-section">
-      <div class="obj-info-section-title">Потребности</div>
+    <div class="obj-info-section obj-info-section-compact obj-info-needs-section">
       <div id="obj-needs-list" class="obj-info-items-list"></div>
       ${currentRole !== 'owner' ? `
       <div class="obj-info-add-row">

@@ -20,3 +20,18 @@ def test_objects_sheet_keyboard_and_fab_motion_contracts():
     assert "@media (prefers-reduced-motion: reduce)" in src
     assert 'id="new-obj-name" placeholder="напр. Дом Шульц" autocomplete="off" autocorrect="off" spellcheck="false"' in src
     assert 'id="new-obj-budget" placeholder="10000" autocomplete="off"' in src
+
+
+def test_object_info_uses_compact_rows_instead_of_duplicate_section_tabs():
+    info_src = (ROOT / "frontend" / "js" / "object-info.js").read_text(encoding="utf-8")
+    html = APP_HTML.read_text(encoding="utf-8")
+
+    assert "obj-info-section-compact" in html
+    assert "obj-info-line-action" in html
+    assert ">Центр управления<" not in info_src
+    assert ">Фото объекта<" not in info_src
+    assert ">Статус объекта<" not in info_src
+    assert ">Описание<" not in info_src
+    assert ">Работы<" not in info_src
+    assert ">Потребности<" not in info_src
+    assert "#view-objects .metrics" in html

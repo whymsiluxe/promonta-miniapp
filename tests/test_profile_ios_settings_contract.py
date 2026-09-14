@@ -53,3 +53,4 @@ def test_profile_css_bridges_to_ios_settings_language():
     assert "var(--ios-surface" in html
     assert "var(--ios-separator" in html
     assert "min-height: var(--ios-touch-target, 44px)" in html
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in html

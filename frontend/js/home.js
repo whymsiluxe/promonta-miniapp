@@ -24,26 +24,6 @@ async function initHomeView() {
       <div class="home-today-loading">Загрузка сегодняшней сводки...</div>
     </section>
 
-    <div id="home-kpi-bar" class="home-kpi-bar">
-      <div class="kpi-tile" id="kpi-objects" onclick="switchView('objects')"><span class="kpi-num">—</span><span class="kpi-label">Объекты</span></div>
-      <div class="kpi-tile" id="kpi-working" onclick="switchView('working-objects')">
-        <span class="kpi-num" id="kpi-working-count">—</span><span class="kpi-label">Команда</span>
-      </div>
-    </div>
-
-    <div id="home-kpi-bar-2" class="home-kpi-bar">
-      <div class="kpi-tile" id="kpi-tasks" onclick="switchView('tasks')">
-        <span class="kpi-num" id="kpi-tasks-count">—</span><span class="kpi-label">Потребности</span>
-      </div>
-      <div class="kpi-tile kpi-alert" id="kpi-alerts" onclick="openAlertsView()">
-        <span class="kpi-num" id="kpi-alerts-count">—</span><span class="kpi-label">Алерты</span>
-        <span class="quick-primary-badge" id="alerts-badge" style="display:none">0</span>
-      </div>
-      <div class="kpi-tile" id="kpi-kontrol" onclick="switchView('kontrol-day')" style="background:color-mix(in srgb,var(--accent) 8%,var(--bg-card))">
-        <span class="kpi-num" id="kpi-kontrol-count">—</span><span class="kpi-label">Контроль дня</span>
-      </div>
-    </div>
-
     <div id="home-radio-player-mount"></div>
 
     <div id="home-messages-wide" class="quick-primary-item home-messages-wide" onclick="switchView('chat')">
@@ -231,7 +211,7 @@ async function _loadHomeTodayCockpit() {
 
   const attentionRows = [];
   if (notStarted.length) attentionRows.push(_homeTodayRow(`${notStarted.length} не начали смену`, 'Назначены на сегодня', 'warning', 'team'));
-  if (awaiting.length) attentionRows.push(_homeTodayRow(`${awaiting.length} ждут подтверждения`, 'Работники ещё не приняли задачу', 'warning', 'team'));
+  if (awaiting.length) attentionRows.push(_homeTodayRow(`${awaiting.length} ждут подтверждения`, 'Рабочие ещё не приняли задачу', 'warning', 'team'));
   if (overdueTasks.length) attentionRows.push(_homeTodayRow(`${overdueTasks.length} просроченных потребностей`, 'Материалы/доступ требуют решения', 'danger', 'tasks'));
   if (blockers.length) attentionRows.push(_homeTodayRow(`${blockers.length} проблем по этапам`, 'Работы заблокированы на объекте', 'danger', 'team'));
   if (budgetRisks.length) attentionRows.push(_homeTodayRow(`${budgetRisks.length} бюджетных рисков`, 'Объекты близко к лимиту', 'warning', 'objects'));
@@ -251,7 +231,7 @@ async function _loadHomeTodayCockpit() {
     </div>
     <div class="home-today-stats">
       <button type="button" class="home-today-stat" data-home-action="objects"><span>${activeObjects.length}</span><small>объектов</small></button>
-      <button type="button" class="home-today-stat" data-home-action="team"><span>${workers.length}</span><small>работников</small></button>
+      <button type="button" class="home-today-stat" data-home-action="team"><span>${workers.length}</span><small>рабочих</small></button>
       <button type="button" class="home-today-stat" data-home-action="team"><span>${working.length}</span><small>на смене</small></button>
       <button type="button" class="home-today-stat${riskCount ? ' home-today-stat-hot' : ''}" data-home-action="${riskCount ? 'alerts' : 'kontrol'}"><span>${riskCount}</span><small>рисков</small></button>
     </div>
@@ -343,7 +323,7 @@ async function _loadHomeCalendarWidget(absDataPromise, wrkDataPromise, teamPlanT
     const assignedTomorrow = assignmentMap(teamPlanTomorrow);
 
     function renderList(dateStr, assignedMap) {
-      if (workers.length === 0) return '<div class="hcw-row">Нет работников</div>';
+      if (workers.length === 0) return '<div class="hcw-row">Нет рабочих</div>';
       return workers.map(w => {
         const entry = absenceFor(w.user_id, dateStr);
         const assignment = assignedMap[String(w.user_id)];
@@ -799,7 +779,7 @@ async function _loadHomeObjectsRings() {
   try {
     const data = await api('/api/objects');
     const active = (data.objects || []).filter(o => o['Статус'] === 'В работе');
-    const kpiNum = kpiEl.querySelector('.kpi-num');
+    const kpiNum = kpiEl?.querySelector('.kpi-num');
     if (kpiNum) kpiNum.textContent = active.length;
 
     // 30.07 v4 (спек): KPI "Команда" -- реально работающих ПРЯМО СЕЙЧАС (working_now.length
@@ -1703,7 +1683,7 @@ async function _openWorkingObjectsPlanAddSheet() {
     const data = await api('/api/workers');
     workers = (data.workers || []).filter(w => w.role === 'worker');
   } catch (e) {
-    showToast('Не удалось загрузить работников: ' + e.message, 'error');
+    showToast('Не удалось загрузить рабочих: ' + e.message, 'error');
     return;
   }
   const existing = document.getElementById('wo-assign-sheet');
@@ -1717,7 +1697,7 @@ async function _openWorkingObjectsPlanAddSheet() {
       <div class="wo-assign-sheet-title">Выберите работника</div>
       ${workers.length ? workers.map(w => `
         <div class="wo-assign-sheet-opt ios-list-row" data-uid="${esc(w.user_id)}" data-name="${esc(w.name)}">${esc(w.name)}</div>
-      `).join('') : '<div class="wo-empty">Нет работников</div>'}
+      `).join('') : '<div class="wo-empty">Нет рабочих</div>'}
       <button class="submit-btn wo-assign-sheet-cancel ios-action-button" type="button">Отмена</button>
     </div>
   `;

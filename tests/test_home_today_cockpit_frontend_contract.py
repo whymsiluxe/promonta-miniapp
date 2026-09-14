@@ -28,6 +28,8 @@ def test_owner_home_renders_today_cockpit_from_operational_sources():
     assert "Остальное спокойно" in src
     assert "Активные смены" in src
     assert "Внимание" in src
+    assert "<small>рабочих</small>" in src
+    assert "<small>работников</small>" not in src
 
 
 def test_home_dashboard_uses_today_title_and_flat_ios_surfaces():
@@ -41,3 +43,11 @@ def test_home_dashboard_uses_today_title_and_flat_ios_surfaces():
     assert "transform: none !important;" in src
     assert "#view-home .kpi-tile::after" in src
     assert "display: none;" in src
+
+
+def test_home_dashboard_does_not_render_duplicate_legacy_kpi_grid():
+    src = _source(HOME_JS)
+
+    assert 'id="home-today-cockpit"' in src
+    assert 'id="home-kpi-bar"' not in src
+    assert 'id="home-kpi-bar-2"' not in src
