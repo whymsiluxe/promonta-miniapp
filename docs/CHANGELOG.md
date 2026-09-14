@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-14 (Check-in geo evidence metadata)
+
+Tests: 783 passed, 1 skipped.
+
+### Backend
+- Extended `/api/checkin/start` and `/api/checkin/{session_id}/finish` with
+  optional `accuracy` and `geo_timestamp` form fields.
+- Persisted start/finish geo accuracy and timestamp metadata in
+  `checkin_meta.json` while keeping older clients and direct route tests
+  backward-compatible.
+
+### Frontend
+- Normalized browser geolocation into `lat`, `lon`, `accuracy`, and `timestamp`
+  for the shared start-shift helper.
+- Sent accuracy/timestamp evidence from both start-shift photo upload and the
+  finish-shift wizard.
+
+### Tests
+- Added `tests/test_checkin_geo_metadata_contract.py` for backend payload and
+  persistence coverage.
+- Expanded finish wizard frontend contracts for start/finish geo metadata.
+- Verified JS/Python syntax, `git diff --check`, focused check-in/DailyPlan
+  tests, and the full suite.
+
 ## 2026-09-14 (Splash iOS markup cleanup)
 
 Tests: 779 passed, 1 skipped.

@@ -7166,6 +7166,8 @@ async def checkin_start(
     object_id: str = Form(''),
     lat: str = Form(''),
     lon: str = Form(''),
+    accuracy: str = Form(''),
+    geo_timestamp: str = Form(''),
     stage_name: str = Form(''),
     files: list[UploadFile] = File(default=[]),
     daily_plan_id: str = Form(''),
@@ -7183,6 +7185,8 @@ async def checkin_start(
         raise HTTPException(400, "object_id обязателен")
     if not lat.strip() or not lon.strip():
         raise HTTPException(400, "Включи геолокацию, чтобы начать смену")
+    accuracy_clean = accuracy.strip()[:50] if isinstance(accuracy, str) else ''
+    geo_timestamp_clean = geo_timestamp.strip()[:50] if isinstance(geo_timestamp, str) else ''
     # 03.08: Europe/Berlin, не UTC сервера -- проверка периода назначения
     # (_get_active_assignment_for_checkin ниже) должна сверяться с той же датой, что
     # реально "сегодня" по местному времени, иначе вечером/ночью Berlin worker мог бы
@@ -7259,6 +7263,8 @@ async def checkin_start(
         "start_photos": photo_paths,
         "start_lat": lat,
         "start_lon": lon,
+        "start_accuracy": accuracy_clean or None,
+        "start_geo_timestamp": geo_timestamp_clean or None,
         "start_gps_suspect": _gps_suspect(lat, lon),
         "stage_name": (stage_name.strip()[:200] if isinstance(stage_name, str) else '') or None,
         "daily_plan_id": _dp_session_plan_id,
@@ -7268,6 +7274,8 @@ async def checkin_start(
         "finish_photos": [],
         "finish_lat": None,
         "finish_lon": None,
+        "finish_accuracy": None,
+        "finish_geo_timestamp": None,
         "finish_gps_suspect": None,
         "pause_started_at": None,
         "pause_accumulated_seconds": 0,
@@ -7345,6 +7353,8 @@ async def checkin_finish(
     session_id: str,
     lat: str = Form(''),
     lon: str = Form(''),
+    accuracy: str = Form(''),
+    geo_timestamp: str = Form(''),
     done_summary: str = Form(''),
     extra_work: str = Form(''),
     extra_works: str = Form(''),
@@ -7391,6 +7401,8 @@ async def checkin_finish(
         raise HTTPException(400, "Включи геолокацию, чтобы завершить смену")
     if not done_summary.strip():
         raise HTTPException(400, "Заполни короткий отчёт: что сделано за смену")
+    accuracy_clean = accuracy.strip()[:50] if isinstance(accuracy, str) else ''
+    geo_timestamp_clean = geo_timestamp.strip()[:50] if isinstance(geo_timestamp, str) else ''
 
     with _checkin_lock:
         items = _load_checkin_meta()
@@ -7433,6 +7445,8 @@ async def checkin_finish(
         session['finish_photos'] = photo_paths
         session['finish_lat'] = lat
         session['finish_lon'] = lon
+        session['finish_accuracy'] = accuracy_clean or None
+        session['finish_geo_timestamp'] = geo_timestamp_clean or None
         session['finish_gps_suspect'] = _gps_suspect(lat, lon)
         # 12.09: короткий отчёт по смене обязателен и на frontend, и на backend.
         # Остальные блоки опциональны: доп-работы, потребности, дефекты, завтра.

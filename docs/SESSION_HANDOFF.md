@@ -1,5 +1,41 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-14 Check-in geo evidence metadata handoff
+
+Current autonomous slice: Stage 2 worker start/finish evidence from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `frontend/js/checkin.js`: `_getGeolocation()` now returns `lat`, `lon`,
+  `accuracy`, and `timestamp`; start-shift photo upload sends the optional
+  `accuracy` and `geo_timestamp` fields with the existing idempotent form
+  payload.
+- `frontend/js/finish-wizard.js`: finish submission sends the same geo evidence
+  metadata gathered during the required geolocation step.
+- `backend/main.py`: `/api/checkin/start` and
+  `/api/checkin/{session_id}/finish` accept optional geo metadata and persist it
+  as start/finish accuracy and timestamp fields in `checkin_meta.json`, without
+  making older clients fail.
+- `tests/test_checkin_geo_metadata_contract.py` and
+  `tests/test_finish_wizard_frontend_contract.py`: locked backend persistence
+  and frontend payload contracts.
+- `docs/DATA_PROTECTION.md`: updated the GPS storage row to include the new
+  metadata fields.
+
+Verification:
+- `node --check frontend/js/checkin.js`.
+- `node --check frontend/js/finish-wizard.js`.
+- `python3 -m py_compile backend/main.py`.
+- `git diff --check`.
+- Focused check-in/DailyPlan tests: `76 passed, 1 skipped`.
+- Full suite: `783 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended slice:
+- Continue Stage 2 with the shared frontend API timeout/retry/abort layer or the
+  durable offline finish/check-in outbox, since photo, voice, required
+  geolocation, DailyPlan acceptance validation, and geo metadata now have
+  concrete coverage.
+
 ## 2026-09-14 Splash iOS markup cleanup handoff
 
 Current autonomous slice: Stage 1 Splash visual alignment follow-up from

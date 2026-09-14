@@ -31,10 +31,19 @@ function _setActiveCheckinSession(objectId, session) {
 
 function _getGeolocation() {
   return new Promise(resolve => {
-    if (!navigator.geolocation) { resolve({ lat: '', lon: '' }); return; }
+    const empty = () => ({ lat: '', lon: '', accuracy: '', timestamp: '' });
+    if (!navigator.geolocation) { resolve(empty()); return; }
     navigator.geolocation.getCurrentPosition(
-      pos => resolve({ lat: String(pos.coords.latitude), lon: String(pos.coords.longitude) }),
-      () => resolve({ lat: '', lon: '' }),
+      pos => {
+        const coords = pos.coords || {};
+        resolve({
+          lat: coords.latitude == null ? '' : String(coords.latitude),
+          lon: coords.longitude == null ? '' : String(coords.longitude),
+          accuracy: coords.accuracy == null ? '' : String(Math.round(coords.accuracy)),
+          timestamp: pos.timestamp ? String(Math.round(pos.timestamp)) : String(Date.now()),
+        });
+      },
+      () => resolve(empty()),
       { timeout: 5000 }
     );
   });
@@ -284,6 +293,8 @@ async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey) {
   formData.append('object_id', _stagesCurrentObjectId);
   formData.append('lat', geo.lat);
   formData.append('lon', geo.lon);
+  if (geo.accuracy) formData.append('accuracy', geo.accuracy);
+  if (geo.timestamp) formData.append('geo_timestamp', geo.timestamp);
   if (extraFields) {
     Object.entries(extraFields).forEach(([k, v]) => formData.append(k, v || ''));
   }

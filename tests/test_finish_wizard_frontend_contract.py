@@ -64,3 +64,20 @@ def test_start_photo_preview_reuses_and_revokes_object_urls():
     assert "URL.revokeObjectURL(url)" in src
     assert "function _clearCheckinPreviewPhotoUrls()" in src
     assert "const [removed] = _checkinPreviewFiles.splice" in src
+
+
+def test_checkin_start_sends_geo_accuracy_metadata():
+    src = _source(CHECKIN)
+
+    assert "accuracy: coords.accuracy == null ? '' : String(Math.round(coords.accuracy))" in src
+    assert "timestamp: pos.timestamp ? String(Math.round(pos.timestamp)) : String(Date.now())" in src
+    assert "formData.append('accuracy', geo.accuracy)" in src
+    assert "formData.append('geo_timestamp', geo.timestamp)" in src
+
+
+def test_finish_wizard_sends_geo_accuracy_metadata():
+    src = _source(FINISH_WIZARD)
+
+    assert "let _fwFinishGeo = null; // {lat, lon, accuracy, timestamp}" in src
+    assert "formData.append('accuracy', _fwFinishGeo.accuracy)" in src
+    assert "formData.append('geo_timestamp', _fwFinishGeo.timestamp)" in src

@@ -16,7 +16,7 @@ let _fwExtraWorks = []; // [{description, zone, time_estimate, needs_approval}]
 let _fwNeeds = []; // [{category, description}]
 let _fwDefects = []; // [{description}]
 let _fwPauseMinutes = 30;
-let _fwFinishGeo = null; // {lat, lon}
+let _fwFinishGeo = null; // {lat, lon, accuracy, timestamp}
 let _fwOverlayUnregister = null;
 // 03.08 (ТЗ Задача 1): персистентный на весь wizard-flow idempotency key -- раньше
 // генерировался заново на КАЖДЫЙ вызов _fwSubmitFinish(), так что retry после сетевой
@@ -706,6 +706,8 @@ async function _fwSubmitFinish() {
     const formData = new FormData();
     formData.append('lat', _fwFinishGeo.lat);
     formData.append('lon', _fwFinishGeo.lon);
+    if (_fwFinishGeo.accuracy) formData.append('accuracy', _fwFinishGeo.accuracy);
+    if (_fwFinishGeo.timestamp) formData.append('geo_timestamp', _fwFinishGeo.timestamp);
     formData.append('done_summary', _fwWorkSummary);
     formData.append('extra_works', JSON.stringify(_fwExtraWorks));
     formData.append('needs', JSON.stringify(_fwNeeds));

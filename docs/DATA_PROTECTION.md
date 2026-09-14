@@ -9,7 +9,7 @@
 | Тип данных | Где хранится | Кто видит | Цель | Входит в backup | Отправляется вовне |
 |---|---|---|---|---|---|
 | Telegram ID, имя (first_name/last_name/username) | `roles.json`, `worker_profiles.json`, все JSON-сторы, где есть `user_id` | Owner видит всех; Worker видит имена коллег в общих экранах (Команда, feed, чат) | Идентификация пользователя, авторизация | Да | Telegram (сам ID приходит от Telegram) |
-| GPS-координаты (начало/конец смены) | `checkin_meta.json` (`start_lat/start_lon/finish_lat/finish_lon`) | Owner всегда; Worker — только свои | Подтверждение присутствия на объекте при check-in/check-out | Да | Нет |
+| GPS-координаты и метаданные точности (начало/конец смены) | `checkin_meta.json` (`start_lat/start_lon/start_accuracy/start_geo_timestamp/finish_lat/finish_lon/finish_accuracy/finish_geo_timestamp`) | Owner всегда; Worker — только свои | Подтверждение присутствия на объекте при check-in/check-out | Да | Нет |
 | Время смен (start_at/finish_at, паузы) | `checkin_meta.json` | Owner всегда; Worker — только свои | Расчёт часов, табель | Да | Нет |
 | Фотографии (начало/конец смены, объекты, дефекты, аватар) | `checkin_photos/`, `object_photos/`, `avatars/`, `feed_photos/` (mangel-фото тоже здесь) | Зависит от контекста — фото объекта видят все авторизованные, фото профиля владелец файла + owner, фото смены — owner + сам работник | Подтверждение выполненной работы, визуальная фиксация дефектов, идентификация в профиле | Да | Нет |
 | Текст сообщений чата | `chat_messages.json`, `chat_messages_archive.json` | Участники конкретного треда (группа/DM/object/mangel/task) + owner всегда | Коммуникация команды | Да | Нет (кроме best-effort AI-анализа фото по явному запросу owner, см. ниже) |
