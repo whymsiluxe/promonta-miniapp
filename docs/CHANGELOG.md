@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-09-15 (Manager quick broadcast controls)
+
+Tests: 809 passed, 1 skipped.
+
+### Backend
+- Added owner-only `POST /api/manager/broadcast` for quick announcements to the
+  whole company or to an object chat.
+- Company broadcasts append normal group-chat messages with broadcast metadata.
+- Object broadcasts validate the object id, append to `obj:<object_id>` chat,
+  report the current audience count, and add a human-readable object-history
+  `broadcast_sent` event.
+
+### Frontend
+- Added an owner-only announcement icon to the Chat header.
+- Added a compact bottom-sheet broadcast composer with company/object targeting,
+  object picker, validation, send state, toast feedback, and chat-list refresh.
+- Added a subtle broadcast label on chat bubbles so announcements remain
+  recognizable in existing chat threads.
+
+### Tests
+- Added `tests/test_manager_broadcast.py` for company/object persistence,
+  validation, object-history integration, and owner-only route dependency.
+- Extended the chat frontend contract for the broadcast button, sheet, API call,
+  owner visibility, and broadcast bubble label.
+- Updated the production route-count contract to 181.
+- Verified `python3 -m py_compile backend/main.py`, `node --check
+  frontend/js/chat.js`, `git diff --check`, focused broadcast/chat checks, and
+  the full suite.
+
 ## 2026-09-15 (Object history backend timeline)
 
 Tests: 803 passed, 1 skipped.

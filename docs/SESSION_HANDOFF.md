@@ -1,5 +1,41 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-15 Manager quick broadcast controls handoff
+
+Current autonomous slice: Stage 3 quick broadcast controls from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `backend/main.py`: added owner-only `POST /api/manager/broadcast` for sending
+  announcements either to the whole company group chat or to an object chat.
+- `backend/main.py`: company broadcasts append regular group-chat messages with
+  broadcast metadata; object broadcasts validate the object id, append to
+  `obj:<object_id>`, return the audience count, and append a
+  `broadcast_sent` object-history event.
+- `frontend/app.html`: added an owner-only Chat header announcement icon, sheet
+  styling, and broadcast bubble label styling.
+- `frontend/js/chat.js`: added the broadcast bottom sheet with company/object
+  target selection, object picker, validation, `/api/manager/broadcast` send
+  flow, toast/haptic feedback, and chat-list refresh.
+- `tests/test_manager_broadcast.py`: new coverage for company/object broadcast
+  persistence, validation, history integration, and owner-only route dependency.
+- `tests/test_chat_frontend_contract.py`: locked the owner broadcast button,
+  sheet contract, API call, and broadcast bubble label.
+- `tests/test_assignment_lifecycle.py`: production route count updated to 181.
+
+Verification:
+- `python3 -m py_compile backend/main.py`.
+- `node --check frontend/js/chat.js`.
+- `git diff --check`.
+- Focused broadcast/chat/frontend checks: `56 passed`.
+- Full suite: `809 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended slice:
+- Assess remaining Stage 3 DONE criteria. `frontend/js/home.js` and
+  `frontend/js/object-info.js` are still root-owned in this checkout, so owner
+  cockpit/central action entry-point polish in those files remains blocked until
+  ownership is corrected or an owner-capable process edits them.
+
 ## 2026-09-15 Object history backend timeline handoff
 
 Current autonomous slice: Stage 3/P1 human-readable object history from

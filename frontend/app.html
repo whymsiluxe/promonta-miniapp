@@ -7104,6 +7104,125 @@ body {
   font-weight: 800;
   letter-spacing: 0;
 }
+#view-chat .chat-list-header .chat-broadcast-btn {
+  grid-column: 3;
+  justify-self: end;
+  width: 42px;
+  height: 42px;
+  border: none;
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-surface, var(--bg-card-raised));
+  color: var(--ios-accent, var(--accent));
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+  padding: 0;
+}
+#view-chat .chat-list-header .chat-broadcast-btn:active {
+  background: var(--ios-grouped-surface, var(--bg-card));
+  transform: scale(0.98);
+}
+#view-chat .chat-broadcast-label {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  margin: 0.2rem 0 0.34rem;
+  padding: 0.18rem 0.46rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--chat-forest, var(--accent)) 42%, transparent);
+  color: var(--chat-forest-light, var(--accent));
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+#view-chat .chat-bubble-own .chat-broadcast-label {
+  border-color: rgba(255,255,255,0.34);
+  color: rgba(255,255,255,0.86);
+}
+.chat-broadcast-sheet .chat-forward-modal-title {
+  padding-bottom: 0.7rem;
+}
+.chat-broadcast-scope {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.07);
+  margin-bottom: 0.7rem;
+}
+.chat-broadcast-scope button {
+  border: none;
+  border-radius: 11px;
+  min-height: 38px;
+  background: transparent;
+  color: rgba(255,255,255,0.68);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+.chat-broadcast-scope button.active {
+  background: rgba(255,255,255,0.16);
+  color: #fff;
+}
+.chat-broadcast-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+  margin-bottom: 0.7rem;
+}
+.chat-broadcast-field span {
+  color: rgba(255,255,255,0.58);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+.chat-broadcast-field select,
+.chat-broadcast-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font: inherit;
+  outline: none;
+}
+.chat-broadcast-field select {
+  min-height: 44px;
+  padding: 0 0.75rem;
+}
+.chat-broadcast-field textarea {
+  min-height: 112px;
+  resize: vertical;
+  padding: 0.7rem 0.75rem;
+  line-height: 1.35;
+}
+.chat-broadcast-field textarea::placeholder {
+  color: rgba(255,255,255,0.36);
+}
+.chat-broadcast-actions {
+  display: flex;
+  gap: 0.55rem;
+  padding-top: 0.15rem;
+}
+.chat-broadcast-actions button {
+  flex: 1;
+  min-height: 44px;
+  border: none;
+  border-radius: 15px;
+  font-size: 1rem;
+  font-weight: 750;
+}
+.chat-broadcast-cancel {
+  background: rgba(255,255,255,0.08);
+  color: #f7f7f8;
+}
+.chat-broadcast-send {
+  background: var(--chat-forest, var(--accent));
+  color: #fff;
+}
+.chat-broadcast-send:disabled {
+  opacity: 0.58;
+}
 #view-chat .chat-inline-search {
   padding: 0 0.75rem 0.55rem;
 }
@@ -8110,6 +8229,9 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
   <div id="chat-thread-list-view">
     <header class="chat-list-header">
       <h1>Чат</h1>
+      <button id="chat-broadcast-btn" class="chat-broadcast-btn" type="button" aria-label="Объявление" title="Объявление">
+        <svg viewBox="0 0 24 24" width="21" height="21"><path d="M4 11v3a2 2 0 0 0 2 2h2l4 4v-6h3l5 3V6l-5 3H6a2 2 0 0 0-2 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M18 9.5v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
     </header>
     <!-- 13.09: Stage 1 premium pass -- search is now an inline iOS-style field
          above the contact strip. It remains client-side filtering by loaded

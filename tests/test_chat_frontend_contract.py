@@ -58,3 +58,23 @@ def test_chat_list_ios_search_and_stale_load_contract():
     assert "messagesEl.innerHTML = '<div class=\"chat-empty\">Загрузка...</div>'" in js
     assert "strip.classList.toggle('search-active', expanded && !inline)" in js
     assert "circle.classList.toggle('has-query', hasQuery)" in js
+
+
+def test_chat_owner_broadcast_controls_contract():
+    html = _source(APP_HTML)
+    js = _source(CHAT_JS)
+
+    assert 'id="chat-broadcast-btn"' in html
+    assert "chat-broadcast-btn" in html
+    assert "chat-broadcast-sheet" in html
+    assert "chat-broadcast-label" in html
+
+    assert "function _openChatBroadcastSheet()" in js
+    assert "function _bindChatBroadcastButton()" in js
+    assert "_bindChatBroadcastButton()" in js
+    assert "btn.style.display = _chatIsOwner ? 'inline-flex' : 'none'" in js
+    assert "data-broadcast-scope=\"company\"" in js
+    assert "data-broadcast-scope=\"object\"" in js
+    assert "api('/api/manager/broadcast'" in js
+    assert "JSON.stringify({ scope, text, object_id: scope === 'object' ? objectId : null })" in js
+    assert "msg.broadcast" in js

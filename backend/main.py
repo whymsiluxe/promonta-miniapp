@@ -4600,6 +4600,18 @@ def _news_post_title(post_id: str) -> str:
     return ''
 
 
+def _find_object_row_by_id(object_id: str) -> dict | None:
+    rows = _cached_get_used_range('Объекты')
+    if not rows:
+        return None
+    header, data = rows[0], rows[1:]
+    for r in data:
+        row = dict(zip(header, r))
+        if str(row.get('ID объекта', '')) == str(object_id):
+            return row
+    return None
+
+
 def _resolve_object_name(object_id: str) -> str:
     if not object_id:
         return ''
@@ -5683,6 +5695,12 @@ class ChatMessageBody(BaseModel):
     location: dict | None = None
 
 
+class BroadcastBody(BaseModel):
+    scope: str
+    text: str
+    object_id: str | None = None
+
+
 def _normalize_chat_location(raw: dict | None) -> dict | None:
     if raw is None:
         return None
@@ -5717,6 +5735,73 @@ def _reply_snapshot(msg: dict) -> dict:
         "id": msg['id'],
         "name": msg.get('name', ''),
         "preview": _message_preview(msg)[:200],
+    }
+
+
+@app.post("/api/manager/broadcast")
+def send_manager_broadcast(body: BroadcastBody, user: dict = Depends(get_current_user),
+                           _: None = Depends(require_owner)):
+    scope = str(body.scope or '').strip().lower()
+    text = str(body.text or '').strip()
+    if scope not in ('company', 'object'):
+        raise HTTPException(400, "scope должен быть company или object")
+    if not text:
+        raise HTTPException(400, "Текст объявления пустой")
+    if len(text) > 1000:
+        raise HTTPException(400, "Объявление слишком длинное (макс. 1000 символов)")
+
+    object_id = ''
+    object_name = ''
+    thread_key = None
+    if scope == 'object':
+        object_id = str(body.object_id or '').strip()
+        if not object_id:
+            raise HTTPException(400, "Укажите object_id для объявления по объекту")
+        object_row = _find_object_row_by_id(object_id)
+        if object_row is None:
+            raise HTTPException(404, "Объект не найден")
+        object_name = object_row.get('Объект') or object_row.get('Название') or object_row.get('Адрес') or object_id
+        thread_key = f'obj:{object_id}'
+        recipients = sorted(_object_chat_participants(object_id))
+    else:
+        recipients = sorted(str(uid) for uid in _load_roles().keys())
+
+    msg = {
+        "id": uuid.uuid4().hex,
+        "ts": int(time.time()),
+        "user_id": user['id'],
+        "name": user.get('first_name', str(user['id'])),
+        "text": text,
+        "to_user_id": None,
+        "thread_key": thread_key,
+        "broadcast": {
+            "scope": scope,
+            "object_id": object_id or None,
+            "object_name": object_name or None,
+            "audience_count": len(recipients),
+        },
+    }
+    with _chat_lock:
+        messages = _load_chat()
+        messages.append(msg)
+        _save_chat(messages)
+
+    if scope == 'object':
+        _append_object_history_best_effort(
+            object_id, 'broadcast_sent', 'Объявление отправлено',
+            user=user, subtitle=text[:200],
+            meta={
+                "message_id": msg['id'],
+                "thread_key": thread_key,
+                "audience_count": len(recipients),
+            },
+        )
+
+    return {
+        "status": "ok",
+        "thread_key": thread_key or "group",
+        "audience_count": len(recipients),
+        "message": msg,
     }
 
 

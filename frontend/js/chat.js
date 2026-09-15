@@ -123,10 +123,14 @@ function _renderOneChatBubbleHtml(msg, isGrouped, dayDividerHtml, isLastMessage)
   const forwardedHtml = msg.forwarded_from
     ? `<div class="chat-forwarded-label">↪ Переслано от ${_escChat(msg.forwarded_from)}</div>`
     : '';
+  const broadcastHtml = msg.broadcast
+    ? `<div class="chat-broadcast-label">Объявление${msg.broadcast.object_name ? ` · ${_escChat(msg.broadcast.object_name)}` : ''}</div>`
+    : '';
   return `${dayDividerHtml || ''}
     <div class="chat-bubble ${isOwn ? 'chat-bubble-own' : 'chat-bubble-other'}${isGrouped ? ' chat-bubble-grouped' : ''}" data-msg-id="${msg.id}" data-uid="${msg.user_id}">
       <div class="chat-msg-header">${avatarHtml}${nameHtml}<span class="chat-time">${_fmtChatTime(msg.ts)}</span></div>
       <button type="button" class="chat-msg-menu-btn" data-menu-btn="${msg.id}" aria-label="Действия с сообщением">⋯</button>
+      ${broadcastHtml}
       ${forwardedHtml}
       ${replyHtml}
       ${msg.attachment ? _renderChatAttachment(msg) : ''}
@@ -758,6 +762,120 @@ async function _openChatForwardDialog(msgId) {
       }
     });
   });
+}
+
+function _broadcastObjectOptions() {
+  return _chatObjectsCache
+    .map(obj => ({
+      id: String(obj['ID объекта'] || '').trim(),
+      title: String(obj['Объект'] || obj['Название'] || obj['Адрес'] || obj['ID объекта'] || '').trim(),
+    }))
+    .filter(obj => obj.id);
+}
+
+function _openChatBroadcastSheet() {
+  if (!_chatIsOwner) return;
+  _closeChatMessageOverlays();
+  const objects = _broadcastObjectOptions();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'chat-forward-modal-backdrop chat-broadcast-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'chat-forward-modal chat-forward-sheet chat-broadcast-sheet';
+  modal.innerHTML = `
+    <div class="chat-action-sheet-handle"></div>
+    <div class="chat-forward-modal-title">Объявление</div>
+    <div class="chat-broadcast-scope" role="group" aria-label="Адресаты объявления">
+      <button type="button" class="active" data-broadcast-scope="company">Компания</button>
+      <button type="button" data-broadcast-scope="object" ${objects.length ? '' : 'disabled'}>Объект</button>
+    </div>
+    <label class="chat-broadcast-field chat-broadcast-object-field" style="display:none;">
+      <span>Объект</span>
+      <select id="chat-broadcast-object">
+        ${objects.map(obj => `<option value="${_escChat(obj.id)}">${_escChat(obj.title || obj.id)}</option>`).join('')}
+      </select>
+    </label>
+    <label class="chat-broadcast-field">
+      <span>Текст</span>
+      <textarea id="chat-broadcast-text" maxlength="1000" placeholder="Сообщение для команды"></textarea>
+    </label>
+    <div class="chat-broadcast-actions">
+      <button type="button" class="chat-broadcast-cancel" data-broadcast-cancel>Отмена</button>
+      <button type="button" class="chat-broadcast-send" id="chat-broadcast-send">Отправить</button>
+    </div>`;
+  document.body.appendChild(backdrop);
+  document.body.appendChild(modal);
+
+  let unregister = null;
+  const close = () => {
+    backdrop.remove();
+    modal.remove();
+    document.removeEventListener('keydown', onKeydown);
+    if (unregister) { unregister(); unregister = null; }
+    if (_chatMessageOverlayUnregister === unregisterHandle) _chatMessageOverlayUnregister = null;
+  };
+  const unregisterHandle = () => close();
+  if (typeof NavigationManager !== 'undefined') unregister = NavigationManager.registerOverlay(close);
+  _chatMessageOverlayUnregister = unregisterHandle;
+
+  const onKeydown = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKeydown);
+  backdrop.addEventListener('pointerdown', e => { e.preventDefault(); close(); });
+  backdrop.addEventListener('click', close);
+  modal.addEventListener('pointerdown', e => e.stopPropagation());
+
+  let scope = 'company';
+  const objectField = modal.querySelector('.chat-broadcast-object-field');
+  const scopeButtons = Array.from(modal.querySelectorAll('[data-broadcast-scope]'));
+  const setScope = next => {
+    if (next === 'object' && !objects.length) return;
+    scope = next;
+    scopeButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.broadcastScope === scope));
+    objectField.style.display = scope === 'object' ? 'flex' : 'none';
+  };
+  scopeButtons.forEach(btn => btn.addEventListener('click', () => setScope(btn.dataset.broadcastScope)));
+  modal.querySelector('[data-broadcast-cancel]').addEventListener('click', close);
+  modal.querySelector('#chat-broadcast-text')?.focus({ preventScroll: true });
+  modal.querySelector('#chat-broadcast-send').addEventListener('click', async () => {
+    const sendBtn = modal.querySelector('#chat-broadcast-send');
+    const text = modal.querySelector('#chat-broadcast-text')?.value.trim() || '';
+    const objectId = modal.querySelector('#chat-broadcast-object')?.value || '';
+    if (!text) {
+      showToast('Введите текст объявления', 'error');
+      return;
+    }
+    if (scope === 'object' && !objectId) {
+      showToast('Выберите объект', 'error');
+      return;
+    }
+    sendBtn.disabled = true;
+    try {
+      const result = await api('/api/manager/broadcast', {
+        method: 'POST',
+        body: JSON.stringify({ scope, text, object_id: scope === 'object' ? objectId : null }),
+      });
+      close();
+      hapticImpact('medium');
+      showToast('Объявление отправлено');
+      _chatCategory = scope === 'object' ? 'obj' : 'general';
+      document.querySelectorAll('.chat-category-tabs [data-chat-category]').forEach(t => {
+        t.classList.toggle('active', t.dataset.chatCategory === _chatCategory);
+      });
+      await _loadMyChatThreads();
+      if (result.thread_key && _chatIsThreadDetailOpen()) _loadChatMessages(true);
+    } catch (e) {
+      sendBtn.disabled = false;
+      showToast('Ошибка объявления: ' + e.message, 'error');
+    }
+  });
+}
+
+function _bindChatBroadcastButton() {
+  const btn = document.getElementById('chat-broadcast-btn');
+  if (!btn) return;
+  btn.style.display = _chatIsOwner ? 'inline-flex' : 'none';
+  if (!_chatIsOwner || btn.dataset.wired) return;
+  btn.dataset.wired = '1';
+  btn.addEventListener('click', _openChatBroadcastSheet);
 }
 
 function _openChatConfirmSheet({ title, note, confirmLabel, danger = false, onConfirm }) {
@@ -1821,6 +1939,7 @@ async function initChatView() {
 
   await _loadChatWorkers();
   await _loadChatObjects();
+  _bindChatBroadcastButton();
   renderChatThreadList();
   _loadUnreadByThread();
   _loadMyChatThreads();
