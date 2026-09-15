@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-15 (Object history backend timeline)
+
+Tests: 803 passed, 1 skipped.
+
+### Backend
+- Added `object_history.json` as an append-only, object-scoped human-readable
+  history store.
+- Added `GET /api/objects/{object_id}/history`, protected by existing object
+  access rules and returning newest events first.
+- Appended history events for object status changes, worker assignment, stage
+  status changes, worker stage completion, document upload, defect creation, and
+  check-in finish submission.
+- Kept history writes best-effort around primary mutations so field operations
+  are not blocked by timeline write failures.
+
+### Tests
+- Added `tests/test_object_history.py` for history filtering/sorting/limits,
+  route registration, assignment/status/stage/defect event hooks, and readable
+  event payloads.
+- Updated the production route-count contract for the new endpoint.
+- Verified `python3 -m py_compile backend/main.py backend/core/paths.py`,
+  `git diff --check`, focused object-history/assignment/stage/defect checks,
+  and the full suite.
+
 ## 2026-09-14 (Assignment confirmation escalation)
 
 Tests: 798 passed, 1 skipped.

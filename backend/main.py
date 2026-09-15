@@ -146,6 +146,7 @@ try:
     from .core.paths import (
         CHAT_ARCHIVE_FILE,
         OBJECT_INFO_FILE,
+        OBJECT_HISTORY_FILE,
         TASKS_FILE,
         OBJECT_DOC_DIR,
         CHAT_ATTACH_DIR,
@@ -197,6 +198,7 @@ except ImportError:
     from core.paths import (  # noqa: E402
         CHAT_ARCHIVE_FILE,
         OBJECT_INFO_FILE,
+        OBJECT_HISTORY_FILE,
         TASKS_FILE,
         OBJECT_DOC_DIR,
         CHAT_ATTACH_DIR,
@@ -2063,6 +2065,73 @@ def my_assignments(user: dict = Depends(get_current_user)):
     return {"assignments": result}
 
 
+def _object_history_actor_name(user: dict | None) -> str:
+    if not user:
+        return ''
+    uid = str(user.get('id', ''))
+    profiles = _load_worker_profiles()
+    name = profiles.get(uid, {}).get('name') or user.get('first_name') or user.get('username')
+    return _sanitize_display_name(name, uid)
+
+
+def _object_history_worker_name(user_id: str) -> str:
+    uid = str(user_id or '')
+    profiles = _load_worker_profiles()
+    return _sanitize_display_name(profiles.get(uid, {}).get('name'), uid)
+
+
+def _append_object_history(object_id: str, kind: str, title: str, *,
+                           user: dict | None = None, subtitle: str = '',
+                           meta: dict | None = None, at: str | None = None) -> dict:
+    oid = str(object_id or '').strip()
+    if not oid:
+        return {}
+    event = {
+        "id": uuid.uuid4().hex,
+        "object_id": oid,
+        "kind": kind,
+        "title": str(title or '').strip()[:200],
+        "subtitle": str(subtitle or '').strip()[:500],
+        "actor_id": str((user or {}).get('id', '')),
+        "actor_name": _object_history_actor_name(user),
+        "at": at or _utcnow_iso(),
+        "meta": meta or {},
+    }
+
+    with _lock_for(OBJECT_HISTORY_FILE):
+        items = _safe_load_json(OBJECT_HISTORY_FILE, [])
+        if not isinstance(items, list):
+            items = []
+        items.append(event)
+        if len(items) > 3000:
+            del items[:-3000]
+        tmp_path = f'{OBJECT_HISTORY_FILE}.tmp-{os.getpid()}'
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(items, f, ensure_ascii=False)
+        os.replace(tmp_path, OBJECT_HISTORY_FILE)
+    return event
+
+
+def _append_object_history_best_effort(*args, **kwargs):
+    try:
+        return _append_object_history(*args, **kwargs)
+    except Exception as e:
+        print(f'WARNING: object history append failed: {e}')
+        return {}
+
+
+@app.get("/api/objects/{object_id}/history")
+def get_object_history(object_id: str, limit: int = Query(50, ge=1, le=200),
+                       user: dict = Depends(get_current_user),
+                       _: None = Depends(require_object_access)):
+    items = _safe_load_json(OBJECT_HISTORY_FILE, [])
+    if not isinstance(items, list):
+        items = []
+    filtered = [e for e in items if str(e.get('object_id')) == str(object_id)]
+    filtered.sort(key=lambda e: str(e.get('at', '')), reverse=True)
+    return {"history": filtered[:limit]}
+
+
 class AssignBody(BaseModel):
     user_id: str
     stage_id: str = ''
@@ -2106,6 +2175,7 @@ def _assignment_periods_overlap(a: dict, b: dict) -> bool:
 @app.post("/api/objects/{object_id}/assign")
 def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     key = str(object_id)
+    result_holder = {}
 
     # 28.07 (real bug found by external audit): было _load_assignments()+_save_assignments()
     # как отдельные вызовы -- read вне лока, два параллельных assign на один объект могли
@@ -2158,7 +2228,7 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
                         f"на период {a.get('date_from') or '(без даты)'} — {a.get('date_to') or '(без даты)'}"
                     )
         assigned_at = _utcnow_iso()
-        assignments[key].append({
+        assignment = {
             # 29.07 (аудит): уникальный assignment_id -- respond-endpoint раньше искал
             # "первый pending этого worker'а на объект", что ломалось при нескольких
             # назначениях одного worker'а на разные этапы/периоды одного объекта.
@@ -2179,9 +2249,28 @@ def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_curre
             'decline_reason': '',
             'responded_at': '',
             'task_note': body.task_note.strip()[:500],
-        })
+        }
+        assignments[key].append(assignment)
+        result_holder['assignment'] = assignment
 
     update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
+    created = result_holder.get('assignment') or {}
+    if created:
+        worker_name = _object_history_worker_name(created.get('user_id', ''))
+        work_label = pskills.skill_display_name(created.get('work_type_id', '')) if created.get('work_type_id') else created.get('stage_id', '')
+        subtitle = ' · '.join(p for p in (worker_name, work_label, created.get('task_note', '')) if p)
+        _append_object_history_best_effort(
+            key, 'worker_assigned', f'Назначен работник: {worker_name}',
+            user=user, subtitle=subtitle,
+            meta={
+                "assignment_id": created.get('id', ''),
+                "worker_id": created.get('user_id', ''),
+                "work_type_id": created.get('work_type_id', ''),
+                "stage_id": created.get('stage_id', ''),
+                "date_from": created.get('date_from', ''),
+                "date_to": created.get('date_to', ''),
+            },
+        )
     return {"status": "ok"}
 
 
@@ -2656,6 +2745,22 @@ def batch_assign(object_id: str, body: BatchAssignBody,
     update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
     if not result_holder['created']:
         raise HTTPException(409, "Ни одно назначение не создано (все пропущены)")
+    for created in result_holder['created']:
+        worker_name = _object_history_worker_name(created.get('user_id', ''))
+        wtid = created.get('work_type_id', '')
+        work_label = wtypes.get(wtid, {}).get('name') or (pskills.skill_display_name(wtid) if wtid else '')
+        subtitle = ' · '.join(p for p in (worker_name, work_label, task_note) if p)
+        _append_object_history_best_effort(
+            key, 'worker_assigned', f'Назначен работник: {worker_name}',
+            user=user, subtitle=subtitle,
+            meta={
+                "assignment_id": created.get('assignment_id', ''),
+                "worker_id": created.get('user_id', ''),
+                "work_type_id": wtid,
+                "date_from": body.date_from,
+                "date_to": body.date_to,
+            },
+        )
     return result_holder
 
 
@@ -3581,6 +3686,16 @@ async def upload_object_document(object_id: str, file: UploadFile = File(...), u
         return doc
 
     update_json_transaction(OBJECT_INFO_FILE, {}, _mutator)
+    _append_object_history_best_effort(
+        object_id, 'document_uploaded', 'Документ загружен',
+        user=user, subtitle=doc.get('name', ''),
+        at=datetime.fromtimestamp(doc['uploaded_at'], timezone.utc).replace(tzinfo=None).isoformat(),
+        meta={
+            "document_id": doc.get('id', ''),
+            "file": doc.get('file', ''),
+            "content_type": doc.get('content_type', ''),
+        },
+    )
     return {"document": doc}
 
 
@@ -3666,10 +3781,28 @@ def update_object_status(object_id: str, body: StatusBody, user: dict = Depends(
     if body.status not in VALID_OBJECT_STATUSES:
         raise HTTPException(400, f'Недопустимый статус: {body.status}')
     o = _load_repo_objekte_lib()
+    old_status = ''
+    try:
+        rows = _cached_get_used_range('Объекты')
+        if rows:
+            header, data = rows[0], rows[1:]
+            for r in data:
+                obj = dict(zip(header, r))
+                if str(obj.get('ID объекта', '')) == str(object_id):
+                    old_status = obj.get('Статус', '')
+                    break
+    except Exception:
+        old_status = ''
     try:
         o.update_object_field(object_id, 'Статус', body.status)
     except ValueError as e:
         raise HTTPException(404, str(e))
+    subtitle = f'{old_status} -> {body.status}' if old_status else body.status
+    _append_object_history_best_effort(
+        object_id, 'object_status_changed', 'Статус объекта изменён',
+        user=user, subtitle=subtitle,
+        meta={"old_status": old_status, "new_status": body.status},
+    )
     return {"status": "ok"}
 
 
@@ -6306,10 +6439,27 @@ class StageStatusBody(BaseModel):
 def update_stage(object_id: str, row_num: int, body: StageStatusBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     o = _load_repo_objekte_lib()
     try:
+        stage_before = _find_stage_by_row(object_id, row_num)
+    except Exception:
+        stage_before = {}
+    try:
         o.update_stage_status(row_num, body.status, business_today_str())  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
     except ValueError as e:
         raise HTTPException(400, str(e))
     o.sync_current_stage(object_id)
+    stage_name = stage_before.get('Название этапа') or f'#{row_num}'
+    old_status = stage_before.get('Статус', '')
+    subtitle = f'{stage_name} · {old_status} -> {body.status}' if old_status else f'{stage_name} · {body.status}'
+    _append_object_history_best_effort(
+        object_id, 'stage_status_changed', 'Статус этапа изменён',
+        user=user, subtitle=subtitle,
+        meta={
+            "row_num": row_num,
+            "stage_name": stage_name,
+            "old_status": old_status,
+            "new_status": body.status,
+        },
+    )
     return {"status": "ok"}
 
 
@@ -6345,9 +6495,19 @@ def swap_stage(object_id: str, row_num: int, body: StageSwapBody, user: dict = D
 def worker_complete_stage(object_id: str, row_num: int, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
     o = _load_repo_objekte_lib()
     try:
+        stage_before = _find_stage_by_row(object_id, row_num)
+    except Exception:
+        stage_before = {}
+    try:
         o.worker_complete_stage(object_id, row_num, str(user['id']), business_today_str())  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    stage_name = stage_before.get('Название этапа') or f'#{row_num}'
+    _append_object_history_best_effort(
+        object_id, 'stage_completed', 'Этап завершён',
+        user=user, subtitle=stage_name,
+        meta={"row_num": row_num, "stage_name": stage_name},
+    )
     return {"status": "ok"}
 
 
@@ -7073,6 +7233,15 @@ async def create_mangel_ticket(
         ])
     except Exception as e:
         print(f'WARNING: mangel-create Sheets mirror failed for ticket {ticket.get("id")}: {e}')
+    _append_object_history_best_effort(
+        ticket.get('object_id', ''), 'defect_created', 'Создан дефект',
+        user=user, subtitle=ticket.get('description', ''),
+        meta={
+            "ticket_id": ticket.get('id', ''),
+            "assigned_worker_id": ticket.get('assigned_worker_id', ''),
+            "photo_count": len(ticket.get('photo_paths') or []),
+        },
+    )
     return ticket
 
 
@@ -7858,6 +8027,20 @@ async def checkin_finish(
             print(f'WARNING: apply_daily_execution failed: {e}')
 
     _write_zeiterfassung_row(session, object_id, session['user_id'])
+    worker_name_for_history = _object_history_worker_name(str(session['user_id']))
+    finish_summary = session.get('done_summary') or done_summary.strip()
+    _append_object_history_best_effort(
+        object_id, 'finish_submitted', 'Финиш смены отправлен',
+        user=user,
+        subtitle=' · '.join(p for p in (worker_name_for_history, finish_summary) if p),
+        at=datetime.fromtimestamp(session['finish_at'], timezone.utc).replace(tzinfo=None).isoformat() if session.get('finish_at') else None,
+        meta={
+            "session_id": session_id,
+            "worker_id": str(session['user_id']),
+            "photo_count": len(session.get('finish_photos') or []),
+            "daily_plan_id": session.get('daily_plan_id') or '',
+        },
+    )
 
     if photo_paths:
         try:

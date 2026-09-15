@@ -686,7 +686,7 @@ class ProductionPackageImportTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         out = result.stdout
 
-        self.assertIn('ROUTES 179', out, out)
+        self.assertIn('ROUTES 180', out, out)
 
         self.assertIn('MINIAPP_FILE', out)
         miniapp_file_line = next(l for l in out.splitlines() if l.startswith('MINIAPP_FILE'))

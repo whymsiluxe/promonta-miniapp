@@ -1,5 +1,36 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-15 Object history backend timeline handoff
+
+Current autonomous slice: Stage 3/P1 human-readable object history from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `backend/core/paths.py`: added `OBJECT_HISTORY_FILE` at
+  `object_history.json` under the active data root.
+- `backend/main.py`: added object history helpers and
+  `GET /api/objects/{object_id}/history`, protected by the existing object
+  access dependency and returning newest entries first with a bounded `limit`.
+- `backend/main.py`: appends readable object events for object status changes,
+  worker assignments, stage status changes, worker stage completion, document
+  upload, defect creation, and finish submission.
+- `backend/main.py`: history appends are best-effort around primary mutations;
+  failures are logged as warnings and do not block the operational action.
+- `tests/test_object_history.py`: new coverage for filtering/sorting/limits,
+  route registration, readable assignment/status/stage/defect events, and event
+  metadata.
+- `tests/test_assignment_lifecycle.py`: production route count updated to 180.
+
+Verification:
+- `python3 -m py_compile backend/main.py backend/core/paths.py`.
+- `git diff --check`.
+- Focused object-history/assignment/stage/defect checks: `67 passed`.
+- Full suite: `803 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended slice:
+- Continue Stage 3 with quick broadcast controls. The object-history backend is
+  ready for a frontend timeline pass once root-owned frontend files are writable.
+
 ## 2026-09-14 Assignment confirmation escalation handoff
 
 Current autonomous slice: Stage 3 task confirmation escalation from
