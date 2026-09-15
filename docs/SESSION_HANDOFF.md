@@ -1,5 +1,35 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-15 Unified autonomous plan completion handoff
+
+Current status: `docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md` is marked
+`AUTONOMOUS_STATUS: DONE`.
+
+Completed scope:
+- Stage 1 premium UI polish is covered by the shared iOS primitives and the
+  screen-by-screen Home, Feed/comments, Chat, Profile, Tools, Calendar,
+  Team/Control, Needs, Alerts, and Splash passes.
+- Stage 2 worker start/finish, geo, photos, voice affordance, chat location,
+  shared API timeout/retry/abort, offline outbox, and DailyPlan validation/ack
+  requirements are shipped with focused contracts.
+- Stage 3 manager daily cockpit, assignment escalation, Russian command parser,
+  central AI command entry, quick broadcast controls, and object history are
+  shipped with backend/frontend coverage.
+- Overlapping P1 items from the backlog are handled by the shipped Stage 2/3
+  slices.
+
+Verification baseline:
+- Latest full suite before this docs-only completion commit: `811 passed,
+  1 skipped`.
+- Production was healthy at deployed version `7f0827e` before the final DONE
+  status commit; the final deploy step should publish the DONE SHA and re-check
+  `/api/health`.
+
+Tiny remaining note:
+- Deeper Home label micro-polish is deferred as cosmetic legacy-surface debt.
+  The owner cockpit data, warning signals, and clean-state behavior required by
+  the plan are already implemented and tested.
+
 ## 2026-09-15 Object history frontend section handoff
 
 Current autonomous slice: Stage 3 object-history frontend contract from

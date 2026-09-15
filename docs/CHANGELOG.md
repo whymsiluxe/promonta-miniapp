@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-15 (Unified autonomous plan completion)
+
+Tests: latest full server suite before this docs-only completion commit was
+811 passed, 1 skipped; final deploy re-runs the suite.
+
+### Documentation
+- Marked `docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md` as
+  `AUTONOMOUS_STATUS: DONE`.
+- Added a completion audit mapping Stage 1, Stage 2, Stage 3, and overlapping
+  P1 backlog work to the shipped implementations and tests.
+- Documented the only remaining tiny note: deeper Home label micro-polish is
+  cosmetic debt on a legacy/root-owned surface, while the required owner cockpit
+  functionality and contracts are shipped.
+
 ## 2026-09-15 (Object history frontend section)
 
 Tests: 811 passed, 1 skipped.

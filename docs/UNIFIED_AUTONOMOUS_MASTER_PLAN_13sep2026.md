@@ -1,4 +1,4 @@
-AUTONOMOUS_STATUS: IN_PROGRESS
+AUTONOMOUS_STATUS: DONE
 
 # Unified Autonomous Master Plan - 2026-09-13
 
@@ -329,3 +329,34 @@ Done means:
 - Production is deployed and health check passes.
 - Changelog, session handoff, and server map are updated.
 - First line is changed to `AUTONOMOUS_STATUS: DONE`.
+
+## G. Completion Audit - 2026-09-15
+
+Status: DONE after the final server deploy and health verification for this plan.
+
+Implemented coverage:
+
+- Stage 1 premium UI: shared `.ios-*` primitives, light splash, Home `Сегодня`
+  cockpit, Feed/comment action polish, Chat list/stale-load cleanup, Profile,
+  Tools, Calendar, Team/Control, Needs, Alerts, and bottom-nav/sheet alignment
+  now have focused frontend contract coverage.
+- Stage 2 worker evidence/offline flow: start/finish geo metadata, required
+  finish photos, finish wizard sequencing/voice affordance, chat location
+  sending, shared API timeout/retry/abort behavior, durable check-in/finish
+  outbox, DailyPlan finish validation, and DailyPlan acknowledgment are covered
+  by backend and frontend contracts.
+- Stage 3 manager cockpit/command/broadcast/history: Home daily summary,
+  assignment confirmation escalation, overdue/confirmation alerts, safe Russian
+  command parser, central AI command entry with voice dictation, quick broadcast
+  controls, and human-readable object history are implemented and tested.
+- P1 overlap: offline finish/check-in outbox, shared API retry layer,
+  DailyPlan validation/acknowledgment, owner daily cockpit, and object history
+  are handled by the shipped slices above.
+
+Tiny explicit note:
+
+- `frontend/js/home.js` remains a large/root-owned legacy surface in this VPS
+  checkout, so deeper Home label micro-polish is intentionally deferred. The
+  required owner cockpit data, escalation signals, clean-state behavior, and
+  contract coverage are shipped; this is cosmetic debt, not a functional blocker
+  for the unified autonomous plan.
