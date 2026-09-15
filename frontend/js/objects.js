@@ -1006,7 +1006,12 @@ function _initObjDetailTab(tab) {
   if (tab === 'info') {
     // 29.07 v2: Инфо рендерит всю сводку (статус/описание/работы/дефекты/документы/
     // потребности) одним вызовом -- Потребности перенесены сюда из бывшей 4-й вкладки.
-    renderObjectInfoTab(_objDetailCurrentId);
+    Promise.resolve(renderObjectInfoTab(_objDetailCurrentId))
+      .then(() => renderObjectHistorySection(_objDetailCurrentId))
+      .catch(e => {
+        const panel = document.getElementById('obj-detail-panel-info');
+        if (panel) panel.insertAdjacentHTML('beforeend', `<div class="obj-info-empty">Ошибка истории: ${esc(e.message)}</div>`);
+      });
     return;
   }
   if (tab === 'stages') {
@@ -1014,6 +1019,73 @@ function _initObjDetailTab(tab) {
     return;
   }
   panel.innerHTML = `<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>`;
+}
+
+function _objectHistoryTimeLabel(at) {
+  if (!at) return '';
+  const d = new Date(String(at).endsWith('Z') ? at : at + 'Z');
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+}
+
+function _objectHistoryKindLabel(kind) {
+  const labels = {
+    object_status_changed: 'Статус',
+    worker_assigned: 'Команда',
+    stage_status_changed: 'План',
+    stage_completed: 'План',
+    document_uploaded: 'Документ',
+    defect_created: 'Дефект',
+    finish_submitted: 'Смена',
+    broadcast_sent: 'Объявление',
+  };
+  return labels[kind] || 'Событие';
+}
+
+async function renderObjectHistorySection(objectId) {
+  const panel = document.getElementById('obj-detail-panel-info');
+  if (!panel || !objectId) return;
+  let section = document.getElementById('obj-history-section');
+  if (!section) {
+    panel.insertAdjacentHTML('beforeend', `
+      <div class="obj-info-section obj-history-section" id="obj-history-section">
+        <div class="obj-info-section-title-row">
+          <span class="obj-info-section-title" style="margin-bottom:0;">История</span>
+          <span id="obj-history-count" class="obj-info-count-badge"></span>
+        </div>
+        <div id="obj-history-list" class="obj-history-list"></div>
+      </div>`);
+    section = document.getElementById('obj-history-section');
+  }
+  const list = document.getElementById('obj-history-list');
+  const countEl = document.getElementById('obj-history-count');
+  if (!list) return;
+  list.innerHTML = '<div class="obj-info-empty-row"><span>Загрузка истории...</span></div>';
+  try {
+    const data = await api(`/api/objects/${encodeURIComponent(objectId)}/history?limit=12`);
+    const history = data.history || [];
+    if (countEl) countEl.textContent = history.length ? String(history.length) : '';
+    if (!history.length) {
+      list.innerHTML = '<div class="obj-info-empty-row"><span>История пока пустая</span></div>';
+      return;
+    }
+    list.innerHTML = history.map(event => `
+      <div class="obj-history-row" data-history-kind="${esc(event.kind || '')}">
+        <span class="obj-history-dot"></span>
+        <div class="obj-history-main">
+          <div class="obj-history-title">${esc(event.title || _objectHistoryKindLabel(event.kind))}</div>
+          <div class="obj-history-sub">${[event.subtitle, event.actor_name].filter(Boolean).map(esc).join(' · ')}</div>
+        </div>
+        <span class="obj-history-meta">${esc(_objectHistoryKindLabel(event.kind))}${_objectHistoryTimeLabel(event.at) ? ' · ' + esc(_objectHistoryTimeLabel(event.at)) : ''}</span>
+      </div>`).join('');
+  } catch (e) {
+    list.innerHTML = `<div class="obj-info-empty-row"><span>История недоступна</span><button type="button" class="obj-info-empty-action" id="obj-history-retry">Повторить</button></div>`;
+    document.getElementById('obj-history-retry')?.addEventListener('click', () => renderObjectHistorySection(objectId));
+  }
 }
 
 // 25.07: свайп-переключение между табами объекта (тот же UX, что юзер уже одобрил

@@ -1,5 +1,34 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-15 Object history frontend section handoff
+
+Current autonomous slice: Stage 3 object-history frontend contract from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `frontend/js/objects.js`: after the existing Object Info tab render completes,
+  appends a human-readable `История` section without editing root-owned
+  `frontend/js/object-info.js`.
+- `frontend/js/objects.js`: loads
+  `GET /api/objects/{object_id}/history?limit=12`, renders event title,
+  subtitle, actor, kind, and time metadata, and includes empty/retry states.
+- `frontend/app.html`: added compact timeline row styling for the object history
+  section.
+- `tests/test_object_history_frontend_contract.py`: new contract locks the Info
+  append, endpoint usage, status/team/plan/document/defect/finish/broadcast
+  event labels, retry state, and styling hooks.
+
+Verification:
+- `node --check frontend/js/objects.js`.
+- `git diff --check`.
+- Focused object-history frontend/backend checks: `8 passed`.
+- Full suite: `811 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended slice:
+- Reassess `AUTONOMOUS_STATUS` and remaining DONE criteria. The main Stage 3
+  items now have backend/frontend contracts; root-owned `frontend/js/home.js`
+  still limits deeper owner cockpit label polish only.
+
 ## 2026-09-15 Central AI management command entry handoff
 
 Current autonomous slice: Stage 3 central voice/action entry point from

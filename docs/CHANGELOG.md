@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-09-15 (Object history frontend section)
+
+Tests: 811 passed, 1 skipped.
+
+### Frontend
+- Added a human-readable `История` section to the Object Info tab by appending
+  it from writable `frontend/js/objects.js` after the existing root-owned
+  `object-info.js` render completes.
+- The section loads `GET /api/objects/{object_id}/history?limit=12`, renders
+  newest timeline events with actor/subtitle/time metadata, includes retry and
+  empty states, and recognizes status, team, plan, document, defect, finish, and
+  broadcast event kinds.
+- Added compact timeline row styling in `frontend/app.html`.
+
+### Tests
+- Added `tests/test_object_history_frontend_contract.py` for the Info-tab append,
+  history endpoint usage, event-kind labels, retry state, and row styling.
+- Verified `node --check frontend/js/objects.js`, `git diff --check`, focused
+  object-history frontend/backend checks, and the full suite.
+
 ## 2026-09-15 (Central AI management command entry)
 
 Tests: 810 passed, 1 skipped.

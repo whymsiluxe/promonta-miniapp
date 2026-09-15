@@ -4001,6 +4001,54 @@ body.chat-reply-active .chat-messages {
 .obj-info-team-row-status-declined { color: var(--red); }
 .obj-info-team-row-menu-btn { background: none; border: none; color: var(--text-light); font-size: 1.1rem; padding: 0.2rem 0.4rem; cursor: pointer; }
 
+/* ═══════════ История объекта (15.09 Stage 3) ═══════════ */
+.obj-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.obj-history-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.58rem 0.7rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+.obj-history-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-accent, var(--accent));
+}
+.obj-history-main {
+  min-width: 0;
+}
+.obj-history-title {
+  color: var(--text-main);
+  font-size: 0.92rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.obj-history-sub {
+  color: var(--text-light);
+  font-size: 0.78rem;
+  margin-top: 0.12rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.obj-history-meta {
+  color: var(--text-light);
+  font-size: 0.72rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
 /* ═══════════ HOME DASHBOARD (Фаза 2f) ═══════════ */
 /* 23.07: единая perspective-сцена на весь дашборд (было 5 разрозненных на каждом блоке —
    давало скачущую геометрию и визуальный наезд карточек друг на друга) */
