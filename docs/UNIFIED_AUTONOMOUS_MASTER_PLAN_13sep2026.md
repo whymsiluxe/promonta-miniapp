@@ -1,4 +1,4 @@
-AUTONOMOUS_STATUS: DONE
+AUTONOMOUS_STATUS: IN_PROGRESS
 
 # Unified Autonomous Master Plan - 2026-09-13
 
@@ -360,3 +360,25 @@ Tiny explicit note:
   required owner cockpit data, escalation signals, clean-state behavior, and
   contract coverage are shipped; this is cosmetic debt, not a functional blocker
   for the unified autonomous plan.
+
+## H. Continuation - 2026-09-15 (owner-authorized)
+
+Section G's completion audit covered Stage 1/2/3. Section E's P1/P2/P3
+backlog below Section D was NOT covered by that audit and remains open.
+Owner has explicitly authorized continuing this same plan to work through
+the P1 backlog next (P2/P3 after, in order), one commit per item, test+deploy
+per item exactly per the Hard Rules and Section F above. Re-verify each P1
+item against current code first (some may already be partially covered by
+Stage 2/3 work — check before implementing, do not duplicate).
+
+Priority order for this continuation: Section E's P1 list top to bottom,
+skipping anything already verifiably shipped. Then P2. Do not start P3
+(architecture-scale items: CRM, PostgreSQL, main.py split, app.html split)
+without a separate explicit owner go-ahead — flag P3 as still deferred in
+the next completion audit instead.
+
+When P1 and P2 are genuinely done (or have explicit tiny blocker notes same
+as Section G's format), write a new dated Completion Audit subsection below
+this one, set the first line back to AUTONOMOUS_STATUS: DONE, and stop. Do
+not re-enable autonomous-miniapp.timer — it was deliberately disabled by the
+owner on 2026-09-15; this continuation is a manual one-off run.
