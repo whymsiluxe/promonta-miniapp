@@ -3099,11 +3099,119 @@ body.chat-composer-focused .chat-input-bar, body.chat-composer-focused .ai-input
 #view-ai .ai-model-row {
   background: #0f1115;
   border-bottom: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
 }
 #view-ai .ai-model-select {
+  flex: 1;
+  min-width: 0;
   background: rgba(255,255,255,0.08);
   color: #f7f7f8;
   border-color: rgba(255,255,255,0.1);
+}
+#view-ai .ai-manager-command-btn {
+  min-height: 38px;
+  padding: 0 0.85rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  color: #f7f7f8;
+  font-size: 0.9rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+#view-ai .ai-manager-command-btn:active {
+  background: rgba(255,255,255,0.14);
+  transform: scale(0.98);
+}
+.ai-manager-command-sheet .chat-forward-modal-title {
+  padding-bottom: 0.7rem;
+}
+.ai-manager-command-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.ai-manager-command-field {
+  position: relative;
+}
+.ai-manager-command-text {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 118px;
+  resize: vertical;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font: inherit;
+  line-height: 1.35;
+  outline: none;
+  padding: 0.72rem 3.05rem 0.72rem 0.78rem;
+}
+.ai-manager-command-text::placeholder {
+  color: rgba(255,255,255,0.36);
+}
+.ai-manager-command-voice {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+}
+.ai-manager-command-voice.voice-input-recording {
+  background: var(--red, #d94a4a);
+}
+.ai-manager-command-submit {
+  min-height: 44px;
+  border: none;
+  border-radius: 15px;
+  background: var(--chat-forest, var(--accent));
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 780;
+}
+.ai-manager-command-submit:disabled {
+  opacity: 0.58;
+}
+.ai-manager-command-draft {
+  display: none;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.10);
+  padding: 0.65rem 0.72rem;
+  color: #f7f7f8;
+}
+.ai-manager-command-draft.show {
+  display: block;
+}
+.ai-manager-command-draft-title {
+  font-size: 0.92rem;
+  font-weight: 800;
+  margin-bottom: 0.4rem;
+}
+.ai-manager-command-draft-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.34rem 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.7);
+  font-size: 0.86rem;
+}
+.ai-manager-command-draft-row strong {
+  color: #fff;
+  text-align: right;
+  font-weight: 700;
 }
 #view-ai .ai-messages {
   background: #0f1115;
@@ -8309,6 +8417,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
   </header>
   <div class="ai-model-row">
     <select id="ai-model-select" class="ai-model-select" title="Модель"></select>
+    <button id="ai-manager-command-btn" class="ai-manager-command-btn" type="button">Команда</button>
   </div>
   <div id="ai-messages" class="ai-messages">
     <div class="ai-empty">Спрашивай что угодно: объекты, тексты клиентам, расчёты, немецкие письма... 🤖</div>

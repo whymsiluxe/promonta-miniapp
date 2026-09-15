@@ -1,5 +1,34 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-15 Central AI management command entry handoff
+
+Current autonomous slice: Stage 3 central voice/action entry point from
+`docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md`.
+
+Implemented in this slice:
+- `frontend/app.html`: added a compact owner AI `Команда` button beside the
+  model selector plus bottom-sheet styling for the management command composer.
+- `frontend/js/ai.js`: added the command sheet, typed command parsing,
+  shared `attachVoiceInputButton()` dictation support via `/api/transcribe`,
+  `/api/manager/command/parse` integration, and safe draft rendering for
+  worker/date/object/task/comment fields.
+- `frontend/js/ai.js`: the entry only renders a confirmation-required draft and
+  does not create assignments or tasks automatically.
+- `tests/test_ai_manager_command_frontend_contract.py`: new frontend contract
+  locks the compact entry point, voice hook, parser API call, and draft-only UI.
+
+Verification:
+- `node --check frontend/js/ai.js`.
+- `git diff --check`.
+- Focused AI/parser/frontend checks: `19 passed`.
+- Full suite: `810 passed, 1 skipped` with only existing deprecation warnings.
+
+Next recommended slice:
+- Reassess final DONE criteria. Object-history frontend display and deeper owner
+  cockpit polish remain tied to root-owned `frontend/js/object-info.js` and
+  `frontend/js/home.js` in this checkout, so either document those as tiny
+  ownership blockers or correct ownership before doing that UI pass.
+
 ## 2026-09-15 Manager quick broadcast controls handoff
 
 Current autonomous slice: Stage 3 quick broadcast controls from

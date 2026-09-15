@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-09-15 (Central AI management command entry)
+
+Tests: 810 passed, 1 skipped.
+
+### Frontend
+- Added a compact owner-only `Команда` action in the AI tab beside the model
+  selector.
+- Added a bottom-sheet management command composer that accepts typed Russian
+  commands or voice dictation via the shared `/api/transcribe` voice helper.
+- Wired the composer to the safe `/api/manager/command/parse` draft endpoint and
+  renders worker/date/object/task/comment fields without creating assignments or
+  tasks automatically.
+
+### Tests
+- Added `tests/test_ai_manager_command_frontend_contract.py` for the AI command
+  entry, voice hook, parser API call, confirmation-only draft rendering, and
+  compact sheet contract.
+- Verified `node --check frontend/js/ai.js`, `git diff --check`, focused
+  AI/parser/frontend checks, and the full suite.
+
 ## 2026-09-15 (Manager quick broadcast controls)
 
 Tests: 809 passed, 1 skipped.

@@ -200,6 +200,121 @@ async function _initAiModelSelect() {
   });
 }
 
+let _aiManagerCommandClose = null;
+
+function _closeAiManagerCommandSheet() {
+  if (_aiManagerCommandClose) {
+    const close = _aiManagerCommandClose;
+    _aiManagerCommandClose = null;
+    close();
+  }
+}
+
+function _aiManagerCommandDraftHtml(draft) {
+  const rows = [
+    ['Работник', draft.worker_name || draft.worker_query || ''],
+    ['Дата', draft.date || draft.date_text || ''],
+    ['Объект', draft.object_name || draft.object_query || ''],
+    ['Задача', draft.task || ''],
+    ['Комментарий', draft.comment || ''],
+  ].filter(row => row[1]);
+  return `
+    <div class="ai-manager-command-draft-title">Черновик команды</div>
+    ${rows.map(row => `
+      <div class="ai-manager-command-draft-row">
+        <span>${_escAi(row[0])}</span>
+        <strong>${_escAi(row[1])}</strong>
+      </div>
+    `.trim()).join('')}
+    ${draft.requires_confirmation ? '<div class="ai-manager-command-draft-row"><span>Статус</span><strong>нужно подтвердить</strong></div>' : ''}`;
+}
+
+async function _parseAiManagerCommand(modal) {
+  const textEl = modal.querySelector('#ai-manager-command-text');
+  const submitBtn = modal.querySelector('#ai-manager-command-parse');
+  const draftEl = modal.querySelector('#ai-manager-command-draft');
+  const text = textEl?.value.trim() || '';
+  if (!text) {
+    showToast('Введите команду', 'error');
+    return;
+  }
+  submitBtn.disabled = true;
+  draftEl.classList.remove('show');
+  draftEl.innerHTML = '';
+  try {
+    const result = await api('/api/manager/command/parse', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    draftEl.innerHTML = _aiManagerCommandDraftHtml(result.draft || {});
+    draftEl.classList.add('show');
+    hapticImpact('light');
+  } catch (e) {
+    showToast('Команда не разобрана: ' + e.message, 'error');
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
+function _openAiManagerCommandSheet() {
+  _closeAiManagerCommandSheet();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'chat-forward-modal-backdrop ai-manager-command-backdrop';
+  const modal = document.createElement('div');
+  modal.className = 'chat-forward-modal chat-forward-sheet ai-manager-command-sheet';
+  modal.innerHTML = `
+    <div class="chat-action-sheet-handle"></div>
+    <div class="chat-forward-modal-title">Команда руководителя</div>
+    <div class="ai-manager-command-form">
+      <div class="ai-manager-command-field">
+        <textarea id="ai-manager-command-text" class="ai-manager-command-text" placeholder="Поставь Ивану завтра задачу закончить потолок у Мюллера и скажи ему взять лазер"></textarea>
+        <button id="ai-manager-command-voice" class="ai-manager-command-voice" type="button" aria-label="Продиктовать команду">
+          <svg viewBox="0 0 24 24" width="17" height="17"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3M8.5 21h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <button id="ai-manager-command-parse" class="ai-manager-command-submit" type="button">Разобрать</button>
+      <div id="ai-manager-command-draft" class="ai-manager-command-draft"></div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  document.body.appendChild(modal);
+
+  let unregister = null;
+  const onKeydown = e => { if (e.key === 'Escape') close(); };
+  const close = () => {
+    backdrop.remove();
+    modal.remove();
+    document.removeEventListener('keydown', onKeydown);
+    if (unregister) { unregister(); unregister = null; }
+    if (_aiManagerCommandClose === close) _aiManagerCommandClose = null;
+  };
+  _aiManagerCommandClose = close;
+  if (typeof NavigationManager !== 'undefined') unregister = NavigationManager.registerOverlay(close);
+  document.addEventListener('keydown', onKeydown);
+  backdrop.addEventListener('pointerdown', e => { e.preventDefault(); close(); });
+  backdrop.addEventListener('click', close);
+  modal.addEventListener('pointerdown', e => e.stopPropagation());
+
+  modal.querySelector('#ai-manager-command-parse').addEventListener('click', () => _parseAiManagerCommand(modal));
+  const voiceBtn = modal.querySelector('#ai-manager-command-voice');
+  if (typeof attachVoiceInputButton === 'function') {
+    attachVoiceInputButton(voiceBtn, transcript => {
+      const textEl = modal.querySelector('#ai-manager-command-text');
+      if (textEl) textEl.value = transcript;
+      _parseAiManagerCommand(modal);
+    });
+  } else if (voiceBtn) {
+    voiceBtn.style.display = 'none';
+  }
+  modal.querySelector('#ai-manager-command-text')?.focus({ preventScroll: true });
+}
+
+function _bindAiManagerCommandEntry() {
+  const btn = document.getElementById('ai-manager-command-btn');
+  if (!btn || btn.dataset.wired) return;
+  btn.dataset.wired = '1';
+  btn.addEventListener('click', _openAiManagerCommandSheet);
+}
+
 function initAiView() {
   const view = document.getElementById('view-ai');
   if (!view) return;
@@ -211,6 +326,7 @@ function initAiView() {
 
   _renderAiMessages();
   _initAiModelSelect();
+  _bindAiManagerCommandEntry();
   // 09.09 v11c: тот же ResizeObserver что chat.js -- --chat-composer-height
   // общая переменная для .chat-input-bar/.ai-input-bar (CSS), но текущий bar
   // (общий или ИИ) может отличаться по высоте -- наблюдаем именно активный.
