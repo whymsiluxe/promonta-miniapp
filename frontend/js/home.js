@@ -1284,6 +1284,15 @@ const WO_ICONS = {
 };
 
 let _woMode = 'summary';
+// 17.09: initWorkingObjectsView() fires 7 parallel API calls before rendering
+// anything, showing a bare "Загрузка…" placeholder every single time the tab
+// is opened -- even on a re-visit in the same session where nothing has
+// likely changed. Cache the last successfully rendered HTML in memory and
+// show it INSTANTLY on next open while a fresh fetch runs in the background;
+// swap to the new render only once it resolves. First-ever open in a session
+// still shows the loading placeholder (nothing to show yet) -- this only
+// removes the loading flash on every subsequent revisit.
+let _woLastRenderHtml = null;
 
 function _initWorkingObjectsModeSwitch() {
   const sw = document.getElementById('wo-mode-switch');
@@ -1309,7 +1318,9 @@ async function initWorkingObjectsView() {
   _initWorkingObjectsModeSwitch();
   const slot = document.getElementById('working-objects-slot');
   if (!slot) return;
-  slot.innerHTML = '<div style="padding:1rem;color:var(--text-light)">Загрузка…</div>';
+  // Show the last successful render instantly instead of a loading flash on
+  // every revisit -- fresh data still fetches below and replaces it once ready.
+  slot.innerHTML = _woLastRenderHtml || '<div style="padding:1rem;color:var(--text-light)">Загрузка…</div>';
 
   try {
     const [workersData, objectsData, absenceData, shifts, stats, blockersData, teamHoursData] = await Promise.all([
@@ -1493,6 +1504,8 @@ async function initWorkingObjectsView() {
       </div>
     `;
 
+    _woLastRenderHtml = slot.innerHTML;
+
     slot.querySelectorAll('.wo-assign-btn').forEach(btn => {
       btn.addEventListener('click', () => _openWorkingObjectsAssignSheet(btn.dataset.uid, btn.dataset.name, objects));
     });
@@ -1543,7 +1556,12 @@ async function initWorkingObjectsView() {
       });
     });
   } catch (e) {
-    slot.innerHTML = '<div style="padding:1rem;color:var(--text-light)">Ошибка загрузки</div>';
+    // 17.09: don't blow away an already-visible cached render with a bare error
+    // message on a failed refresh -- stale-but-real data beats a scary red box
+    // when a previous load DID succeed. Only show the error state when there is
+    // nothing to fall back to (first-ever load in this session failed).
+    slot.innerHTML = _woLastRenderHtml
+      || '<div style="padding:1rem;color:var(--text-light)">Ошибка загрузки</div>';
   }
 }
 
