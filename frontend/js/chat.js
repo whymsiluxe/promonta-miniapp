@@ -1923,7 +1923,12 @@ async function initChatView() {
   _closeChatMessageOverlays(); // 03.08: тот же idempotent-паттерн, что _revokeAllChatBlobUrls ниже
   _watchChatDialogClose();
   _revokeAllChatBlobUrls();
-  _observeChatComposerHeight(document.getElementById('chat-input-bar'));
+  // 17.09 composer-stack refactor: measure the WHOLE stack (reply-bar +
+  // reactions + input-bar/voice-bar together), not just #chat-input-bar alone
+  // -- otherwise --chat-composer-height would only cover the input row and
+  // .chat-messages::after's spacer would under-reserve space whenever
+  // reactions/reply-bar are visible.
+  _observeChatComposerHeight(document.getElementById('chat-composer-stack'));
   _bindChatQuickEmojiRow();
   if (!_chatMyId) {
     try {
