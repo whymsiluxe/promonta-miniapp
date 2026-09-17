@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-17 (Document gallery P2 slice)
+
+Tests: focused document gallery/object UI contracts passed (`17 passed`); full
+suite passed (`842 passed, 1 skipped`). Deploy verification follows in the
+release step.
+
+### Frontend
+- Added a global object-document gallery to the Documents view while preserving
+  the existing Angebot/Rechnung PDF builder below it.
+- The gallery reuses existing object document endpoints, loads per-object
+  documents, and adds object filter chips with document counts.
+- Cards include authenticated image thumbnails or PDF tiles plus quick actions:
+  preview, open object, and owner-only delete.
+- The Documents page now uses the shared iOS page/section language and keeps the
+  page title stable while the PDF builder title switches by document type.
+
+### Tests
+- Added `tests/test_document_gallery_frontend_contract.py` for gallery markup,
+  script/init wiring, endpoint reuse, filters, preview/open/delete quick actions,
+  and style hooks.
+
 ## 2026-09-17 (Object task Kanban P2 slice)
 
 Tests: focused object task Kanban/budget/history/object/needs contracts passed

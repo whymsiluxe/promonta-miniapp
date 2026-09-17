@@ -1,5 +1,34 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-17 Document gallery P2 slice handoff
+
+Current autonomous slice: Section H continuation, fourth P2 item
+(`Document gallery/preview grid with object filters and quick actions`).
+
+Implemented in this slice:
+- `frontend/app.html`: Documents view now includes an object-document gallery
+  above the existing Angebot/Rechnung PDF builder.
+- `frontend/app.html`: the Documents page now uses `ios-page`/`ios-section`
+  structure, a stable page title, object filter rail, gallery grid, and builder
+  section title.
+- `frontend/js/document-gallery.js`: new module fetches `/api/objects`, loads
+  `/api/objects/{object_id}/documents` for each accessible object, and renders
+  filtered cards with authenticated image thumbnails or PDF tiles.
+- `frontend/js/document-gallery.js`: quick actions reuse the existing
+  authenticated document viewer, open Object Detail, and expose owner-only delete.
+- `tests/test_document_gallery_frontend_contract.py`: new frontend contract locks
+  markup, script/init wiring, endpoint reuse, filters, quick actions, and styles.
+
+Verification so far:
+- `node --check frontend/js/document-gallery.js`.
+- `node --check frontend/js/objects.js`.
+- Focused document gallery/object UI checks: `17 passed`.
+- Full suite: `842 passed, 1 skipped`.
+
+Next recommended slice:
+- Finish release verification/deploy for this P2 item, then continue to P2 item
+  5: extended calendar week/month/year and day bottom sheet polish.
+
 ## 2026-09-17 Object task Kanban P2 slice handoff
 
 Current autonomous slice: Section H continuation, third P2 item

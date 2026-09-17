@@ -395,3 +395,6 @@ owner on 2026-09-15; this continuation is a manual one-off run.
 - P2 item 3 in progress: Object Info now includes an object-scoped task Kanban
   using existing `/api/tasks` statuses (`Нужно` / `В работе` / `Готово`) with
   owner actions, drag/drop lane moves, and task chat access.
+- P2 item 4 in progress: Documents view now includes an object-document gallery
+  with per-object filters, authenticated preview grid, open-object action, and
+  owner-only delete quick action while preserving Angebot/Rechnung generation.
