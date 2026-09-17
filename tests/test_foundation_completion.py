@@ -270,7 +270,7 @@ class ServerTrustCheckinStartTests(unittest.TestCase):
         with patch.object(backend, '_get_active_assignment_for_checkin', return_value='assign-1'), \
              patch.object(backend, '_load_checkin_meta', return_value=[]), \
              patch.object(backend, '_save_checkin_meta', side_effect=fake_save), \
-             patch.object(backend, '_save_checkin_photos', new=unittest.mock.AsyncMock(return_value=[])):
+             patch.object(backend, '_save_checkin_photos', new=unittest.mock.AsyncMock(return_value=['OBJ-1/2026-09-17/fake.jpg'])):
             try:
                 result = asyncio.run(backend.checkin_start(
                     object_id='OBJ-1',
@@ -289,6 +289,67 @@ class ServerTrustCheckinStartTests(unittest.TestCase):
         self.assertEqual(result['daily_plan_acceptance_id'], acceptance['id'])
         self.assertEqual(result['daily_plan_version'], '1')
         self.assertEqual(saved['items'][0]['daily_plan_version'], '1')
+
+
+class CheckinStartRequiresPhotoTests(unittest.TestCase):
+    """17.09 (audit finding, P0): frontend requires >=1 start photo, but backend
+    accepted the request unconditionally regardless of how many photos actually
+    saved. Same enforcement pattern Finish already had for its 2-photo minimum."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix='fc-test-')
+        backend.DATA_ROOT = self.tmpdir
+        backend.ROLES_FILE = os.path.join(self.tmpdir, 'roles.json')
+        backend.CHECKIN_META_FILE = os.path.join(self.tmpdir, 'checkin_meta.json')
+        backend._save_roles({'999': 'worker', '1': 'owner'})
+
+    def test_zero_saved_photos_rejected(self):
+        from fastapi import HTTPException
+        import asyncio
+        with patch.object(backend, '_get_active_assignment_for_checkin', return_value='assign-1'), \
+             patch.object(backend, '_load_checkin_meta', return_value=[]), \
+             patch.object(backend, '_save_checkin_meta') as mock_save, \
+             patch.object(backend, '_save_checkin_photos', new=unittest.mock.AsyncMock(return_value=[])):
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(backend.checkin_start(
+                    object_id='OBJ-1', lat='51.0', lon='12.0', accuracy='', geo_timestamp='',
+                    stage_name='', files=[], daily_plan_id='', daily_plan_version='',
+                    daily_plan_acceptance_id='',
+                    user={'id': 999, 'first_name': 'Worker'}, role='worker', idempotency_key='',
+                ))
+        self.assertEqual(ctx.exception.status_code, 400)
+        mock_save.assert_not_called()
+
+    def test_one_saved_photo_accepted(self):
+        import asyncio
+        with patch.object(backend, '_get_active_assignment_for_checkin', return_value='assign-1'), \
+             patch.object(backend, '_load_checkin_meta', return_value=[]), \
+             patch.object(backend, '_save_checkin_meta') as mock_save, \
+             patch.object(backend, '_save_checkin_photos', new=unittest.mock.AsyncMock(return_value=['OBJ-1/2026-09-17/a.jpg'])):
+            result = asyncio.run(backend.checkin_start(
+                object_id='OBJ-1', lat='51.0', lon='12.0', accuracy='', geo_timestamp='',
+                stage_name='', files=[], daily_plan_id='', daily_plan_version='',
+                daily_plan_acceptance_id='',
+                user={'id': 999, 'first_name': 'Worker'}, role='worker', idempotency_key='',
+            ))
+        self.assertEqual(result['start_photos'], ['OBJ-1/2026-09-17/a.jpg'])
+        mock_save.assert_called_once()
+
+    def test_failed_photo_files_cleaned_up_on_rejection(self):
+        from fastapi import HTTPException
+        import asyncio
+        with patch.object(backend, '_get_active_assignment_for_checkin', return_value='assign-1'), \
+             patch.object(backend, '_load_checkin_meta', return_value=[]), \
+             patch.object(backend, '_save_checkin_photos', new=unittest.mock.AsyncMock(return_value=[])), \
+             patch.object(backend, '_cleanup_checkin_photo_files') as mock_cleanup:
+            with self.assertRaises(HTTPException):
+                asyncio.run(backend.checkin_start(
+                    object_id='OBJ-1', lat='51.0', lon='12.0', accuracy='', geo_timestamp='',
+                    stage_name='', files=[], daily_plan_id='', daily_plan_version='',
+                    daily_plan_acceptance_id='',
+                    user={'id': 999, 'first_name': 'Worker'}, role='worker', idempotency_key='',
+                ))
+        mock_cleanup.assert_called_once_with([])
 
 
 # ══════════════════════════════════════════════════════════════════════════════

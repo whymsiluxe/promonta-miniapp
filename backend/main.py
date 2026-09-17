@@ -7994,6 +7994,17 @@ async def checkin_start(
             raise HTTPException(409, f"У вас уже есть незавершённая смена на объекте {open_session['object_id']} — сначала завершите её")
 
     photo_paths = await _save_checkin_photos(files, object_id.strip()[:100], date_str)
+    # 17.09 (audit finding, P0): frontend requires >=1 start photo before allowing
+    # Start, but backend accepted the request unconditionally regardless of how
+    # many photos actually made it through _save_checkin_photos (0 if all files
+    # failed the size/sniff check, or the client sent none at all) -- an old or
+    # broken client could start a shift with zero evidence photos. Same pattern
+    # Finish already uses (see the len(photo_paths) < 2 check below in
+    # checkin_finish): reject BEFORE creating the session, clean up any files
+    # that did save from this failed attempt so they don't become orphans.
+    if len(photo_paths) < 1:
+        _cleanup_checkin_photo_files(photo_paths)
+        raise HTTPException(400, "Для начала смены нужно минимум одно корректное фото")
 
     entry = {
         "id": uuid.uuid4().hex,
