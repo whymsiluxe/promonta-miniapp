@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-17 (Object task Kanban P2 slice)
+
+Tests: focused object task Kanban/budget/history/object/needs contracts passed
+(`36 passed`); full suite passed (`827 passed, 1 skipped`). Deploy
+verification follows in the release step.
+
+### Frontend
+- Added an Object Info Kanban board for object-scoped tasks/needs using the
+  existing `/api/tasks?object_id=...` workflow.
+- The board groups tasks into `Нужно`, `В работе`, and `Готово`, preserving the
+  existing `открыто -> в работе -> закрыто` status model.
+- Owner users can advance tasks with inline actions or drag cards between lanes;
+  worker users get a read-only board plus task chat access.
+- Task-screen status changes now refresh the open Object Info Kanban through the
+  existing cross-screen sync hook.
+
+### Tests
+- Added `tests/test_object_task_kanban_frontend_contract.py` for render order,
+  task workflow reuse, status mapping, owner actions, drag/drop, chat integration,
+  sync hook, and styling hooks.
+
 ## 2026-09-17 (Object budget dashboard P2 slice)
 
 Tests: focused object budget/history/object contracts passed (`10 passed`);

@@ -1008,6 +1008,7 @@ function _initObjDetailTab(tab) {
     // потребности) одним вызовом -- Потребности перенесены сюда из бывшей 4-й вкладки.
     Promise.resolve(renderObjectInfoTab(_objDetailCurrentId))
       .then(() => renderObjectBudgetSection(_objDetailCurrentId))
+      .then(() => renderObjectTaskKanbanSection(_objDetailCurrentId))
       .then(() => renderObjectHistorySection(_objDetailCurrentId))
       .catch(e => {
         const panel = document.getElementById('obj-detail-panel-info');
@@ -1159,6 +1160,209 @@ async function renderObjectBudgetSection(objectId) {
   } catch (e) {
     dashboard.innerHTML = `<div class="obj-info-empty-row"><span>Бюджет недоступен</span><button type="button" class="obj-info-empty-action" id="obj-budget-retry">Повторить</button></div>`;
     document.getElementById('obj-budget-retry')?.addEventListener('click', () => renderObjectBudgetSection(objectId));
+  }
+}
+
+function _objectTaskKanbanStage(status) {
+  if (typeof taskStage === 'function') return taskStage(status);
+  if (status === 'закрыто' || status === 'выдано' || status === 'отклонено') return 'done';
+  if (status === 'в работе' || status === 'принято' || status === 'заказано') return 'accepted';
+  return 'new';
+}
+
+function _objectTaskKanbanStatusFor(stage) {
+  if (stage === 'accepted') return 'в работе';
+  if (stage === 'done') return 'закрыто';
+  return 'открыто';
+}
+
+function _objectTaskKanbanLabel(status) {
+  return (typeof taskStatusLabel === 'function') ? taskStatusLabel(status) : (status || 'Новая');
+}
+
+function _objectTaskKanbanCategory(task) {
+  return (typeof taskCategoryLabel === 'function') ? taskCategoryLabel(task.category) : (task.category || 'Другое');
+}
+
+function _objectTaskKanbanWhen(ts) {
+  if (!ts) return '';
+  try {
+    const d = new Date(Number(ts) * 1000);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+  } catch (e) { return ''; }
+}
+
+function _objectTaskKanbanDue(task) {
+  if (!task.due_at) return '';
+  const overdue = _objectTaskKanbanStage(task.status) !== 'done' && Number(task.due_at) < Math.floor(Date.now() / 1000);
+  const label = (typeof _taskDueLabel === 'function') ? _taskDueLabel(task.due_at) : _objectTaskKanbanWhen(task.due_at);
+  return `<div class="obj-task-kanban-due${overdue ? ' obj-task-kanban-overdue' : ''}">${overdue ? 'Просрочено' : 'Срок'}: ${esc(label)}</div>`;
+}
+
+function _objectTaskKanbanCard(task) {
+  const stage = _objectTaskKanbanStage(task.status);
+  const isOwner = currentRole === 'owner';
+  const primary = stage === 'new'
+    ? { label: 'В работу', status: 'в работе' }
+    : stage === 'accepted'
+      ? { label: 'Готово', status: 'закрыто' }
+      : { label: 'Вернуть', status: 'открыто' };
+  const pillClass = stage === 'new' ? 'task-pill-new' : stage === 'accepted' ? 'task-pill-accepted' : 'task-pill-done';
+  const created = _objectTaskKanbanWhen(task.created_at);
+  return `
+    <article class="obj-task-kanban-card" data-kanban-task-id="${esc(task.id)}" data-kanban-stage="${stage}" ${isOwner ? 'draggable="true"' : ''}>
+      <div class="obj-task-kanban-card-head">
+        <div class="obj-task-kanban-card-title">${esc(task.title || '')}</div>
+        ${task.priority === 'срочно' ? '<span class="obj-task-kanban-urgent">Срочно</span>' : ''}
+      </div>
+      <div class="obj-task-kanban-meta">${esc(_objectTaskKanbanCategory(task))}${created ? ` · ${esc(created)}` : ''}</div>
+      <div class="obj-task-kanban-meta">Запросил: ${esc(task.from_name || task.from_user_id || '—')}</div>
+      ${_objectTaskKanbanDue(task)}
+      <div class="obj-task-kanban-card-actions">
+        <span class="task-status-pill ios-status-pill ${pillClass}">${esc(_objectTaskKanbanLabel(task.status))}</span>
+        <div class="obj-task-kanban-card-buttons">
+          ${isOwner ? `<button class="obj-task-kanban-action ios-action-button" data-kanban-set-status="${esc(primary.status)}" data-kanban-task="${esc(task.id)}" type="button">${esc(primary.label)}</button>` : ''}
+          <button class="obj-task-kanban-chat ios-icon-button" data-kanban-chat="${esc(task.id)}" data-kanban-title="${esc(task.title || '')}" type="button" aria-label="Чат">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v7A2.5 2.5 0 0 1 17.5 15H9l-5 5V5.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </article>`;
+}
+
+function _objectTaskKanbanColumn(col, tasks) {
+  const cards = tasks.length
+    ? tasks.map(_objectTaskKanbanCard).join('')
+    : '<div class="obj-task-kanban-empty">Нет задач</div>';
+  return `
+    <section class="obj-task-kanban-column obj-task-kanban-column-${col.key}" data-kanban-column="${col.key}">
+      <div class="obj-task-kanban-column-head">
+        <span>${esc(col.title)}</span>
+        <b>${tasks.length}</b>
+      </div>
+      <div class="obj-task-kanban-lane" data-kanban-stage="${col.key}">${cards}</div>
+    </section>`;
+}
+
+async function _objectTaskKanbanSetStatus(taskId, status, objectId, btn) {
+  if (btn && btn.disabled) return;
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    await api(`/api/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+    hapticImpact('light');
+    await renderObjectTaskKanbanSection(objectId);
+    if (typeof _refreshObjInfoNeeds === 'function') _refreshObjInfoNeeds();
+    if (typeof refreshTasksBadge === 'function') refreshTasksBadge();
+  } catch (e) {
+    showToast('Ошибка: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
+}
+
+function _attachObjectTaskKanbanHandlers(section, objectId) {
+  section.querySelectorAll('[data-kanban-set-status]').forEach(btn => {
+    btn.addEventListener('click', () => _objectTaskKanbanSetStatus(btn.dataset.kanbanTask, btn.dataset.kanbanSetStatus, objectId, btn));
+  });
+  section.querySelectorAll('[data-kanban-chat]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (typeof openObjectOrMangelChat === 'function') {
+        openObjectOrMangelChat(`task:${btn.dataset.kanbanChat}`, `Потребность: ${btn.dataset.kanbanTitle}`, { view: 'object-detail', objectId, taskId: btn.dataset.kanbanChat });
+      }
+    });
+  });
+  if (currentRole !== 'owner') return;
+
+  section.querySelectorAll('.obj-task-kanban-card[draggable="true"]').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      card.classList.add('obj-task-kanban-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.dataset.kanbanTaskId);
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('obj-task-kanban-dragging');
+      section.querySelectorAll('.obj-task-kanban-drop-active').forEach(el => el.classList.remove('obj-task-kanban-drop-active'));
+    });
+  });
+  section.querySelectorAll('.obj-task-kanban-lane').forEach(lane => {
+    lane.addEventListener('dragover', e => {
+      e.preventDefault();
+      lane.classList.add('obj-task-kanban-drop-active');
+      e.dataTransfer.dropEffect = 'move';
+    });
+    lane.addEventListener('dragleave', () => lane.classList.remove('obj-task-kanban-drop-active'));
+    lane.addEventListener('drop', e => {
+      e.preventDefault();
+      lane.classList.remove('obj-task-kanban-drop-active');
+      const taskId = e.dataTransfer.getData('text/plain');
+      const targetStage = lane.dataset.kanbanStage;
+      const card = Array.from(section.querySelectorAll('.obj-task-kanban-card'))
+        .find(node => node.dataset.kanbanTaskId === taskId);
+      if (!taskId || !targetStage || card?.dataset.kanbanStage === targetStage) return;
+      _objectTaskKanbanSetStatus(taskId, _objectTaskKanbanStatusFor(targetStage), objectId, null);
+    });
+  });
+}
+
+async function renderObjectTaskKanbanSection(objectId) {
+  const panel = document.getElementById('obj-detail-panel-info');
+  if (!panel || !objectId) return;
+
+  let section = document.getElementById('obj-task-kanban-section');
+  if (!section) {
+    const html = `
+      <div class="obj-info-section obj-task-kanban-section" id="obj-task-kanban-section">
+        <div id="obj-task-kanban-board" class="obj-task-kanban-board">
+          <div class="js-skeleton-line" style="width:58%"></div>
+          <div class="js-skeleton-line" style="width:72%"></div>
+        </div>
+      </div>`;
+    const budgetSection = document.getElementById('obj-budget-section');
+    const controlSection = panel.querySelector('.obj-control-section');
+    if (budgetSection) budgetSection.insertAdjacentHTML('afterend', html);
+    else if (controlSection) controlSection.insertAdjacentHTML('afterend', html);
+    else panel.insertAdjacentHTML('afterbegin', html);
+    section = document.getElementById('obj-task-kanban-section');
+  }
+  const board = document.getElementById('obj-task-kanban-board');
+  if (!board) return;
+
+  try {
+    const { tasks } = await api(`/api/tasks?object_id=${encodeURIComponent(objectId)}`);
+    const groups = { new: [], accepted: [], done: [] };
+    (tasks || []).forEach(task => {
+      const stage = _objectTaskKanbanStage(task.status);
+      (groups[stage] || groups.new).push(task);
+    });
+    const totalCount = (tasks || []).length;
+    const activeCount = groups.new.length + groups.accepted.length;
+    const columns = [
+      { key: 'new', title: 'Нужно' },
+      { key: 'accepted', title: 'В работе' },
+      { key: 'done', title: 'Готово' },
+    ];
+    board.innerHTML = `
+      <div class="obj-task-kanban-head">
+        <div>
+          <div class="obj-task-kanban-title">Задачи объекта</div>
+          <div class="obj-task-kanban-sub">${activeCount ? `${activeCount} активн.` : totalCount ? 'Всё закрыто' : 'Задач нет'}</div>
+        </div>
+      </div>
+      <div class="obj-task-kanban-columns">
+        ${columns.map(col => _objectTaskKanbanColumn(col, groups[col.key])).join('')}
+      </div>
+    `;
+    _attachObjectTaskKanbanHandlers(section, objectId);
+  } catch (e) {
+    board.innerHTML = `<div class="obj-info-empty-row"><span>Задачи недоступны</span><button type="button" class="obj-info-empty-action" id="obj-task-kanban-retry">Повторить</button></div>`;
+    document.getElementById('obj-task-kanban-retry')?.addEventListener('click', () => renderObjectTaskKanbanSection(objectId));
+  }
+}
+
+function _refreshObjTaskKanban() {
+  if (typeof _objDetailCurrentId !== 'undefined' && _objDetailCurrentId && document.getElementById('obj-task-kanban-section')) {
+    renderObjectTaskKanbanSection(_objDetailCurrentId);
   }
 }
 

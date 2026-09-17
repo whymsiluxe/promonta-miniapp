@@ -4155,6 +4155,169 @@ body.chat-reply-active .chat-messages {
   font-size: 13px;
   font-weight: 650;
 }
+.obj-task-kanban-board {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.obj-task-kanban-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.obj-task-kanban-title {
+  color: var(--ios-text, var(--text-main));
+  font-size: 18px;
+  font-weight: 750;
+  line-height: 1.15;
+}
+.obj-task-kanban-sub {
+  margin-top: 0.18rem;
+  color: var(--ios-muted, var(--text-light));
+  font-size: 13px;
+  font-weight: 600;
+}
+.obj-task-kanban-columns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(218px, 82%);
+  gap: 0.65rem;
+  overflow-x: auto;
+  padding-bottom: 0.12rem;
+  scroll-snap-type: x proximity;
+}
+.obj-task-kanban-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  scroll-snap-align: start;
+}
+.obj-task-kanban-column-head {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.1rem;
+  color: var(--ios-muted, var(--text-light));
+  font-size: 13px;
+  font-weight: 750;
+}
+.obj-task-kanban-column-head b {
+  min-width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-text, var(--text-main));
+  font-size: 12px;
+  font-weight: 750;
+}
+.obj-task-kanban-lane {
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.5rem;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 14px;
+  background: var(--ios-grouped-surface, var(--bg-body));
+}
+.obj-task-kanban-drop-active {
+  border-color: color-mix(in srgb, var(--ios-accent, var(--accent)) 48%, var(--ios-border, var(--border-color)));
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 7%, var(--ios-grouped-surface, var(--bg-body)));
+}
+.obj-task-kanban-empty {
+  padding: 0.8rem 0.25rem;
+  color: var(--ios-muted, var(--text-light));
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+.obj-task-kanban-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+  padding: 0.68rem;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 12px;
+  background: var(--ios-surface, var(--bg-card));
+  box-shadow: var(--c-shadow-control, 0 1px 2px rgba(0,0,0,0.04));
+}
+.obj-task-kanban-card[draggable="true"] {
+  cursor: grab;
+}
+.obj-task-kanban-card[draggable="true"]:active {
+  cursor: grabbing;
+}
+.obj-task-kanban-dragging {
+  opacity: 0.55;
+}
+.obj-task-kanban-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+.obj-task-kanban-card-title {
+  min-width: 0;
+  color: var(--ios-text, var(--text-main));
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.22;
+  overflow-wrap: anywhere;
+}
+.obj-task-kanban-urgent {
+  flex-shrink: 0;
+  color: var(--red, #b3403a);
+  font-size: 11px;
+  font-weight: 750;
+}
+.obj-task-kanban-meta,
+.obj-task-kanban-due {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.obj-task-kanban-overdue {
+  color: var(--red, #b3403a);
+}
+.obj-task-kanban-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin-top: 0.2rem;
+}
+.obj-task-kanban-card-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.obj-task-kanban-action {
+  min-height: 30px;
+  padding: 0 0.62rem;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 750;
+}
+.obj-task-kanban-chat {
+  width: 32px;
+  height: 32px;
+}
+@media (min-width: 720px) {
+  .obj-task-kanban-columns {
+    grid-auto-flow: initial;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+}
 .obj-history-list {
   display: flex;
   flex-direction: column;

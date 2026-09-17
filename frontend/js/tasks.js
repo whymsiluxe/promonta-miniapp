@@ -183,6 +183,7 @@ function _wireTaskCardHandlers(scope) {
 function _syncTasksElsewhere() {
   // синхронизировать Object Info и Dashboard-счётчик после изменения статуса
   if (typeof _refreshObjInfoNeeds === 'function') _refreshObjInfoNeeds();
+  if (typeof _refreshObjTaskKanban === 'function') _refreshObjTaskKanban();
   if (typeof refreshTasksBadge === 'function') refreshTasksBadge();
 }
 

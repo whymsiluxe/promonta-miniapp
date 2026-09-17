@@ -1,5 +1,36 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-17 Object task Kanban P2 slice handoff
+
+Current autonomous slice: Section H continuation, third P2 item
+(`Object task Kanban: To Do -> In Progress -> Done`).
+
+Implemented in this slice:
+- `frontend/js/objects.js`: Object Info now appends a Kanban board after the
+  budget dashboard and before object history.
+- `frontend/js/objects.js`: the board reuses object-scoped `/api/tasks`, groups
+  `открыто`, `в работе`, and `закрыто` into `Нужно`, `В работе`, and `Готово`,
+  and keeps task chat access on every card.
+- `frontend/js/objects.js`: owner users can advance cards with inline buttons or
+  drag/drop between lanes; workers see the board read-only.
+- `frontend/js/tasks.js`: global task status changes now refresh the Object Info
+  Kanban when it is open.
+- `frontend/app.html`: added compact responsive Kanban, lane, card, drop-active,
+  and action styling.
+- `tests/test_object_task_kanban_frontend_contract.py`: new frontend contract
+  locks render order, status mapping, owner actions, drag/drop, chat integration,
+  sync hook, and styling hooks.
+
+Verification so far:
+- `node --check frontend/js/objects.js`.
+- `node --check frontend/js/tasks.js`.
+- Focused object task Kanban/budget/history/object/needs checks: `36 passed`.
+- Full suite: `827 passed, 1 skipped`.
+
+Next recommended slice:
+- Finish release verification/deploy for this P2 item, then continue to P2 item
+  4: document gallery/preview grid with object filters and quick actions.
+
 ## 2026-09-17 Object budget dashboard P2 slice handoff
 
 Current autonomous slice: Section H continuation, second P2 item

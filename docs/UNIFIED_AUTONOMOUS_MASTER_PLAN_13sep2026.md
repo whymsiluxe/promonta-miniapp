@@ -392,3 +392,6 @@ owner on 2026-09-15; this continuation is a manual one-off run.
   collecting work type, from/to period, optional task note, and confirmation.
 - P2 item 2 in progress: Object Info now includes an owner-only budget dashboard
   with budget, spent, remaining/overrun, and green/yellow/red risk state.
+- P2 item 3 in progress: Object Info now includes an object-scoped task Kanban
+  using existing `/api/tasks` statuses (`Нужно` / `В работе` / `Готово`) with
+  owner actions, drag/drop lane moves, and task chat access.
