@@ -10080,6 +10080,16 @@ function _commentKeyboardReconcile(actualInset) {
 document.addEventListener('focusin', (e) => {
   if (!_isChatComposerField(e.target)) return;
   _chatKeyboardOpen();
+  // 17.09 (owner request): tapping the composer should always reveal the latest
+  // message, matching every standard messenger (Telegram/WhatsApp) -- previously
+  // the list stayed wherever it was scrolled, so opening the keyboard could hide
+  // the newest message under it with no indication anything was missed. Uses the
+  // same double-rAF helper as send/receive scrolling (shared.js) so it waits for
+  // the keyboard-open transform/composer-height changes this same event triggers
+  // to actually apply before measuring scrollHeight.
+  const composerBar = e.target.closest('.chat-input-bar, .ai-input-bar');
+  const messagesId = composerBar?.classList.contains('ai-input-bar') ? 'ai-messages' : 'chat-messages';
+  if (typeof _scrollChatToBottom === 'function') _scrollChatToBottom(messagesId);
 }, true);
 
 document.addEventListener('focusout', (e) => {
