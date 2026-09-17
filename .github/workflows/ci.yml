@@ -28,9 +28,9 @@ jobs:
       - name: Install test dependencies
         run: pip install -r requirements-test.txt
 
-      - name: Python syntax check (backend/*.py, tests/*.py)
+      - name: Python syntax check (backend/*.py, backend/core/*.py, tests/*.py)
         run: |
-          python -m py_compile backend/*.py tests/*.py
+          python -m py_compile backend/*.py backend/core/*.py tests/*.py
 
       - name: Verify backend/main.py importable in test environment
         run: |
@@ -52,6 +52,7 @@ jobs:
           # как это делает uvicorn в проде.
           rm -rf /tmp/ci-pkgtest && mkdir -p /tmp/ci-pkgtest/miniapp
           cp backend/*.py /tmp/ci-pkgtest/miniapp/
+          cp -r backend/core /tmp/ci-pkgtest/miniapp/
           cd /tmp/ci-pkgtest && python -c "
           import sys
           sys.path.insert(0, '.')
@@ -72,6 +73,8 @@ jobs:
           test -f backend/work_types.py || (echo 'backend/work_types.py missing' && exit 1)
           test -f backend/profile_skills.py || (echo 'backend/profile_skills.py missing' && exit 1)
           test -f backend/assignment_matching.py || (echo 'backend/assignment_matching.py missing' && exit 1)
+          test -f backend/daily_plan_lib.py || (echo 'backend/daily_plan_lib.py missing' && exit 1)
+          test -f scripts/manifest.sh || (echo 'scripts/manifest.sh missing' && exit 1)
           test -f frontend/js/skill-picker.js || (echo 'frontend/js/skill-picker.js missing' && exit 1)
           test -f frontend/js/assignment-sheet.js || (echo 'frontend/js/assignment-sheet.js missing' && exit 1)
           test -f backend/angebot_free.js || (echo 'backend/angebot_free.js missing' && exit 1)
@@ -88,7 +91,8 @@ jobs:
         run: |
           bash -n scripts/deploy.sh
           bash -n scripts/rollback.sh
-          echo "deploy.sh/rollback.sh syntax OK"
+          bash -n scripts/manifest.sh
+          echo "deploy.sh/rollback.sh/manifest.sh syntax OK"
 
       - name: Check for unresolved merge conflict markers
         run: |
@@ -131,11 +135,9 @@ jobs:
         run: |
           cd tests && python -m pytest . -q
 
-      - name: JS syntax check (frontend/js/*.js + backend PDF scripts)
+      - name: JS syntax check (frontend/js/**/*.js + backend PDF scripts)
         run: |
-          for f in frontend/js/*.js; do
-            node --check "$f" || exit 1
-          done
+          find frontend/js -name '*.js' -print0 | xargs -0 -n1 node --check
           node --check backend/angebot_free.js
           node --check backend/rechnung.js
           echo "All JS files syntax-OK"
