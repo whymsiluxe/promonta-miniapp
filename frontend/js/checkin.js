@@ -90,6 +90,9 @@ async function refreshCheckinButtons() {
         startAt: open.start_at || null,
         pauseStartedAt: open.pause_started_at || null,
         pauseAccumulatedSeconds: open.pause_accumulated_seconds || 0,
+        // 17.09 (audit finding): server already saves+returns this, the GPS
+        // status display just never read it -- see _updateActiveShiftPanel.
+        startAccuracy: open.start_accuracy != null ? Number(open.start_accuracy) : null,
       };
     } else if (sessions.length) {
       session = { id: sessions[sessions.length - 1].id, finished: true };
@@ -194,12 +197,23 @@ function _updateActiveShiftPanel(activeSession, objectId) {
 
   const gpsEl = document.getElementById('active-shift-gps-status');
   if (gpsEl) {
-    if (navigator.geolocation) {
-      gpsEl.textContent = '📍 GPS ок';
+    // 17.09 (audit finding): `navigator.geolocation` only proves the browser
+    // API object exists -- it says nothing about whether permission was
+    // granted, a position was actually obtained, or how accurate it is. The
+    // real accuracy (meters) was already saved at Start and is available on
+    // the session (see startAccuracy above) -- show that instead of a
+    // meaningless "GPS ок" that's true even with geolocation permanently
+    // denied.
+    const acc = activeSession.startAccuracy;
+    if (acc == null || Number.isNaN(acc)) {
+      gpsEl.textContent = '📍 Местоположение записано';
       gpsEl.style.color = '';
-    } else {
-      gpsEl.textContent = '⚠️ GPS недоступен';
+    } else if (acc > 100) {
+      gpsEl.textContent = `⚠️ Низкая точность · ±${Math.round(acc)} м`;
       gpsEl.style.color = 'var(--red)';
+    } else {
+      gpsEl.textContent = `📍 Местоположение · ±${Math.round(acc)} м`;
+      gpsEl.style.color = '';
     }
   }
 

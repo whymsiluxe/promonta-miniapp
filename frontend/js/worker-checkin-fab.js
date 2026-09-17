@@ -37,41 +37,35 @@ async function _openCheckinStatusScreen() {
   if (!modal || !body) return;
 
   if (activeObjectId) {
+    // 17.09 (audit finding, Shift Flow unification #2): this used to build its
+    // OWN minimal markup here ("Смена идёт" + a single Финиш button) -- a
+    // completely different, much poorer active-shift experience than opening
+    // the object directly, which shows the real #active-shift-panel (live
+    // timer, GPS status, Pause, Chat/Потребность/Дефект quick actions). Tapping
+    // the FAB during an active shift now opens the SAME real stages-view panel
+    // instead of a stripped-down substitute -- one active-shift UI everywhere,
+    // not two with different capabilities depending on entry point.
     let objectName = activeObjectId;
     try {
       const data = await api('/api/objects');
       const obj = (data.objects || []).find(o => o['ID объекта'] === activeObjectId);
       if (obj) objectName = obj['Объект'] || activeObjectId;
     } catch (e) {}
-    body.innerHTML = `
-      <div class="checkin-status-active">
-        <div class="checkin-status-label">Смена идёт</div>
-        <div class="checkin-status-object">${esc(objectName)}</div>
-      </div>
-      <button class="submit-btn checkin-status-btn" style="background:var(--red)" id="checkin-status-finish-btn">■ Финиш смены</button>
-    `;
-    document.getElementById('checkin-status-finish-btn').addEventListener('click', () => {
-      modal.style.display = 'none';
-      _stagesCurrentObjectId = activeObjectId;
-      // 27.07 (B3): finish идёт через новый пошаговый wizard.
-      const session = _getActiveCheckinSession(activeObjectId);
-      if (!session) { showToast('Нет активной смены', 'error'); return; }
-      if (typeof openFinishShiftWizard === 'function') {
-        openFinishShiftWizard(session.id, activeObjectId);
-      }
-    });
-  } else {
-    body.innerHTML = `
-      <div class="checkin-status-active">
-        <div class="checkin-status-label">Смена не начата</div>
-      </div>
-      <button class="submit-btn checkin-status-btn" id="checkin-status-start-btn">▶ Старт смены</button>
-    `;
-    document.getElementById('checkin-status-start-btn').addEventListener('click', async () => {
-      modal.style.display = 'none';
-      await _openWorkerObjectPicker();
-    });
+    switchView('objects');
+    if (typeof openStagesView === 'function') openStagesView(activeObjectId, objectName);
+    return; // real stages-view panel handles everything now, no modal to show
   }
+
+  body.innerHTML = `
+    <div class="checkin-status-active">
+      <div class="checkin-status-label">Смена не начата</div>
+    </div>
+    <button class="submit-btn checkin-status-btn" id="checkin-status-start-btn">▶ Старт смены</button>
+  `;
+  document.getElementById('checkin-status-start-btn').addEventListener('click', async () => {
+    modal.style.display = 'none';
+    await _openWorkerObjectPicker();
+  });
   modal.style.display = 'flex';
 }
 
