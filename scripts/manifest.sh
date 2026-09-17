@@ -9,8 +9,11 @@
 #
 # Deliberately excluded:
 #   cleanup_old_attachments.py — standalone maintenance script, not imported by main.py
-#   create_object*.py          — external, at /home/promonta/agent/ (outside this repo)
-#                                see docs/OPEN_QUESTIONS_11sep2026.md for resolution plan
+#
+# 17.09: create_object.py/create_object_folder.py MOVED into backend/ (were
+# external at /home/promonta/agent/, see docs/OPEN_QUESTIONS_11sep2026.md Q1)
+# -- listed in BACKEND_SUBPROCESS_SCRIPTS below, not BACKEND_PY_LIBS, since
+# main.py shells out to them (subprocess) rather than importing them.
 BACKEND_PY_LIBS=(
     "tools_lib.py"
     "mangel_lib.py"
@@ -25,6 +28,10 @@ BACKEND_PY_LIBS=(
 BACKEND_JS_FILES=(
     "angebot_free.js"
     "rechnung.js"
+)
+BACKEND_SUBPROCESS_SCRIPTS=(
+    "create_object.py"
+    "create_object_folder.py"
 )
 # Shipped as a unit: rm -rf $DEST/core && cp -r $SRC/core $DEST/core
 BACKEND_CORE_DIR="core"

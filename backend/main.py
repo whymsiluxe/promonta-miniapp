@@ -34,8 +34,12 @@ sys.path.insert(0, '/home/promonta/agent')
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
 AGENT_ROOT = os.environ.get('PROMONTA_AGENT_ROOT', '/home/promonta/agent')
-CREATE_OBJECT_SCRIPT = os.environ.get('PROMONTA_CREATE_OBJECT_SCRIPT', os.path.join(AGENT_ROOT, 'create_object.py'))
-CREATE_OBJECT_FOLDER_SCRIPT = os.environ.get('PROMONTA_CREATE_OBJECT_FOLDER_SCRIPT', os.path.join(AGENT_ROOT, 'create_object_folder.py'))
+# 17.09: default moved from AGENT_ROOT (external, untracked path) to BACKEND_DIR
+# -- both scripts are now tracked in backend/ (see scripts/manifest.sh) so a
+# clean clone + deploy is self-contained. Env override still works for anyone
+# who wants to point at a different location.
+CREATE_OBJECT_SCRIPT = os.environ.get('PROMONTA_CREATE_OBJECT_SCRIPT', os.path.join(BACKEND_DIR, 'create_object.py'))
+CREATE_OBJECT_FOLDER_SCRIPT = os.environ.get('PROMONTA_CREATE_OBJECT_FOLDER_SCRIPT', os.path.join(BACKEND_DIR, 'create_object_folder.py'))
 
 _PROD_DATA_ROOT = '/home/promonta/agent/miniapp'
 _is_test_context = (

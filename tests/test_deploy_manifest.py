@@ -22,16 +22,18 @@ BACKEND_DIR = os.path.join(REPO_ROOT, 'backend')
 
 
 def _parse_manifest():
-    """Parse BACKEND_PY_LIBS and BACKEND_JS_FILES arrays from manifest.sh."""
+    """Parse BACKEND_PY_LIBS, BACKEND_JS_FILES, BACKEND_SUBPROCESS_SCRIPTS from manifest.sh."""
     with open(MANIFEST_PATH, encoding='utf-8') as f:
         content = f.read()
     py_match = re.search(r'BACKEND_PY_LIBS=\(([^)]+)\)', content, re.DOTALL)
     js_match = re.search(r'BACKEND_JS_FILES=\(([^)]+)\)', content, re.DOTALL)
+    subproc_match = re.search(r'BACKEND_SUBPROCESS_SCRIPTS=\(([^)]+)\)', content, re.DOTALL)
     core_match = re.search(r'BACKEND_CORE_DIR="([^"]+)"', content)
     py_libs = re.findall(r'"([^"]+\.py)"', py_match.group(1)) if py_match else []
     js_files = re.findall(r'"([^"]+\.js)"', js_match.group(1)) if js_match else []
+    subprocess_scripts = re.findall(r'"([^"]+\.py)"', subproc_match.group(1)) if subproc_match else []
     core_dir = core_match.group(1) if core_match else 'core'
-    return py_libs, js_files, core_dir
+    return py_libs, js_files, core_dir, subprocess_scripts
 
 
 class ManifestCompletenessTests(unittest.TestCase):
@@ -39,7 +41,7 @@ class ManifestCompletenessTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.py_libs, cls.js_files, cls.core_dir = _parse_manifest()
+        cls.py_libs, cls.js_files, cls.core_dir, cls.subprocess_scripts = _parse_manifest()
 
     def test_manifest_file_exists(self):
         self.assertTrue(os.path.isfile(MANIFEST_PATH), f"manifest.sh not found at {MANIFEST_PATH}")
@@ -62,6 +64,23 @@ class ManifestCompletenessTests(unittest.TestCase):
         for f in self.js_files:
             path = os.path.join(BACKEND_DIR, f)
             self.assertTrue(os.path.isfile(path), f"Manifest lists {f} but backend/{f} does not exist")
+
+    def test_create_object_scripts_in_manifest(self):
+        """17.09: create_object.py/create_object_folder.py moved from external
+        /home/promonta/agent/ into backend/ (docs/OPEN_QUESTIONS_11sep2026.md Q1) --
+        must be tracked so a clean clone+deploy can create objects."""
+        self.assertIn('create_object.py', self.subprocess_scripts)
+        self.assertIn('create_object_folder.py', self.subprocess_scripts)
+
+    def test_all_subprocess_scripts_exist_and_compile(self):
+        for f in self.subprocess_scripts:
+            path = os.path.join(BACKEND_DIR, f)
+            self.assertTrue(os.path.isfile(path), f"Manifest lists {f} but backend/{f} does not exist")
+            result = subprocess.run(
+                [sys.executable, '-m', 'py_compile', path],
+                capture_output=True, text=True
+            )
+            self.assertEqual(result.returncode, 0, f"py_compile failed for {f}: {result.stderr}")
 
     def test_core_dir_exists(self):
         core_path = os.path.join(BACKEND_DIR, self.core_dir)
@@ -135,7 +154,7 @@ class DeployRollbackRoundTripTests(unittest.TestCase):
     """Simulate backup → mutate → rollback and verify hashes match original."""
 
     def setUp(self):
-        self.py_libs, self.js_files, self.core_dir = _parse_manifest()
+        self.py_libs, self.js_files, self.core_dir, self.subprocess_scripts = _parse_manifest()
         self.old_serving = tempfile.mkdtemp(prefix='rollback_test_old_')
         self.backup_dir = tempfile.mkdtemp(prefix='rollback_test_backup_')
         self.new_repo = tempfile.mkdtemp(prefix='rollback_test_repo_')
