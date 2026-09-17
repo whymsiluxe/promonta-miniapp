@@ -9064,6 +9064,11 @@ class AbwesenheitStatusBody(BaseModel):
     status: str
 
 
+class AbwesenheitMoveBody(BaseModel):
+    date_from: str
+    date_to: str | None = None
+
+
 @app.patch("/api/abwesenheit/{entry_id}/status")
 def update_abwesenheit_status(entry_id: str, body: AbwesenheitStatusBody,
                                user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
@@ -9083,6 +9088,46 @@ def update_abwesenheit_status(entry_id: str, body: AbwesenheitStatusBody,
               f"{'одобрено' if body.status == 'approved' else 'не одобрено'}",
         ref_id=entry['id'],
     )
+    return entry
+
+
+@app.patch("/api/abwesenheit/{entry_id}")
+def update_abwesenheit_dates(entry_id: str, body: AbwesenheitMoveBody,
+                              user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    _validate_date_str(body.date_from, 'date_from')
+    items = _load_abwesenheit()
+    entry = next((i for i in items if i['id'] == entry_id), None)
+    if not entry:
+        raise HTTPException(404, "Запись не найдена")
+    if entry['user_id'] != str(user['id']) and role != 'owner':
+        raise HTTPException(403, "Можно переносить только свои записи")
+
+    if body.date_to:
+        _validate_date_str(body.date_to, 'date_to')
+        date_to = body.date_to
+    elif entry.get('open_ended'):
+        date_to = _month_end(body.date_from)
+    else:
+        # 17.09 (real bug found finishing this endpoint off): frontend's
+        # _moveAbwesenheitEntry() computes and sends an explicit date_to that
+        # preserves the entry's original span -- but if date_to is omitted (any
+        # other/future caller, or a client that only sends date_from), this used
+        # to collapse a multi-day entry down to a single day (date_to = date_from)
+        # instead of preserving its original duration. Backend must not depend on
+        # the client remembering to do this -- compute the shift from the
+        # ORIGINAL entry's own span before it gets overwritten below.
+        original_span_days = (datetime.strptime(entry['date_to'], '%Y-%m-%d').date()
+                               - datetime.strptime(entry['date_from'], '%Y-%m-%d').date()).days
+        original_span_days = max(0, original_span_days)
+        new_from_date = datetime.strptime(body.date_from, '%Y-%m-%d').date()
+        date_to = (new_from_date + timedelta(days=original_span_days)).isoformat()
+    if date_to < body.date_from:
+        raise HTTPException(400, "date_to не может быть раньше date_from")
+
+    entry['date_from'] = body.date_from
+    entry['date_to'] = date_to
+    entry['updated_at'] = int(time.time())
+    _save_abwesenheit(items)
     return entry
 
 

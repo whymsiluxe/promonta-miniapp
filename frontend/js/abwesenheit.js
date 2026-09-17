@@ -8,6 +8,8 @@ let _pendingAbwesenheitFocusId = null; // 10.28: переход из алерт�
 let _abwFocusHighlightId = null; // держится дольше — подсветка диапазона видна пока месяц открыт
 let _abwSelectedProfileId = ''; // 10.30: owner выбрал профиль worker'а — availability-режим
 let _abwAvailability = { unavailable_dates: [], worked_dates: [] };
+let _abwViewMode = 'month'; // week | month | year
+let _abwDragEntryId = '';
 
 // Раунд 6 §2: период-пикер + статистика за период.
 let _abwPeriod = 'month';   // week | month | 3months | custom (default Месяц)
@@ -21,6 +23,7 @@ const ABW_ICONS = {
   chat: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v7A2.5 2.5 0 0 1 17.5 15H9l-5 5V5.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5" stroke="currentColor" stroke-width="2"/><path d="M8 2.5v4M16 2.5v4M4 9h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   clock: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2"/><path d="M12 7.5v5l3.2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  move: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M12 3v18M3 12h18M7 7l-4 5 4 5M17 7l4 5-4 5M7 7l5-4 5 4M7 17l5 4 5-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
 function _abwFormatDate(y, m, d) {
@@ -29,6 +32,50 @@ function _abwFormatDate(y, m, d) {
 
 function _abwDateInRange(dateStr, entry) {
   return dateStr >= entry.date_from && dateStr <= entry.date_to;
+}
+
+function _abwIsoToUtcDate(iso) {
+  const [y, m, d] = String(iso || '').split('-').map(Number);
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12));
+}
+
+function _abwIsoDaySpan(dateFrom, dateTo) {
+  const start = _abwIsoToUtcDate(dateFrom);
+  const end = _abwIsoToUtcDate(dateTo || dateFrom);
+  return Math.max(0, Math.round((end - start) / 86400000));
+}
+
+function _abwEntryOverlapsMonth(entry, year, monthIndex) {
+  const monthStart = `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
+  const monthEnd = _abwFormatDate(year, monthIndex, new Date(year, monthIndex + 1, 0).getDate());
+  return entry.date_from <= monthEnd && entry.date_to >= monthStart;
+}
+
+function _abwEntriesForCurrentCalendar() {
+  if (_abwSelectedProfileId) {
+    return _abwEntries.filter(e => String(e.user_id) === String(_abwSelectedProfileId));
+  }
+  if (currentRole === 'owner') return _abwEntries;
+  return _abwEntries.filter(e => String(e.user_id) === String(currentUserId));
+}
+
+function _abwEntriesForDate(dateStr) {
+  return _abwEntriesForCurrentCalendar().filter(e => e.date_from && e.date_to && _abwDateInRange(dateStr, e));
+}
+
+function _abwCanMoveEntry(entry) {
+  if (!entry || !entry.id) return false;
+  return currentRole === 'owner' || String(entry.user_id) === String(currentUserId);
+}
+
+function _abwAvailabilityState(dateStr) {
+  const unavailableSet = new Set(_abwAvailability.unavailable_dates || []);
+  const workedSet = new Set(_abwAvailability.worked_dates || []);
+  const assignedSet = new Set(_abwAvailability.assigned_dates || []);
+  if (workedSet.has(dateStr)) return { key: 'worked', label: 'Отработал' };
+  if (unavailableSet.has(dateStr)) return { key: 'unavailable', label: 'Не может работать' };
+  if (assignedSet.has(dateStr)) return { key: 'assigned', label: 'Назначен' };
+  return { key: 'available', label: 'Доступен' };
 }
 
 async function loadAbwesenheit() {
@@ -92,14 +139,48 @@ function _abwRenderDayCells(dates, focusEntry, todayStr, unavailableSet, workedS
     const isAssigned = assignedSet.has(dateStr);
     const stateCls = isWorked ? 'abw-state-worked' : isUnavailable ? 'abw-state-unavailable' : isAssigned ? 'abw-state-assigned' : 'abw-state-available';
     const inFocusRange = focusEntry && _abwDateInRange(dateStr, focusEntry);
+    const entryCount = _abwEntriesForDate(dateStr).length;
     const cls = ['heatmap-cell', 'abw-avail-cell', stateCls, isToday ? 'today' : '', inFocusRange ? 'focus-range' : '']
       .filter(Boolean).join(' ');
-    return `<div class="${cls}" data-date="${dateStr}">${dt.getDate()}</div>`;
+    return `<div class="${cls}" data-date="${dateStr}" data-drop-date="${dateStr}">
+      <span class="abw-day-num">${dt.getDate()}</span>
+      ${entryCount ? `<span class="abw-day-count">${entryCount}</span>` : ''}
+    </div>`;
   }).join('');
+}
+
+function _abwRenderYearView(grid) {
+  const y = _abwCurrentMonth.getFullYear();
+  const entries = _abwEntriesForCurrentCalendar();
+  document.getElementById('abw-month-label').textContent = `${y}`;
+  grid.innerHTML = ABW_MONTH_NAMES.map((name, index) => {
+    const monthEntries = entries.filter(e => e.date_from && e.date_to && _abwEntryOverlapsMonth(e, y, index));
+    const approved = monthEntries.filter(e => (e.status || 'pending') === 'approved').length;
+    const pending = monthEntries.filter(e => (e.status || 'pending') === 'pending').length;
+    const rejected = monthEntries.filter(e => (e.status || 'pending') === 'rejected').length;
+    const counts = [
+      approved ? `<span class="abw-year-count abw-year-count-approved">${approved} одобр.</span>` : '',
+      pending ? `<span class="abw-year-count abw-year-count-pending">${pending} ожид.</span>` : '',
+      rejected ? `<span class="abw-year-count abw-year-count-rejected">${rejected} откл.</span>` : '',
+    ].filter(Boolean).join('');
+    const total = monthEntries.length;
+    return `<button type="button" class="abw-year-card" data-abw-year-month="${index}">
+      <span class="abw-year-title">${esc(name)}</span>
+      <span class="abw-year-total">${total ? `${total} заявок` : 'Нет заявок'}</span>
+      <span class="abw-year-counts">${counts}</span>
+    </button>`;
+  }).join('');
+  grid.querySelectorAll('[data-abw-year-month]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      _abwCurrentMonth = new Date(y, Number(btn.dataset.abwYearMonth), 1);
+      await _setAbwViewMode('month', { syncPeriod: true });
+    });
+  });
 }
 
 function renderAbwesenheitMonth() {
   const grid = document.getElementById('abw-month-grid');
+  const view = document.getElementById('view-abwesenheit');
   const todayStr = _abwFormatDate(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
   const focusEntry = _abwFocusHighlightId ? _abwEntries.find(e => e.id === _abwFocusHighlightId) : null;
   // 21.07 + 22.07: единая система 4 состояний для ЛЮБОГО режима (owner смотрит любого, worker смотрит себя) —
@@ -109,9 +190,15 @@ function renderAbwesenheitMonth() {
   const unavailableSet = new Set(_abwAvailability.unavailable_dates || []);
   const workedSet = new Set(_abwAvailability.worked_dates || []);
   const assignedSet = new Set(_abwAvailability.assigned_dates || []);
+  if (view) view.classList.toggle('abw-year-mode', _abwViewMode === 'year');
+  grid.classList.toggle('abw-year-grid', _abwViewMode === 'year');
 
   let html = '';
-  if (_abwPeriod === 'week') {
+  if (_abwViewMode === 'year') {
+    _abwRenderYearView(grid);
+    return;
+  }
+  if (_abwViewMode === 'week') {
     // 17.09: week view -- реиспользует ту же 4-состояние заливку и клик-обработчик,
     // просто сужает диапазон до 7 дней текущей ISO-недели вместо полного месяца.
     const dates = _abwWeekDates();
@@ -137,8 +224,20 @@ function renderAbwesenheitMonth() {
   grid.innerHTML = html;
 
   grid.querySelectorAll('.heatmap-cell[data-date]').forEach(cell => {
-    if (_abwSelectedProfileId) return; // просмотр чужой доступности — не форма создания
-    cell.addEventListener('click', () => _openAbwReasonForm(cell.dataset.date));
+    cell.addEventListener('click', () => _openAbwReasonForm(cell.dataset.date, { readOnly: Boolean(_abwSelectedProfileId) }));
+    cell.addEventListener('dragover', (e) => {
+      if (!_abwDragEntryId) return;
+      e.preventDefault();
+      cell.classList.add('abw-drop-target');
+    });
+    cell.addEventListener('dragleave', () => cell.classList.remove('abw-drop-target'));
+    cell.addEventListener('drop', (e) => {
+      const entryId = _abwDragEntryId || e.dataTransfer?.getData('text/plain') || '';
+      if (!entryId) return;
+      e.preventDefault();
+      cell.classList.remove('abw-drop-target');
+      _moveAbwesenheitEntry(entryId, cell.dataset.date);
+    });
   });
 }
 
@@ -150,14 +249,13 @@ const ABW_STATUS_COLOR = { pending: 'var(--warning)', approved: 'var(--accent)',
 function renderAbwesenheitList() {
   const y = _abwCurrentMonth.getFullYear();
   const m = _abwCurrentMonth.getMonth();
-  const monthPrefix = `${y}-${String(m + 1).padStart(2, '0')}`;
   // 28.07: /api/abwesenheit/all теперь доступен и worker'у (для dropdown "чей календарь
   // смотреть"), но список заявок ("Никто не отмечен" / карточки) должен по умолчанию
   // показывать только свои записи воркеру -- иначе он видит заявки всех коллег всегда,
   // не только когда явно выбрал кого-то в селекторе (тот выбор влияет на availability
   // heatmap, не на этот список).
   const scopedEntries = currentRole === 'owner' ? _abwEntries : _abwEntries.filter(e => String(e.user_id) === String(currentUserId));
-  const entriesThisMonth = scopedEntries.filter(e => e.date_from.startsWith(monthPrefix) || e.date_to.startsWith(monthPrefix));
+  const entriesThisMonth = scopedEntries.filter(e => _abwEntryOverlapsMonth(e, y, m));
 
   const listEl = document.getElementById('abw-list');
   if (!entriesThisMonth.length) {
@@ -171,15 +269,17 @@ function renderAbwesenheitList() {
     const canClose = e.open_ended && (isMine || currentRole === 'owner');
     const timeStr = (e.start_time || e.end_time) ? `${e.start_time || ''}${e.end_time ? '–' + e.end_time : ''}` : '';
     const showChatIcon = currentRole === 'owner' && !isMine;
+    const canMove = _abwCanMoveEntry(e);
 
     return `
-    <div class="abw-request-card" data-entry-id="${e.id}">
+    <div class="abw-request-card${canMove ? ' abw-request-movable' : ''}" data-entry-id="${esc(e.id)}" ${canMove ? 'draggable="true" title="Перенести дату"' : ''}>
       <div class="abw-request-top">
         <div class="abw-request-avatar">${esc((e.name || '?')[0].toUpperCase())}</div>
         <div class="abw-request-who">
           <div class="abw-request-name">${esc(e.name || e.user_id)}</div>
           <div class="abw-request-status" style="color:${ABW_STATUS_COLOR[status]}">${esc(ABW_STATUS_LABEL[status] || status)}</div>
         </div>
+        ${canMove ? `<span class="abw-request-move-handle" aria-hidden="true">${ABW_ICONS.move}</span>` : ''}
         ${showChatIcon ? `<button class="abw-request-chat-btn abw-open-chat-btn" data-user-id="${esc(e.user_id)}" data-user-name="${esc(e.name || e.user_id)}" title="Написать в чат" aria-label="Написать в чат">${ABW_ICONS.chat}</button>` : ''}
       </div>
 
@@ -208,6 +308,21 @@ function renderAbwesenheitList() {
   listEl.querySelectorAll('.abw-open-chat-btn').forEach(btn => {
     btn.addEventListener('click', () => _openAbwesenheitChat(btn.dataset.userId, btn.dataset.userName));
   });
+  listEl.querySelectorAll('.abw-request-card[draggable="true"]').forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      _abwDragEntryId = card.dataset.entryId || '';
+      e.dataTransfer?.setData('text/plain', _abwDragEntryId);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      card.classList.add('abw-request-dragging');
+      document.getElementById('abw-month-grid')?.classList.add('abw-grid-dragging');
+    });
+    card.addEventListener('dragend', () => {
+      _abwDragEntryId = '';
+      card.classList.remove('abw-request-dragging');
+      document.getElementById('abw-month-grid')?.classList.remove('abw-grid-dragging');
+      document.querySelectorAll('#abw-month-grid .abw-drop-target').forEach(cell => cell.classList.remove('abw-drop-target'));
+    });
+  });
 }
 
 function _openAbwesenheitChat(userId, name) {
@@ -235,9 +350,41 @@ async function _decideAbwesenheit(entryId, status) {
 // Telegram BackButton закрывает корректно вместо провала на предыдущий route.
 let _abwSheetOverlayUnregister = null;
 
-function _openAbwReasonForm(dateStr) {
+function _renderAbwDaySummary(dateStr, readOnly) {
+  const box = document.getElementById('abw-day-summary');
+  if (!box) return;
+  const state = _abwAvailabilityState(dateStr);
+  const entries = _abwEntriesForDate(dateStr);
+  const cards = entries.length ? entries.map(e => {
+    const status = e.status || 'pending';
+    return `<div class="abw-day-summary-entry">
+      <div class="abw-day-summary-entry-title">${esc(e.name || e.user_id || 'Сотрудник')}</div>
+      <div class="abw-day-summary-entry-meta">
+        ${esc(ABW_REASON_LABEL[e.reason] || 'Отсутствие')} · ${fmtDateRangeHuman(e.date_from, e.date_to)}
+      </div>
+      <span class="abw-day-summary-status" style="color:${ABW_STATUS_COLOR[status]}">${esc(ABW_STATUS_LABEL[status] || status)}</span>
+    </div>`;
+  }).join('') : '<div class="abw-day-summary-empty">Заявок нет</div>';
+  box.innerHTML = `
+    <div class="abw-day-summary-card abw-day-summary-${state.key}">
+      <div class="abw-day-summary-top">
+        <span class="abw-day-summary-kicker">Статус дня</span>
+        <span class="abw-day-summary-pill">${esc(state.label)}</span>
+      </div>
+      <div class="abw-day-summary-list">${cards}</div>
+      ${readOnly ? '<div class="abw-day-summary-readonly">Просмотр календаря сотрудника</div>' : ''}
+    </div>`;
+}
+
+function _openAbwReasonForm(dateStr, opts = {}) {
   _abwSelectedDate = dateStr;
   document.getElementById('abw-selected-date').textContent = typeof fmtDateHuman === 'function' ? fmtDateHuman(dateStr) : dateStr;
+  const readOnly = Boolean(opts.readOnly);
+  _renderAbwDaySummary(dateStr, readOnly);
+  const form = document.getElementById('abw-reason-form');
+  if (form) form.style.display = readOnly ? 'none' : '';
+  const dateToInput = document.getElementById('abw-date-to-input');
+  if (dateToInput) dateToInput.min = dateStr;
   const sheet = document.getElementById('abw-reason-sheet');
   sheet.style.display = 'flex';
   requestAnimationFrame(() => sheet.classList.add('open'));
@@ -301,6 +448,28 @@ async function _closeOpenAbwesenheit(entryId) {
     await loadAbwesenheit();
   } catch (e) {
     showToast('Ошибка: ' + e.message, 'error');
+  }
+}
+
+async function _moveAbwesenheitEntry(entryId, newDateFrom) {
+  const entry = _abwEntries.find(e => e.id === entryId);
+  if (!entry || !_abwCanMoveEntry(entry)) return;
+  const payload = { date_from: newDateFrom };
+  if (!entry.open_ended) {
+    payload.date_to = _abwShiftIso(newDateFrom, _abwIsoDaySpan(entry.date_from, entry.date_to));
+  }
+  try {
+    await api(`/api/abwesenheit/${entryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    _abwFocusHighlightId = entryId;
+    hapticImpact('light');
+    showToast('Дата перенесена', 'success');
+    await _loadAbwAvailability();
+    await loadAbwesenheit();
+  } catch (e) {
+    showToast('Ошибка переноса: ' + e.message, 'error');
   }
 }
 
@@ -507,6 +676,48 @@ async function _downloadAbwPeriodCsv() {
   }
 }
 
+function _abwSyncViewModeSwitch() {
+  const switcher = document.getElementById('abw-view-mode-switch');
+  if (!switcher) return;
+  switcher.querySelectorAll('[data-abw-view]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.abwView === _abwViewMode);
+  });
+}
+
+function _abwSyncPeriodPills() {
+  const pills = document.getElementById('abw-period-pills');
+  if (!pills) return;
+  pills.querySelectorAll('.abw-period-pill').forEach(p => p.classList.toggle('active', p.dataset.period === _abwPeriod));
+  const custom = document.getElementById('abw-period-custom');
+  if (custom) custom.style.display = (_abwPeriod === 'custom') ? 'flex' : 'none';
+}
+
+async function _setAbwViewMode(mode, opts = {}) {
+  if (!['week', 'month', 'year'].includes(mode)) return;
+  _abwViewMode = mode;
+  if (opts.syncPeriod && (mode === 'week' || mode === 'month')) {
+    _abwPeriod = mode;
+    _abwSyncPeriodPills();
+  }
+  _abwSyncViewModeSwitch();
+  await _loadAbwAvailability();
+  renderAbwesenheitMonth();
+  renderAbwesenheitList();
+}
+
+function _initAbwViewModeSwitch() {
+  const switcher = document.getElementById('abw-view-mode-switch');
+  if (!switcher || switcher.dataset.wired) return;
+  switcher.dataset.wired = '1';
+  _abwSyncViewModeSwitch();
+  switcher.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-abw-view]');
+    if (!btn) return;
+    _setAbwViewMode(btn.dataset.abwView, { syncPeriod: true });
+    if (btn.dataset.abwView === 'week' || btn.dataset.abwView === 'month') _loadAbwPeriodStats();
+  });
+}
+
 function _initAbwPeriodPicker() {
   const pills = document.getElementById('abw-period-pills');
   if (!pills || pills.dataset.wired) return;
@@ -520,12 +731,10 @@ function _initAbwPeriodPicker() {
     const b = e.target.closest('.abw-period-pill');
     if (!b) return;
     _abwPeriod = b.dataset.period;
-    pills.querySelectorAll('.abw-period-pill').forEach(p => p.classList.toggle('active', p === b));
-    document.getElementById('abw-period-custom').style.display = (_abwPeriod === 'custom') ? 'flex' : 'none';
-    // 17.09: pill теперь также переключает саму сетку (неделя vs месяц), не только
-    // агрегированную статистику снизу -- '3months'/'custom' сетку не меняют (грид не
-    // умеет показывать 90+ дней читаемо), только влияют на abw-period-stats как раньше.
-    if (_abwPeriod === 'week' || _abwPeriod === 'month') renderAbwesenheitMonth();
+    _abwSyncPeriodPills();
+    // 17.09: отдельный переключатель вида календаря добавил год; старые stats-пилюли
+    // для недели/месяца продолжают синхронизировать сам календарь.
+    if (_abwPeriod === 'week' || _abwPeriod === 'month') _setAbwViewMode(_abwPeriod, { syncPeriod: false });
     if (_abwPeriod !== 'custom') _loadAbwPeriodStats();
   });
   document.getElementById('abw-period-apply')?.addEventListener('click', () => {
@@ -536,8 +745,10 @@ function _initAbwPeriodPicker() {
 }
 
 async function _shiftAbwMonth(delta) {
-  if (_abwPeriod === 'week') {
+  if (_abwViewMode === 'week') {
     _abwCurrentMonth = new Date(_abwCurrentMonth.getFullYear(), _abwCurrentMonth.getMonth(), _abwCurrentMonth.getDate() + delta * 7);
+  } else if (_abwViewMode === 'year') {
+    _abwCurrentMonth = new Date(_abwCurrentMonth.getFullYear() + delta, _abwCurrentMonth.getMonth(), 1);
   } else {
     _abwCurrentMonth = new Date(_abwCurrentMonth.getFullYear(), _abwCurrentMonth.getMonth() + delta, 1);
   }
@@ -550,6 +761,7 @@ async function initAbwesenheitView() {
   await _loadAbwAvailability();
   loadAbwesenheit();
   _initAbwProfileSelector();
+  _initAbwViewModeSwitch();
   _initAbwPeriodPicker();
   _loadAbwPeriodStats(); // worker сразу видит свою статистику; owner — после выбора
 
