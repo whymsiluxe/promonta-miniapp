@@ -7207,6 +7207,44 @@ body {
   font-weight: 800;
   letter-spacing: 0;
 }
+/* 17.09: Объекты (top-level nav tab, same tier as Команда/Инструменты/Профиль/
+   Календарь/Сообщения-список) had NO override at all -- fell through to the
+   base header h1 (28px/700), visibly smaller/lighter than every sibling
+   top-level tab title. Unified to the same large-title pattern the others
+   already use. */
+#objects-list-view header {
+  background: var(--ios-page-bg, var(--bg-app));
+  border-bottom: none;
+}
+#objects-list-view header h1 {
+  color: var(--ios-text, var(--text-main));
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+/* 17.09: same unification for Сегодня (Home) and Лента (Feed) -- both are
+   bottom-nav top-level tabs, same tier as Объекты/Профиль/Чат-список, and
+   both also fell through to the base 28px/700 header with no override. */
+#view-home header {
+  background: var(--ios-page-bg, var(--bg-app));
+  border-bottom: none;
+}
+#view-home header h1 {
+  color: var(--ios-text, var(--text-main));
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+#view-feed header {
+  background: var(--ios-page-bg, var(--bg-app));
+  border-bottom: none;
+}
+#view-feed header h1 {
+  color: var(--ios-text, var(--text-main));
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
 #view-abwesenheit #abw-profile-selector-wrap,
 #view-abwesenheit #abw-period-panel {
   margin-top: 0.1rem;
@@ -9670,6 +9708,15 @@ function switchView(viewName, opts = {}) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   const _targetViewEl = document.getElementById(`view-${viewName}`);
   _targetViewEl.classList.add('active');
+  // 17.09: .view toggles via display:none<->block, which does NOT reset scrollTop --
+  // a view left scrolled down (e.g. a long Календарь entries list, or a long Объекты
+  // list) reopened at that same stale scroll position instead of the top, looking
+  // like it "opened in the middle". Reset ONLY on a genuine bottom-nav tab switch,
+  // not on push/back navigation into a sub-screen.
+  if (opts.isTabSwitch) {
+    window.scrollTo(0, 0);
+    if (_targetViewEl) _targetViewEl.scrollTop = 0;
+  }
   if (_tabMotionClass) {
     _targetViewEl.classList.add(_tabMotionClass);
     _targetViewEl.addEventListener('animationend', () => _targetViewEl.classList.remove(_tabMotionClass), { once: true });
