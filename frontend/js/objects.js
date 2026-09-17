@@ -1434,7 +1434,14 @@ function _isObjTabSwipeExcluded(target) {
   // 28.07: .obj-stage-move-col удалён (заменён drag-handle), новые классы аккордеона/drag
   // добавлены -- без этого глобальный tab-swipe перехватывал тап по заголовку этапа
   // (не давая аккордеону открыться) и конфликтовал с drag-перетаскиванием.
-  return !!target.closest?.('#obj-detail-tabs, .chat-messages, .chat-input-bar, .obj-stage-header, .obj-stage-drag-handle, .obj-stages-roadmap, .obj-info-doc-viewer, #obj-info-doc-viewer, input, textarea');
+  // 17.09 (owner report): .obj-task-kanban-section добавлен -- Object Task Kanban
+  // (P2 backlog item, added after this exclusion list was last touched) has no
+  // horizontal swipe gesture of its own, but a horizontal swipe over its cards/lanes
+  // was still being read by THIS tab-switch handler and flipping the whole Object
+  // Detail screen to the next tab (Инфо/План работ/Дефекты/...) instead of doing
+  // nothing -- the same class of bug the 28.07 comment above already fixed once for
+  // stages, just never swept to this newer section.
+  return !!target.closest?.('#obj-detail-tabs, .chat-messages, .chat-input-bar, .obj-stage-header, .obj-stage-drag-handle, .obj-stages-roadmap, .obj-info-doc-viewer, #obj-info-doc-viewer, .obj-task-kanban-section, input, textarea');
 }
 
 function _currentObjDetailTab() {
