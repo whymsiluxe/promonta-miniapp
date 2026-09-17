@@ -70,30 +70,22 @@ function _scrollToAbwesenheitEntry(entryId) {
   }
 }
 
-function renderAbwesenheitMonth() {
-  const y = _abwCurrentMonth.getFullYear();
-  const m = _abwCurrentMonth.getMonth();
-  document.getElementById('abw-month-label').textContent = `${ABW_MONTH_NAMES[m]} ${y}`;
+function _abwWeekDates() {
+  // Monday-start week containing _abwCurrentMonth's anchor date (day-of-month
+  // preserved by _shiftAbwWeek/_shiftAbwMonth, see below).
+  const anchor = _abwCurrentMonth;
+  const dow = (anchor.getDay() + 6) % 7; // ISO: понедельник = 0
+  const monday = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - dow);
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    dates.push(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i));
+  }
+  return dates;
+}
 
-  const firstDay = new Date(y, m, 1);
-  const daysInMonth = new Date(y, m + 1, 0).getDate();
-  // ISO: понедельник = 0
-  const startOffset = (firstDay.getDay() + 6) % 7;
-
-  const todayStr = _abwFormatDate(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
-  const grid = document.getElementById('abw-month-grid');
-  let html = '';
-  for (let i = 0; i < startOffset; i++) html += '<div class="heatmap-cell" style="visibility:hidden;"></div>';
-  const focusEntry = _abwFocusHighlightId ? _abwEntries.find(e => e.id === _abwFocusHighlightId) : null;
-  // 21.07 + 22.07: единая система 4 состояний для ЛЮБОГО режима (owner смотрит любого, worker смотрит себя) —
-  // зелёный=доступен, серый=отработал (день уже прошёл — важнее прочего), красный=недоступен
-  // (одобренный отпуск, теперь физически блокирует новое назначение — см. assign_user backend),
-  // синий=назначен на объект в эти даты. Приоритет: отработал > недоступен > назначен > доступен.
-  const unavailableSet = new Set(_abwAvailability.unavailable_dates || []);
-  const workedSet = new Set(_abwAvailability.worked_dates || []);
-  const assignedSet = new Set(_abwAvailability.assigned_dates || []);
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = _abwFormatDate(y, m, d);
+function _abwRenderDayCells(dates, focusEntry, todayStr, unavailableSet, workedSet, assignedSet) {
+  return dates.map(dt => {
+    const dateStr = _abwFormatDate(dt.getFullYear(), dt.getMonth(), dt.getDate());
     const isToday = dateStr === todayStr;
     const isWorked = workedSet.has(dateStr);
     const isUnavailable = unavailableSet.has(dateStr);
@@ -102,7 +94,45 @@ function renderAbwesenheitMonth() {
     const inFocusRange = focusEntry && _abwDateInRange(dateStr, focusEntry);
     const cls = ['heatmap-cell', 'abw-avail-cell', stateCls, isToday ? 'today' : '', inFocusRange ? 'focus-range' : '']
       .filter(Boolean).join(' ');
-    html += `<div class="${cls}" data-date="${dateStr}">${d}</div>`;
+    return `<div class="${cls}" data-date="${dateStr}">${dt.getDate()}</div>`;
+  }).join('');
+}
+
+function renderAbwesenheitMonth() {
+  const grid = document.getElementById('abw-month-grid');
+  const todayStr = _abwFormatDate(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  const focusEntry = _abwFocusHighlightId ? _abwEntries.find(e => e.id === _abwFocusHighlightId) : null;
+  // 21.07 + 22.07: единая система 4 состояний для ЛЮБОГО режима (owner смотрит любого, worker смотрит себя) —
+  // зелёный=доступен, серый=отработал (день уже прошёл — важнее прочего), красный=недоступен
+  // (одобренный отпуск, теперь физически блокирует новое назначение — см. assign_user backend),
+  // синий=назначен на объект в эти даты. Приоритет: отработал > недоступен > назначен > доступен.
+  const unavailableSet = new Set(_abwAvailability.unavailable_dates || []);
+  const workedSet = new Set(_abwAvailability.worked_dates || []);
+  const assignedSet = new Set(_abwAvailability.assigned_dates || []);
+
+  let html = '';
+  if (_abwPeriod === 'week') {
+    // 17.09: week view -- реиспользует ту же 4-состояние заливку и клик-обработчик,
+    // просто сужает диапазон до 7 дней текущей ISO-недели вместо полного месяца.
+    const dates = _abwWeekDates();
+    const first = dates[0], last = dates[6];
+    const sameMonth = first.getMonth() === last.getMonth();
+    const label = sameMonth
+      ? `${first.getDate()}–${last.getDate()} ${ABW_MONTH_NAMES[first.getMonth()]} ${first.getFullYear()}`
+      : `${first.getDate()} ${ABW_MONTH_NAMES[first.getMonth()]} – ${last.getDate()} ${ABW_MONTH_NAMES[last.getMonth()]} ${last.getFullYear()}`;
+    document.getElementById('abw-month-label').textContent = label;
+    html = _abwRenderDayCells(dates, focusEntry, todayStr, unavailableSet, workedSet, assignedSet);
+  } else {
+    const y = _abwCurrentMonth.getFullYear();
+    const m = _abwCurrentMonth.getMonth();
+    document.getElementById('abw-month-label').textContent = `${ABW_MONTH_NAMES[m]} ${y}`;
+    const firstDay = new Date(y, m, 1);
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const startOffset = (firstDay.getDay() + 6) % 7;
+    for (let i = 0; i < startOffset; i++) html += '<div class="heatmap-cell" style="visibility:hidden;"></div>';
+    const dates = [];
+    for (let d = 1; d <= daysInMonth; d++) dates.push(new Date(y, m, d));
+    html += _abwRenderDayCells(dates, focusEntry, todayStr, unavailableSet, workedSet, assignedSet);
   }
   grid.innerHTML = html;
 
@@ -492,6 +522,10 @@ function _initAbwPeriodPicker() {
     _abwPeriod = b.dataset.period;
     pills.querySelectorAll('.abw-period-pill').forEach(p => p.classList.toggle('active', p === b));
     document.getElementById('abw-period-custom').style.display = (_abwPeriod === 'custom') ? 'flex' : 'none';
+    // 17.09: pill теперь также переключает саму сетку (неделя vs месяц), не только
+    // агрегированную статистику снизу -- '3months'/'custom' сетку не меняют (грид не
+    // умеет показывать 90+ дней читаемо), только влияют на abw-period-stats как раньше.
+    if (_abwPeriod === 'week' || _abwPeriod === 'month') renderAbwesenheitMonth();
     if (_abwPeriod !== 'custom') _loadAbwPeriodStats();
   });
   document.getElementById('abw-period-apply')?.addEventListener('click', () => {
@@ -502,7 +536,11 @@ function _initAbwPeriodPicker() {
 }
 
 async function _shiftAbwMonth(delta) {
-  _abwCurrentMonth = new Date(_abwCurrentMonth.getFullYear(), _abwCurrentMonth.getMonth() + delta, 1);
+  if (_abwPeriod === 'week') {
+    _abwCurrentMonth = new Date(_abwCurrentMonth.getFullYear(), _abwCurrentMonth.getMonth(), _abwCurrentMonth.getDate() + delta * 7);
+  } else {
+    _abwCurrentMonth = new Date(_abwCurrentMonth.getFullYear(), _abwCurrentMonth.getMonth() + delta, 1);
+  }
   await _loadAbwAvailability();
   renderAbwesenheitMonth();
   renderAbwesenheitList();
