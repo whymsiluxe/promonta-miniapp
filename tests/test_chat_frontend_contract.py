@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP_HTML = ROOT / "frontend" / "app.html"
 CHAT_JS = ROOT / "frontend" / "js" / "chat.js"
+OBJECT_INFO_JS = ROOT / "frontend" / "js" / "object-info.js"
 
 
 def _source(path: Path) -> str:
@@ -78,3 +79,20 @@ def test_chat_owner_broadcast_controls_contract():
     assert "api('/api/manager/broadcast'" in js
     assert "JSON.stringify({ scope, text, object_id: scope === 'object' ? objectId : null })" in js
     assert "msg.broadcast" in js
+
+
+def test_chat_thread_skin_is_bound_to_reusable_detail_view():
+    html = _source(APP_HTML)
+    object_info_js = _source(OBJECT_INFO_JS)
+
+    assert "#obj-detail-panel-chat.obj-chat-active #chat-thread-detail-view" in html
+    assert "panel.appendChild(chatView)" in object_info_js
+    for selector in (
+        "#chat-thread-detail-view .chat-bubble",
+        "#chat-thread-detail-view .chat-bubble-own",
+        "#chat-thread-detail-view .chat-bubble-other",
+        "#chat-thread-detail-view .chat-input-bar",
+        "#chat-thread-detail-view .chat-quick-reactions",
+        "#chat-thread-detail-view .chat-send-btn",
+    ):
+        assert selector in html
