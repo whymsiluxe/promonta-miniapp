@@ -1115,22 +1115,37 @@ async function _loadWorkerShiftCta(objDataPromise) {
       return;
     }
 
-    // нет активной смены — предложить начать на первом назначенном сегодня объекте
+    // нет активной смены — предложить начать
     const myObjects = (objData.objects || []).filter(o =>
       (o.assigned_users || []).some(u => String(u.user_id) === String(currentUserId)) && o['Статус'] === 'В работе'
     );
     if (myObjects.length) {
-      const obj = myObjects[0];
+      // 17.09 (audit finding #1, Shift Flow unification): with 2+ eligible objects
+      // this used to silently take myObjects[0] and send the worker straight into
+      // THAT object's shift with no chooser -- a real risk of starting the wrong
+      // shift by accident. With exactly 1 object there is nothing to choose, so
+      // the label still names it directly; with 2+ the CTA is now deliberately
+      // generic ("Начать смену") and its tap opens the SAME shared picker flow
+      // FAB/DailyPlan already use (_openWorkerObjectPicker -- object chooser ->
+      // stage picker -> _startWorkerCheckin), instead of the Home-only
+      // _openObjectForShift/openStagesView path that bypassed both choices.
+      const single = myObjects.length === 1 ? myObjects[0] : null;
       cta.style.display = 'flex';
       cta.className = 'worker-shift-cta worker-shift-cta-idle';
       cta.innerHTML = `
         <div class="worker-shift-cta-text">
           <div class="worker-shift-cta-status">⚪ Смена не начата</div>
-          <div class="worker-shift-cta-object">${esc(obj['Объект'])}</div>
+          <div class="worker-shift-cta-object">${single ? esc(single['Объект']) : 'Выберите объект'}</div>
         </div>
         <span class="worker-shift-cta-arrow">Начать ›</span>
       `;
-      cta.onclick = () => _openObjectForShift(obj['ID объекта'], obj['Объект']);
+      cta.onclick = () => {
+        if (typeof _openStagePickerThenStart === 'function' && single) {
+          _openStagePickerThenStart(single['ID объекта']);
+        } else if (typeof _openWorkerObjectPicker === 'function') {
+          _openWorkerObjectPicker();
+        }
+      };
     }
   } catch (e) {}
 }
@@ -1138,11 +1153,9 @@ async function _loadWorkerShiftCta(objDataPromise) {
 function _openObjectForShift(objectId, objectName) {
   // openStagesView (objects.js) — экран с реальными Start/Pause/Finish-кнопками смены,
   // не сама карточка объекта (та лишь разворачивает детали, не открывает check-in).
-  // 24.07: убран искусственный setTimeout(150) — он давал заметное мигание (список
-  // Объекты на долю секунды показывался пустым/грузящимся, потом резко перекрывался
-  // Этапами объекта). openStagesView сам ждёт свои данные через await, а его DOM-цели
-  // (#objects-list-view, #stages-view) статичны в разметке — не нужно ждать
-  // initObjectsView()/loadObjects() до вызова.
+  // 17.09: only used for the ACTIVE-shift "Завершить" tap now (see openSession branch
+  // above) -- the idle "Начать" path was moved to the shared picker flow
+  // (_openStagePickerThenStart/_openWorkerObjectPicker) instead of coming here.
   switchView('objects');
   if (typeof openStagesView === 'function') openStagesView(objectId, objectName || '');
 }
