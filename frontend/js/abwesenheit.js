@@ -758,6 +758,22 @@ async function _shiftAbwMonth(delta) {
 }
 
 async function initAbwesenheitView() {
+  // 17.09 (owner report, real iPhone Telegram): the calendar sometimes opened
+  // mid-scroll -- header/title missing, the Неделя/Месяц/Год switch already
+  // under the Telegram system UI. Root cause: #view-abwesenheit toggles via
+  // display:none<->block (not removed from DOM), which does not reset
+  // scrollTop -- if the document/root was scrolled from a PREVIOUS state of
+  // this same view, it reopened at that stale position. Reset synchronously
+  // BEFORE the async load/render below starts, not after -- doing it only
+  // after data arrives would let the browser paint the stale scroll position
+  // for one visible frame first. Skip the reset only when a deep-link/alert
+  // navigation set _pendingAbwesenheitFocusId -- that flow's own
+  // _scrollToAbwesenheitEntry() (called from loadAbwesenheit() below) owns
+  // the scroll position in that case, don't fight it.
+  if (!_pendingAbwesenheitFocusId) {
+    if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+    window.scrollTo(0, 0);
+  }
   await _loadAbwAvailability();
   loadAbwesenheit();
   _initAbwProfileSelector();

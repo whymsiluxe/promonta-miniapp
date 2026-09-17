@@ -792,7 +792,9 @@ async function _retryFinishOutboxRecords() {
   _finishOutboxRetrying = true;
   try {
     const records = await promontaOutboxList(CHECKIN_OUTBOX_KIND_FINISH).catch(() => []);
-    for (const record of records) {
+    // 17.09 (audit finding, P0): same dead_letter fix as checkin.js's start-outbox
+    // retry -- see promontaOutboxRecordFailure() in shared.js for the shared logic.
+    for (const record of records.filter(r => r.state !== 'dead_letter')) {
       await promontaOutboxPatch(record.id, {
         state: 'sending',
         attempts: (record.attempts || 0) + 1,
@@ -803,7 +805,7 @@ async function _retryFinishOutboxRecords() {
         _fwMarkFinishConfirmed(record, false);
         showToast('Отложенный финиш смены отправлен', 'success');
       } catch (e) {
-        await promontaOutboxPatch(record.id, { state: 'queued', lastError: e.message || String(e) });
+        await promontaOutboxRecordFailure({ ...record, attempts: (record.attempts || 0) + 1 }, e);
       }
     }
   } finally {

@@ -47,7 +47,11 @@ def test_profile_css_bridges_to_ios_settings_language():
     ):
         assert selector in html
 
-    assert "font-size: 36px" in html
+    # 17.09: #view-profile header h1's own 36px/800 override removed as a
+    # duplicate of the canonical top-level page-title (28px/800, lives on the
+    # base `header h1` rule only -- see that rule's comment). 36px overflowed
+    # the header's centered column on real iPhone.
+    assert "font-weight: 800;" in html
     assert "text-transform: none" in html
     assert "letter-spacing: 0" in html
     assert "var(--ios-surface" in html

@@ -159,8 +159,18 @@ header {
 
 header h1 {
   font-family: var(--font-heading);
-  font-size: 1.75rem; /* 23.07: было 1.5rem(24px) — отчёт рекомендует page title 28-32px, page title должен доминировать над section title (1.26rem) */
-  font-weight: 700;
+  /* 17.09: this IS the canonical top-level page-title size now (28px/800) --
+     a same-session earlier commit added a competing 36px/800 override on 9
+     individual top-level screens (Home/Feed/Объекты/Профиль/Чат-список/
+     Инструменты/Команда/Задачи/Календарь), which on real iPhone caused the
+     title to overflow the header's centered column and truncate with an
+     ellipsis ("Календарь" -> "Календа..."). Fixed at the root: this base
+     rule is the single source of truth every top-level view h1 inherits,
+     the 9 duplicate 36px overrides are removed below instead of kept as a
+     second competing definition. Do not re-add a per-view override for
+     page-title size -- add here if the canonical size ever needs to change. */
+  font-size: 1.75rem; /* 28px, matches --app-page-title-size intent */
+  font-weight: 800;
   color: var(--text-main); /* 24.07: было var(--bg-card) — светлый текст на тёмном фоне,
      осталось от до-Phase-0 тёмной темы. После Phase 0 :root стал светлым (Old Money
      ivory), header лежит на var(--bg-app) (тоже светлый) — светлый-на-светлом делал
@@ -6548,12 +6558,6 @@ body {
 #view-working-objects {
   background: var(--ios-page-bg, var(--bg-app));
 }
-#view-working-objects header h1 {
-  color: var(--ios-text, var(--text-main));
-  font-size: 36px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
 #view-working-objects .wo-mode-switch {
   margin: 0 0.9rem 0.75rem;
 }
@@ -6966,12 +6970,6 @@ body {
 #view-tasks {
   background: var(--ios-page-bg, var(--bg-app));
 }
-#view-tasks header h1 {
-  color: var(--ios-text, var(--text-main));
-  font-size: 36px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
 #view-tasks .tasks-new-btn {
   position: static;
   width: 40px;
@@ -7201,12 +7199,6 @@ body {
   background: var(--ios-page-bg, var(--bg-app));
   border-bottom: none;
 }
-#view-abwesenheit header h1 {
-  color: var(--ios-text, var(--text-main));
-  font-size: 36px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
 /* 17.09: Объекты (top-level nav tab, same tier as Команда/Инструменты/Профиль/
    Календарь/Сообщения-список) had NO override at all -- fell through to the
    base header h1 (28px/700), visibly smaller/lighter than every sibling
@@ -7216,12 +7208,6 @@ body {
   background: var(--ios-page-bg, var(--bg-app));
   border-bottom: none;
 }
-#objects-list-view header h1 {
-  color: var(--ios-text, var(--text-main));
-  font-size: 36px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
 /* 17.09: same unification for Сегодня (Home) and Лента (Feed) -- both are
    bottom-nav top-level tabs, same tier as Объекты/Профиль/Чат-список, and
    both also fell through to the base 28px/700 header with no override. */
@@ -7229,21 +7215,9 @@ body {
   background: var(--ios-page-bg, var(--bg-app));
   border-bottom: none;
 }
-#view-home header h1 {
-  color: var(--ios-text, var(--text-main));
-  font-size: 36px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
 #view-feed header {
   background: var(--ios-page-bg, var(--bg-app));
   border-bottom: none;
-}
-#view-feed header h1 {
-  color: var(--ios-text, var(--text-main));
-  font-size: 36px;
-  font-weight: 800;
-  letter-spacing: 0;
 }
 #view-abwesenheit #abw-profile-selector-wrap,
 #view-abwesenheit #abw-period-panel {
@@ -7656,12 +7630,6 @@ body {
 #view-tools {
   background: var(--ios-page-bg, var(--bg-app));
 }
-#view-tools header h1 {
-  color: var(--ios-text, var(--text-main));
-  font-size: 36px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
 #view-tools .tools-add-btn {
   position: static;
   width: 40px;
@@ -7943,12 +7911,6 @@ body {
 #view-profile {
   background: var(--ios-page-bg, var(--bg-app));
 }
-#view-profile header h1 {
-  color: var(--ios-text, var(--text-main));
-  font-size: 36px;
-  font-weight: 800;
-  letter-spacing: 0;
-}
 #profile-content {
   padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
 }
@@ -8153,12 +8115,6 @@ body {
   padding-bottom: 0.45rem;
   background: var(--ios-bg, var(--bg-app));
   border-bottom: none;
-}
-#view-chat .chat-list-header h1 {
-  color: var(--ios-text, var(--text-main));
-  font-size: 36px;
-  font-weight: 800;
-  letter-spacing: 0;
 }
 #view-chat .chat-list-header .chat-broadcast-btn {
   grid-column: 3;

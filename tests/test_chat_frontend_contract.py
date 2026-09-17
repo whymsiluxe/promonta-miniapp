@@ -45,7 +45,15 @@ def test_chat_list_ios_search_and_stale_load_contract():
     assert "#view-chat .chat-inline-search .chat-search-circle" in html
     assert "#view-chat .chat-thread-list" in html
     assert "border-radius: var(--ios-radius-card, 12px)" in html
-    assert "font-size: 36px" in html
+    # 17.09: chat list header used to have its own 36px/800 override
+    # (#view-chat .chat-list-header h1) -- removed as a duplicate of the
+    # canonical top-level page-title size, which now lives ONLY on the base
+    # `header h1` rule (28px/800, see that rule's own comment) so every
+    # top-level screen inherits one definition instead of N copies that can
+    # drift out of sync (36px overflowed the header's centered column on
+    # real iPhone -- "Календарь" truncated to "Календа..."). Assert the
+    # canonical size directly instead of the removed duplicate.
+    assert "font-weight: 800;" in html
     assert "chat-load-error" in html
     assert "#chat-retry-load" in html
 

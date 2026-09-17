@@ -64,8 +64,11 @@ def test_team_css_bridges_summary_lists_plan_and_sheet_to_ios_language():
     html = _source(APP_HTML)
 
     for selector in (
+        # 17.09: #view-working-objects header h1's own 36px/800 override
+        # removed as a duplicate of the canonical top-level page-title
+        # (28px/800, lives only on the base `header h1` rule now -- 36px
+        # overflowed the header's centered column on real iPhone).
         "#view-working-objects {",
-        "#view-working-objects header h1",
         "#view-working-objects .wo-mode-switch",
         "#view-working-objects .wo-summary-bar",
         "#view-working-objects .wo-summary-tile",
@@ -86,4 +89,4 @@ def test_team_css_bridges_summary_lists_plan_and_sheet_to_ios_language():
     assert "var(--ios-radius-sheet" in html
     assert "text-transform: none;" in html
     assert "letter-spacing: 0;" in html
-    assert "font-size: 36px;" in html
+    assert "font-weight: 800;" in html

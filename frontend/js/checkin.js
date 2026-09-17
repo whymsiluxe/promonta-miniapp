@@ -376,7 +376,10 @@ async function _retryCheckinOutbox() {
   _checkinOutboxRetrying = true;
   try {
     const startRecords = await promontaOutboxList(CHECKIN_OUTBOX_KIND_START).catch(() => []);
-    for (const record of startRecords) {
+    // 17.09 (audit finding, P0): dead_letter records must not be retried by the
+    // background/reconnect loop anymore -- they exhausted their attempts or hit
+    // a permanent rejection, see promontaOutboxRecordFailure() in shared.js.
+    for (const record of startRecords.filter(r => r.state !== 'dead_letter')) {
       await promontaOutboxPatch(record.id, {
         state: 'sending',
         attempts: (record.attempts || 0) + 1,
@@ -386,7 +389,7 @@ async function _retryCheckinOutbox() {
         await _sendCheckinStartOutboxRecord(record);
         showToast('Отложенный старт смены отправлен', 'success');
       } catch (e) {
-        await promontaOutboxPatch(record.id, { state: 'queued', lastError: e.message || String(e) });
+        await promontaOutboxRecordFailure({ ...record, attempts: (record.attempts || 0) + 1 }, e);
       }
     }
     if (typeof _retryFinishOutboxRecords === 'function') await _retryFinishOutboxRecords();

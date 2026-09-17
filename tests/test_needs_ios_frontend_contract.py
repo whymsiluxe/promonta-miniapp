@@ -37,7 +37,11 @@ def test_needs_css_bridges_to_ios_summary_filters_and_list_rows():
     html = _source(APP_HTML)
 
     for selector in (
-        "#view-tasks header h1",
+        # 17.09: #view-tasks header h1's own 36px/800 override removed as a
+        # duplicate of the canonical top-level page-title, which now lives
+        # only on the base `header h1` rule (28px/800) so every top-level
+        # screen inherits one definition instead of N copies that drifted
+        # (36px overflowed the header's centered column on real iPhone).
         "#view-tasks .tasks-new-btn",
         "#view-tasks #tasks-form",
         "#view-tasks .tasks-voice-btn",

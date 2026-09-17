@@ -36,7 +36,10 @@ def test_tools_css_bridges_to_premium_ios_list_language():
     html = _source(APP_HTML)
 
     for selector in (
-        "#view-tools header h1",
+        # 17.09: #view-tools header h1's own 36px/800 override removed as a
+        # duplicate of the canonical top-level page-title, which now lives
+        # only on the base `header h1` rule (28px/800) -- 36px overflowed the
+        # header's centered column on real iPhone.
         "#view-tools .tools-add-btn",
         "#view-tools .tools-summary-bar",
         "#view-tools .tools-summary-tile",

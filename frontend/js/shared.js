@@ -463,6 +463,45 @@ async function promontaOutboxList(kind) {
   });
 }
 
+// 17.09 (audit finding, P0): retry loops (checkin.js::_retryCheckinOutbox,
+// finish-wizard.js::_retryFinishOutboxRecords) incremented `attempts` on every
+// failed send but never actually READ it anywhere -- a record that keeps
+// failing (server permanently rejects it with 403/409/400, not just a flaky
+// network blip) went back to state:'queued' forever and retried on every
+// reconnect/poll indefinitely, with no way for the worker to know it was
+// stuck or do anything about it. Single shared decision point for both
+// outbox kinds: after this many failed attempts, OR immediately on a
+// non-transient (real HTTP rejection, not a network error) failure, the
+// record moves to a terminal 'dead_letter' state instead of going back to
+// 'queued'. Retry loops must stop picking up dead_letter records themselves
+// (promontaOutboxList still returns them -- callers filter by state); a
+// manual retry (resets state to 'queued', attempts to 0) or manual delete is
+// the only way out once dead_letter, matching a normal outbox/DLQ pattern.
+const PROMONTA_OUTBOX_MAX_ATTEMPTS = 5;
+
+function promontaOutboxIsTransientError(err) {
+  const msg = String(err?.message || '');
+  if (err?.status) return false; // real HTTP response = server actually rejected it, not transient
+  return !navigator.onLine || err?.name === 'TypeError' || err?.name === 'TimeoutError' || /Failed to fetch|NetworkError/i.test(msg);
+}
+
+async function promontaOutboxRecordFailure(record, err) {
+  const attempts = (record.attempts || 0); // already incremented by the caller before the send attempt
+  const transient = promontaOutboxIsTransientError(err);
+  const exhausted = attempts >= PROMONTA_OUTBOX_MAX_ATTEMPTS;
+  if (!transient || exhausted) {
+    return promontaOutboxPatch(record.id, {
+      state: 'dead_letter',
+      lastError: err?.message || String(err),
+    });
+  }
+  return promontaOutboxPatch(record.id, { state: 'queued', lastError: err?.message || String(err) });
+}
+
+async function promontaOutboxManualRetry(id) {
+  return promontaOutboxPatch(id, { state: 'queued', attempts: 0, lastError: null });
+}
+
 function hapticImpact(style) {
   try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(style); } catch (e) {}
   if (window.navigator.vibrate) window.navigator.vibrate(style === 'medium' ? 15 : 8);
