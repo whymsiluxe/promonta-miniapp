@@ -4056,6 +4056,105 @@ body.chat-reply-active .chat-messages {
 .obj-info-team-row-menu-btn { background: none; border: none; color: var(--text-light); font-size: 1.1rem; padding: 0.2rem 0.4rem; cursor: pointer; }
 
 /* ═══════════ История объекта (15.09 Stage 3) ═══════════ */
+.obj-budget-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.72rem;
+}
+.obj-budget-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.obj-budget-title {
+  color: var(--ios-text, var(--text-main));
+  font-size: 18px;
+  font-weight: 750;
+  line-height: 1.15;
+}
+.obj-budget-sub {
+  margin-top: 0.18rem;
+  color: var(--ios-muted, var(--text-light));
+  font-size: 13px;
+  font-weight: 600;
+}
+.obj-budget-risk {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.62rem;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.obj-budget-risk-ok {
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 12%, var(--ios-surface, #fff));
+  color: var(--ios-accent, var(--accent));
+}
+.obj-budget-risk-warn {
+  background: color-mix(in srgb, var(--warning, #d6a11d) 15%, var(--ios-surface, #fff));
+  color: var(--warning-text, #a16207);
+}
+.obj-budget-risk-danger {
+  background: color-mix(in srgb, var(--red, #b3403a) 13%, var(--ios-surface, #fff));
+  color: var(--red, #b3403a);
+}
+.obj-budget-risk-muted {
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-muted, var(--text-light));
+}
+.obj-budget-meter {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ios-grouped-surface, var(--bg-card));
+}
+.obj-budget-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+.obj-budget-meter-ok {
+  background: var(--ios-accent, var(--accent));
+}
+.obj-budget-meter-warn {
+  background: var(--warning, #d6a11d);
+}
+.obj-budget-meter-danger {
+  background: var(--red, #b3403a);
+}
+.obj-budget-meter-muted {
+  background: var(--ios-muted, var(--text-light));
+}
+.obj-budget-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.obj-budget-stat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.14rem;
+}
+.obj-budget-stat span {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 12px;
+  font-weight: 650;
+}
+.obj-budget-stat b {
+  min-width: 0;
+  color: var(--ios-text, var(--text-main));
+  font-size: 16px;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+.obj-budget-note {
+  color: var(--red, #b3403a);
+  font-size: 13px;
+  font-weight: 650;
+}
 .obj-history-list {
   display: flex;
   flex-direction: column;

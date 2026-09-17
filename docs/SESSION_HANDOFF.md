@@ -1,5 +1,32 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-17 Object budget dashboard P2 slice handoff
+
+Current autonomous slice: Section H continuation, second P2 item
+(`Object budget dashboard with budget/spent/remaining/risk`).
+
+Implemented in this slice:
+- `frontend/js/objects.js`: Object Info now renders an owner-only budget
+  dashboard after the object control center and before object history.
+- `frontend/js/objects.js`: budget parsing handles existing budget/spent fields
+  plus the known percent aliases (`потрачено в % от бюджета`, `% бюджета`,
+  `Потрачено %`), computes remaining/overrun, and maps risk to normal/yellow/red
+  states.
+- `frontend/app.html`: added compact iOS-style budget dashboard, meter, risk
+  pill, stat, and overrun-note styling.
+- `tests/test_object_budget_frontend_contract.py`: new frontend contract locks
+  render order, budget aliases, owner-only guard, risk states, retry state, and
+  styling hooks.
+
+Verification so far:
+- `node --check frontend/js/objects.js`.
+- Focused object budget/history/object checks: `10 passed`.
+- Full suite: `822 passed, 1 skipped`.
+
+Next recommended slice:
+- Finish release verification/deploy for this P2 item, then continue to P2 item
+  3: object task Kanban.
+
 ## 2026-09-17 Team drag-to-assign P2 slice handoff
 
 Current autonomous slice: Section H continuation, first P2 item

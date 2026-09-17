@@ -1007,6 +1007,7 @@ function _initObjDetailTab(tab) {
     // 29.07 v2: Инфо рендерит всю сводку (статус/описание/работы/дефекты/документы/
     // потребности) одним вызовом -- Потребности перенесены сюда из бывшей 4-й вкладки.
     Promise.resolve(renderObjectInfoTab(_objDetailCurrentId))
+      .then(() => renderObjectBudgetSection(_objDetailCurrentId))
       .then(() => renderObjectHistorySection(_objDetailCurrentId))
       .catch(e => {
         const panel = document.getElementById('obj-detail-panel-info');
@@ -1044,6 +1045,121 @@ function _objectHistoryKindLabel(kind) {
     broadcast_sent: 'Объявление',
   };
   return labels[kind] || 'Событие';
+}
+
+function _objectBudgetAmount(raw) {
+  if (raw === null || raw === undefined) return null;
+  let cleaned = String(raw)
+    .replace(/[^\d,.-]/g, '')
+    .trim();
+  const lastComma = cleaned.lastIndexOf(',');
+  const lastDot = cleaned.lastIndexOf('.');
+  if (lastComma >= 0 && lastDot >= 0) {
+    cleaned = lastComma > lastDot
+      ? cleaned.replace(/\./g, '').replace(',', '.')
+      : cleaned.replace(/,/g, '');
+  } else if (lastComma >= 0) {
+    cleaned = cleaned.length - lastComma - 1 === 3
+      ? cleaned.replace(/,/g, '')
+      : cleaned.replace(',', '.');
+  } else if (lastDot >= 0 && cleaned.length - lastDot - 1 === 3) {
+    cleaned = cleaned.replace(/\./g, '');
+  }
+  const value = Number.parseFloat(cleaned);
+  return Number.isFinite(value) ? value : null;
+}
+
+function _objectBudgetPercent(obj, budget, spent) {
+  const keys = ['потрачено в % от бюджета', '% бюджета', 'Потрачено %'];
+  for (const key of keys) {
+    const value = _objectBudgetAmount(obj?.[key]);
+    if (value !== null) return value;
+  }
+  return budget && spent !== null ? (spent / budget) * 100 : 0;
+}
+
+function _objectBudgetMoney(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat('de-DE', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function _objectBudgetRisk(pct, budget) {
+  if (!budget) return { key: 'muted', label: 'Нет бюджета' };
+  if (pct >= 90) return { key: 'danger', label: 'Красный риск' };
+  if (pct >= 60) return { key: 'warn', label: 'Жёлтый риск' };
+  return { key: 'ok', label: 'Норма' };
+}
+
+async function _objectBudgetLoadObject(objectId) {
+  const local = (_allObjects || []).find(o => String(o['ID объекта']) === String(objectId));
+  if (local && Object.prototype.hasOwnProperty.call(local, 'Бюджет (EUR)')) return local;
+  const data = await api('/api/objects');
+  _allObjects = data.objects || [];
+  return _allObjects.find(o => String(o['ID объекта']) === String(objectId)) || null;
+}
+
+async function renderObjectBudgetSection(objectId) {
+  if (currentRole !== 'owner') return;
+  const panel = document.getElementById('obj-detail-panel-info');
+  if (!panel || !objectId) return;
+
+  let section = document.getElementById('obj-budget-section');
+  if (!section) {
+    const html = `
+      <div class="obj-info-section obj-budget-section" id="obj-budget-section">
+        <div id="obj-budget-dashboard" class="obj-budget-dashboard">
+          <div class="js-skeleton-line" style="width:68%"></div>
+          <div class="js-skeleton-line" style="width:46%"></div>
+        </div>
+      </div>`;
+    const controlSection = panel.querySelector('.obj-control-section');
+    if (controlSection) controlSection.insertAdjacentHTML('afterend', html);
+    else panel.insertAdjacentHTML('afterbegin', html);
+    section = document.getElementById('obj-budget-section');
+  }
+  const dashboard = document.getElementById('obj-budget-dashboard');
+  if (!dashboard) return;
+
+  try {
+    const obj = await _objectBudgetLoadObject(objectId);
+    if (!obj || !Object.prototype.hasOwnProperty.call(obj, 'Бюджет (EUR)')) {
+      section.remove();
+      return;
+    }
+    const budget = _objectBudgetAmount(obj['Бюджет (EUR)']);
+    const spent = _objectBudgetAmount(obj['Потрачено (EUR)']) || 0;
+    const remaining = budget !== null ? budget - spent : null;
+    const pct = Math.max(0, _objectBudgetPercent(obj, budget, spent));
+    const risk = _objectBudgetRisk(pct, budget);
+    const meterPct = Math.min(100, Math.round(pct));
+    const overrun = budget && spent > budget ? spent - budget : 0;
+
+    dashboard.innerHTML = `
+      <div class="obj-budget-head">
+        <div>
+          <div class="obj-budget-title">Бюджет</div>
+          <div class="obj-budget-sub">${budget ? `${Math.round(pct)}% использовано` : 'Бюджет не задан'}</div>
+        </div>
+        <span class="obj-budget-risk obj-budget-risk-${risk.key}">${esc(risk.label)}</span>
+      </div>
+      <div class="obj-budget-meter" aria-label="Использовано бюджета ${Math.round(pct)}%">
+        <div class="obj-budget-meter-fill obj-budget-meter-${risk.key}" style="width:${meterPct}%"></div>
+      </div>
+      <div class="obj-budget-stats">
+        <div class="obj-budget-stat"><span>Бюджет</span><b>${esc(_objectBudgetMoney(budget))}</b></div>
+        <div class="obj-budget-stat"><span>Потрачено</span><b>${esc(_objectBudgetMoney(spent))}</b></div>
+        <div class="obj-budget-stat"><span>${overrun ? 'Перерасход' : 'Остаток'}</span><b>${esc(_objectBudgetMoney(overrun || Math.max(0, remaining || 0)))}</b></div>
+      </div>
+      ${overrun ? `<div class="obj-budget-note">Превышение бюджета на ${esc(_objectBudgetMoney(overrun))}</div>` : ''}
+    `;
+  } catch (e) {
+    dashboard.innerHTML = `<div class="obj-info-empty-row"><span>Бюджет недоступен</span><button type="button" class="obj-info-empty-action" id="obj-budget-retry">Повторить</button></div>`;
+    document.getElementById('obj-budget-retry')?.addEventListener('click', () => renderObjectBudgetSection(objectId));
+  }
 }
 
 async function renderObjectHistorySection(objectId) {

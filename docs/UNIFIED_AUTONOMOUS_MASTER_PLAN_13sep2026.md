@@ -390,3 +390,5 @@ owner on 2026-09-15; this continuation is a manual one-off run.
 - P2 item 1 in progress: Team drag/drop worker-to-object assignment now opens
   the existing Assignment Sheet with worker and object preselected, while still
   collecting work type, from/to period, optional task note, and confirmation.
+- P2 item 2 in progress: Object Info now includes an owner-only budget dashboard
+  with budget, spent, remaining/overrun, and green/yellow/red risk state.

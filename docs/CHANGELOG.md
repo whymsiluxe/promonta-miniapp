@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-17 (Object budget dashboard P2 slice)
+
+Tests: focused object budget/history/object contracts passed (`10 passed`);
+full suite passed (`822 passed, 1 skipped`). Deploy verification follows in
+the release step.
+
+### Frontend
+- Added an owner-only budget dashboard to the Object Info cockpit, inserted right
+  after the existing object control center and before history.
+- The dashboard uses existing object DTO fields for budget, spent, remaining or
+  overrun, and risk state, including all known budget-percent column aliases.
+- Budget amounts now parse common comma/dot thousand and decimal formats before
+  rendering EUR values.
+- Worker privacy stays intact: the dashboard returns early for non-owner roles,
+  matching the backend behavior that strips budget fields from worker object DTOs.
+
+### Tests
+- Added `tests/test_object_budget_frontend_contract.py` for render order,
+  budget-field aliases, owner-only guard, risk states, retry state, and styling
+  hooks.
+
 ## 2026-09-17 (Team drag-to-assign P2 slice)
 
 Tests: focused frontend/assignment checks passed (`87 passed`); full suite and
