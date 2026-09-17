@@ -71,7 +71,18 @@ class DailyPlanSecurityTests(unittest.TestCase):
 
     def test_replan_returns_green_for_empty_object(self):
         """Replan returns green/no issues when no plans exist for object."""
-        from backend.main import ReplanRequestBody
+        # 17.09: CI-only failure -- this was the one inline import in the file
+        # using the package-qualified path (from backend.main import ...),
+        # which only resolves under the production package-import layout (see
+        # test_assignment_lifecycle.py's ProductionPackageImportTests), not
+        # under this file's own sys.path.insert(backend/) + `import main`
+        # pattern that every other test in this class already uses via
+        # self.backend. GitHub Actions runs with a clean checkout (no
+        # backend.<name> package on sys.path unless the production-layout
+        # test constructs it in its own temp dir), so this import always
+        # failed there while passing locally where a leftover sys.modules
+        # entry could mask it.
+        ReplanRequestBody = self.backend.ReplanRequestBody
         result = self.backend.daily_plan_replan(
             object_id='nonexistent-obj',
             body=ReplanRequestBody(),
