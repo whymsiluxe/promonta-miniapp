@@ -81,6 +81,22 @@ async function checkAndShowTodayPlan() {
   try {
     const data = await api('/api/daily-plan/today');
     _todayPlanState = data; window._todayPlanState = data;
+    // 17.09 (audit finding #3, P0): _dailyPlanCheckinFields used to be populated
+    // ONLY inside the accept-button click handler -- if the worker accepted the
+    // plan, closed the app, and reopened later (a very normal Telegram usage
+    // pattern), this went back to null on the fresh load even though the plan
+    // was still accepted server-side. Start would then silently proceed WITHOUT
+    // DailyPlan linkage (the backend treats it as optional), losing the
+    // connection between an actually-accepted plan and the shift session.
+    // Restore it here on every load whenever the server confirms an acceptance,
+    // not just at the moment acceptance happens client-side.
+    if (data.has_plan && data.acceptance) {
+      window._dailyPlanCheckinFields = {
+        daily_plan_id: data.plan.id,
+        daily_plan_version: String(data.plan.version),
+        daily_plan_acceptance_id: data.acceptance.id,
+      };
+    }
     if (data.acceptance) _tpDbSave(data); // persist for offline fallback
     _updateTodayPlanBar(data);
     if (_shouldShowPlanScreen(data)) {
@@ -93,6 +109,15 @@ async function checkAndShowTodayPlan() {
       if (cached && cached.acceptance) {
         _todayPlanState = { ...cached, _offline: true };
         window._todayPlanState = _todayPlanState;
+        // Same restoration as the online path above -- offline cache also
+        // carries a real server-confirmed acceptance, must not be lost either.
+        if (cached.has_plan && cached.plan) {
+          window._dailyPlanCheckinFields = {
+            daily_plan_id: cached.plan.id,
+            daily_plan_version: String(cached.plan.version),
+            daily_plan_acceptance_id: cached.acceptance.id,
+          };
+        }
         _updateTodayPlanBar(_todayPlanState);
       }
     }

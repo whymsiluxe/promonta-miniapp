@@ -1159,3 +1159,44 @@ class TestItem14ContractStoreSafety(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── 17.09 audit finding #3: _dailyPlanCheckinFields lost on app reload ──────
+
+class TestDailyPlanCheckinFieldsSurviveReload(unittest.TestCase):
+    """today-plan.js must restore window._dailyPlanCheckinFields from the
+    server-confirmed acceptance on EVERY load of /api/daily-plan/today, not
+    only inside the accept-button click handler -- otherwise a worker who
+    accepted a plan, closed the app, and reopened it loses the DailyPlan
+    linkage for Start even though the plan is still accepted server-side."""
+
+    def _read_js(self):
+        path = os.path.join(os.path.dirname(__file__), "..", "frontend", "js", "today-plan.js")
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    def test_check_and_show_restores_checkin_fields_from_server_response(self):
+        js = self._read_js()
+        fn_start = js.index("async function checkAndShowTodayPlan()")
+        fn_end = js.index("_startTodayPlanPolling();", fn_start)
+        fn_body = js[fn_start:fn_end]
+        self.assertIn("data.acceptance", fn_body)
+        self.assertIn("window._dailyPlanCheckinFields = {", fn_body,
+            "checkAndShowTodayPlan must repopulate _dailyPlanCheckinFields on "
+            "every load when the server confirms an acceptance, not only inside "
+            "the accept-button click handler")
+        self.assertIn("data.plan.id", fn_body)
+        self.assertIn("data.acceptance.id", fn_body)
+
+    def test_offline_cached_fallback_also_restores_checkin_fields(self):
+        js = self._read_js()
+        offline_idx = js.index("const cached = await _tpDbLoad();")
+        # scope to the same catch-block (bounded by the next closing of the outer try/catch)
+        block_end = js.index("_startTodayPlanPolling();", offline_idx)
+        block = js[offline_idx:block_end]
+        self.assertIn("window._dailyPlanCheckinFields = {", block,
+            "the offline IndexedDB-cache fallback path must restore checkin "
+            "fields too -- it also carries a real server-confirmed acceptance")
+        self.assertIn("cached.plan.id", block)
+        self.assertIn("cached.acceptance.id", block)
+
