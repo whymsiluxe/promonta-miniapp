@@ -1961,7 +1961,182 @@ header h1 {
   font-size: 0.85rem;
 }
 
-/* ── Angebot ── */
+/* ── Документы / Angebot ── */
+#view-documents {
+  background: var(--ios-bg, var(--bg-app));
+}
+.doc-gallery-section,
+.documents-builder-section {
+  padding: 0.85rem 0.75rem 1rem;
+}
+.doc-gallery-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.doc-gallery-title,
+.documents-builder-title {
+  color: var(--ios-text, var(--text-main));
+  font-size: 19px;
+  font-weight: 760;
+  line-height: 1.15;
+}
+.doc-gallery-sub {
+  margin-top: 0.18rem;
+  color: var(--ios-muted, var(--text-light));
+  font-size: 13px;
+  font-weight: 600;
+}
+.doc-gallery-refresh {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+}
+.doc-gallery-filters {
+  display: flex;
+  gap: 0.45rem;
+  overflow-x: auto;
+  margin: 0 0 0.85rem;
+  padding: 0 0 0.1rem;
+  background: transparent;
+}
+.doc-gallery-filter {
+  min-height: 32px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  border: 1px solid var(--ios-border, var(--border-color));
+  background: var(--ios-surface, var(--bg-card));
+  color: var(--ios-muted, var(--text-light));
+}
+.doc-gallery-filter.active {
+  border-color: transparent;
+  background: var(--ios-accent, var(--accent));
+  color: #fff;
+}
+.doc-gallery-filter b {
+  min-width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  font-size: 11px;
+  font-weight: 800;
+}
+.doc-gallery-filter:not(.active) b {
+  background: var(--ios-grouped-surface, var(--bg-card-raised));
+  color: var(--ios-text, var(--text-main));
+}
+.doc-gallery-filter-empty {
+  align-self: center;
+  color: var(--ios-muted, var(--text-light));
+  font-size: 13px;
+  font-weight: 600;
+}
+.doc-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.doc-gallery-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--ios-surface, var(--bg-card));
+  box-shadow: var(--c-shadow-control, 0 1px 2px rgba(0,0,0,0.04));
+}
+.doc-gallery-thumb {
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ios-grouped-surface, var(--bg-body));
+  color: var(--ios-muted, var(--text-light));
+  background-position: center;
+  background-size: cover;
+  font-size: 12px;
+  font-weight: 750;
+}
+.doc-gallery-thumb-image.loaded {
+  color: transparent;
+}
+.doc-gallery-thumb-pdf {
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--ios-accent, var(--accent));
+}
+.doc-gallery-card-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  padding: 0.62rem 0.68rem 0.5rem;
+}
+.doc-gallery-name {
+  min-width: 0;
+  color: var(--ios-text, var(--text-main));
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.22;
+  overflow-wrap: anywhere;
+}
+.doc-gallery-meta {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.doc-gallery-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.68rem 0.68rem;
+}
+.doc-gallery-action {
+  min-height: 32px;
+  flex: 1 1 auto;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 750;
+}
+.doc-gallery-icon-action {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+.doc-gallery-delete {
+  color: var(--red, #b3403a);
+}
+.doc-gallery-empty,
+.doc-gallery-loading {
+  grid-column: 1 / -1;
+  padding: 1.1rem 0.75rem;
+  border-radius: 12px;
+  background: var(--ios-surface, var(--bg-card));
+  color: var(--ios-muted, var(--text-light));
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+.documents-builder-section {
+  border-top: 1px solid var(--ios-border, var(--border-color));
+}
+.documents-builder-title {
+  margin: 0 0 0.75rem;
+}
+@media (min-width: 720px) {
+  .doc-gallery-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 .doc-type-switch {
   display: flex;
   background: var(--bg-card-raised);
@@ -8395,23 +8570,41 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 </div>
 
 <!-- ═══════════ ANGEBOT ═══════════ -->
-<div class="view" id="view-documents">
+<div class="view ios-page" id="view-documents">
   <header>
     <button class="chat-back-btn" onclick="NavigationManager.back()" type="button" aria-label="Назад">←</button>
-    <h1 id="documents-title">Angebot erstellen</h1>
+    <h1 id="documents-title">Документы</h1>
   </header>
-  <div class="doc-type-switch">
-    <div class="doc-type-opt active" data-doc="angebot">Angebot</div>
-    <div class="doc-type-opt" data-doc="rechnung">Rechnung</div>
-  </div>
-  <div id="angebot-content"></div>
-  <div id="angebot-submit-bar">
-    <button class="submit-btn" id="angebot-submit-btn">Создать Angebot (PDF)</button>
-  </div>
-  <div id="rechnung-content" style="display:none"></div>
-  <div id="rechnung-submit-bar" style="display:none">
-    <button class="submit-btn" id="rechnung-submit-btn">Создать Rechnung (PDF)</button>
-  </div>
+  <section class="doc-gallery-section ios-section" id="document-gallery">
+    <div class="doc-gallery-head">
+      <div>
+        <div class="doc-gallery-title">Документы объектов</div>
+        <div class="doc-gallery-sub">Фильтр по объекту, быстрый просмотр и действия</div>
+      </div>
+      <button class="doc-gallery-refresh ios-icon-button" id="document-gallery-refresh" type="button" aria-label="Обновить" title="Обновить">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="doc-gallery-filters ios-segmented" id="document-gallery-filters">
+      <button type="button" class="doc-gallery-filter ios-chip active" data-doc-gallery-filter="all"><span>Все</span><b>0</b></button>
+    </div>
+    <div class="doc-gallery-grid" id="document-gallery-grid"></div>
+  </section>
+  <section class="documents-builder-section ios-section">
+    <div class="documents-builder-title" id="documents-builder-title">Angebot erstellen</div>
+    <div class="doc-type-switch">
+      <div class="doc-type-opt active" data-doc="angebot">Angebot</div>
+      <div class="doc-type-opt" data-doc="rechnung">Rechnung</div>
+    </div>
+    <div id="angebot-content"></div>
+    <div id="angebot-submit-bar">
+      <button class="submit-btn" id="angebot-submit-btn">Создать Angebot (PDF)</button>
+    </div>
+    <div id="rechnung-content" style="display:none"></div>
+    <div id="rechnung-submit-bar" style="display:none">
+      <button class="submit-btn" id="rechnung-submit-btn">Создать Rechnung (PDF)</button>
+    </div>
+  </section>
 </div>
 
 <!-- ═══════════ SIGNATURE PAD (Фаза 7), глобальная модалка для Angebot/Rechnung ═══════════ -->
@@ -9105,6 +9298,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 <script src="js/skill-picker.js"></script>
 <script src="js/objects.js"></script>
 <script src="js/object-info.js"></script>
+<script src="js/document-gallery.js"></script>
 <script src="js/tools.js"></script>
 <script src="js/angebot.js"></script>
 <script src="js/rechnung.js"></script>
@@ -9137,14 +9331,18 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 // Mängel — js/mangel.js (Фаза 3); Profile — js/profile.js (Фаза 8)
 
 function initDocumentsView() {
+  if (typeof initDocumentGallery === 'function') initDocumentGallery();
   initAngebotView();
   initRechnungView();
 
   document.querySelectorAll('#view-documents .doc-type-opt[data-doc]').forEach(opt => {
+    if (opt.dataset.wired) return;
+    opt.dataset.wired = '1';
     opt.addEventListener('click', () => {
       const doc = opt.dataset.doc;
       document.querySelectorAll('#view-documents .doc-type-opt[data-doc]').forEach(o => o.classList.toggle('active', o === opt));
-      document.getElementById('documents-title').textContent = doc === 'rechnung' ? 'Rechnung erstellen' : 'Angebot erstellen';
+      const builderTitle = document.getElementById('documents-builder-title');
+      if (builderTitle) builderTitle.textContent = doc === 'rechnung' ? 'Rechnung erstellen' : 'Angebot erstellen';
       document.getElementById('angebot-content').style.display = doc === 'angebot' ? 'block' : 'none';
       document.getElementById('angebot-submit-bar').style.display = doc === 'angebot' ? 'block' : 'none';
       document.getElementById('rechnung-content').style.display = doc === 'rechnung' ? 'block' : 'none';
