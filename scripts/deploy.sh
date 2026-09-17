@@ -250,6 +250,20 @@ echo "== Последние логи backend =="
 journalctl -u "$SERVICE_NAME" -n 20 --no-pager
 
 echo ""
+# 17.09 (P1 retention/disk-hygiene finding): rollback_backup_* directories
+# accumulated unbounded in /tmp -- 83 backups / 1.8GB found on this VPS
+# before this fix, going back weeks. Each deploy makes one; nothing ever
+# removed old ones. Keep the newest 10 (matches the realistic rollback
+# window -- nobody rolls back more than a few deploys), delete the rest.
+# Pure disk hygiene, no live references to old backups once newer ones
+# exist and are known-good.
+OLD_BACKUPS=$(ls -dt /tmp/rollback_backup_* 2>/dev/null | tail -n +11)
+if [ -n "$OLD_BACKUPS" ]; then
+  echo "$OLD_BACKUPS" | xargs rm -rf
+  REMOVED_COUNT=$(echo "$OLD_BACKUPS" | wc -l)
+  echo "Очистка: удалено $REMOVED_COUNT старых backup-каталогов (оставлены последние 10)"
+fi
+
 echo "=== ДЕПЛОЙ ЗАВЕРШЁН ==="
 echo "SHA:     $CURRENT_SHA"
 echo "Backup:  $BACKUP_DIR (не удалён -- для отката: scripts/rollback.sh $BACKUP_DIR)"
