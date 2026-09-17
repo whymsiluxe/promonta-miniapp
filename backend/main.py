@@ -3363,6 +3363,16 @@ def create_tool_booking(serial: str, body: ToolBookingBody,
         raise HTTPException(404, f'инструмент {serial} не найден')
     if tl.mapped_status(tool) in ('repair', 'missing'):
         raise HTTPException(409, "Инструмент недоступен для брони")
+    # 17.09 (audit finding, P1): booking used to ignore the tool's CURRENT physical
+    # possession entirely -- only repair/missing blocked it, so booking a tool for
+    # TODAY while someone else already has it in-use/reserved right now silently
+    # created a booking the requester could never actually fulfill today. Only
+    # checked for start_date == today -- a future-dated booking is fine even if the
+    # tool is in-use right now, since whoever holds it will plausibly return it
+    # before then, and the existing overlap-check between bookings already protects
+    # future-date conflicts between two bookings.
+    if start_date == business_today() and tl.mapped_status(tool) in ('in-use', 'reserved'):
+        raise HTTPException(409, "Инструмент сейчас занят -- бронь на сегодня недоступна")
 
     holder_id, holder_name = _tool_booking_holder(body, user, role)
     booking_id = uuid.uuid4().hex
@@ -3463,6 +3473,30 @@ def _lock_for_tool(serial: str):
         return _tool_locks[serial]
 
 
+def _active_tool_booking_conflict(serial: str, on_date: str, requester_id: str):
+    """17.09 (audit finding, P1): booking ('/api/tools/{serial}/bookings') was
+    purely advisory -- checkout_tool never consulted TOOL_BOOKINGS_FILE, so a
+    worker could book a tool for tomorrow and have someone else walk up and
+    take it today via the plain checkout flow with zero warning. Returns the
+    conflicting booking dict if an ACTIVE booking for this serial covers
+    on_date and belongs to someone other than requester_id -- the booking's
+    own holder checking the tool out early is allowed (that IS them fulfilling
+    their reservation), a different person is not."""
+    data = _safe_load_json(TOOL_BOOKINGS_FILE, _tool_booking_default_store())
+    for b in data.get('bookings', []):
+        if b.get('status') == 'cancelled':
+            continue
+        if str(b.get('serial', '')) != str(serial):
+            continue
+        b_from, b_to = b.get('date_from', ''), b.get('date_to', '')
+        if not (b_from and b_to and b_from <= on_date <= b_to):
+            continue
+        if str(b.get('holder_id', '')) == str(requester_id):
+            continue
+        return b
+    return None
+
+
 @app.patch("/api/tools/{serial}/checkout")
 def checkout_tool(serial: str, body: CheckoutBody, user: dict = Depends(get_current_user)):
     tl = _load_repo_tools_lib()
@@ -3474,6 +3508,9 @@ def checkout_tool(serial: str, body: CheckoutBody, user: dict = Depends(get_curr
             raise HTTPException(404, f'инструмент {serial} не найден')
         if tl.mapped_status(tool) != 'free':
             raise HTTPException(409, "Инструмент уже выдан или недоступен")
+        conflict = _active_tool_booking_conflict(serial, business_today_str(), str(user['id']))
+        if conflict is not None:
+            raise HTTPException(409, f"Инструмент забронирован на сегодня: {conflict.get('holder_name', '')} ({conflict.get('object_name', '')})")
         # 22.07: worker сам оформляет checkout — user['id'] это и есть реальный держатель,
         # пишем как holder_id чтобы avatar на карточке инструмента был кликабельным (openUserCard).
         holder_name = _holder_name_from_user(user)
@@ -9094,6 +9131,12 @@ def update_abwesenheit_status(entry_id: str, body: AbwesenheitStatusBody,
 @app.patch("/api/abwesenheit/{entry_id}")
 def update_abwesenheit_dates(entry_id: str, body: AbwesenheitMoveBody,
                               user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """Move an absence request to another date range.
+
+    Used by the calendar drag/drop UI. Owner can move any request; workers can
+    move only their own. Open-ended requests keep open_ended=true and refresh
+    their temporary visibility window to the end of the new month.
+    """
     _validate_date_str(body.date_from, 'date_from')
     items = _load_abwesenheit()
     entry = next((i for i in items if i['id'] == entry_id), None)

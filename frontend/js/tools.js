@@ -547,7 +547,14 @@ async function loadToolBookings() {
   const list = document.getElementById('tool-booking-list');
   if (!list) return;
   const from = document.getElementById('tool-booking-from')?.value || todayBerlin();
-  const to = _toolsIsoOffset(30);
+  // 17.09 (audit finding, P1): this used to hardcode to = today+30 regardless of
+  // what the user picked in #tool-booking-to -- if from was chosen further out
+  // than 30 days from today, to ended up BEFORE from and the backend correctly
+  // rejected the request with "date_to раньше date_from", silently breaking the
+  // list view for any date range beyond a month out. Read the actual field value,
+  // fall back to from+30 only when the user hasn't picked an explicit end date.
+  const toRaw = document.getElementById('tool-booking-to')?.value || '';
+  const to = toRaw || _toolsIsoOffset(30);
   try {
     const res = await api(`/api/tools/bookings?date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}`);
     TOOL_BOOKINGS = res.bookings || [];
@@ -604,7 +611,21 @@ function _initToolBookingControls() {
     const el = document.getElementById(id);
     if (el && !el.dataset.wired) {
       el.dataset.wired = '1';
-      el.addEventListener('change', loadToolBookings);
+      el.addEventListener('change', () => {
+        // 17.09 (audit finding, P1, same root cause as the loadToolBookings fix
+        // above): from/to fired loadToolBookings independently with no mutual
+        // sync -- moving "from" past the still-default/stale "to" produced a
+        // to-before-from request the backend correctly 400s, silently breaking
+        // the list. Standard date-range UX: pushing from past to pulls to along.
+        if (id === 'tool-booking-from') {
+          const fromEl = document.getElementById('tool-booking-from');
+          const toEl = document.getElementById('tool-booking-to');
+          if (fromEl?.value && toEl && (!toEl.value || toEl.value < fromEl.value)) {
+            toEl.value = fromEl.value;
+          }
+        }
+        loadToolBookings();
+      });
     }
   });
 }

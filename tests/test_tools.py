@@ -278,5 +278,118 @@ class ToolBookingTests(unittest.TestCase):
         self.assertEqual(cancelled['booking']['status'], 'cancelled')
 
 
+class CheckoutBookingConflictTests(unittest.TestCase):
+    """17.09 (audit finding, P1): booking a tool for a date never blocked a
+    DIFFERENT person from physically checking it out that same day -- the two
+    features (advisory booking calendar vs. the actual checkout gate) were never
+    connected. checkout_tool now consults TOOL_BOOKINGS_FILE for an active booking
+    covering business_today() before allowing checkout."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_file = backend.TOOL_BOOKINGS_FILE
+        backend.TOOL_BOOKINGS_FILE = os.path.join(self.tmp.name, 'tool_bookings.json')
+
+    def tearDown(self):
+        backend.TOOL_BOOKINGS_FILE = self.old_file
+        self.tmp.cleanup()
+
+    def test_different_worker_blocked_from_checkout_during_active_booking(self):
+        tl = _repo_tools_lib()
+        today = backend.business_today_str()
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)):
+            body = backend.ToolBookingBody(date_from=today, date_to=today, object_name='Дом Мюллер')
+            backend.create_tool_booking('T-014', body, user={'id': 777, 'first_name': 'Олег'}, role='worker')
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)):
+            with self.assertRaises(HTTPException) as ctx:
+                checkout_body = backend.CheckoutBody(object_name='Другой объект')
+                run(backend.checkout_tool(serial='T-014', body=checkout_body, user={'id': 999, 'first_name': 'Другой'}))
+        self.assertEqual(ctx.exception.status_code, 409)
+
+    def test_booking_holder_can_checkout_their_own_booking_early(self):
+        tl = _repo_tools_lib()
+        today = backend.business_today_str()
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)):
+            body = backend.ToolBookingBody(date_from=today, date_to=today, object_name='Дом Мюллер')
+            backend.create_tool_booking('T-014', body, user={'id': 777, 'first_name': 'Олег'}, role='worker')
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)), \
+             patch.object(tl, 'checkout_tool') as mock_checkout:
+            checkout_body = backend.CheckoutBody(object_name='Дом Мюллер')
+            result = run(backend.checkout_tool(serial='T-014', body=checkout_body, user={'id': 777, 'first_name': 'Олег'}))
+        self.assertEqual(result, {"status": "ok"})
+        mock_checkout.assert_called_once()
+
+    def test_checkout_unaffected_by_booking_on_different_date(self):
+        tl = _repo_tools_lib()
+        import datetime as _dt
+        future = (backend.business_today() + _dt.timedelta(days=5)).isoformat()
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)):
+            body = backend.ToolBookingBody(date_from=future, date_to=future, object_name='Дом Мюллер')
+            backend.create_tool_booking('T-014', body, user={'id': 777, 'first_name': 'Олег'}, role='worker')
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)), \
+             patch.object(tl, 'checkout_tool') as mock_checkout:
+            checkout_body = backend.CheckoutBody(object_name='Другой объект')
+            result = run(backend.checkout_tool(serial='T-014', body=checkout_body, user={'id': 999, 'first_name': 'Другой'}))
+        self.assertEqual(result, {"status": "ok"})
+        mock_checkout.assert_called_once()
+
+    def test_cancelled_booking_does_not_block_checkout(self):
+        tl = _repo_tools_lib()
+        today = backend.business_today_str()
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)):
+            body = backend.ToolBookingBody(date_from=today, date_to=today, object_name='Дом Мюллер')
+            booking = backend.create_tool_booking('T-014', body, user={'id': 777, 'first_name': 'Олег'}, role='worker')['booking']
+            backend.cancel_tool_booking('T-014', booking['id'], user={'id': 777, 'first_name': 'Олег'}, role='worker')
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)), \
+             patch.object(tl, 'checkout_tool') as mock_checkout:
+            checkout_body = backend.CheckoutBody(object_name='Другой объект')
+            result = run(backend.checkout_tool(serial='T-014', body=checkout_body, user={'id': 999, 'first_name': 'Другой'}))
+        self.assertEqual(result, {"status": "ok"})
+        mock_checkout.assert_called_once()
+
+
+class BookingAvailabilityTests(unittest.TestCase):
+    """17.09 (audit finding, P1): booking used to ignore current physical
+    possession entirely (only repair/missing blocked it) -- booking a tool for
+    TODAY while it is currently in-use/reserved is now rejected; future-dated
+    bookings are unaffected (existing overlap-check between bookings covers
+    that case)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_file = backend.TOOL_BOOKINGS_FILE
+        backend.TOOL_BOOKINGS_FILE = os.path.join(self.tmp.name, 'tool_bookings.json')
+
+    def tearDown(self):
+        backend.TOOL_BOOKINGS_FILE = self.old_file
+        self.tmp.cleanup()
+
+    def test_same_day_booking_blocked_when_tool_in_use(self):
+        tl = _repo_tools_lib()
+        today = backend.business_today_str()
+        with patch.object(tl, 'get_tool', return_value=dict(IN_USE_TOOL)):
+            with self.assertRaises(HTTPException) as ctx:
+                body = backend.ToolBookingBody(date_from=today, date_to=today, object_name='Дом Мюллер')
+                backend.create_tool_booking('T-014', body, user={'id': 777, 'first_name': 'Олег'}, role='worker')
+        self.assertEqual(ctx.exception.status_code, 409)
+
+    def test_future_booking_allowed_when_tool_currently_in_use(self):
+        tl = _repo_tools_lib()
+        import datetime as _dt
+        future = (backend.business_today() + _dt.timedelta(days=3)).isoformat()
+        with patch.object(tl, 'get_tool', return_value=dict(IN_USE_TOOL)):
+            body = backend.ToolBookingBody(date_from=future, date_to=future, object_name='Дом Мюллер')
+            result = backend.create_tool_booking('T-014', body, user={'id': 777, 'first_name': 'Олег'}, role='worker')
+        self.assertEqual(result['booking']['serial'], 'T-014')
+
+    def test_same_day_booking_allowed_when_tool_free(self):
+        tl = _repo_tools_lib()
+        today = backend.business_today_str()
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)):
+            body = backend.ToolBookingBody(date_from=today, date_to=today, object_name='Дом Мюллер')
+            result = backend.create_tool_booking('T-014', body, user={'id': 777, 'first_name': 'Олег'}, role='worker')
+        self.assertEqual(result['booking']['serial'], 'T-014')
+
+
 if __name__ == '__main__':
     unittest.main()

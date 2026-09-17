@@ -27,8 +27,17 @@ def test_team_drag_assign_decorates_free_workers_and_object_dropzones():
     assert "wo-object-dropzone" in js
     assert "document.elementsFromPoint" in js
     assert "new MutationObserver(scheduleEnhance)" in js
-    assert "api('/api/objects')" in js
-    assert "normalizeObjectDto" in js
+    # 17.09 (audit finding, P1 fix): dropzone identity used to be reconstructed
+    # via an api('/api/objects') call + Map<display_name, obj> lookup -- a
+    # display-name collision (duplicate address, renamed object) made every
+    # drag-drop assignment silently land on the wrong object. Fixed by reading
+    # object_id directly from a data-object-id attribute home.js now writes
+    # into the block templates at render time -- no API call/cache needed here
+    # at all anymore.
+    assert "data-object-id" in js
+    assert "block.dataset.objectId" in js
+    assert "api('/api/objects')" not in js
+    assert "normalizeObjectDto" not in js
 
 
 def test_drop_opens_full_assignment_sheet_with_worker_and_object_preselected():

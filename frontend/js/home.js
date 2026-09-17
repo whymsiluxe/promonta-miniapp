@@ -1485,7 +1485,7 @@ async function initWorkingObjectsView() {
         </div>
         <div class="wo-collapsible-body">
           ${activeObjects.length ? activeObjects.map(o => `
-            <div class="wo-object-block ios-list">
+            <div class="wo-object-block ios-list" data-object-id="${esc(o['ID объекта'] || '')}">
               <div class="wo-object-name">${esc(o['Объект'] || '')}</div>
               ${(o.assigned_users || []).map(u => `<div class="wo-worker-row wo-worker-row-nested ios-list-row"><span class="wo-worker-name">${esc(u.name)}</span></div>`).join('')}
             </div>`).join('') : '<div class="wo-empty">Нет назначений</div>'}
@@ -1690,7 +1690,7 @@ async function _loadWorkingObjectsPlanContent() {
       return;
     }
     content.innerHTML = objects.map(o => `
-      <div class="wo-plan-object-block ios-list">
+      <div class="wo-plan-object-block ios-list" data-object-id="${esc(o.object_id || '')}">
         <div class="wo-plan-object-name">${esc(o.object_name)}</div>
         ${o.assignments.map(a => `
           <div class="wo-plan-row ios-list-row" data-uid="${esc(a.user_id)}">

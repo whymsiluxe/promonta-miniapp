@@ -1,7 +1,15 @@
 // P2 continuation: drag a free worker onto an object and reuse the full Assignment Sheet.
+//
+// 17.09 (audit finding, P1): decorateDropZones() used to look objects up by their
+// DISPLAY NAME (Map<label, obj>, first match wins on a collision) instead of using
+// the real object_id already present in the row data -- two objects sharing a
+// display name (duplicate address, renamed object, etc.) would silently make every
+// drag-drop assignment land on whichever object happened to load first. Fixed by
+// reading object_id directly from a data-object-id attribute that home.js now
+// writes into both block templates (.wo-object-block / .wo-plan-object-block) at
+// render time -- no more reconstructing identity from rendered text, no more API
+// call or cache needed here at all.
 (function () {
-  let objectCache = null;
-  let objectCacheAt = 0;
   let activeDrag = null;
   let enhanceTimer = null;
 
@@ -12,21 +20,6 @@
     enhanceTimer = setTimeout(enhanceTeamDragAssign, 80);
   }
 
-  async function getObjectMap() {
-    const now = Date.now();
-    if (objectCache && now - objectCacheAt < 30000) return objectCache;
-    const data = await api('/api/objects');
-    const map = new Map();
-    (data.objects || []).map(normalizeObjectDto).forEach(obj => {
-      const label = obj.name || obj.address || obj.id;
-      if (!label || !obj.id) return;
-      if (!map.has(label)) map.set(label, obj);
-    });
-    objectCache = map;
-    objectCacheAt = now;
-    return objectCache;
-  }
-
   function workerNameFromRow(row) {
     return row.querySelector('.wo-worker-name')?.textContent?.trim() || row.dataset.name || '';
   }
@@ -35,16 +28,13 @@
     return block.querySelector('.wo-object-name, .wo-plan-object-name')?.textContent?.trim() || '';
   }
 
-  async function decorateDropZones() {
-    const map = await getObjectMap().catch(() => null);
-    if (!map) return;
-    document.querySelectorAll('#view-working-objects .wo-object-block, #view-working-objects .wo-plan-object-block').forEach(block => {
-      const label = objectNameFromBlock(block);
-      const obj = map.get(label);
-      if (!obj) return;
+  function decorateDropZones() {
+    document.querySelectorAll('#view-working-objects .wo-object-block[data-object-id], #view-working-objects .wo-plan-object-block[data-object-id]').forEach(block => {
+      const objectId = block.dataset.objectId;
+      if (!objectId) return;
       block.classList.add('wo-object-dropzone');
-      block.dataset.dragObjectId = obj.id;
-      block.dataset.dragObjectName = label;
+      block.dataset.dragObjectId = objectId;
+      block.dataset.dragObjectName = objectNameFromBlock(block);
     });
   }
 
@@ -60,11 +50,11 @@
     });
   }
 
-  async function enhanceTeamDragAssign() {
+  function enhanceTeamDragAssign() {
     const root = document.getElementById('view-working-objects');
     if (!root || root.style.display === 'none') return;
     decorateWorkers();
-    await decorateDropZones();
+    decorateDropZones();
   }
 
   function makeGhost(row) {
