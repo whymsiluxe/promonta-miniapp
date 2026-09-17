@@ -124,6 +124,35 @@ def test_news_cards_do_not_render_dislike_action():
     assert "news-like-btn" in feed_src
     assert "news-dislike-btn" not in feed_src
     assert "data-news-reaction=\"dislike\"" not in feed_src
+    assert "post.dislikes" not in feed_src
+
+
+def test_news_category_filters_are_rendered_from_feed_categories():
+    html = _source(APP_HTML)
+    feed_src = _source(FEED_JS)
+
+    assert 'id="feed-news-category-filters"' in html
+    assert ".feed-news-category-filters" in html
+    assert ".feed-news-category-chip.active" in html
+    assert "let _newsCategoryFilter = 'all';" in feed_src
+    assert "function _renderNewsCategoryFilters()" in feed_src
+    assert "data-news-category" in feed_src
+    assert "_newsCategoryFilter === 'all' || _newsCategoryLabel(x.n) === _newsCategoryFilter" in feed_src
+
+
+def test_feed_view_resets_scroll_on_open_and_after_render():
+    feed_src = _source(FEED_JS)
+
+    assert "function resetFeedViewScroll()" in feed_src
+    assert "window.scrollTo(0, 0);" in feed_src
+    assert "document.scrollingElement.scrollTop = 0;" in feed_src
+    assert "document.getElementById('feed-swipe-area')" in feed_src
+    assert "document.getElementById('feed-photo-grid')" in feed_src
+    assert "document.getElementById('feed-news-list')" in feed_src
+    assert "document.getElementById('feed-list')" in feed_src
+    assert "function initFeedView()" in feed_src
+    assert "resetFeedViewScroll();" in feed_src
+    assert "requestAnimationFrame(resetFeedViewScroll);" in feed_src
 
 
 def test_ios_input_zoom_and_ai_composer_visibility_contracts():

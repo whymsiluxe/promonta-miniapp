@@ -566,6 +566,7 @@ async function _confirmCheckinPreview() {
     // не нужно переснимать фото заново при плохой связи. Geo-ошибка — отдельный случай:
     // повтор не поможет, пока юзер физически не включит геолокацию (не временный network-сбой).
     const isGeoError = /геолокац/i.test(e.message || '');
+    let queueErrorMessage = '';
     if (!isGeoError && _isTransientCheckinUploadError(e)) {
       try {
         await _queueCheckinStartOutbox(_checkinPreviewFiles, startFieldsOrNull, _checkinIdempotencyKey);
@@ -576,13 +577,13 @@ async function _confirmCheckinPreview() {
         _closeCheckinPreviewModal();
         return;
       } catch (queueErr) {
-        _setCheckinSyncStatus('Не удалось сохранить офлайн: ' + queueErr.message, true);
+        queueErrorMessage = 'Не удалось сохранить офлайн: ' + queueErr.message;
       }
     }
     _setCheckinSyncStatus(
       isGeoError
         ? 'Включи геолокацию в настройках и нажми "Подтвердить" ещё раз'
-        : 'Не удалось отправить — данные сохранены, нажми "Подтвердить" ещё раз',
+        : (queueErrorMessage || 'Не удалось отправить — нажми "Подтвердить" ещё раз'),
       true
     );
     showToast('Ошибка check-in: ' + e.message, 'error');

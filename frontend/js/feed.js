@@ -94,6 +94,15 @@ const IG_ICONS = {
 
 const FEED_SAVED_FILTERS = { photos: 'all', news: 'all' };
 
+function resetFeedViewScroll() {
+  window.scrollTo(0, 0);
+  if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+  ['feed-swipe-area', 'feed-photo-grid', 'feed-news-list', 'feed-list'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.scrollTop = 0;
+  });
+}
+
 function _feedJsString(value) {
   return JSON.stringify(String(value == null ? '' : value));
 }
@@ -692,6 +701,7 @@ function _initFeedSavedFilters() {
 function _selectFeedTab(which, opts = {}) {
   const { silent } = opts;
   const root = getFeedRoot();
+  resetFeedViewScroll();
   root.querySelectorAll('.doc-type-opt[data-feed]').forEach(o => o.classList.toggle('active', o.dataset.feed === which));
   document.getElementById('feed-weather-content').style.display = which === 'weather' ? 'block' : 'none';
   document.getElementById('feed-photos-content').style.display = which === 'photos' ? 'block' : 'none';
@@ -710,6 +720,7 @@ const NEWS_CAT_COLORS = { 'Украина': '#56768C', 'Германия': '#B38
 const NEWS_PAGE_SIZE = 10;
 let _newsItems = [];
 let _newsRenderedCount = 0;
+let _newsCategoryFilter = 'all';
 
 function openNewsLink(idx) {
   const url = _newsItems[idx]?.url;
@@ -796,6 +807,38 @@ function _newsCardHtml(n, i) {
   </div>`;
 }
 
+function _newsCategoryLabel(n) {
+  return (n?.category || 'Другое').trim() || 'Другое';
+}
+
+function _renderNewsCategoryFilters() {
+  const root = document.getElementById('feed-news-category-filters');
+  if (!root) return;
+  const counts = {};
+  _newsItems.forEach(n => {
+    const cat = _newsCategoryLabel(n);
+    counts[cat] = (counts[cat] || 0) + 1;
+  });
+  const cats = Object.keys(counts).sort((a, b) => a.localeCompare(b, 'ru'));
+  if (!cats.length) {
+    root.innerHTML = '';
+    return;
+  }
+  if (_newsCategoryFilter !== 'all' && !counts[_newsCategoryFilter]) _newsCategoryFilter = 'all';
+  root.innerHTML = [
+    `<button type="button" class="feed-news-category-chip ${_newsCategoryFilter === 'all' ? 'active' : ''}" data-news-category="all">Все</button>`,
+    ...cats.map(cat => `<button type="button" class="feed-news-category-chip ${_newsCategoryFilter === cat ? 'active' : ''}" data-news-category="${esc(cat)}">${esc(cat)} ${counts[cat]}</button>`),
+  ].join('');
+  root.querySelectorAll('.feed-news-category-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _newsCategoryFilter = btn.dataset.newsCategory || 'all';
+      hapticImpact('light');
+      _renderNewsFromCache();
+      resetFeedViewScroll();
+    });
+  });
+}
+
 async function reactNews(postId, reaction, btnEl) {
   if (reaction !== 'like') return;
   const post = _newsItems.find(n => n.id === postId);
@@ -809,7 +852,6 @@ async function reactNews(postId, reaction, btnEl) {
       body: JSON.stringify({ reaction: newReaction }),
     });
     post.likes = res.likes;
-    post.dislikes = res.dislikes;
     post.my_reaction = res.my_reaction;
     const card = btnEl.closest('.news-card');
     const likeBtn = card.querySelector('[data-news-reaction="like"]');
@@ -825,7 +867,8 @@ async function reactNews(postId, reaction, btnEl) {
 function _visibleNewsEntries() {
   return _newsItems
     .map((n, index) => ({ n, index }))
-    .filter(x => FEED_SAVED_FILTERS.news !== 'saved' || x.n.saved_by_me);
+    .filter(x => FEED_SAVED_FILTERS.news !== 'saved' || x.n.saved_by_me)
+    .filter(x => _newsCategoryFilter === 'all' || _newsCategoryLabel(x.n) === _newsCategoryFilter);
 }
 
 function _renderMoreNews() {
@@ -858,12 +901,15 @@ function _renderNewsFromCache() {
   const list = document.getElementById('feed-news-list');
   if (!list) return;
   _updateFeedSavedCount('news', _newsItems.filter(n => n.saved_by_me).length);
+  _renderNewsCategoryFilters();
   const visible = _visibleNewsEntries();
   _newsRenderedCount = 0;
   if (!visible.length) {
     list.innerHTML = FEED_SAVED_FILTERS.news === 'saved'
       ? '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Сохранённых новостей пока нет</div>'
-      : '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Сводка новостей появится в течение дня</div>';
+      : (_newsCategoryFilter === 'all'
+        ? '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Сводка новостей появится в течение дня</div>'
+        : '<div style="padding:2rem 0;text-align:center;color:var(--text-light)">В этой категории новостей пока нет</div>');
     return;
   }
   list.innerHTML = (FEED_SAVED_FILTERS.news === 'saved' ? '' : _renderDiscussingSection()) +
@@ -891,6 +937,7 @@ function _renderDiscussingSection() {
   const now = Math.floor(Date.now() / 1000);
   const discussing = _newsItems
     .map((n, idx) => ({ n, idx }))
+    .filter(x => _newsCategoryFilter === 'all' || _newsCategoryLabel(x.n) === _newsCategoryFilter)
     .filter(x => (x.n.comment_count || 0) > 0 && (x.n.last_comment_at || 0) > now - 86400)
     .sort((a, b) => (b.n.last_comment_at || 0) - (a.n.last_comment_at || 0))
     .slice(0, 3);
@@ -1292,7 +1339,9 @@ function initFeedTabs() {
 
 // Public API: called by switchView('feed') in app.html.
 function initFeedView() {
+  resetFeedViewScroll();
   initFeedTabs();
+  requestAnimationFrame(resetFeedViewScroll);
 }
 
 function _setFeedBadge(tabKey, count) {

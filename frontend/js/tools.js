@@ -2,6 +2,8 @@
 
 let TOOLS = [];
 let TOOLS_ACTIVE_OBJECTS = []; // 30.07: реальные объекты вместо хардкода, грузятся один раз (см. loadToolsObjects)
+let TOOL_BOOKINGS = [];
+let TOOLS_WORKERS = [];
 const PERSONAL_USE = 'Личное пользование';
 
 const STATUS_LABEL = { free: 'Свободен', 'in-use': 'На объекте', reserved: 'Зарезервирован', repair: 'В ремонте', missing: 'Не найден' };
@@ -32,6 +34,12 @@ const TOOL_CATEGORY_ICON = {
 };
 function _toolIcon(cat) {
   return TOOL_CATEGORY_ICON[cat] || '🛠️';
+}
+
+function _toolsIsoOffset(days) {
+  const base = new Date(`${todayBerlin()}T12:00:00`);
+  base.setDate(base.getDate() + days);
+  return base.toISOString().slice(0, 10);
 }
 
 // 3D объёмная иконка по названию/категории инструмента (Фаза 10.26) — распознаём
@@ -441,6 +449,166 @@ function attachToolsHandlers() {
 
 let toolsActiveFilter = 'all';
 
+function _bookingToolOptions() {
+  const bookable = TOOLS.filter(t => !['repair', 'missing'].includes(t.status));
+  if (!bookable.length) return '<option value="">Инструментов нет</option>';
+  return [
+    '<option value="">Инструмент</option>',
+    ...bookable.map(t => `<option value="${esc(t.id)}">${esc(t.name)} · №${esc(t.id)}</option>`),
+  ].join('');
+}
+
+function _bookingObjectOptions() {
+  const objects = TOOLS_ACTIVE_OBJECTS.length ? TOOLS_ACTIVE_OBJECTS : [];
+  return [
+    '<option value="">Объект</option>',
+    ...objects.map(o => `<option value="${esc(o)}">${esc(o)}</option>`),
+    `<option value="${PERSONAL_USE}">${PERSONAL_USE}</option>`,
+  ].join('');
+}
+
+function _bookingHolderOptions() {
+  return [
+    '<option value="">Для себя / общий резерв</option>',
+    ...TOOLS_WORKERS.map(w => `<option value="${esc(w.user_id)}">${esc(w.name)}</option>`),
+  ].join('');
+}
+
+function _refreshToolBookingControls() {
+  const toolSelect = document.getElementById('tool-booking-tool');
+  const objectSelect = document.getElementById('tool-booking-object');
+  const holderSelect = document.getElementById('tool-booking-holder');
+  const fromInput = document.getElementById('tool-booking-from');
+  const toInput = document.getElementById('tool-booking-to');
+  if (toolSelect) {
+    const prev = toolSelect.value;
+    toolSelect.innerHTML = _bookingToolOptions();
+    if (prev && Array.from(toolSelect.options).some(o => o.value === prev)) toolSelect.value = prev;
+  }
+  if (objectSelect) {
+    const prev = objectSelect.value;
+    objectSelect.innerHTML = _bookingObjectOptions();
+    if (prev && Array.from(objectSelect.options).some(o => o.value === prev)) objectSelect.value = prev;
+  }
+  if (holderSelect) {
+    holderSelect.innerHTML = _bookingHolderOptions();
+    holderSelect.style.display = currentRole === 'owner' ? '' : 'none';
+  }
+  if (fromInput && !fromInput.value) fromInput.value = todayBerlin();
+  if (toInput && !toInput.value) toInput.value = todayBerlin();
+}
+
+function _toolBookingRangeText(b) {
+  if (b.date_from === b.date_to) return b.date_from;
+  return `${b.date_from} — ${b.date_to}`;
+}
+
+function _canCancelToolBooking(b) {
+  return currentRole === 'owner'
+    || String(b.holder_id || '') === String(currentUserId)
+    || String(b.created_by || '') === String(currentUserId);
+}
+
+function _renderToolBookings() {
+  const list = document.getElementById('tool-booking-list');
+  if (!list) return;
+  if (!TOOL_BOOKINGS.length) {
+    list.innerHTML = '<div class="tool-booking-empty">На ближайшие даты брони нет</div>';
+    return;
+  }
+  list.innerHTML = TOOL_BOOKINGS.slice(0, 8).map(b => `
+    <div class="tool-booking-row" data-booking-id="${esc(b.id)}" data-serial="${esc(b.serial)}">
+      <div class="tool-booking-row-main">
+        <div class="tool-booking-row-title">${esc(b.tool_name || b.serial)} · ${esc(_toolBookingRangeText(b))}</div>
+        <div class="tool-booking-row-meta">${esc([b.object_name, b.holder_name].filter(Boolean).join(' · '))}</div>
+      </div>
+      ${_canCancelToolBooking(b) ? '<button type="button" class="tool-booking-cancel">Отменить</button>' : ''}
+    </div>
+  `).join('');
+  list.querySelectorAll('.tool-booking-cancel').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const row = btn.closest('.tool-booking-row');
+      if (!row) return;
+      btn.disabled = true;
+      try {
+        await api(`/api/tools/${encodeURIComponent(row.dataset.serial)}/bookings/${encodeURIComponent(row.dataset.bookingId)}`, { method: 'DELETE' });
+        showToast('Бронь отменена', 'success');
+        await loadToolBookings();
+      } catch (err) {
+        showToast('Ошибка: ' + err.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+async function loadToolBookings() {
+  const list = document.getElementById('tool-booking-list');
+  if (!list) return;
+  const from = document.getElementById('tool-booking-from')?.value || todayBerlin();
+  const to = _toolsIsoOffset(30);
+  try {
+    const res = await api(`/api/tools/bookings?date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}`);
+    TOOL_BOOKINGS = res.bookings || [];
+    _renderToolBookings();
+  } catch (e) {
+    list.innerHTML = `<div class="tool-booking-empty">Не удалось загрузить бронь: ${esc(e.message)}</div>`;
+  }
+}
+
+async function _submitToolBooking() {
+  const toolId = document.getElementById('tool-booking-tool')?.value || '';
+  const objectName = document.getElementById('tool-booking-object')?.value || '';
+  const dateFrom = document.getElementById('tool-booking-from')?.value || '';
+  const dateTo = document.getElementById('tool-booking-to')?.value || dateFrom;
+  const holderId = document.getElementById('tool-booking-holder')?.value || '';
+  const btn = document.getElementById('tool-booking-submit');
+  if (!toolId || !objectName || !dateFrom || !dateTo) {
+    showToast('Выбери инструмент, объект и даты', 'error');
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Бронирую...';
+  try {
+    const body = { date_from: dateFrom, date_to: dateTo, object_name: objectName };
+    if (currentRole === 'owner' && holderId) body.holder_id = holderId;
+    await api(`/api/tools/${encodeURIComponent(toolId)}/bookings`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    hapticImpact('light');
+    showToast('Инструмент забронирован', 'success');
+    await loadToolBookings();
+  } catch (e) {
+    showToast('Ошибка: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Забронировать';
+  }
+}
+
+function _initToolBookingControls() {
+  _refreshToolBookingControls();
+  const submit = document.getElementById('tool-booking-submit');
+  if (submit && !submit.dataset.wired) {
+    submit.dataset.wired = '1';
+    submit.addEventListener('click', _submitToolBooking);
+  }
+  const refresh = document.getElementById('tool-booking-refresh');
+  if (refresh && !refresh.dataset.wired) {
+    refresh.dataset.wired = '1';
+    refresh.addEventListener('click', loadToolBookings);
+  }
+  ['tool-booking-from', 'tool-booking-to'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.dataset.wired) {
+      el.dataset.wired = '1';
+      el.addEventListener('change', loadToolBookings);
+    }
+  });
+}
+
 function _updateToolsSummary() {
   const counts = {
     all: TOOLS.length,
@@ -471,6 +639,7 @@ async function loadTools() {
   try {
     const data = await api('/api/tools');
     TOOLS = data.tools.map(mapTool);
+    _refreshToolBookingControls();
     _updateToolsSummary();
     applyToolsFilters();
   } catch (e) {
@@ -490,6 +659,22 @@ async function loadToolsObjects() {
   } catch (e) {
     TOOLS_ACTIVE_OBJECTS = [];
   }
+  _refreshToolBookingControls();
+}
+
+async function loadToolsWorkers() {
+  if (currentRole !== 'owner') {
+    TOOLS_WORKERS = [];
+    _refreshToolBookingControls();
+    return;
+  }
+  try {
+    const data = await api('/api/workers');
+    TOOLS_WORKERS = (data.workers || []).filter(w => w.role === 'worker');
+  } catch (e) {
+    TOOLS_WORKERS = [];
+  }
+  _refreshToolBookingControls();
 }
 
 function initToolsView() {
@@ -528,6 +713,9 @@ function initToolsView() {
     });
   }
 
+  _initToolBookingControls();
   loadToolsObjects();
+  loadToolsWorkers();
   loadTools();
+  loadToolBookings();
 }

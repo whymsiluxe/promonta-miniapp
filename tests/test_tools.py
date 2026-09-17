@@ -21,6 +21,7 @@ the miniapp .venv's python3, not bare system python3.)
 import asyncio
 import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -220,6 +221,61 @@ class OwnerManageStillWorksTests(unittest.TestCase):
             mock_update.assert_called_once()
             _, kwargs = mock_update.call_args
             self.assertEqual(kwargs.get('holder_id'), '321')
+
+
+class ToolBookingTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_file = backend.TOOL_BOOKINGS_FILE
+        backend.TOOL_BOOKINGS_FILE = os.path.join(self.tmp.name, 'tool_bookings.json')
+
+    def tearDown(self):
+        backend.TOOL_BOOKINGS_FILE = self.old_file
+        self.tmp.cleanup()
+
+    def test_worker_creates_tool_booking_for_self(self):
+        tl = _repo_tools_lib()
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)):
+            body = backend.ToolBookingBody(
+                date_from='2099-01-10',
+                date_to='2099-01-12',
+                object_name='Дом Мюллер',
+                holder_id='other-worker',
+            )
+            result = backend.create_tool_booking('T-014', body, user={'id': 777, 'first_name': 'Олег'}, role='worker')
+
+        booking = result['booking']
+        self.assertEqual(booking['serial'], 'T-014')
+        self.assertEqual(booking['holder_id'], '777')
+        self.assertEqual(booking['holder_name'], 'Олег')
+        self.assertEqual(booking['object_name'], 'Дом Мюллер')
+
+    def test_overlapping_tool_booking_is_rejected(self):
+        tl = _repo_tools_lib()
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)):
+            first = backend.ToolBookingBody(date_from='2099-02-01', date_to='2099-02-03', object_name='Дом Мюллер')
+            second = backend.ToolBookingBody(date_from='2099-02-03', date_to='2099-02-05', object_name='Офис Санация')
+            backend.create_tool_booking('T-014', first, user={'id': 777, 'first_name': 'Олег'}, role='worker')
+            with self.assertRaises(HTTPException) as ctx:
+                backend.create_tool_booking('T-014', second, user={'id': 888, 'first_name': 'Мария'}, role='worker')
+        self.assertEqual(ctx.exception.status_code, 409)
+
+    def test_worker_cannot_cancel_another_workers_booking(self):
+        tl = _repo_tools_lib()
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)):
+            body = backend.ToolBookingBody(date_from='2099-03-01', date_to='2099-03-01', object_name='Дом Мюллер')
+            booking = backend.create_tool_booking('T-014', body, user={'id': 777, 'first_name': 'Олег'}, role='worker')['booking']
+            with self.assertRaises(HTTPException) as ctx:
+                backend.cancel_tool_booking('T-014', booking['id'], user={'id': 888, 'first_name': 'Мария'}, role='worker')
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_owner_can_cancel_any_booking(self):
+        tl = _repo_tools_lib()
+        with patch.object(tl, 'get_tool', return_value=dict(FREE_TOOL)):
+            body = backend.ToolBookingBody(date_from='2099-04-01', date_to='2099-04-01', object_name='Дом Мюллер')
+            booking = backend.create_tool_booking('T-014', body, user={'id': 777, 'first_name': 'Олег'}, role='worker')['booking']
+            cancelled = backend.cancel_tool_booking('T-014', booking['id'], user={'id': 1, 'first_name': 'Owner'}, role='owner')
+        self.assertEqual(cancelled['booking']['status'], 'cancelled')
 
 
 if __name__ == '__main__':

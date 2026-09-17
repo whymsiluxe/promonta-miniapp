@@ -118,6 +118,32 @@ class DashboardTodayBoundaryTests(unittest.TestCase):
             result = backend.get_team_plan(date='', user=OWNER, _=None)
         self.assertEqual(result['date'], MIDNIGHT_EDGE_BERLIN_DATE)
 
+    def test_shifts_today_exposes_berlin_week_sparkline(self):
+        sessions = [
+            {'id': 's-prev', 'user_id': '10', 'object_id': 'OBJ-1', 'date': '2026-08-03',
+             'manual_entry': True, 'start_time': '08:00', 'end_time': '10:00', 'pause_minutes': 0,
+             'finish_at': 1},
+            {'id': 's-today', 'user_id': '10', 'object_id': 'OBJ-1', 'date': MIDNIGHT_EDGE_BERLIN_DATE,
+             'manual_entry': True, 'start_time': '08:00', 'end_time': '11:00', 'pause_minutes': 0,
+             'finish_at': 1},
+        ]
+        with patch.object(backend, 'business_now', return_value=MIDNIGHT_EDGE_BERLIN), \
+             patch.object(backend, '_load_checkin_meta', return_value=sessions), \
+             patch.object(backend, '_load_worker_profiles', return_value={'10': {'name': 'Ivan'}}), \
+             patch.object(backend, '_cached_get_used_range', return_value=None), \
+             patch.object(backend, '_load_assignments', return_value={}), \
+             patch.object(backend, '_load_abwesenheit', return_value=[]), \
+             patch.object(backend, '_load_roles', return_value={'10': 'worker'}):
+            result = backend.get_dashboard_shifts_today(user=OWNER, _=None)
+
+        days = result['sparkline']['days']
+        self.assertEqual(len(days), 7)
+        self.assertEqual(days[-1]['date'], MIDNIGHT_EDGE_BERLIN_DATE)
+        self.assertEqual(days[-1]['hours'], 3.0)
+        self.assertEqual(days[-1]['shifts'], 1)
+        self.assertEqual(days[-1]['finished'], 1)
+        self.assertEqual(days[-2]['hours'], 2.0)
+
 
 class AbwesenheitBusinessDateBoundaryTests(unittest.TestCase):
     def test_close_abwesenheit_uses_berlin_business_today(self):

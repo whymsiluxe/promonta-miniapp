@@ -45,6 +45,20 @@ def test_home_dashboard_uses_today_title_and_flat_ios_surfaces():
     assert "display: none;" in src
 
 
+def test_home_dashboard_renders_sparklines_from_shift_series():
+    html = _source(APP_HTML)
+    js = _source(HOME_JS)
+
+    assert ".home-today-sparklines" in html
+    assert ".home-sparkline-svg" in html
+    assert "function _homeSparklineSvg(values)" in js
+    assert "const sparkDays = shiftsData.sparkline?.days || [];" in js
+    assert "_homeTodaySparkCard('Часы'" in js
+    assert "sparkDays.map(d => d.hours)" in js
+    assert "sparkDays.map(d => d.shifts)" in js
+    assert "sparkDays.map(d => d.finished)" in js
+
+
 def test_home_dashboard_does_not_render_duplicate_legacy_kpi_grid():
     src = _source(HOME_JS)
 

@@ -106,6 +106,7 @@ class PersistentCorruptLockTests(unittest.TestCase):
         self.assertIn('object_info.json', critical_filenames)
         self.assertIn('object_images.json', critical_filenames)
         self.assertIn('work_calendar.json', critical_filenames)
+        self.assertIn('tool_bookings.json', critical_filenames)
         self.assertIn('chat_thread_meta.json', critical_filenames)
 
 

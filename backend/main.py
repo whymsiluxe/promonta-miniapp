@@ -14,6 +14,7 @@ import re
 import sys
 import tempfile
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, quote
 
@@ -40,6 +41,7 @@ AGENT_ROOT = os.environ.get('PROMONTA_AGENT_ROOT', '/home/promonta/agent')
 # who wants to point at a different location.
 CREATE_OBJECT_SCRIPT = os.environ.get('PROMONTA_CREATE_OBJECT_SCRIPT', os.path.join(BACKEND_DIR, 'create_object.py'))
 CREATE_OBJECT_FOLDER_SCRIPT = os.environ.get('PROMONTA_CREATE_OBJECT_FOLDER_SCRIPT', os.path.join(BACKEND_DIR, 'create_object_folder.py'))
+TOOL_BOOKINGS_FILE = os.path.join(DATA_ROOT, 'tool_bookings.json')
 
 _PROD_DATA_ROOT = '/home/promonta/agent/miniapp'
 _is_test_context = (
@@ -2774,7 +2776,7 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
     """Кто сейчас работает / кто назначен но не начал / все смены за сегодня --
     для owner dashboard. owner-only: агрегирует GPS/личные данные всех работников,
     та же чувствительность что у GET /api/checkin (уже owner-gated для чужих сессий)."""
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = business_today_str()
     sessions = _load_checkin_meta()
     today_sessions = [s for s in sessions if s.get('date') == today]
 
@@ -2892,10 +2894,32 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
             elapsed = (time.time() - s['start_at'] - (s.get('pause_accumulated_seconds') or 0)) / 3600.0
             hours_today_total += max(0.0, elapsed)
 
+    sparkline_days = []
+    today_date = business_today()
+    for i in range(6, -1, -1):
+        d = (today_date - timedelta(days=i)).isoformat()
+        day_sessions = [s for s in sessions if s.get('date') == d]
+        day_hours = 0.0
+        for s in day_sessions:
+            if s.get('finish_at') is not None or s.get('manual_entry'):
+                day_hours += _hours_from_session(s)
+            elif d == today and s.get('start_at'):
+                elapsed = (time.time() - s['start_at'] - (s.get('pause_accumulated_seconds') or 0)) / 3600.0
+                day_hours += max(0.0, elapsed)
+        sparkline_days.append({
+            "date": d,
+            "hours": round(day_hours, 1),
+            "shifts": len(day_sessions),
+            "finished": sum(1 for s in day_sessions if s.get('finish_at') is not None or s.get('manual_entry')),
+        })
+
     return {
         "date": today,
         "working_now": working_now,
         "hours_today_total": round(hours_today_total, 1),
+        "sparkline": {
+            "days": sparkline_days,
+        },
         "not_started": not_started,
         "finished_today": finished_today,
         "awaiting_response": awaiting_response,
@@ -3257,6 +3281,147 @@ def tool_history(serial: str, user: dict = Depends(get_current_user)):
     return {"history": tl.tool_history(serial)}
 
 
+class ToolBookingBody(BaseModel):
+    date_from: str
+    date_to: str
+    object_name: str
+    holder_id: str = ''
+    holder: str = ''
+    note: str = ''
+
+
+def _parse_tool_booking_date(value: str, field_name: str):
+    raw = (value or '').strip()
+    try:
+        return datetime.strptime(raw, '%Y-%m-%d').date()
+    except ValueError:
+        raise HTTPException(400, f"{field_name} должен быть YYYY-MM-DD")
+
+
+def _tool_booking_default_store():
+    return {"bookings": []}
+
+
+def _tool_booking_overlaps(a_from: str, a_to: str, b_from: str, b_to: str) -> bool:
+    return bool(a_from and a_to and b_from and b_to and a_from <= b_to and b_from <= a_to)
+
+
+def _tool_booking_holder(body: ToolBookingBody, user: dict, role: str) -> tuple[str, str]:
+    if role != 'owner':
+        return str(user['id']), _holder_name_from_user(user)
+    holder_id = (body.holder_id or '').strip()
+    if holder_id:
+        profiles = _load_worker_profiles()
+        holder_name = _sanitize_display_name(profiles.get(holder_id, {}).get('name'), holder_id)
+        return holder_id, holder_name
+    return str(user['id']), (body.holder or _holder_name_from_user(user)).strip() or str(user['id'])
+
+
+@app.get("/api/tools/bookings")
+def list_tool_bookings(serial: str = '', date_from: str = '', date_to: str = '',
+                       user: dict = Depends(get_current_user)):
+    data = _safe_load_json(TOOL_BOOKINGS_FILE, _tool_booking_default_store())
+    today = business_today_str()
+    start = (date_from or today).strip()
+    end = (date_to or start).strip()
+    start_date = _parse_tool_booking_date(start, 'date_from')
+    end_date = _parse_tool_booking_date(end, 'date_to')
+    if end_date < start_date:
+        raise HTTPException(400, "date_to раньше date_from")
+    serial_filter = (serial or '').strip()
+    bookings = []
+    for b in data.get('bookings', []):
+        if b.get('status') == 'cancelled':
+            continue
+        if serial_filter and str(b.get('serial', '')) != serial_filter:
+            continue
+        if not _tool_booking_overlaps(start, end, b.get('date_from', ''), b.get('date_to', '')):
+            continue
+        bookings.append(b)
+    bookings.sort(key=lambda b: (b.get('date_from', ''), b.get('tool_name', ''), b.get('serial', '')))
+    return {"bookings": bookings}
+
+
+@app.post("/api/tools/{serial}/bookings")
+def create_tool_booking(serial: str, body: ToolBookingBody,
+                        user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    date_from = (body.date_from or '').strip()
+    date_to = (body.date_to or '').strip()
+    start_date = _parse_tool_booking_date(date_from, 'date_from')
+    end_date = _parse_tool_booking_date(date_to, 'date_to')
+    if end_date < start_date:
+        raise HTTPException(400, "date_to раньше date_from")
+    if start_date < business_today():
+        raise HTTPException(400, "Нельзя бронировать инструмент в прошлом")
+    object_name = (body.object_name or '').strip()
+    if not object_name:
+        raise HTTPException(400, "Укажи объект")
+
+    tl = _load_repo_tools_lib()
+    tool = tl.get_tool(serial)
+    if tool is None:
+        raise HTTPException(404, f'инструмент {serial} не найден')
+    if tl.mapped_status(tool) in ('repair', 'missing'):
+        raise HTTPException(409, "Инструмент недоступен для брони")
+
+    holder_id, holder_name = _tool_booking_holder(body, user, role)
+    booking_id = uuid.uuid4().hex
+    now = int(time.time())
+
+    def _mutator(data):
+        data.setdefault('bookings', [])
+        for existing in data['bookings']:
+            if existing.get('status') == 'cancelled':
+                continue
+            if str(existing.get('serial', '')) != str(serial):
+                continue
+            if _tool_booking_overlaps(date_from, date_to, existing.get('date_from', ''), existing.get('date_to', '')):
+                raise HTTPException(409, "Инструмент уже забронирован на эти даты")
+        booking = {
+            "id": booking_id,
+            "serial": str(serial),
+            "tool_name": tool.get('Название Инструмента', ''),
+            "category": tool.get('Категория', ''),
+            "date_from": date_from,
+            "date_to": date_to,
+            "object_name": object_name,
+            "holder_id": holder_id,
+            "holder_name": holder_name,
+            "note": (body.note or '').strip()[:300],
+            "status": "active",
+            "created_at": now,
+            "created_by": str(user['id']),
+        }
+        data['bookings'].append(booking)
+        return booking
+
+    booking = update_json_transaction(TOOL_BOOKINGS_FILE, _tool_booking_default_store, _mutator)
+    return {"booking": booking}
+
+
+@app.delete("/api/tools/{serial}/bookings/{booking_id}")
+def cancel_tool_booking(serial: str, booking_id: str,
+                        user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    uid = str(user['id'])
+
+    def _mutator(data):
+        for booking in data.get('bookings', []):
+            if booking.get('id') != booking_id or str(booking.get('serial', '')) != str(serial):
+                continue
+            if booking.get('status') == 'cancelled':
+                return booking
+            if role != 'owner' and booking.get('holder_id') != uid and booking.get('created_by') != uid:
+                raise HTTPException(403, "Можно удалить только свою бронь")
+            booking['status'] = 'cancelled'
+            booking['cancelled_at'] = int(time.time())
+            booking['cancelled_by'] = uid
+            return booking
+        raise HTTPException(404, "Бронь не найдена")
+
+    booking = update_json_transaction(TOOL_BOOKINGS_FILE, _tool_booking_default_store, _mutator)
+    return {"booking": booking}
+
+
 class CheckoutBody(BaseModel):
     object_name: str
     # 30.07 (Инструменты cleanup): optional только для обратной совместимости --
@@ -3384,7 +3549,6 @@ def create_tool(body: NewToolBody, user: dict = Depends(get_current_user), _: No
 
 # ---------- Angebot generator ----------
 import subprocess
-import uuid
 import urllib.request as _urlreq
 from fastapi.responses import FileResponse
 
@@ -9784,6 +9948,7 @@ CRITICAL_JSON_PATHS.update({
     OBJECT_INFO_FILE,
     OBJECT_IMAGES_FILE,
     WORK_CALENDAR_FILE,
+    TOOL_BOOKINGS_FILE,
     CHAT_THREAD_META_FILE,
     CONTRACT_INGEST_STATE_FILE,
 })

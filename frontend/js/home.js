@@ -153,6 +153,32 @@ function _homeTodayRow(title, meta, tone, action) {
   </button>`;
 }
 
+function _homeSparklineSvg(values) {
+  const nums = (values || []).map(v => Number(v) || 0);
+  const width = 92;
+  const height = 30;
+  const pad = 3;
+  const max = Math.max(1, ...nums);
+  const step = nums.length > 1 ? (width - pad * 2) / (nums.length - 1) : 0;
+  const points = nums.map((v, i) => {
+    const x = pad + i * step;
+    const y = height - pad - (v / max) * (height - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const area = points ? `${pad},${height - pad} ${points} ${width - pad},${height - pad}` : '';
+  return `<svg class="home-sparkline-svg" viewBox="0 0 ${width} ${height}" aria-hidden="true">
+    <polyline class="home-sparkline-area" points="${area}"></polyline>
+    <polyline class="home-sparkline-line" points="${points}"></polyline>
+  </svg>`;
+}
+
+function _homeTodaySparkCard(label, value, values) {
+  return `<div class="home-today-spark-card">
+    <div class="home-today-spark-top"><span>${esc(label)}</span><b>${esc(value)}</b></div>
+    ${_homeSparklineSvg(values)}
+  </div>`;
+}
+
 function _bindHomeTodayCockpit(root) {
   root.querySelectorAll('[data-home-action]').forEach(el => {
     const action = el.dataset.homeAction;
@@ -192,6 +218,8 @@ async function _loadHomeTodayCockpit() {
   const working = shiftsData.working_now || [];
   const notStarted = shiftsData.not_started || [];
   const awaiting = shiftsData.awaiting_response || [];
+  const finishedToday = shiftsData.finished_today || [];
+  const sparkDays = shiftsData.sparkline?.days || [];
   const blockers = blockersData.blockers || [];
   const openTasks = (tasksData.tasks || []).filter(t => t.status !== 'закрыто');
   const nowSec = Math.floor(Date.now() / 1000);
@@ -220,6 +248,13 @@ async function _loadHomeTodayCockpit() {
   const attentionHtml = attentionRows.length
     ? attentionRows.slice(0, 5).join('')
     : _homeTodayRow('Остальное спокойно', 'Критичных сигналов на сегодня нет', 'success', 'kontrol');
+  const sparklineHtml = sparkDays.length ? `
+    <div class="home-today-sparklines">
+      ${_homeTodaySparkCard('Часы', `${shiftsData.hours_today_total || 0} ч`, sparkDays.map(d => d.hours))}
+      ${_homeTodaySparkCard('Смены', String(working.length + finishedToday.length), sparkDays.map(d => d.shifts))}
+      ${_homeTodaySparkCard('Финиши', String(finishedToday.length), sparkDays.map(d => d.finished))}
+    </div>
+  ` : '';
 
   root.innerHTML = `
     <div class="home-today-head">
@@ -235,6 +270,10 @@ async function _loadHomeTodayCockpit() {
       <button type="button" class="home-today-stat" data-home-action="team"><span>${working.length}</span><small>на смене</small></button>
       <button type="button" class="home-today-stat${riskCount ? ' home-today-stat-hot' : ''}" data-home-action="${riskCount ? 'alerts' : 'kontrol'}"><span>${riskCount}</span><small>рисков</small></button>
     </div>
+    <div class="home-today-control-row">
+      <button type="button" class="home-today-control-open" data-home-action="kontrol">Контроль дня</button>
+    </div>
+    ${sparklineHtml}
     <div class="home-today-grid">
       <div class="home-today-block">
         <div class="home-today-block-title">Активные смены</div>

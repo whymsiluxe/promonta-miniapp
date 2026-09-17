@@ -5068,6 +5068,33 @@ body.chat-reply-active .chat-messages {
 /* ── News-карточки (Новости суб-таб, стиль Telegram-канала) ── */
 .news-card { background: var(--bg-card); border-radius: var(--radius-lg); padding: 0.85rem; margin: 0 0.75rem 0.75rem; cursor: pointer; transition: transform 0.12s ease; }
 .news-card:active { transform: scale(0.985); }
+.feed-news-category-filters {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0 0.75rem 0.65rem;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+}
+.feed-news-category-filters::-webkit-scrollbar { display: none; }
+.feed-news-category-chip {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 0.78rem;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 999px;
+  background: var(--ios-surface, var(--bg-card-raised));
+  color: var(--ios-muted, var(--text-light));
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.feed-news-category-chip.active {
+  background: var(--ios-accent, var(--accent));
+  border-color: var(--ios-accent, var(--accent));
+  color: white;
+}
 .news-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.45rem; }
 .news-cat { font-size: 0.7rem; font-weight: 700; padding: 0.18rem 0.55rem; border-radius: 999px; letter-spacing: 0.04em; }
 .news-src { font-size: 0.75rem; color: var(--text-light); }
@@ -7292,6 +7319,119 @@ body {
 #view-tools .tools-search-wrap input::placeholder {
   color: var(--ios-muted, var(--text-light));
 }
+#view-tools .tool-booking-panel {
+  margin: 0 0.75rem 0.75rem;
+  padding: 0.75rem;
+  background: var(--ios-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+#view-tools .tool-booking-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+#view-tools .tool-booking-kicker {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 12px;
+  font-weight: 650;
+}
+#view-tools .tool-booking-title {
+  color: var(--ios-text, var(--text-main));
+  font-size: 18px;
+  font-weight: 780;
+  line-height: 1.15;
+}
+#view-tools .tool-booking-refresh {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 999px;
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-accent, var(--accent));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+#view-tools .tool-booking-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+#view-tools .tool-booking-input {
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-grouped-surface, var(--bg-card));
+  color: var(--ios-text, var(--text-main));
+  font-size: 16px;
+  padding: 0 0.58rem;
+  font-family: var(--font-family-body);
+}
+#view-tools .tool-booking-submit {
+  grid-column: 1 / -1;
+  min-height: 42px;
+  border: none;
+  border-radius: var(--ios-radius-control, 11px);
+  background: var(--ios-accent, var(--accent));
+  color: white;
+  font-size: 16px;
+  font-weight: 700;
+}
+#view-tools .tool-booking-list {
+  margin-top: 0.65rem;
+  border-top: 1px solid var(--ios-separator, var(--border-color));
+  padding-top: 0.3rem;
+}
+#view-tools .tool-booking-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--ios-separator, var(--border-color));
+}
+#view-tools .tool-booking-row:last-child {
+  border-bottom: none;
+}
+#view-tools .tool-booking-row-main {
+  min-width: 0;
+  flex: 1;
+}
+#view-tools .tool-booking-row-title {
+  color: var(--ios-text, var(--text-main));
+  font-size: 14px;
+  font-weight: 720;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+#view-tools .tool-booking-row-meta {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 0.12rem;
+}
+#view-tools .tool-booking-cancel {
+  min-height: 32px;
+  padding: 0 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--c-red, var(--red)) 24%, var(--ios-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c-red, var(--red)) 8%, var(--ios-surface));
+  color: var(--c-red, var(--red));
+  font-size: 13px;
+  font-weight: 700;
+}
+#view-tools .tool-booking-empty {
+  color: var(--ios-muted, var(--text-light));
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0.45rem 0 0.15rem;
+}
 #view-tools .cards {
   gap: 0.65rem;
   padding: 0 0.75rem calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
@@ -7902,6 +8042,69 @@ body {
   border-color: color-mix(in srgb, var(--c-yellow, var(--warning)) 45%, var(--ios-border));
   background: color-mix(in srgb, var(--c-yellow, var(--warning)) 10%, var(--ios-grouped-surface));
 }
+.home-today-control-row {
+  margin: -0.15rem 0 0.75rem;
+}
+.home-today-control-open {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid color-mix(in srgb, var(--ios-accent, var(--accent)) 30%, var(--ios-border, var(--border-color)));
+  border-radius: var(--ios-radius-control, 11px);
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 10%, var(--ios-surface, var(--bg-card-raised)));
+  color: var(--ios-accent, var(--accent));
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+.home-today-sparklines {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 0 0 0.75rem;
+}
+.home-today-spark-card {
+  min-width: 0;
+  min-height: 66px;
+  padding: 0.5rem 0.52rem 0.42rem;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: var(--ios-radius-card, 12px);
+  background: var(--ios-grouped-surface, var(--bg-card));
+  overflow: hidden;
+}
+.home-today-spark-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem;
+  color: var(--ios-muted, var(--text-light));
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.home-today-spark-top b {
+  color: var(--ios-text, var(--text-main));
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.home-sparkline-svg {
+  display: block;
+  width: 100%;
+  height: 30px;
+  margin-top: 0.26rem;
+  color: var(--ios-accent, var(--accent));
+}
+.home-sparkline-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.home-sparkline-area {
+  fill: color-mix(in srgb, currentColor 13%, transparent);
+  stroke: none;
+}
 .home-today-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -8166,6 +8369,28 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     </span>
     <input type="text" id="tools-search" placeholder="Название, №, объект, сотрудник" aria-label="Поиск инструментов" autocomplete="off">
   </div>
+  <section class="tool-booking-panel" id="tool-booking-panel">
+    <div class="tool-booking-head">
+      <div>
+        <div class="tool-booking-kicker">Календарь инструмента</div>
+        <div class="tool-booking-title">Бронь по датам</div>
+      </div>
+      <button type="button" class="tool-booking-refresh" id="tool-booking-refresh" aria-label="Обновить бронь">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M20 12a8 8 0 1 1-2.35-5.65M20 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="tool-booking-form">
+      <select id="tool-booking-tool" class="tool-booking-input" aria-label="Инструмент"></select>
+      <select id="tool-booking-object" class="tool-booking-input" aria-label="Объект"></select>
+      <input id="tool-booking-from" class="tool-booking-input" type="date" aria-label="С даты">
+      <input id="tool-booking-to" class="tool-booking-input" type="date" aria-label="По дату">
+      <select id="tool-booking-holder" class="tool-booking-input" aria-label="Рабочий" style="display:none"></select>
+      <button id="tool-booking-submit" class="tool-booking-submit" type="button">Забронировать</button>
+    </div>
+    <div id="tool-booking-list" class="tool-booking-list">
+      <div class="tool-booking-empty">Загрузка брони...</div>
+    </div>
+  </section>
   <div class="cards" id="tools-cards"></div>
 </div>
 
@@ -8251,6 +8476,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
         <button class="feed-saved-opt active" type="button" data-feed-saved-filter="all">Все</button>
         <button class="feed-saved-opt" type="button" data-feed-saved-filter="saved">Сохранённые<span class="feed-saved-count" id="feed-saved-count-news">0</span></button>
       </div>
+      <div class="feed-news-category-filters" id="feed-news-category-filters" data-no-swipe aria-label="Категории новостей"></div>
       <div id="feed-news-list">
         <div style="padding:2rem 0;text-align:center;color:var(--text-light)">Скоро: утренняя сводка новостей</div>
       </div>
