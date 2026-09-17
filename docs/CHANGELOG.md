@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-17 (Team drag-to-assign P2 slice)
+
+Tests: focused frontend/assignment checks passed (`87 passed`); full suite and
+deploy verification follow in the release step.
+
+### Frontend
+- Added `frontend/js/team-drag-assign.js`, a small Team-view enhancer that adds
+  a drag handle to unassigned worker rows and makes Team object blocks droppable.
+- Dropping a worker onto an object opens the existing Assignment Sheet with the
+  worker and object preselected, preserving the full work-type, period, task
+  note, confirmation, and backend batch-validation flow.
+- Enhanced `frontend/js/assignment-sheet.js` so known worker+object assignments
+  skip the redundant picker step and so `openAssignFromProfile()` honors its
+  existing `initialDate` argument.
+- Added Team drag/drop affordance styling and loaded the new helper after the
+  Assignment Sheet script.
+
+### Tests
+- Added `tests/test_team_drag_assignment_frontend_contract.py` for script load
+  order, drag handle/drop-zone wiring, Assignment Sheet preselection, and
+  reduced-motion styling hooks.
+
 ## 2026-09-15 (Unified autonomous plan completion)
 
 Tests: latest full server suite before this docs-only completion commit was

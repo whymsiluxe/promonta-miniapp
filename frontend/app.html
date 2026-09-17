@@ -3979,6 +3979,60 @@ body.chat-reply-active .chat-messages {
 }
 .assignment-sheet-summary { display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.92rem; color: var(--text-main); }
 
+/* P2: Team drag-to-assign affordance */
+#view-working-objects .wo-drag-worker-row {
+  touch-action: pan-y;
+}
+#view-working-objects .wo-drag-handle {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-radius: 50%;
+  background: var(--ios-grouped-surface, var(--bg-card-raised));
+  color: var(--ios-muted-text, var(--text-light));
+  cursor: grab;
+}
+#view-working-objects .wo-drag-handle:active {
+  cursor: grabbing;
+  color: var(--ios-accent, var(--accent));
+}
+#view-working-objects .wo-dragging {
+  opacity: 0.62;
+}
+#view-working-objects .wo-object-dropzone {
+  border: 1px dashed transparent;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+#view-working-objects .wo-object-dropzone.wo-drop-active {
+  border-color: color-mix(in srgb, var(--ios-accent, var(--accent)) 58%, transparent);
+  background: color-mix(in srgb, var(--ios-accent, var(--accent)) 10%, var(--ios-surface, var(--bg-card)));
+  transform: translateY(-1px);
+}
+.wo-drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 5000;
+  pointer-events: none;
+  padding: 0.52rem 0.72rem;
+  border-radius: 999px;
+  background: var(--ios-surface, var(--bg-card));
+  color: var(--ios-text, var(--text-main));
+  border: 1px solid var(--ios-border, var(--border-color));
+  box-shadow: 0 12px 28px rgba(31, 35, 28, 0.18);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  #view-working-objects .wo-object-dropzone {
+    transition: none;
+  }
+}
+
 /* ═══════════ Команда и смены (01.08 переработка) ═══════════ */
 .obj-info-team-add-btn { background: none; border: none; color: var(--accent); font-size: 0.85rem; font-weight: 700; cursor: pointer; }
 .obj-info-team-summary { display: flex; gap: 1rem; font-size: 0.82rem; color: var(--text-light); margin-bottom: 0.5rem; }
@@ -8575,6 +8629,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 <script src="js/components/radio-player.js"></script>
 <script src="js/onboarding.js"></script>
 <script src="js/assignment-sheet.js"></script>
+<script src="js/team-drag-assign.js"></script>
 <script src="js/mangel.js"></script>
 <script src="js/tasks.js"></script>
 <script src="js/my-tasks.js"></script>

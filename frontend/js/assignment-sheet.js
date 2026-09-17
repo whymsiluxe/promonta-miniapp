@@ -32,16 +32,19 @@ async function openAssignmentSheet(opts = {}) {
     console.error('openAssignmentSheet: stale _asState with no overlay in DOM -- resetting');
     _asState = null;
   }
+  const knownObject = Boolean(opts.objectId);
+  const knownWorker = Boolean(opts.userId);
+  const initialDate = opts.initialDate || opts.dateFrom || '';
   _asState = {
-    mode: opts.objectId ? 'from_object' : 'from_worker',
+    mode: knownObject && knownWorker ? 'from_worker_object' : knownObject ? 'from_object' : 'from_worker',
     objectId: opts.objectId || '',
     objectName: opts.objectName || '',
     userIds: opts.userId ? [String(opts.userId)] : [],
     userNames: opts.userId ? { [String(opts.userId)]: opts.userName || '' } : {},
     workTypeIds: [],
     workTypeName: '',
-    dateFrom: '',
-    dateTo: '',
+    dateFrom: initialDate,
+    dateTo: opts.dateTo || initialDate,
     taskNote: '',
     step: _asState_initialStep(opts),
   };
@@ -229,7 +232,7 @@ function _asBindPeriodStep() {
   updateSummary();
   nextBtn.addEventListener('click', () => {
     if (!_asState.dateFrom || !_asState.dateTo) return;
-    _asState.step = 'workers';
+    _asState.step = _asState.objectId && _asState.userIds.length ? 'task_note' : 'workers';
     _asRender();
   });
 }
@@ -504,5 +507,5 @@ async function openBubbleAssign(objectId, stageName, dropZoneEl) {
 }
 
 function openAssignFromProfile(userId, userName, initialDate = '') {
-  openAssignmentSheet({ userId, userName });
+  openAssignmentSheet({ userId, userName, initialDate });
 }

@@ -382,3 +382,11 @@ as Section G's format), write a new dated Completion Audit subsection below
 this one, set the first line back to AUTONOMOUS_STATUS: DONE, and stop. Do
 not re-enable autonomous-miniapp.timer — it was deliberately disabled by the
 owner on 2026-09-15; this continuation is a manual one-off run.
+
+### Continuation Progress - 2026-09-17
+
+- P1 re-verification: all P1 overlap items are already covered by shipped
+  Stage 2/3 work and tests, so no duplicate implementation was added.
+- P2 item 1 in progress: Team drag/drop worker-to-object assignment now opens
+  the existing Assignment Sheet with worker and object preselected, while still
+  collecting work type, from/to period, optional task note, and confirmation.

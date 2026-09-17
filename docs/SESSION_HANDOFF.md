@@ -1,5 +1,34 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-17 Team drag-to-assign P2 slice handoff
+
+Current autonomous slice: Section H continuation, first P2 item
+(`Drag/drop worker to object, opening assignment sheet with from/to/task/work type`).
+
+Implemented in this slice:
+- Re-verified P1 backlog overlap as already shipped by the Stage 2/3 work:
+  offline check-in/finish outbox, shared API timeout/retry/abort, DailyPlan
+  validation/acknowledgment, owner daily cockpit, and object history.
+- `frontend/js/team-drag-assign.js`: new Team-view enhancer adds drag handles to
+  unassigned workers, marks object blocks as drop zones, and opens the existing
+  Assignment Sheet with both worker and object preselected.
+- `frontend/js/assignment-sheet.js`: added known worker+object mode so drops go
+  straight from work type and period to task note/confirmation, and the existing
+  `openAssignFromProfile()` `initialDate` argument is now honored.
+- `frontend/app.html`: loads the new helper after `assignment-sheet.js` and adds
+  drag handle, drop-zone, ghost, and reduced-motion styles.
+- `tests/test_team_drag_assignment_frontend_contract.py`: new frontend contract
+  locks the P2 drag-to-assign wiring.
+
+Verification so far:
+- `node --check frontend/js/assignment-sheet.js`.
+- `node --check frontend/js/team-drag-assign.js`.
+- Focused Team/assignment checks: `87 passed`.
+
+Next recommended slice:
+- Finish release verification/deploy for this P2 item, then continue to P2 item
+  2: object budget dashboard with budget/spent/remaining/risk.
+
 ## 2026-09-15 Unified autonomous plan completion handoff
 
 Current status: `docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md` is marked
