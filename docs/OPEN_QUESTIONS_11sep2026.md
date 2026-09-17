@@ -92,3 +92,16 @@ DailyPlan for that day, or should it be blocked with a reason field? Current beh
 (allow start without plan) is documented but not explicitly enforced as policy.
 
 See Phase 4 notes in `docs/HANDOFF_11sep2026_hardening.md` for implementation context.
+
+---
+
+## Q1 RESOLVED (2026-09-17, commit befc962)
+
+Both scripts moved into `backend/`, tracked in `scripts/manifest.sh`
+(`BACKEND_SUBPROCESS_SCRIPTS`), wired through `scripts/runtime_manifest.sh`
+so backup/deploy/rollback/syntax-check all cover them. `sys.path.insert`
+changed from the hardcoded `/home/promonta/agent` to a repo-relative path.
+Side-effect finding: the external `objekte_lib.py` these scripts imported had
+diverged from the repo copy (stale budget-percent column name, real crash
+bug) — synced and `promonta-bot.service` restarted to pick up the fix for
+the 6 other external scripts that also import that module.
