@@ -959,6 +959,16 @@ function _objDetailTabClick(tab) {
   document.querySelectorAll('#obj-detail-tabs .doc-type-opt').forEach(o => o.classList.toggle('active', o.dataset.objTab === tab));
   document.querySelectorAll('.obj-detail-panel').forEach(p => { p.style.display = 'none'; });
   document.getElementById(`obj-detail-panel-${tab}`).style.display = 'block';
+  // 17.09 (same class of bug as Календарь -- owner report): .obj-detail-panel
+  // toggles via display:none<->block, which does not reset scrollTop. Switching
+  // to План работ (stages tab) after scrolling down in a previous tab (e.g.
+  // Инфо) kept the stale scroll position, showing the new panel already
+  // scrolled past its own header. Reset the actual scrolling ancestor -- this
+  // screen's own container, not just window/document -- on every tab switch.
+  const detailView = document.getElementById('view-object-detail');
+  if (detailView) detailView.scrollTop = 0;
+  window.scrollTo(0, 0);
+  if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
   _initObjDetailTab(tab);
 }
 
