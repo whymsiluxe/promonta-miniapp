@@ -3124,6 +3124,19 @@ body.chat-keyboard-transitioning #chat-voice-recording-bar {
 body.chat-composer-focused .chat-input-bar, body.chat-composer-focused .ai-input-bar {
   padding-bottom: 0.4rem;
 }
+/* 17.09: chat-composer-focused instantly drops the composer's safe-area
+   padding-bottom (~34px on iPhone with home indicator) -- but the emoji quick-
+   reaction row is positioned with bottom: var(--chat-composer-height), which is
+   only updated ASYNCHRONOUSLY by a ResizeObserver a frame or more later. In that
+   window the row still sits at the OLD (taller) composer height while the
+   composer itself has already shrunk, producing a visible gap between them on
+   focus. Force the row down by the same safe-area amount the composer just lost,
+   using the same instant focus signal instead of waiting for the measured
+   height to catch up. */
+body.chat-composer-focused .chat-quick-reactions,
+body.chat-composer-focused #chat-thread-detail-view .chat-quick-reactions {
+  transform: translate3d(0, calc(-1 * var(--chat-keyboard-inset, 0px) + env(safe-area-inset-bottom)), 0);
+}
 
 .chat-input, .ai-input {
   flex: 1;
