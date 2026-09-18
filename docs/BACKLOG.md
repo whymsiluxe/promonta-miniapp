@@ -88,6 +88,12 @@ the full original list for comparison.
 - Manager/Bauleiter role — not requested.
 - QR-code scanner for tool lookup — better fit for a future native app than
   the Telegram WebView; logged as an idea there, not building here.
+- **Sanitized fixture/seed data for local development** — this was in the
+  old (now-superseded) `docs/TODO.md` P2 list. Owner confirmed 2026-09-18
+  this is no longer needed: automated tests already run fully isolated
+  (`MINIAPP_DATA_ROOT` pointed at a fresh tempdir per test, never touches
+  production data — 886 tests, zero prod risk), and there's no separate need
+  for a hand-explorable local demo instance beyond that. Not building.
 
 ## Verified already done (kept here only so nobody re-proposes them)
 
