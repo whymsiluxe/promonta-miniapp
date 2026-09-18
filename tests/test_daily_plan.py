@@ -373,9 +373,67 @@ class DailyPlanRouteTests(unittest.TestCase):
 
     def test_daily_plan_today_no_plan(self):
         result = self.backend.daily_plan_today(
-            user={'id': 777777}, role='worker')
+            user={'id': 777777}, role='worker', day='today')
         self.assertFalse(result['has_plan'])
         self.assertIn('date', result)
+
+    def test_daily_plan_invalid_day_param_rejected(self):
+        with self.assertRaises(HTTPException) as ctx:
+            self.backend.daily_plan_today(
+                user={'id': 777777}, role='worker', day='yesterday')
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_daily_plan_tomorrow_preview(self):
+        # 18.09 (owner request): worker should be able to see tomorrow's plan
+        # ahead of time to prepare tools/materials, without it counting as
+        # today's plan for checkin_start purposes.
+        from datetime import timedelta
+        tomorrow_str = (self.backend.business_today() + timedelta(days=1)).strftime('%Y-%m-%d')
+        body = self.backend.DailyPlanIn(
+            object_id='OBJ-TOMORROW-1', stage_key='OBJ-TOMORROW-1-S1',
+            date=tomorrow_str, assigned_worker_ids=['9001'],
+            items=[self.backend.DailyPlanItemIn(
+                id='tm1', sequence=1, title='Tomorrow action',
+                planned_quantity=4.0, unit='м²',
+            )],
+            publish=True,
+        )
+        self.backend.daily_plan_create(body=body, user={'id': 1})
+
+        today_result = self.backend.daily_plan_today(
+            user={'id': 9001}, role='worker', day='today')
+        self.assertFalse(today_result['has_plan'])
+
+        tomorrow_result = self.backend.daily_plan_today(
+            user={'id': 9001}, role='worker', day='tomorrow')
+        self.assertTrue(tomorrow_result['has_plan'])
+        self.assertEqual(tomorrow_result['plan']['date'], tomorrow_str)
+        self.assertEqual(tomorrow_result['date'], tomorrow_str)
+
+    def test_daily_plan_tomorrow_can_be_accepted_early(self):
+        # accept_plan() is date-agnostic by design -- confirm the tomorrow-preview
+        # endpoint's plan id can be accepted today via the existing /accept route,
+        # without any new accept mechanism.
+        from datetime import timedelta
+        tomorrow_str = (self.backend.business_today() + timedelta(days=1)).strftime('%Y-%m-%d')
+        body = self.backend.DailyPlanIn(
+            object_id='OBJ-TOMORROW-2', stage_key='OBJ-TOMORROW-2-S1',
+            date=tomorrow_str, assigned_worker_ids=['9002'],
+            items=[self.backend.DailyPlanItemIn(
+                id='tm2', sequence=1, title='Tomorrow accept test',
+                planned_quantity=2.0, unit='м²',
+            )],
+            publish=True,
+        )
+        plan = self.backend.daily_plan_create(body=body, user={'id': 1})
+
+        result = self.backend.daily_plan_accept(
+            plan_id=plan['id'], user={'id': 9002}, role='worker')
+        self.assertEqual(result['status'], 'accepted')
+
+        tomorrow_result = self.backend.daily_plan_today(
+            user={'id': 9002}, role='worker', day='tomorrow')
+        self.assertIsNotNone(tomorrow_result['acceptance'])
 
     def test_create_and_get_plan_as_owner(self):
         body = self.backend.DailyPlanIn(
@@ -692,13 +750,13 @@ class Round4RouteTests(unittest.TestCase):
         """Owner can see a specific worker's today plan via ?worker_id=."""
         # No plan for worker 999 → has_plan=False
         result = self.backend.daily_plan_today(
-            worker_id_param='999', user={'id': 1}, role='owner')
+            worker_id_param='999', user={'id': 1}, role='owner', day='today')
         self.assertFalse(result['has_plan'])
 
     def test_worker_cannot_use_worker_id_param(self):
         """Worker always sees their own plan (worker_id_param is ignored)."""
         result = self.backend.daily_plan_today(
-            worker_id_param='1', user={'id': 888}, role='worker')
+            worker_id_param='1', user={'id': 888}, role='worker', day='today')
         self.assertFalse(result['has_plan'])
 
     def test_owner_matrix_empty(self):

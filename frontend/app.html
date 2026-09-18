@@ -6251,6 +6251,16 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .tp-status-accepted{ background: var(--accent, #2563eb); color: #fff; }
 .tp-item-count { font-size: 0.82rem; color: var(--text-light); margin-top: 0.25rem; }
 
+.tp-tabs { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; }
+.tp-tab {
+  flex: 1; padding: 0.5rem 0.75rem; border-radius: var(--radius-md);
+  border: 1px solid var(--border-color); background: var(--bg-card);
+  color: var(--text-light); font-size: 0.88rem; font-weight: 600;
+  cursor: pointer; min-height: 40px;
+}
+.tp-tab-active { background: var(--accent, #2563eb); border-color: var(--accent, #2563eb); color: #fff; }
+.tp-accept-btn-done { opacity: 0.7; }
+
 .tp-body {
   flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 1rem 1rem 0;

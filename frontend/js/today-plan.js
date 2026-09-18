@@ -11,8 +11,10 @@
 // IndexedDB and shows it with an offline banner. Plan is read-only offline.
 
 let _todayPlanState = null;   // last GET /api/daily-plan/today result
+let _tomorrowPlanState = null; // last GET /api/daily-plan/today?day=tomorrow result (18.09 preview)
 let _planPollInterval = null;
 let _planScreenOpen = false;
+let _planScreenDay = 'today'; // which tab the open screen currently shows
 
 // ── IndexedDB cache (offline fallback) ───────────────────────────────────────
 
@@ -224,14 +226,18 @@ function _startTodayPlanPolling() {
 
 // Full-screen today plan overlay.
 // mandatory=true: no close button, user must interact (acceptance or blocker or noplan-start)
-// mandatory=false: has close button (tapping bar)
-function _openTodayPlanScreen(data, { mandatory = true } = {}) {
+// mandatory=false: has close button (tapping bar) + Сегодня/Завтра tab switcher
+// day: which tab is being rendered ('today' or 'tomorrow') -- tomorrow is always
+// non-mandatory (18.09, owner request: worker previews/accepts tomorrow's plan
+// early to prepare tools/materials; it must never gate today's shift start).
+function _openTodayPlanScreen(data, { mandatory = true, day = 'today' } = {}) {
   return new Promise(resolve => {
     const screen = document.getElementById('today-plan-screen');
     if (!screen) { resolve(); return; }
 
     _planScreenOpen = true;
-    screen.innerHTML = _renderScreenHTML(data, mandatory);
+    _planScreenDay = day;
+    screen.innerHTML = _renderScreenHTML(data, mandatory, day);
     screen.style.display = 'flex';
     _resolveAmendmentFieldNames(screen);
 
@@ -242,6 +248,18 @@ function _openTodayPlanScreen(data, { mandatory = true } = {}) {
     screen.querySelector('#tp-close-btn')?.addEventListener('click', () => {
       _closeTodayPlanScreen();
       resolve();
+    });
+
+    // Сегодня/Завтра tab switcher (non-mandatory view only)
+    screen.querySelector('#tp-tab-today')?.addEventListener('click', async () => {
+      if (day === 'today') return;
+      resolve();
+      _openPlanCard();
+    });
+    screen.querySelector('#tp-tab-tomorrow')?.addEventListener('click', async () => {
+      if (day === 'tomorrow') return;
+      resolve();
+      await _openTomorrowPlanCard();
     });
 
     // Amendment acknowledgement CTA (takes priority over plain acceptance)
@@ -285,6 +303,22 @@ function _openTodayPlanScreen(data, { mandatory = true } = {}) {
         try {
           const result = await api(`/api/daily-plan/${plan.id}/accept`, { method: 'POST' });
           const newAcceptance = result.acceptance;
+
+          if (day === 'tomorrow') {
+            // Tomorrow-preview accept: record acceptance for its own tab state only.
+            // Must NOT touch window._dailyPlanCheckinFields (that is read by
+            // checkin.js at Start and must only ever reflect TODAY's plan) and
+            // must NOT morph into "НАЧАТЬ СМЕНУ" -- the shift for this plan's
+            // date hasn't started yet.
+            _tomorrowPlanState = { ..._tomorrowPlanState, acceptance: newAcceptance };
+            hapticImpact('medium');
+            acceptBtn.textContent = 'План принят';
+            acceptBtn.disabled = true;
+            acceptBtn.classList.add('tp-accept-btn-done');
+            screen.querySelector('#tp-blocker-btn')?.remove();
+            return;
+          }
+
           _todayPlanState = { ..._todayPlanState, acceptance: newAcceptance };
           window._todayPlanState = _todayPlanState;
           window._dailyPlanCheckinFields = {
@@ -344,7 +378,7 @@ function _closeTodayPlanScreen() {
   _planScreenOpen = false;
 }
 
-function _renderScreenHTML(data, mandatory) {
+function _renderScreenHTML(data, mandatory, day = 'today') {
   const plan = data?.plan;
   const accepted = !!(data?.acceptance);
   const hasPlan = !!(data?.has_plan && plan);
@@ -353,13 +387,25 @@ function _renderScreenHTML(data, mandatory) {
   const offlineBanner = isOffline
     ? '<div class="tp-offline-banner">Офлайн · показан последний принятый план</div>'
     : '';
+  // Tab switcher only makes sense outside the mandatory today-screen -- mandatory
+  // means the worker must resolve today's plan right now, a tab away from it
+  // would let them dodge that gate via the tomorrow tab.
+  const tabSwitcher = mandatory ? '' : `
+    <div class="tp-tabs">
+      <button class="tp-tab${day === 'today' ? ' tp-tab-active' : ''}" id="tp-tab-today" type="button">Сегодня</button>
+      <button class="tp-tab${day === 'tomorrow' ? ' tp-tab-active' : ''}" id="tp-tab-tomorrow" type="button">Завтра</button>
+    </div>`;
 
   if (!hasPlan) {
     // No plan published — worker assigned but no plan yet
+    const noPlanFooter = day === 'tomorrow'
+      ? '<div class="tp-no-plan-text" style="text-align:center;color:var(--text-light)">План на завтра ещё не опубликован</div>'
+      : `<button class="tp-noplan-btn" id="tp-noplan-start-btn" type="button"${isOffline ? ' disabled' : ''}>Начать смену без плана</button>`;
     return `
       <div class="tp-inner">
         <div class="tp-header">
           ${closeBtn}
+          ${tabSwitcher}
           ${offlineBanner}
           <div class="tp-date">${esc(data?.date || '')}</div>
           <div class="tp-object-name">—</div>
@@ -367,11 +413,11 @@ function _renderScreenHTML(data, mandatory) {
         <div class="tp-body">
           <div class="tp-no-plan-msg">
             <div class="tp-no-plan-icon">📋</div>
-            <div class="tp-no-plan-text">План дня ещё не опубликован руководителем</div>
+            <div class="tp-no-plan-text">${day === 'tomorrow' ? 'План на завтра ещё не опубликован руководителем' : 'План дня ещё не опубликован руководителем'}</div>
           </div>
         </div>
         <div class="tp-footer">
-          <button class="tp-noplan-btn" id="tp-noplan-start-btn" type="button"${isOffline ? ' disabled' : ''}>Начать смену без плана</button>
+          ${noPlanFooter}
         </div>
       </div>`;
   }
@@ -441,6 +487,11 @@ function _renderScreenHTML(data, mandatory) {
       <button class="tp-blocker-btn" id="tp-blocker-btn" type="button">
         ЕСТЬ ПРЕПЯТСТВИЕ
       </button>`;
+  } else if (day === 'tomorrow') {
+    // Preview tab, already accepted -- no "НАЧАТЬ СМЕНУ" here, the shift for
+    // this plan's date can only start once that date actually arrives (via
+    // today's own tab, which will show this same plan once it becomes "today").
+    footerHtml = '';
   } else {
     footerHtml = `
       <button class="tp-cta-btn tp-start-btn" id="tp-start-btn" type="button">
@@ -452,6 +503,7 @@ function _renderScreenHTML(data, mandatory) {
     <div class="tp-inner">
       <div class="tp-header">
         ${closeBtn}
+        ${tabSwitcher}
         ${offlineBanner}
         <div class="tp-date">${esc(plan.date || data?.date || '')}</div>
         <div class="tp-object-name" id="tp-object-name-el">${esc(plan.object_id || '')}</div>
@@ -709,5 +761,17 @@ async function _resolveBarObjectName(objectId) {
 
 function _openPlanCard() {
   if (!_todayPlanState) return;
-  _openTodayPlanScreen(_todayPlanState, { mandatory: false });
+  _openTodayPlanScreen(_todayPlanState, { mandatory: false, day: 'today' });
+}
+
+// 18.09: tomorrow-preview tab -- always re-fetches so the switcher shows the
+// latest published state, not a possibly-stale cache from app launch.
+async function _openTomorrowPlanCard() {
+  try {
+    const data = await api('/api/daily-plan/today?day=tomorrow');
+    _tomorrowPlanState = data;
+    await _openTodayPlanScreen(data, { mandatory: false, day: 'tomorrow' });
+  } catch (e) {
+    showToast('Не удалось загрузить план на завтра: ' + e.message, 'error');
+  }
 }

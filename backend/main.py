@@ -9266,25 +9266,12 @@ def delete_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), ro
 
 # ── DailyPlan routes (Round 1 — Production Control) ────────────────────────
 
-@app.get("/api/daily-plan/today")
-def daily_plan_today(
-    worker_id_param: str = Query('', alias='worker_id'),
-    user: dict = Depends(get_current_user),
-    role: str = Depends(get_role),
-):
-    """Работник видит свой план на сегодня (или сообщение «нет плана»).
-    Owner может смотреть план за любого worker: ?worker_id=<id>."""
-    today = business_today_str()
-    if role == 'owner' and worker_id_param:
-        worker_id = worker_id_param
-    else:
-        worker_id = str(user['id'])
-
-    plan = dpl.get_today_plan_for_worker(worker_id, today)
+def _build_daily_plan_response(worker_id: str, date_str: str) -> dict:
+    plan = dpl.get_today_plan_for_worker(worker_id, date_str)
     if not plan:
-        return {"has_plan": False, "date": today}
+        return {"has_plan": False, "date": date_str}
 
-    carryovers = dpl.get_carryovers_for_worker(worker_id, today)
+    carryovers = dpl.get_carryovers_for_worker(worker_id, date_str)
     acceptance = dpl.get_acceptance(plan["id"], worker_id)
     amendments = dpl.get_pending_amendments(plan["id"], worker_id)
 
@@ -9309,8 +9296,34 @@ def daily_plan_today(
         "acceptance": acceptance,
         "pending_amendments": amendments,
         "carryovers": carryovers,
-        "date": today,
+        "date": date_str,
     }
+
+
+@app.get("/api/daily-plan/today")
+def daily_plan_today(
+    worker_id_param: str = Query('', alias='worker_id'),
+    day: str = Query('today'),
+    user: dict = Depends(get_current_user),
+    role: str = Depends(get_role),
+):
+    """Работник видит свой план на сегодня (или сообщение «нет плана»).
+    Owner может смотреть план за любого worker: ?worker_id=<id>.
+    18.09: ?day=tomorrow -- предпросмотр завтрашнего плана (owner попросил, чтобы
+    работник заранее знал какой инструмент/материал готовить). Тот же shape ответа,
+    accept_plan()/daily_plan_lib уже date-agnostic -- завтрашний план можно принять
+    тем же /accept endpoint'ом, ничего дополнительно строить не нужно."""
+    if day not in ('today', 'tomorrow'):
+        raise HTTPException(400, "day должен быть 'today' или 'tomorrow'")
+    target_date = business_today() if day == 'today' else business_today() + timedelta(days=1)
+    target_date_str = target_date.strftime('%Y-%m-%d')
+
+    if role == 'owner' and worker_id_param:
+        worker_id = worker_id_param
+    else:
+        worker_id = str(user['id'])
+
+    return _build_daily_plan_response(worker_id, target_date_str)
 
 
 @app.post("/api/daily-plan/{plan_id}/accept")

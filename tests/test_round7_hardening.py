@@ -56,6 +56,7 @@ class DailyPlanSecurityTests(unittest.TestCase):
             worker_id_param='99999',
             user={'id': 42},
             role='worker',
+            day='today',
         )
         # Should return plan for user 42, not 99999 — no plan = no_plan response
         self.assertFalse(result['has_plan'])
@@ -66,6 +67,7 @@ class DailyPlanSecurityTests(unittest.TestCase):
             worker_id_param='77777',
             user={'id': 1},
             role='owner',
+            day='today',
         )
         self.assertFalse(result['has_plan'])  # no plan for 77777, but no error
 

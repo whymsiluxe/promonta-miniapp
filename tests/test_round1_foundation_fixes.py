@@ -348,7 +348,7 @@ class TestRound12FieldChangesRendered(unittest.TestCase):
         # Both screen-render call sites (initial open + amendment-ack re-render)
         # must be immediately followed by a resolver call within a few lines.
         render_call_sites = [
-            "screen.innerHTML = _renderScreenHTML(data, mandatory);",
+            "screen.innerHTML = _renderScreenHTML(data, mandatory, day);",
             "screen.innerHTML = _renderScreenHTML(freshData, mandatory);",
         ]
         for site in render_call_sites:
