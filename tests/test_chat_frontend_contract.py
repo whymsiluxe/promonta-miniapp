@@ -104,3 +104,19 @@ def test_chat_thread_skin_is_bound_to_reusable_detail_view():
         "#chat-thread-detail-view .chat-send-btn",
     ):
         assert selector in html
+
+
+def test_chat_hub_lists_accessible_empty_entity_threads_for_workers():
+    js = _source(CHAT_JS)
+
+    assert "let _chatMangelCache = [];" in js
+    assert "let _chatTasksCache = [];" in js
+    assert "function _loadChatMangelTickets()" in js
+    assert "function _loadChatTasks()" in js
+    assert "const res = await api('/api/mangel');" in js
+    assert "const res = await api('/api/tasks');" in js
+    assert "api(`/api/tasks?object_id=${encodeURIComponent(oid)}`)" in js
+    assert "await Promise.all([_loadChatMangelTickets(), _loadChatTasks()]);" in js
+    assert "const key = `mangel:${ticket.id}`;" in js
+    assert "const key = `task:${task.id}`;" in js
+    assert "Object.values(threadsByKey).forEach(thread => {" in js

@@ -19,6 +19,7 @@ uses, not bare system python3.)
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
@@ -112,6 +113,36 @@ class ThreadPrefsTests(unittest.TestCase):
     def test_prefs_are_per_user(self):
         meta = {'group': {'user_prefs': {'u1': {'pinned': True}}}}
         self.assertEqual(backend._thread_user_prefs(meta, 'group', 'u2'), dict(backend.DEFAULT_THREAD_PREFS))
+
+
+class WorkerEntityThreadAccessTests(unittest.TestCase):
+    def test_worker_can_open_visible_mangel_chat(self):
+        with patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker'}), \
+             patch.object(backend.ml, 'get_ticket', return_value={'id': 'T-1', 'object_id': 'OBJ-1'}):
+            participants = backend._mangel_chat_participants('T-1')
+            self.assertIn('20', participants)
+            backend._check_thread_access('mangel:T-1', '20', 'worker')
+
+    def test_worker_with_active_object_assignment_can_open_task_chat(self):
+        task = {'id': 'TASK-1', 'from_user_id': '10', 'object_id': 'OBJ-1'}
+        assignments = {'OBJ-1': [{'user_id': '20', 'status': 'accepted'}]}
+        with patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker'}), \
+             patch.object(backend, '_load_tasks', return_value=[task]), \
+             patch.object(backend, '_load_assignments', return_value=assignments):
+            participants = backend._task_chat_participants('TASK-1')
+            self.assertIn('10', participants)
+            self.assertIn('20', participants)
+            backend._check_thread_access('task:TASK-1', '20', 'worker')
+
+    def test_worker_without_object_assignment_cannot_open_task_chat(self):
+        task = {'id': 'TASK-1', 'from_user_id': '10', 'object_id': 'OBJ-1'}
+        assignments = {'OBJ-1': [{'user_id': '20', 'status': 'accepted'}]}
+        with patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker', '30': 'worker'}), \
+             patch.object(backend, '_load_tasks', return_value=[task]), \
+             patch.object(backend, '_load_assignments', return_value=assignments):
+            with self.assertRaises(HTTPException) as ctx:
+                backend._check_thread_access('task:TASK-1', '30', 'worker')
+        self.assertEqual(ctx.exception.status_code, 403)
 
 
 if __name__ == '__main__':

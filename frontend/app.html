@@ -5405,7 +5405,7 @@ body.chat-reply-active .chat-messages::after {
   background: color-mix(in srgb, #1B211C 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(245,241,232,0.12); border-radius: 999px; color: #F5F1E8;
   box-shadow: 0 8px 20px -12px rgba(0,0,0,0.4);
-  transition: width 200ms ease, max-width 200ms ease;
+  transition: left 200ms ease, width 200ms ease, max-width 200ms ease, bottom 200ms ease;
 }
 /* 28.07: на табе Объекты mini-player перекрывал .objects-fab (оба в правом углу над
    nav) -- сужаем только здесь, оставляя объектам-FAB свободную зону справа. Другие
@@ -5445,10 +5445,16 @@ body.view-objects-active .radio-mini-player {
   right: max(20px, env(safe-area-inset-right));
   bottom: calc(max(14px, env(safe-area-inset-bottom)) + 96px);
   z-index: 60;
+  transition: bottom 200ms ease, transform 160ms ease;
 }
 .nav-start-fab { width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: #0F0F0F; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; font-weight: 700; box-shadow: 0 6px 18px rgba(93,214,44,0.4); }
 .nav-start-fab.active-session { background: var(--red); box-shadow: 0 6px 18px rgba(248,113,113,0.4); }
-body.view-locked .nav-item-start { display: none; } /* не мешать клавиатуре в чате/ИИ, тот же паттерн что radio-fab */
+body.radio-mini-visible .nav-item-start {
+  bottom: calc(var(--app-bottom-nav-height, 70px) + max(10px, env(safe-area-inset-bottom)) + 74px);
+  z-index: 920;
+}
+body.view-locked .nav-item-start,
+body.keyboard-open .nav-item-start { display: none; } /* не мешать клавиатуре в чате/ИИ, тот же паттерн что radio-fab */
 
 /* ── Objects "+" FAB (28.07, Phase 04 remainder item 1) — squircle, forest-green/ivory,
    позиция через реально измеренную --app-bottom-nav-height (JS: _applyBottomNavHeight()),
@@ -6990,6 +6996,12 @@ body {
 }
 #view-tasks .tasks-new-btn {
   position: static;
+  grid-column: 3;
+  justify-self: end;
+  align-self: center;
+  inset: auto;
+  margin: 0;
+  transform: none;
   width: 40px;
   height: 40px;
   min-width: 40px;

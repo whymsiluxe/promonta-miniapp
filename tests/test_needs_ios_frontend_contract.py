@@ -62,6 +62,9 @@ def test_needs_css_bridges_to_ios_summary_filters_and_list_rows():
     assert "var(--ios-surface" in html
     assert "var(--ios-grouped-surface" in html
     assert "var(--bottom-nav-safe-pad" in html
+    assert "grid-column: 3;" in html
+    assert "justify-self: end;" in html
+    assert "inset: auto;" in html
 
 
 def test_needs_js_renders_stat_tiles_svg_actions_and_wires_once():

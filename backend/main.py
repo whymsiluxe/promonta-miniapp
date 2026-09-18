@@ -5118,8 +5118,11 @@ def _object_chat_participants(object_id: str) -> list:
 
 def _mangel_chat_participants(ticket_id: str) -> list:
     roles = _load_roles()
-    owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
-    participants = {str(owner_id)} if owner_id else set()
+    # 18.09: Mängel themselves are visible/commentable for every active worker
+    # (see require_mangel_access/get_mangel_list). The chat must follow that same
+    # product rule; otherwise owner can open a defect chat while worker sees the
+    # defect card but gets a 403 on the conversation.
+    participants = {str(uid) for uid, r in roles.items() if r in ('owner', 'worker')}
     try:
         ticket = ml.get_ticket(ticket_id)
         if ticket.get('assigned_worker_id'):
@@ -5138,6 +5141,18 @@ def _task_chat_participants(task_id: str) -> list:
     task = next((t for t in _load_tasks() if t['id'] == task_id), None)
     if task and task.get('from_user_id'):
         participants.add(str(task['from_user_id']))
+    # 18.09: object-scoped needs are team-visible for workers assigned to that
+    # object (/api/tasks?object_id=...). Give the same workers access to the
+    # need's chat so the chat entry works like it does for owner.
+    object_id = task.get('object_id') if task else ''
+    if object_id:
+        today = _today_berlin_str()
+        for a in _load_assignments().get(str(object_id), []):
+            if _assignment_status(a) != 'accepted':
+                continue
+            d_from, d_to = a.get('date_from', ''), a.get('date_to', '')
+            if (not (d_from and d_to)) or (d_from <= today <= d_to):
+                participants.add(str(a.get('user_id')))
     return list(participants)
 
 

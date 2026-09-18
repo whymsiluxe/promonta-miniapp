@@ -186,11 +186,15 @@ function initRadioMiniPlayer() {
 
 function _updateRadioMiniPlayer(s) {
   const el = document.getElementById('radio-mini-player');
-  if (!el) return;
+  if (!el) {
+    document.body.classList.remove('radio-mini-visible');
+    return;
+  }
   const onHome = document.getElementById('view-home')?.classList.contains('active');
   const shouldShow = s.state !== 'IDLE' && !onHome && !document.body.classList.contains('keyboard-open')
     && !document.body.classList.contains('chat-dialog-open');
   el.style.display = shouldShow ? 'flex' : 'none';
+  document.body.classList.toggle('radio-mini-visible', shouldShow);
   if (!shouldShow) return;
 
   document.getElementById('radio-mini-title').textContent = s.station ? s.station.name : '';

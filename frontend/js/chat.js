@@ -26,6 +26,10 @@ let _chatWorkers = [];
 // переписка. Раньше filtered = _chatMyThreads.filter(startsWith('obj:')) -- объект
 // без единого сообщения не имел thread_key вообще, поэтому не появлялся в списке.
 let _chatObjectsCache = [];
+// 18.09: тот же контракт для Дефектов/Потребностей -- доступная сущность должна
+// открывать чат сразу, а не только после первого сообщения владельца.
+let _chatMangelCache = [];
+let _chatTasksCache = [];
 let _chatReturnToView = null; // 21.07: откуда открыт чат (Потребности/Дефекты) — назад должен вернуть туда, не в общий список тредов
 let _chatReplyTarget = null; // {id, name, preview} — выбранное сообщение для ответа, до отправки
 
@@ -1251,6 +1255,55 @@ async function _loadChatObjects() {
   }
 }
 
+async function _loadChatMangelTickets() {
+  try {
+    const res = await api('/api/mangel');
+    _chatMangelCache = res.tickets || [];
+  } catch (e) {
+    _chatMangelCache = [];
+  }
+}
+
+async function _loadChatTasks() {
+  const byId = {};
+  const addTasks = tasks => (tasks || []).forEach(task => {
+    if (task && task.id) byId[String(task.id)] = task;
+  });
+
+  try {
+    const res = await api('/api/tasks');
+    addTasks(res.tasks || []);
+  } catch (e) {}
+
+  // Worker sees only own needs in the global endpoint, but object detail shows
+  // team-visible needs for each assigned object. Chat Hub mirrors both paths.
+  if (!_chatIsOwner) {
+    const objectIds = Array.from(new Set(_chatObjectsCache
+      .map(obj => String(obj['ID объекта'] || '').trim())
+      .filter(Boolean)));
+    await Promise.all(objectIds.map(async oid => {
+      try {
+        const res = await api(`/api/tasks?object_id=${encodeURIComponent(oid)}`);
+        addTasks(res.tasks || []);
+      } catch (e) {}
+    }));
+  }
+
+  _chatTasksCache = Object.values(byId);
+}
+
+function _chatObjectName(objectId) {
+  const obj = _chatObjectsCache.find(o => String(o['ID объекта'] || '') === String(objectId || ''));
+  return obj?.['Объект'] || objectId || '';
+}
+
+function _chatEntityTs(raw) {
+  if (!raw) return 0;
+  if (Number.isFinite(Number(raw))) return Number(raw);
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : 0;
+}
+
 // ── Thread-selector (Фаза 6): список контактов, "Общий чат" закреплён первым ──
 async function _loadChatWorkers() {
   try {
@@ -1643,7 +1696,36 @@ function renderChatThreadList() {
     });
   } else {
     const prefix = _chatCategory === 'mangel' ? 'mangel:' : 'task:';
-    let filtered = _chatMyThreads.filter(t => t.thread_key.startsWith(prefix));
+    const threadsByKey = {};
+    _chatMyThreads.filter(t => t.thread_key.startsWith(prefix)).forEach(t => {
+      threadsByKey[t.thread_key] = t;
+    });
+    let merged = [];
+    if (_chatCategory === 'mangel') {
+      merged = _chatMangelCache.map(ticket => {
+        const key = `mangel:${ticket.id}`;
+        return threadsByKey[key] || {
+          thread_key: key,
+          title: `Тикет: ${_chatObjectName(ticket.object_id) || ticket.object_id || ticket.id}`,
+          last_preview: ticket.description || 'Начать переписку',
+          last_ts: _chatEntityTs(ticket.created_at),
+        };
+      });
+    } else {
+      merged = _chatTasksCache.map(task => {
+        const key = `task:${task.id}`;
+        return threadsByKey[key] || {
+          thread_key: key,
+          title: `Потребность: ${task.title || task.id}`,
+          last_preview: task.object_id ? (_chatObjectName(task.object_id) || task.object_id) : 'Начать переписку',
+          last_ts: _chatEntityTs(task.created_at),
+        };
+      });
+    }
+    Object.values(threadsByKey).forEach(thread => {
+      if (!merged.some(t => t.thread_key === thread.thread_key)) merged.push(thread);
+    });
+    let filtered = merged;
     if (q) filtered = filtered.filter(t => t.title.toLowerCase().includes(q) || (t.last_preview || '').toLowerCase().includes(q));
     const viewThreads = _applyThreadPrefsView(filtered, t => t.thread_key);
     listEl.innerHTML = viewThreads.map(({ it: t, prefs }) => `
@@ -1944,6 +2026,7 @@ async function initChatView() {
 
   await _loadChatWorkers();
   await _loadChatObjects();
+  await Promise.all([_loadChatMangelTickets(), _loadChatTasks()]);
   _bindChatBroadcastButton();
   renderChatThreadList();
   _loadUnreadByThread();
