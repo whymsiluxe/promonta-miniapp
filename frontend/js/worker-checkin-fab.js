@@ -125,6 +125,7 @@ async function _openWorkerObjectPicker() {
 
   const modal = document.createElement('div');
   modal.id = 'worker-object-picker-modal';
+  modal.dataset.noSwipe = '1';
   modal.innerHTML = `
     <div class="worker-picker-inner">
       <div class="worker-picker-header">
@@ -175,6 +176,7 @@ function _renderStagePickerModal(objectId, stages) {
 
   const modal = document.createElement('div');
   modal.id = 'worker-stage-picker-modal';
+  modal.dataset.noSwipe = '1';
   modal.innerHTML = `
     <div class="worker-picker-inner">
       <div class="worker-picker-header">

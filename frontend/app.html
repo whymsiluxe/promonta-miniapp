@@ -5548,8 +5548,16 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .mangel-photo-preview-actions button { flex: 1; padding: 0.45rem; font-size: 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--border-soft, rgba(0,0,0,0.1)); background: var(--bg-card-raised); color: var(--text-main); cursor: pointer; }
 .mangel-photo-preview-actions button.danger { color: var(--red); }
 
-/* ── Worker object picker modal (Фаза 10.14) ── */
-#worker-object-picker-modal { position: fixed; inset: 0; z-index: 1400; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; }
+/* ── Worker object/stage picker modal (Фаза 10.14) ── */
+#worker-object-picker-modal,
+#worker-stage-picker-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: flex-end;
+}
 .worker-picker-inner { width: 100%; background: var(--bg-card); border-radius: 20px 20px 0 0; padding: 1rem; max-height: 70vh; display: flex; flex-direction: column; }
 .worker-picker-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
 .worker-picker-title { font-weight: 700; font-size: 1.05rem; }
