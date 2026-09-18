@@ -20,16 +20,20 @@ function initWorkerCheckinFab() {
   // если он стартует смену через FAB, не заходя в объект, обработчики отсутствовали.
   if (typeof initCheckinControls === 'function') initCheckinControls();
   _refreshWorkerCheckinFabIcon();
-
-  const closeBtn = document.getElementById('checkin-status-close-btn');
-  if (closeBtn) closeBtn.addEventListener('click', () => {
-    document.getElementById('checkin-status-modal').style.display = 'none';
-  });
 }
 
-// 22.07: FAB теперь открывает промежуточный экран (статус смены + крупные кнопки
-// Старт/Финиш), не сразу камеру — юзер попросил "отдельную вкладку" для check-in,
-// без добавления 6-го таба в bottom-nav (принятое IA-решение — 5 табов).
+// 22.07: FAB изначально открывал промежуточный "статус смены" экран, не сразу камеру.
+// 18.09 (audit finding, Shift Flow unification #3): активная смена уже вела на реальный
+// stages-view/#active-shift-panel (17.09 fix), а idle-случай всё ещё строил отдельную
+// одноразовую модалку "Смена не начата" -> кнопка "Старт смены" -> и ТОЛЬКО ПОТОМ
+// _openWorkerObjectPicker() -- лишний промежуточный экран без функции: Home CTA уже вёл
+// в тот же picker напрямую. FAB idle-tap (и вызов из Object Detail stages-tab через
+// object-info.js::_appendCheckinShortcut, тот же _openCheckinStatusScreen) теперь тоже
+// идёт прямо в picker, никакой промежуточной модалки не остаётся: Home Start == FAB Start
+// == Object Detail Start (все три -> _openWorkerObjectPicker()/_openStagePickerThenStart()),
+// не разная длина пути к одному и тому же экрану. Имя функции сохранено (не переименовано
+// в _workerCheckinTap), потому что object-info.js вызывает её напрямую по имени, не только
+// через тап по FAB.
 async function _workerCheckinTap() {
   if (currentRole !== 'worker') return;
   await _openCheckinStatusScreen();
@@ -37,19 +41,7 @@ async function _workerCheckinTap() {
 
 async function _openCheckinStatusScreen() {
   const activeObjectId = await _findActiveWorkerCheckinObjectId();
-  const modal = document.getElementById('checkin-status-modal');
-  const body = document.getElementById('checkin-status-body');
-  if (!modal || !body) return;
-
   if (activeObjectId) {
-    // 17.09 (audit finding, Shift Flow unification #2): this used to build its
-    // OWN minimal markup here ("Смена идёт" + a single Финиш button) -- a
-    // completely different, much poorer active-shift experience than opening
-    // the object directly, which shows the real #active-shift-panel (live
-    // timer, GPS status, Pause, Chat/Потребность/Дефект quick actions). Tapping
-    // the FAB during an active shift now opens the SAME real stages-view panel
-    // instead of a stripped-down substitute -- one active-shift UI everywhere,
-    // not two with different capabilities depending on entry point.
     let objectName = activeObjectId;
     try {
       const data = await api('/api/objects');
@@ -58,20 +50,9 @@ async function _openCheckinStatusScreen() {
     } catch (e) {}
     switchView('objects');
     if (typeof openStagesView === 'function') openStagesView(activeObjectId, objectName);
-    return; // real stages-view panel handles everything now, no modal to show
+    return;
   }
-
-  body.innerHTML = `
-    <div class="checkin-status-active">
-      <div class="checkin-status-label">Смена не начата</div>
-    </div>
-    <button class="submit-btn checkin-status-btn" id="checkin-status-start-btn">▶ Старт смены</button>
-  `;
-  document.getElementById('checkin-status-start-btn').addEventListener('click', async () => {
-    modal.style.display = 'none';
-    await _openWorkerObjectPicker();
-  });
-  modal.style.display = 'flex';
+  await _openWorkerObjectPicker();
 }
 
 // 24.07: сервер как источник истины (не localStorage — нестабилен в Telegram WebView
