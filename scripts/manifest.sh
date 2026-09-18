@@ -9,6 +9,8 @@
 #
 # Deliberately excluded:
 #   cleanup_old_attachments.py — standalone maintenance script, not imported by main.py
+#   daily_plan_cutoff_check.py — standalone owner-alert script (imports main.py, not
+#     imported BY it), same manual-deploy-to-runtime-dir pattern as cleanup_old_attachments.py
 #
 # 17.09: create_object.py/create_object_folder.py MOVED into backend/ (were
 # external at /home/promonta/agent/, see docs/OPEN_QUESTIONS_11sep2026.md Q1)
