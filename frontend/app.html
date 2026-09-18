@@ -9652,6 +9652,8 @@ const TAB_ORDER = ['feed', 'home', 'chat', 'objects', 'profile'];
 let _lastActiveTabView = null;
 
 function switchView(viewName, opts = {}) {
+  if (opts.isTabSwitch && typeof closeWorkerShiftPickers === 'function') closeWorkerShiftPickers();
+
   // Если #chat-thread-detail-view был перемещён в obj-detail-panel-chat (embed),
   // вернуть его домой до смены вида -- иначе #view-chat окажется без этого узла и
   // обычный чат перестанет работать до следующего закрытия экрана объекта.

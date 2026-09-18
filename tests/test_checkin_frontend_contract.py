@@ -30,6 +30,8 @@ def test_worker_stage_picker_has_real_modal_layer():
     assert "z-index: 1800" in html
     assert "modal.id = 'worker-stage-picker-modal'" in fab
     assert "modal.dataset.noSwipe = '1';" in fab
+    assert "function closeWorkerShiftPickers()" in fab
+    assert "if (opts.isTabSwitch && typeof closeWorkerShiftPickers === 'function') closeWorkerShiftPickers();" in html
 
 
 def test_home_idle_shift_cta_uses_shared_start_flow():

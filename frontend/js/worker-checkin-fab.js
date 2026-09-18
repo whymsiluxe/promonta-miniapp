@@ -5,6 +5,11 @@
 
 let _workerCheckinObjectId = null;
 
+function closeWorkerShiftPickers() {
+  document.getElementById('worker-object-picker-modal')?.remove();
+  document.getElementById('worker-stage-picker-modal')?.remove();
+}
+
 function initWorkerCheckinFab() {
   const fab = document.getElementById('nav-checkin-btn');
   if (!fab || fab.dataset.wired) return;
