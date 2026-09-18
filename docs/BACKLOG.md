@@ -1,0 +1,105 @@
+# Backlog
+
+**Last updated**: 2026-09-18. Consolidated from ~15 historical PLAN/HANDOFF/
+UNIFIED_AUTONOMOUS_MASTER_PLAN files after reading each one in full and
+verifying every candidate item against the real code (`git log`, `grep`),
+not taken on the source doc's word. See [CURRENT_STATE.md](CURRENT_STATE.md)
+for which files this superseded.
+
+Items here are real gaps confirmed absent from the code as of 2026-09-18.
+Anything that looked like a gap in an old doc but is actually already built
+was left out — see each historical file's own `SUPERSEDED` note if you want
+the full original list for comparison.
+
+## P1 — worth doing soon
+
+- **Swipe-to-reply in chat.** Reply currently only works via long-press →
+  menu → "↩ Ответить" (`grep swipe frontend/js/chat.js` empty). Quick win if
+  picked up, not blocking anything.
+- **Calendar year view + drag-to-move entries.** Week/month views exist
+  (commits `9442daa`, `c630131`). Year view and dragging live
+  absence/assignment data were deliberately left out of that round — commit
+  `9442daa`'s own message says drag/drop "needs its own design pass." Scope
+  it properly before building, not a quick add-on to the existing week/month
+  code.
+- **Worker Card "Календарь" tab vs "Открыть полный календарь" button —
+  clarify, don't just remove one.** Verified 2026-09-18: this is NOT
+  duplication, it's a preview-then-see-all pattern (the tab shows the
+  worker's next 5 absence entries; the button opens the full Abwesenheit
+  screen). The owner read it as "calendar twice for no reason" from a
+  screenshot without that context. Real fix here is likely a UI label/visual
+  tweak so the relationship is obvious at a glance (e.g. "Ближайшие" as the
+  tab label, or visually nesting the button inside the tab panel more
+  clearly) — not deleting either piece. Confirm the actual complaint with
+  the owner before touching this (see OPEN_QUESTIONS.md #1).
+
+## P2 — worth doing, not urgent
+
+- **Backend domain split**: `backend/main.py` is 10092 lines, one file.
+  Candidate router boundaries (from earlier planning, still reasonable):
+  `auth`/`permissions`, `objects`, `checkin`, `chat`, `tasks`, `mangel`
+  (defects), `profile`, `documents`, `ai`, `daily_plan`, `contracts`. Hard
+  constraint carried over from every prior attempt at scoping this: route
+  paths and names must not change during the split.
+- **Frontend thin-shell split**: `frontend/app.html` (10521 lines) still
+  carries styles/view containers/some inline handlers beyond what's already
+  externalized into `frontend/js/*.js`. `home.js` (1782 lines) and `chat.js`
+  (2225 lines) are the two largest JS modules and the next candidates if
+  this is picked up.
+- **Full automated E2E test**: owner assigns → worker accepts → DailyPlan
+  publish/accept → shift start with photo+GPS → pause → finish → owner sees
+  the result on their dashboard. Not found in `tests/` — current coverage is
+  unit/contract-level per feature, not one continuous flow. Also would need
+  a bad-connectivity/reconnect variant given the offline-outbox work already
+  in place.
+- **CRM block** (clients, leads, deals, communication history) — not in the
+  data model at all currently. P3-adjacent, listed here because it keeps
+  coming up in owner-pasted gap lists; no scoping done yet.
+- **Real staging environment.** Production-only today (by design so far, not
+  an oversight — see CURRENT_STATE.md known blockers).
+- **Contract ingestion pipeline activation.** `backend/contract_ingest.py` +
+  `scripts/plan_sync.py` are fully built (Drive polling → fact extraction →
+  draft DailyPlan → owner approve/reject) and gated behind
+  `CONTRACTS_DRIVE_FOLDER_ID`. Owner has explicitly said (2026-09-18): don't
+  enable yet, keep building the surrounding DailyPlan logic (cutoff alerts,
+  tomorrow-preview, etc.) first. Revisit when the owner gives the go-ahead —
+  needs Drive OAuth scope confirmed first (was `docs/OPEN_QUESTIONS.md` Q1
+  historically, already resolved as "deliberately deferred," not re-opening
+  it here).
+
+## P3 — future ideas, not scoped
+
+- **PostgreSQL / real database migration.** Flat JSON stays fine at current
+  scale (see DATABASE.md); revisit only if concurrency or reporting needs
+  grow. Not urgent, no scoping done.
+- **Google Sheets write-back for DailyPlan** (currently one-directional,
+  Sheets → local store via `plan_sync.py`). Would need a durable sync queue
+  if built — explicitly flagged in earlier planning as "only together, not
+  separately."
+- **Cross-worker productivity accuracy for multi-worker objects on a single
+  DailyPlan** — `daily_plan_lib.py` already has a `contribution_weight`/
+  `confidence="crew"` mechanism for this; whether it needs refinement wasn't
+  re-verified in this pass.
+
+## Explicitly out of scope (owner decision, not a gap)
+
+- Material/warehouse inventory (Materialverwaltung).
+- Fahrtenbuch (vehicle logbook).
+- Manager/Bauleiter role — not requested.
+- QR-code scanner for tool lookup — better fit for a future native app than
+  the Telegram WebView; logged as an idea there, not building here.
+
+## Verified already done (kept here only so nobody re-proposes them)
+
+Offline outbox with dead-letter state, `api()` request timeout/retry,
+server-side DailyPlan validation at checkin start, per-worker plan
+acknowledgment, owner daily cockpit, object history, drag-assign, budget
+dashboard, task Kanban, document gallery, week/month calendar views,
+Stundenzettel period charts, home dashboard sparklines, tool booking
+calendar with conflict checks, news category filtering, durable finish
+outbox with startup reconciliation, contract RED/GREEN risk coloring,
+shared `fcntl`-based store locking across the API process and the
+`plan_sync.py` worker, bottom-nav order (Лента/Главная/Чат/Объекты/Профиль,
+Feed first — this was an open item in an old plan, confirmed done by
+reading `frontend/app.html` directly 2026-09-18), dashboard N+1 request
+dedup + feed lazy-load + owner diagnostics view (commit `abe3712`).

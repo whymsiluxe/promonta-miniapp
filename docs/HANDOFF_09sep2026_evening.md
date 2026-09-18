@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 # READY FOR OWNER REVIEW — 09.09.2026 evening autonomous run
 
 **Production SHA**: 29a2c4eb97aca9b8628100363d4e40709a31a589  

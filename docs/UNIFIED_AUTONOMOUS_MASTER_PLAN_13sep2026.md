@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 AUTONOMOUS_STATUS: IN_PROGRESS
 
 # Unified Autonomous Master Plan - 2026-09-13

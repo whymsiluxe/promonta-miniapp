@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [CURRENT_STATE.md](CURRENT_STATE.md) for current state.
+
 # Project state
 
 **Last updated**: 2026-09-13, Feed UX round — unified Instagram-like popup

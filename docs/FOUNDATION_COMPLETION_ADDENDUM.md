@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 IMPORTANT ADDENDUM BEFORE FINAL STATUS
 
 Reviewer can now see pushed main through 850f84b.

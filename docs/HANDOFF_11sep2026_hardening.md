@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 # Handoff — Final Production Hardening Round, 11.09.2026
 
 Governing documents: `docs/AUTONOMOUS_RULES_11sep2026_hardening.md` and

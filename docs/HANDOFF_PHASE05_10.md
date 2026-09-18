@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 # HANDOFF — Autonomous continuation, Phases 05-10
 
 Read this first. Then read every file in `docs/plan-phases/05-*.md` through `10-*.md` in order — each is a self-contained phase brief with the owner's exact requirements. Phases 01-04 are already done (see their files for what was built, don't redo).

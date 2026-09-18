@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 # TASK — Master Plan Round 0 + Round 1 (Foundation Bug Fixes)
 
 Execute ONLY Round 0 (baseline/discovery/freeze) and Round 1 (foundation bug fixes)

@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 # Release Candidate Report — 0.9.0-rc1
 
 Дата: 2026-07-31. Промonta Mini App — release-readiness pass (14 этапов) перед

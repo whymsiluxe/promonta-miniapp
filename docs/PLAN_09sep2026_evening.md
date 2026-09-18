@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 # Functional UI Fix Round — оставшиеся задачи (09.09.2026, автономное продолжение)
 
 ## Контекст

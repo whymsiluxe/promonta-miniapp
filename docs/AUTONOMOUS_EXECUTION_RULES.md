@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 # Autonomous Execution Rules — Recovery + Architecture + UX Round
 
 You are executing the plan at `~/.claude/plans/fancy-booping-hammock.md` on the owner's Mac

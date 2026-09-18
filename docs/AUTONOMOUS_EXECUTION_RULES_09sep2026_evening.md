@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 # Autonomous Execution Rules — UI Fix Round continuation, 09.09.2026 evening
 
 Owner is going to sleep, asked to finish remaining items from today's Functional UI

@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) for current state.
+
 # Open Questions — Production Hardening Round 11.09.2026
 
 Items requiring an owner decision before implementation. Kept separate from

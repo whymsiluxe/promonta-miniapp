@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 # Premium UI Direction - 2026-09-13
 
 Status: refined after live Telegram screenshot batch from 2026-09-13 23:20-23:21 and static code audit. This is the current visual direction for the next autonomous UI pass.

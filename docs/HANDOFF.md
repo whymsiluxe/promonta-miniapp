@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [BACKLOG.md](BACKLOG.md) for current state.
+
 # HANDOFF — Round 1.2 Final DailyPlan Consistency Fix + Phase A (paused)
 
 > Round 1.2 (2 owner-identified issues) COMPLETE. Phase A step 1 done (core/time.py),

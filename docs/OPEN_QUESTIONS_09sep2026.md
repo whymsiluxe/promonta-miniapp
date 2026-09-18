@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-18** — historical snapshot, kept for context/git-blame only, not maintained. See [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) for current state.
+
 # Open Questions — 09.09.2026 evening
 
 ## Item 6: Worker profile — what exactly is "the duplicate" to remove?
