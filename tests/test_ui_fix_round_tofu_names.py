@@ -36,6 +36,26 @@ class ProfileMeGarbledNameFallbackTests(unittest.TestCase):
         result = backend._sanitize_display_name('Иван Петров', 'FALLBACK')
         self.assertEqual(result, 'Иван Петров')
 
+    def test_sanitize_display_name_strips_filler_from_mixed_name(self):
+        # 18.09 real-world case found live in a daily_plan_cutoff_check alert:
+        # a name that is MOSTLY filler characters with one real character mixed
+        # in ('ᅠ ᅠ ᅠ ᅠ ᅠ ᅠ1') passed the "is there anything real here" check
+        # (the '1' counts as \w) but the function then returned the ORIGINAL
+        # uncleaned string, filler characters and all, instead of the cleaned
+        # one -- so the garbled pattern still reached the UI/Telegram alert
+        # even though the function's whole purpose is to strip exactly this.
+        garbled_mixed = 'ᅠ ᅠ ᅠ ᅠ ᅠ ᅠ1'
+        result = backend._sanitize_display_name(garbled_mixed, 'FALLBACK')
+        self.assertEqual(result, '1',
+            'Filler characters must be stripped even when a real character is '
+            'mixed in, not passed through whole once any \\w character is found')
+
+    def test_sanitize_display_name_collapses_whitespace_left_by_filler(self):
+        # Filler characters removed from the middle of a name must not leave
+        # behind a run of bare spaces where they used to be word-separated.
+        result = backend._sanitize_display_name('Анна ㅤ ㅤ Иванова', 'FALLBACK')
+        self.assertEqual(result, 'Анна Иванова')
+
     def test_get_my_profile_falls_back_to_user_id_when_both_names_garbled(self):
         uid = '999888777'
         garbled = 'ㅤ ㅤ ㅤ'

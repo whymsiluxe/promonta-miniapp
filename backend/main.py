@@ -1080,10 +1080,21 @@ def _sanitize_display_name(raw: str | None, fallback: str) -> str:
     visible = ''.join(
         ch for ch in stripped
         if ch not in _INVISIBLE_FILLER_CHARS and unicodedata.category(ch) != 'Cf'
-    ).strip()
+    )
+    # 18.09: collapse whitespace left behind where filler characters used to sit
+    # (e.g. 'ᅠ ᅠ ᅠ ᅠ ᅠ ᅠ1' -> filler removed leaves '      1' -- a run of spaces,
+    # not a real name) -- re.sub before the final strip so a leading/trailing
+    # run collapses away too, not just internal ones.
+    visible = re.sub(r'\s+', ' ', visible).strip()
     if not visible or not re.search(r'\w', visible, re.UNICODE):
         return fallback
-    return stripped
+    # Bug fixed 18.09: this used to `return stripped` (the ORIGINAL uncleaned
+    # string) once visible passed the meaningfulness check above -- a mixed
+    # name like 'ᅠ ᅠ ᅠ ᅠ ᅠ ᅠ1' has one real character (enough to pass the
+    # check) but was then returned WITH all the filler characters still in it,
+    # defeating the sanitization the function exists to do. Return the cleaned
+    # string instead.
+    return visible
 
 
 def _is_meaningful_name(raw: str | None, user_id: str) -> bool:
