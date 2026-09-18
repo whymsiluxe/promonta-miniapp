@@ -1,9 +1,10 @@
-"""Tests for backend/daily_plan_cutoff_check.py -- the owner alert that fires
-when a worker with an active object assignment for today still has no
-published/accepted DailyPlan by the time the script runs (18.09, owner request:
-the plan should arrive the evening before, this is a lagging-indicator alert
-for the owner, not a start-time block on the worker -- checkin_start's freely-
-allowed-without-a-plan behavior is intentionally untouched).
+"""Tests for backend/daily_plan_cutoff_check.py -- the owner alerts around
+DailyPlan publishing timing (18.09, owner request: the plan should arrive the
+evening before, not be assembled the morning of). Two modes: 'evening' (18:00,
+reminds the owner tomorrow's plan isn't published yet) and 'morning' (06:30,
+the evening reminder was missed and today's plan is now overdue). Neither is
+a start-time block on the worker -- checkin_start's freely-allowed-without-a-
+plan behavior is intentionally untouched either way.
 """
 import importlib.util
 import json
@@ -131,6 +132,48 @@ class DailyPlanCutoffCheckTests(unittest.TestCase):
         self.backend._save_assignments(assignments)
         rc = self.script.main()
         self.assertEqual(rc, 0)
+        alerts = self.backend._load_critical_alerts()
+        self.assertEqual(alerts, [])
+
+    # ── evening mode (18:00 reminder, checks TOMORROW) ──────────────────────
+
+    def _tomorrow_str(self) -> str:
+        from datetime import timedelta
+        return (self.backend.business_today() + timedelta(days=1)).strftime('%Y-%m-%d')
+
+    def test_evening_worker_with_no_tomorrow_plan_triggers_reminder(self):
+        self._assign('555')
+        rc = self.script.main('evening')
+        self.assertEqual(rc, 0)
+        alerts = self.backend._load_critical_alerts()
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[0]['kind'], 'plan_publish_reminder')
+        self.assertIn(self._tomorrow_str(), alerts[0]['title'])
+
+    def test_evening_worker_with_tomorrow_plan_already_published_no_alert(self):
+        self._assign('555')
+        self._publish_plan('555', self._tomorrow_str())
+        rc = self.script.main('evening')
+        self.assertEqual(rc, 0)
+        alerts = self.backend._load_critical_alerts()
+        self.assertEqual(alerts, [])
+
+    def test_evening_and_morning_run_same_day_both_fire_independently(self):
+        # A worker assigned both today and tomorrow with no plan for either --
+        # separate state keys mean the evening run doesn't suppress the morning
+        # run for the same calendar day, and vice versa.
+        self._assign('555', date_from='', date_to='')
+        rc_morning = self.script.main('morning')
+        rc_evening = self.script.main('evening')
+        self.assertEqual(rc_morning, 0)
+        self.assertEqual(rc_evening, 0)
+        alerts = self.backend._load_critical_alerts()
+        kinds = sorted(a['kind'] for a in alerts)
+        self.assertEqual(kinds, ['plan_overdue', 'plan_publish_reminder'])
+
+    def test_invalid_mode_rejected(self):
+        rc = self.script.main('afternoon')
+        self.assertEqual(rc, 1)
         alerts = self.backend._load_critical_alerts()
         self.assertEqual(alerts, [])
 

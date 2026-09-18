@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""daily_plan_cutoff_check.py — owner alert when DailyPlan wasn't published in time.
+"""daily_plan_cutoff_check.py — owner alerts around DailyPlan publishing timing.
 
 Owner request (18.09): the plan should arrive the evening BEFORE the work day, not
-be assembled the morning of. This does not block a worker's shift start -- start
-without a plan stays freely allowed either way (checkin_start's existing behavior,
-unchanged). It only alerts the owner once per day if, by CUTOFF_HOUR local time,
-some worker who has an active object assignment for today still has no
-published/accepted/amendment_pending/in_progress DailyPlan for today.
+be assembled the morning of. Neither alert here blocks a worker's shift start --
+start without a plan stays freely allowed either way (checkin_start's existing
+behavior, unchanged). Two modes, run by two separate systemd timers:
 
-Does NOT run inline in FastAPI request handlers -- invoked by a systemd timer once
-a day, same standalone-script pattern as backend/cleanup_old_attachments.py.
+  evening (18:00) — reminder: any worker with an accepted assignment covering
+    TOMORROW who has no plan yet for tomorrow. Owner still has the evening to
+    publish it.
+  morning (06:30) — overdue: any worker with an accepted assignment covering
+    TODAY who still has no plan for today. The evening reminder was missed.
+
+Does NOT run inline in FastAPI request handlers -- invoked by systemd timers,
+same standalone-script pattern as backend/cleanup_old_attachments.py.
 
 Deploy: like cleanup_old_attachments.py, this file is NOT copied automatically by
 scripts/deploy.sh's manifest (it isn't imported by main.py, so it isn't a runtime
@@ -19,15 +23,23 @@ below resolves the same top-level `main` module the systemd uvicorn service and
 every tests/test_*.py file use (as opposed to the `miniapp.main` package import
 uvicorn itself uses -- see main.py's own relative/absolute import fallback
 comment for why both forms exist side by side in this codebase).
-systemd unit + timer fire at 06:30 local time (server is already Europe/Berlin).
 
-Idempotency: writes a per-day marker to $MINIAPP_DATA_ROOT/daily_plan_cutoff_state.json
-so a timer misfire/retry on the same day does not spam duplicate alerts.
+Usage:
+  python3 daily_plan_cutoff_check.py evening   # 18:00 timer
+  python3 daily_plan_cutoff_check.py morning   # 06:30 timer (default if omitted,
+                                                # for backward compat with the
+                                                # original single-timer deploy)
+
+Idempotency: writes a per-day, per-mode marker to
+$MINIAPP_DATA_ROOT/daily_plan_cutoff_state.json so a timer misfire/retry on the
+same day does not spam duplicate alerts. The two modes use separate state keys
+so one running twice in a day (e.g. a manual test run) can't suppress the other.
 """
 import json
 import logging
 import os
 import sys
+from datetime import timedelta
 
 logging.basicConfig(
     format='%(asctime)s [daily_plan_cutoff_check] %(levelname)s %(message)s',
@@ -37,6 +49,14 @@ log = logging.getLogger(__name__)
 
 DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
 STATE_FILE = os.path.join(DATA_ROOT, 'daily_plan_cutoff_state.json')
+
+MODES = {
+    # mode: (state_key, alert_kind, date_offset_days, title_verb)
+    'morning': ('last_checked_date_morning', 'plan_overdue', 0,
+                'не опубликован'),
+    'evening': ('last_checked_date_evening', 'plan_publish_reminder', 1,
+                'ещё не опубликован на завтра'),
+}
 
 
 def _load_state() -> dict:
@@ -54,47 +74,56 @@ def _save_state(state: dict) -> None:
     os.replace(tmp, STATE_FILE)
 
 
-def main() -> int:
-    import main as backend  # noqa: E402
-    import daily_plan_lib as dpl  # noqa: E402
-
-    today = backend.business_today_str()
-
-    state = _load_state()
-    if state.get('last_checked_date') == today:
-        log.info("Already checked %s today, skipping (idempotent).", today)
-        return 0
-
-    roles = backend._load_roles()
-    owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
-    if not owner_id:
-        log.warning("No owner found in roles, cannot send alert.")
-        _save_state({**state, 'last_checked_date': today})
-        return 0
-
+def _find_workers_without_plan(backend, dpl, target_date: str) -> set:
     assignments = backend._load_assignments()
-    # Workers with an accepted assignment covering today, per object.
     workers_without_plan = set()
     for object_id, candidates in assignments.items():
         for a in candidates:
             if backend._assignment_status(a) != 'accepted':
                 continue
             d_from, d_to = a.get('date_from', ''), a.get('date_to', '')
-            if d_from and d_to and not (d_from <= today <= d_to):
+            if d_from and d_to and not (d_from <= target_date <= d_to):
                 continue
             worker_id = str(a.get('user_id', ''))
             if not worker_id:
                 continue
-            plan = dpl.get_today_plan_for_worker(worker_id, today)
+            plan = dpl.get_today_plan_for_worker(worker_id, target_date)
             has_real_plan = plan is not None and plan.get('status') in (
                 'published', 'accepted', 'amendment_pending', 'in_progress',
             )
             if not has_real_plan:
                 workers_without_plan.add(worker_id)
+    return workers_without_plan
+
+
+def main(mode: str = 'morning') -> int:
+    if mode not in MODES:
+        log.error("Unknown mode %r, expected one of %s", mode, list(MODES))
+        return 1
+    state_key, alert_kind, offset_days, title_verb = MODES[mode]
+
+    import main as backend  # noqa: E402
+    import daily_plan_lib as dpl  # noqa: E402
+
+    target_date = (backend.business_today() + timedelta(days=offset_days)).strftime('%Y-%m-%d')
+
+    state = _load_state()
+    if state.get(state_key) == target_date:
+        log.info("[%s] Already checked %s, skipping (idempotent).", mode, target_date)
+        return 0
+
+    roles = backend._load_roles()
+    owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
+    if not owner_id:
+        log.warning("No owner found in roles, cannot send alert.")
+        _save_state({**state, state_key: target_date})
+        return 0
+
+    workers_without_plan = _find_workers_without_plan(backend, dpl, target_date)
 
     if not workers_without_plan:
-        log.info("All assigned workers have a plan for %s. Nothing to alert.", today)
-        _save_state({'last_checked_date': today})
+        log.info("[%s] All assigned workers have a plan for %s. Nothing to alert.", mode, target_date)
+        _save_state({**state, state_key: target_date})
         return 0
 
     profiles = backend._load_worker_profiles()
@@ -102,19 +131,20 @@ def main() -> int:
         backend._sanitize_display_name(profiles.get(wid, {}).get('name'), wid)
         for wid in sorted(workers_without_plan)
     ]
-    log.info("Workers without a plan for %s: %s", today, names)
+    log.info("[%s] Workers without a plan for %s: %s", mode, target_date, names)
 
     backend._create_critical_alert(
         target_user_id=owner_id,
-        kind='plan_overdue',
-        title=f"План на {today} не опубликован для {len(names)} "
+        kind=alert_kind,
+        title=f"План на {target_date} {title_verb} для {len(names)} "
               f"{'работника' if len(names) == 1 else 'работников'}",
         subtitle=', '.join(names)[:200],
     )
 
-    _save_state({'last_checked_date': today})
+    _save_state({**state, state_key: target_date})
     return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    _mode = sys.argv[1] if len(sys.argv) > 1 else 'morning'
+    sys.exit(main(_mode))
