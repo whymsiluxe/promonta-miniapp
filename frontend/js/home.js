@@ -42,6 +42,7 @@ async function initHomeView() {
           <div class="quick-primary-title">Календарь</div>
           <div class="quick-primary-sub" id="abwesenheit-quick-sub">Календарь недоступностей</div>
         </div>
+        <span class="quick-primary-badge" id="home-calendar-badge" style="display:none">0</span>
       </div>
       <div class="quick-primary-item" onclick="switchView('tools')">
         <div class="quick-primary-icon-wrap qp-icon qp-icon-tools-wide"><div class="qp-icon-sphere"></div><div class="qp-icon-wrench"></div></div>
@@ -64,6 +65,7 @@ async function initHomeView() {
     <div class="home-calendar-widget" id="home-calendar-widget">
       <div class="home-section-header">
         <span class="home-section-title">Расписание команды</span>
+        <span class="home-section-action" onclick="switchView('abwesenheit')">Календарь ▸</span>
       </div>
       <div class="hcw-day-section">
         <div class="hcw-day-label">Сегодня · <span id="hcw-today-date"></span></div>
@@ -463,10 +465,24 @@ function _bindHcwRowInteractions(listEl) {
   });
 }
 
+function _homeCounterLabel(count) {
+  const n = Number(count) || 0;
+  return n > 99 ? '99+' : String(n);
+}
+
+function _setHomeCounter(elId, count) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const n = Number(count) || 0;
+  el.textContent = _homeCounterLabel(n);
+  el.style.display = n > 0 ? 'flex' : 'none';
+}
+
 // 10.11: Abwesenheit-плашка на Home — сводка вместо мелкой строки в Profile→Ещё.
 async function _loadHomeAbwesenheitSummary(absDataPromise) {
   const sub = document.getElementById('abwesenheit-quick-sub');
-  if (!sub) return;
+  const badge = document.getElementById('home-calendar-badge');
+  if (!sub && !badge) return;
   try {
     const data = absDataPromise
       ? await absDataPromise
@@ -478,6 +494,8 @@ async function _loadHomeAbwesenheitSummary(absDataPromise) {
     const upcoming = (data.entries || [])
       .filter(e => new Date(e.date_from) >= now)
       .sort((a, b) => new Date(a.date_from) - new Date(b.date_from));
+    _setHomeCounter('home-calendar-badge', upcoming.length);
+    if (!sub) return;
     if (upcoming.length === 0) {
       sub.textContent = 'Нет ближайших событий';
       return;
@@ -488,7 +506,8 @@ async function _loadHomeAbwesenheitSummary(absDataPromise) {
     const who = currentRole === 'owner' && next.name ? `${next.name}: ` : '';
     sub.textContent = `${who}${next.reason || 'Отсутствие'} · ${dateLabel}`;
   } catch (e) {
-    sub.textContent = 'Календарь недоступностей';
+    _setHomeCounter('home-calendar-badge', 0);
+    if (sub) sub.textContent = 'Календарь недоступностей';
   }
 }
 
@@ -516,8 +535,7 @@ async function _loadHomeChatSummary() {
   const badge = document.getElementById('home-chat-badge');
   if (badge && unreadData.status === 'fulfilled') {
     const count = (unreadData.value && unreadData.value.unread) || 0;
-    badge.textContent = count;
-    badge.style.display = count > 0 ? 'flex' : 'none';
+    _setHomeCounter('home-chat-badge', count);
   }
 }
 

@@ -65,3 +65,27 @@ def test_home_dashboard_does_not_render_duplicate_legacy_kpi_grid():
     assert 'id="home-today-cockpit"' in src
     assert 'id="home-kpi-bar"' not in src
     assert 'id="home-kpi-bar-2"' not in src
+
+
+def test_home_dashboard_has_message_and_calendar_counters():
+    js = _source(HOME_JS)
+
+    assert 'id="home-chat-badge"' in js
+    assert 'id="home-calendar-badge"' in js
+    assert "function _homeCounterLabel(count)" in js
+    assert "return n > 99 ? '99+' : String(n);" in js
+    assert "_setHomeCounter('home-chat-badge', count);" in js
+    assert "_setHomeCounter('home-calendar-badge', upcoming.length);" in js
+
+
+def test_home_calendar_widget_uses_polished_ios_rows():
+    html = _source(APP_HTML)
+
+    assert ".home-calendar-widget .home-section-title" in html
+    assert ".hcw-row:last-child" in html
+    assert ".hcw-status { max-width: 44%;" in html
+    assert ".hcw-free { background:" in html
+    assert ".hcw-assigned { background:" in html
+    assert ".hcw-working { background:" in html
+    assert ".hcw-absent { background:" in html
+    assert "font-variant-numeric: tabular-nums;" in html

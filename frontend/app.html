@@ -4623,7 +4623,7 @@ body.chat-reply-active .chat-messages::after {
 .quick-primary-text { flex: 1; min-width: 0; }
 .quick-primary-title { font-weight: 600; font-size: 1.14rem; color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quick-primary-sub { font-size: 0.94rem; color: var(--text-light-oncard); margin-top: 0.1rem; }
-.quick-primary-badge { background: var(--red); color: #fff; font-weight: 700; font-size: 0.94rem; min-width: 24px; height: 24px; border-radius: 12px; display: flex; align-items: center; justify-content: center; padding: 0 5px; flex-shrink: 0; }
+.quick-primary-badge { background: var(--red); color: #fff; font-weight: 700; font-size: 0.94rem; min-width: 24px; height: 24px; border-radius: 12px; display: flex; align-items: center; justify-content: center; padding: 0 5px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .home-quick-secondary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; padding: 0 0.75rem 0.75rem; }
 .home-messages-wide { margin: 0.35rem 0.75rem 0.6rem; }
 .home-stack-wide { display: flex; flex-direction: column; gap: 0.6rem; padding: 0 0.75rem; margin-bottom: 0.75rem; }
@@ -5788,29 +5788,35 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 .home-rings-section { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); margin: 0 0.75rem 0.75rem; padding: 0.75rem; }
 
 /* ── Phase 3.7 — Dashboard calendar widget ── */
-.home-calendar-widget { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); margin: 0 0.75rem 0.75rem; padding: 0.75rem; }
-.hcw-day-section { margin-bottom: 0.6rem; }
-.hcw-day-label { font-size: 0.78rem; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.35rem; }
-.hcw-list { display: flex; flex-direction: column; gap: 0.3rem; }
-.hcw-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.2rem 0; cursor: pointer; }
+.home-calendar-widget { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); margin: 0.15rem 0.75rem 0.85rem; padding: 0.85rem 0.9rem 0.75rem; }
+.home-calendar-widget .home-section-header { margin-bottom: 0.65rem; }
+.home-calendar-widget .home-section-title { font-size: 1.08rem; font-weight: 800; line-height: 1.2; }
+.home-calendar-widget .home-section-action { font-weight: 700; white-space: nowrap; }
+.hcw-day-section { margin: 0; padding: 0.6rem 0; border-top: 1px solid var(--ios-separator, var(--border-color)); }
+.hcw-day-section:first-of-type { border-top: none; padding-top: 0; }
+.hcw-day-section:last-of-type { padding-bottom: 0.25rem; }
+.hcw-day-label { font-size: 0.86rem; font-weight: 800; color: var(--text-light); text-transform: none; letter-spacing: 0; margin-bottom: 0.4rem; }
+.hcw-list { display: flex; flex-direction: column; gap: 0; }
+.hcw-row { display: flex; align-items: center; gap: 0.55rem; min-height: 50px; padding: 0.38rem 0; border-bottom: 1px solid color-mix(in srgb, var(--ios-separator, var(--border-color)) 70%, transparent); cursor: pointer; }
+.hcw-row:last-child { border-bottom: none; }
 /* 09.09: аватар + имя кликабельны (Worker Card), отдельная "+" кнопка (Assignment
    Sheet) -- см. _bindHcwRowInteractions в home.js. Touch target >= 44px на кнопке
    (спека внешнего разбора), аватар меньше визуально (28px), но клик по всей .hcw-row
    тоже открывает карточку (кликабельная область больше самого кружка). */
-.hcw-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.75rem; font-weight: 700; overflow: hidden; }
+.hcw-avatar { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.76rem; font-weight: 800; overflow: hidden; }
 .hcw-avatar-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
-.hcw-assign-btn { flex-shrink: 0; width: 44px; height: 44px; border: none; background: none; color: var(--accent); font-size: 1.3rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+.hcw-assign-btn { flex-shrink: 0; width: 36px; height: 36px; border: 1px solid var(--ios-border, var(--border-color)); background: var(--ios-grouped-surface, var(--bg-card)); color: var(--accent); font-size: 1.1rem; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 50%; margin-left: 0.1rem; }
 .hcw-assign-btn:active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .hcw-object-link { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px; }
-.hcw-worker-name { font-size: 0.9rem; color: var(--text-main); font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hcw-status { font-size: 0.82rem; white-space: nowrap; }
-.hcw-free { color: var(--accent); }
-.hcw-assigned { color: var(--text-main); }
-.hcw-working { color: var(--accent); font-weight: 600; }
-.hcw-absent { color: var(--text-light); }
-.hcw-loading, .hcw-error { font-size: 0.85rem; color: var(--text-light); }
-.hcw-summary { font-size: 0.78rem; color: var(--text-light); margin-top: 0.25rem; }
-.hcw-open-btn { display: block; width: 100%; margin-top: 0.75rem; padding: 0.6rem; background: none; border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--accent); font-size: 0.9rem; cursor: pointer; text-align: center; }
+.hcw-worker-name { font-size: 0.94rem; color: var(--text-main); font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hcw-status { max-width: 44%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 999px; padding: 0.18rem 0.52rem; font-size: 0.78rem; font-weight: 800; line-height: 1.25; }
+.hcw-free { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.hcw-assigned { background: color-mix(in srgb, var(--accent-gold, #B38B4D) 14%, transparent); color: var(--text-main); }
+.hcw-working { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.hcw-absent { background: color-mix(in srgb, var(--text-light) 12%, transparent); color: var(--text-light); }
+.hcw-loading, .hcw-error { font-size: 0.9rem; color: var(--text-light); padding: 0.45rem 0; }
+.hcw-summary { font-size: 0.82rem; color: var(--text-light); margin-top: 0.45rem; font-weight: 700; }
+.hcw-open-btn { display: block; width: 100%; margin-top: 0.7rem; padding: 0.68rem; background: var(--ios-grouped-surface, transparent); border: 1px solid var(--ios-border, var(--border-color)); border-radius: var(--radius-md); color: var(--accent); font-size: 0.92rem; font-weight: 800; cursor: pointer; text-align: center; }
 .hcw-open-btn:active { background: var(--bg-card-raised); }
 
 /* ── quick-primary icon — квадратные цветные плашки (референс: чёрный/красный/оранжевый/фиолетовый) ── */
@@ -6421,11 +6427,37 @@ body {
   height: 32px;
   padding: 6px;
   stroke-width: 2;
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.18s ease, color 0.18s ease;
 }
 .nav-item.active .nav-icon-svg {
   background: color-mix(in srgb, var(--ios-accent, var(--accent)) 12%, var(--ios-surface, #fff));
   color: var(--ios-accent, var(--accent));
   box-shadow: none;
+}
+.bottom-nav .nav-item {
+  border-radius: 999px;
+  transform-style: preserve-3d;
+}
+.bottom-nav .nav-item.active {
+  color: var(--ios-accent, var(--accent));
+}
+.bottom-nav .nav-item.active .nav-icon-svg {
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255,255,255,0.72), rgba(255,255,255,0) 34%),
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--ios-accent, var(--accent)) 26%, #fff 74%),
+      color-mix(in srgb, var(--ios-accent, var(--accent)) 18%, var(--ios-surface, #fff) 82%));
+  color: var(--ios-accent, var(--accent));
+  box-shadow:
+    inset 0 1px 1px rgba(255,255,255,0.85),
+    inset 0 -8px 14px color-mix(in srgb, var(--ios-accent, var(--accent)) 12%, transparent),
+    0 9px 18px -13px color-mix(in srgb, var(--ios-accent, var(--accent)) 70%, transparent),
+    0 2px 6px -4px rgba(33,30,23,0.45);
+  transform: translateY(-2px) scale(1.03);
+}
+.bottom-nav .nav-item.active .nav-label {
+  color: var(--ios-accent, var(--accent));
+  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
 }
 .nav-label {
   color: currentColor;
@@ -9663,6 +9695,21 @@ const loadedViews = new Set();
 const TAB_ORDER = ['feed', 'home', 'chat', 'objects', 'profile'];
 let _lastActiveTabView = null;
 
+function _activeBottomNavEl() {
+  const ownerNav = document.getElementById('bottom-nav-owner');
+  const workerNav = document.getElementById('bottom-nav-worker');
+  const roleNav = currentRole === 'worker' ? workerNav : ownerNav;
+  if (roleNav && roleNav.dataset.roleActive !== 'hidden') return roleNav;
+  return document.querySelector('.bottom-nav:not([data-role-active="hidden"])') || roleNav || ownerNav || workerNav;
+}
+
+function _syncBottomNavActive(viewName) {
+  document.querySelectorAll('.bottom-nav .nav-item').forEach(n => n.classList.remove('active'));
+  const nav = _activeBottomNavEl();
+  const navItem = nav ? nav.querySelector(`.nav-item[data-view="${viewName}"]`) : null;
+  if (navItem) navItem.classList.add('active');
+}
+
 function switchView(viewName, opts = {}) {
   if (opts.isTabSwitch && typeof closeWorkerShiftPickers === 'function') closeWorkerShiftPickers();
 
@@ -9693,7 +9740,6 @@ function switchView(viewName, opts = {}) {
   }
 
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active', 'tab-enter-left', 'tab-enter-right'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   const _targetViewEl = document.getElementById(`view-${viewName}`);
   _targetViewEl.classList.add('active');
   // 17.09: .view toggles via display:none<->block, which does NOT reset scrollTop --
@@ -9710,8 +9756,7 @@ function switchView(viewName, opts = {}) {
     _targetViewEl.addEventListener('animationend', () => _targetViewEl.classList.remove(_tabMotionClass), { once: true });
   }
   if (viewName !== 'chat') document.body.classList.remove('chat-dialog-open');
-  const navItem = document.querySelector(`.nav-item[data-view="${viewName}"]`);
-  if (navItem) navItem.classList.add('active');
+  _syncBottomNavActive(viewName);
 
   // 25.07 v2: старый radio-fab orb удалён полностью (заменён HomeRadioPlayer внутри
   // Home dashboard flow + RadioMiniPlayer над bottom-nav). RadioMiniPlayer сам решает
@@ -9818,6 +9863,8 @@ function applyRoleNav() {
   // инструмент), только владельцу.
   const docsMenuItem = document.getElementById('profile-more-documents');
   if (docsMenuItem) docsMenuItem.style.display = currentRole === 'worker' ? 'none' : '';
+  const activeView = document.querySelector('.view.active')?.id?.replace(/^view-/, '') || 'home';
+  _syncBottomNavActive(activeView);
   _applyBottomNavHeight();
 }
 
