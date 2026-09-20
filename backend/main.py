@@ -8637,6 +8637,50 @@ def get_checkin_photo(session_id: str, which: str, index: int, user: dict = Depe
     return FileResponse(path)
 
 
+@app.get("/api/checkin/{session_id}/finish-context")
+def get_checkin_finish_context(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """18.09 (audit finding): Finish Wizard used to read window._todayPlanState --
+    the LIVE current plan -- to show the worker their task list at Finish. If the
+    owner amended the plan after this worker started their shift, Finish would
+    show the amended (possibly different) item list, not what this worker actually
+    accepted and started against. checkin_finish() itself already validates against
+    the immutable accepted_context_snapshot (Round 1.2 #2) -- this endpoint gives
+    the frontend the matching frozen item list to DISPLAY, closing the same gap on
+    the read side that was already closed on the write side.
+    Returns has_plan=False (not 404) when the session has no daily_plan_id at all --
+    a completely valid state (shift started without a plan), not an error."""
+    items = _load_checkin_meta()
+    session = next((i for i in items if i.get('id') == session_id), None)
+    if not session:
+        raise HTTPException(404, "Сессия не найдена")
+    if role != 'owner' and str(session.get('user_id')) != str(user['id']):
+        raise HTTPException(403, "Нет доступа к этой смене")
+
+    plan_id = session.get('daily_plan_id') or ''
+    acceptance_id = session.get('daily_plan_acceptance_id') or ''
+    if not plan_id or not acceptance_id:
+        return {"has_plan": False}
+
+    worker_id_str = str(session['user_id'])
+    dp_store = dpl.get_store_snapshot()
+    acceptance = dp_store["acceptances"].get(acceptance_id)
+    if not acceptance or str(acceptance.get('worker_id')) != worker_id_str or acceptance.get('daily_plan_id') != plan_id:
+        # Session references an acceptance that no longer resolves cleanly --
+        # same "not a plan-linked shift, carry on" fallback checkin_start uses
+        # rather than a hard error on an otherwise normal Finish.
+        return {"has_plan": False}
+
+    plan = dpl.get_plan(plan_id)
+    frozen_items = dpl.get_accepted_snapshot(plan_id, worker_id_str)
+    return {
+        "has_plan": True,
+        "plan_id": plan_id,
+        "plan_version": acceptance.get('plan_version', 0),
+        "object_id": plan.get('object_id') if plan else acceptance.get('accepted_context_snapshot', {}).get('object_id'),
+        "items": frozen_items,
+    }
+
+
 # ---------- Zeiterfassung (ручной ввод времени, референс "Neue Zeit") — Фаза 4a ----------
 class ZeiterfassungBody(BaseModel):
     object_id: str

@@ -92,7 +92,7 @@ function _fwClearPhotoUrls() {
   _fwPhotoUrls = new WeakMap();
 }
 
-function openFinishShiftWizard(sessionId, objectId) {
+async function openFinishShiftWizard(sessionId, objectId) {
   _fwStopVoiceRecording();
   _fwClearPhotoUrls();
   _fwStep = 1;
@@ -118,18 +118,36 @@ function openFinishShiftWizard(sessionId, objectId) {
   _fwTomorrowIssues = [];
   _fwTomorrowComment = '';
   _fwExtraDraftOpen = false;
-  const planState = window._todayPlanState;
-  if (planState?.has_plan && planState.acceptance && planState.plan?.items?.length) {
-    _fwDailyPlanItems = planState.plan.items;
-    _fwDailyPlanId = planState.plan.id || '';
-    _fwDailyPlanVersion = planState.plan.version || 0;
-  }
 
   document.getElementById('finish-wizard-modal').style.display = 'flex';
   if (typeof NavigationManager !== 'undefined' && !_fwOverlayUnregister) {
     _fwOverlayUnregister = NavigationManager.registerOverlay(() => _fwCloseWizardInternal());
   }
-  _fwRenderStep();
+  _fwRenderStep(); // render immediately with an empty item list -- don't block modal open on the network
+
+  // 18.09 (audit finding): used to read window._todayPlanState -- the LIVE
+  // current plan -- which could differ from what THIS worker actually accepted
+  // and started their shift against if the owner amended the plan in between.
+  // /finish-context returns the frozen accepted-snapshot items instead (the
+  // same immutable snapshot checkin_finish() already validates against on
+  // submit, Round 1.2 #2) -- Finish now shows and submits against what was
+  // actually accepted at Start, not whatever the plan currently says.
+  try {
+    const ctx = await api(`/api/checkin/${sessionId}/finish-context`);
+    // Stale response guard: the wizard may have been closed/reopened for a
+    // different session while this request was in flight.
+    if (_fwSessionId !== sessionId) return;
+    if (ctx.has_plan && ctx.items?.length) {
+      _fwDailyPlanItems = ctx.items;
+      _fwDailyPlanId = ctx.plan_id || '';
+      _fwDailyPlanVersion = ctx.plan_version || 0;
+      _fwRenderStep();
+    }
+  } catch (e) {
+    // Non-fatal -- Finish still works without a plan item checklist, same as
+    // when a shift was started with no plan linked at all.
+    console.warn('finish-context load failed', e);
+  }
 }
 
 function _fwCloseWizardInternal() {

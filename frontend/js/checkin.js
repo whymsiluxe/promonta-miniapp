@@ -690,13 +690,13 @@ function initCheckinControls() {
     _checkinPendingAction = 'start';
     document.getElementById('checkin-photo-input').click();
   });
-  document.getElementById('checkin-finish-btn').addEventListener('click', () => {
+  document.getElementById('checkin-finish-btn').addEventListener('click', async () => {
     // 27.07 (B3): finish идёт через новый пошаговый wizard, не через старый
     // единый preview-modal (тот остаётся только для start-shift).
     const session = _getActiveCheckinSession(_stagesCurrentObjectId);
     if (!session) { showToast('Нет активной смены', 'error'); return; }
     if (typeof openFinishShiftWizard === 'function') {
-      openFinishShiftWizard(session.id, _stagesCurrentObjectId);
+      await openFinishShiftWizard(session.id, _stagesCurrentObjectId);
     }
   });
   document.getElementById('checkin-photo-input').addEventListener('change', e => {
