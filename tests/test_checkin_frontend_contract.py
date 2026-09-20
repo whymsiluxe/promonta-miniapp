@@ -6,6 +6,7 @@ APP_HTML = ROOT / "frontend" / "app.html"
 CHECKIN_JS = ROOT / "frontend" / "js" / "checkin.js"
 HOME_JS = ROOT / "frontend" / "js" / "home.js"
 WORKER_CHECKIN_FAB_JS = ROOT / "frontend" / "js" / "worker-checkin-fab.js"
+WORKER_SHIFT_STATE_JS = ROOT / "frontend" / "js" / "worker-shift-state.js"
 RADIO_PLAYER_JS = ROOT / "frontend" / "js" / "components" / "radio-player.js"
 
 
@@ -27,7 +28,7 @@ def test_worker_stage_picker_has_real_modal_layer():
     html = _source(APP_HTML)
     fab = _source(WORKER_CHECKIN_FAB_JS)
 
-    assert "#worker-object-picker-modal,\n#worker-stage-picker-modal" in html
+    assert "#worker-object-picker-modal,\n#worker-stage-picker-modal,\n#worker-shift-status-modal" in html
     assert "z-index: 1800" in html
     assert "modal.id = 'worker-stage-picker-modal'" in fab
     assert "modal.dataset.noSwipe = '1';" in fab
@@ -38,10 +39,27 @@ def test_worker_stage_picker_has_real_modal_layer():
 def test_home_idle_shift_cta_uses_shared_start_flow():
     src = _source(HOME_JS)
 
-    assert "if (typeof _openStagePickerThenStart === 'function' && single)" in src
-    assert "_openStagePickerThenStart(single['ID объекта']);" in src
-    assert "else if (typeof _openWorkerObjectPicker === 'function')" in src
-    assert "_openWorkerObjectPicker();" in src
+    assert "resolveWorkerShiftState()" in src
+    assert "WORKER_SHIFT_STATE.START_PENDING_SYNC" in src
+    assert "WORKER_SHIFT_STATE.FINISH_PENDING_SYNC" in src
+    assert "openWorkerShiftFlow({" in src
+    assert "entryPoint: 'home'" in src
+
+
+def test_worker_shift_state_resolver_prioritizes_outbox_before_server():
+    html = _source(APP_HTML)
+    src = _source(WORKER_SHIFT_STATE_JS)
+    fab = _source(WORKER_CHECKIN_FAB_JS)
+
+    assert '<script src="js/worker-shift-state.js"></script>' in html
+    assert "async function resolveWorkerShiftState(options = {})" in src
+    assert "promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_FINISH)" in src
+    assert "promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_START)" in src
+    assert "state: WORKER_SHIFT_STATE.FINISH_PENDING_SYNC" in src
+    assert "state: WORKER_SHIFT_STATE.START_PENDING_SYNC" in src
+    assert "api(path)" in src
+    assert "async function openWorkerShiftFlow" in fab
+    assert "openWorkerShiftStatusSheet(shiftState)" in fab
 
 
 def test_worker_start_fab_moves_above_radio_mini_player_everywhere():

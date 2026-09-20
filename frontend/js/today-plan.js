@@ -610,7 +610,12 @@ function _showBlockerForm(planId, onDone) {
 
 // Start shift from plan — skip object picker if plan has object_id
 function _startShiftFromPlan(plan) {
-  if (plan?.object_id && typeof _openStagePickerThenStart === 'function') {
+  if (typeof openWorkerShiftFlow === 'function') {
+    openWorkerShiftFlow({
+      objectId: plan?.object_id || null,
+      entryPoint: 'daily-plan',
+    });
+  } else if (plan?.object_id && typeof _openStagePickerThenStart === 'function') {
     _openStagePickerThenStart(plan.object_id);
   } else if (typeof _openWorkerObjectPicker === 'function') {
     _openWorkerObjectPicker();

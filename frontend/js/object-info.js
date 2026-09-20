@@ -1375,14 +1375,24 @@ async function _appendCheckinShortcut(panel, objectId) {
     <button id="obj-stages-checkin-btn" class="submit-btn" style="width:100%">…</button>`;
   panel.appendChild(wrap);
 
-  let activeObjectId = null;
-  try { activeObjectId = await _findActiveWorkerCheckinObjectId(); } catch (e) {}
+  let shiftState = null;
+  try {
+    shiftState = typeof resolveWorkerShiftState === 'function'
+      ? await resolveWorkerShiftState()
+      : null;
+  } catch (e) {}
 
   const btn = document.getElementById('obj-stages-checkin-btn');
   if (!btn) return;
-  if (activeObjectId) {
+  if (workerShiftStateHasActiveSession?.(shiftState)) {
     btn.textContent = '■ Завершить смену';
     btn.style.background = 'var(--red)';
+  } else if (workerShiftStateIsPending?.(shiftState)) {
+    btn.textContent = shiftState.state === WORKER_SHIFT_STATE.FINISH_PENDING_SYNC
+      ? '⏳ Финиш синхронизируется'
+      : '⏳ Старт синхронизируется';
+  } else if (shiftState?.state === WORKER_SHIFT_STATE.SYNC_ERROR) {
+    btn.textContent = '⚠️ Повторить синхронизацию';
   } else {
     btn.textContent = '▶ Начать смену';
   }
@@ -1394,8 +1404,12 @@ async function _appendCheckinShortcut(panel, objectId) {
     // с экрана объекта Б -- _getActiveCheckinSession(Б) не находил сессию, finish
     // уходил с неверным/пустым session.id, смена оставалась "идёт" на бэкенде,
     // хотя фото уже успевали куда-то загрузиться отдельным запросом.
-    _stagesCurrentObjectId = activeObjectId || objectId;
-    _openCheckinStatusScreen();
+    _stagesCurrentObjectId = shiftState?.objectId || objectId;
+    if (typeof openWorkerShiftFlow === 'function') {
+      openWorkerShiftFlow({ objectId, entryPoint: 'object' });
+    } else {
+      _openCheckinStatusScreen();
+    }
   });
 }
 

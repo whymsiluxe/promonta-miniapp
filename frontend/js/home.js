@@ -1113,23 +1113,50 @@ async function _loadWorkerShiftCta(objDataPromise) {
   const cta = document.getElementById('worker-shift-cta');
   if (!cta) return;
   try {
-    const [checkinData, objData] = await Promise.all([
-      api('/api/checkin'),
+    const [shiftState, objData] = await Promise.all([
+      typeof resolveWorkerShiftState === 'function' ? resolveWorkerShiftState() : Promise.resolve({ state: null }),
       objDataPromise || api('/api/objects'),
     ]);
-    const openSession = (checkinData.sessions || []).find(s => s.finish_at === null || s.finish_at === undefined);
-    if (openSession) {
-      const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(openSession.object_id));
+    const objectName = (objectId) => {
+      const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(objectId));
+      return obj ? (obj['Объект'] || objectId) : objectId;
+    };
+
+    if (shiftState?.state === WORKER_SHIFT_STATE.START_PENDING_SYNC
+      || shiftState?.state === WORKER_SHIFT_STATE.FINISH_PENDING_SYNC
+      || shiftState?.state === WORKER_SHIFT_STATE.SYNC_ERROR) {
+      const isError = shiftState.state === WORKER_SHIFT_STATE.SYNC_ERROR;
+      const isFinish = shiftState.pendingState === WORKER_SHIFT_STATE.FINISH_PENDING_SYNC
+        || shiftState.state === WORKER_SHIFT_STATE.FINISH_PENDING_SYNC;
+      cta.style.display = 'flex';
+      cta.className = isError
+        ? 'worker-shift-cta worker-shift-cta-idle'
+        : 'worker-shift-cta worker-shift-cta-active';
+      cta.innerHTML = `
+        <div class="worker-shift-cta-text">
+          <div class="worker-shift-cta-status">${isError ? '⚠️ Ошибка синхронизации' : '⏳ Ожидает синхронизации'}</div>
+          <div class="worker-shift-cta-object">${esc(isFinish ? 'Завершение смены' : 'Начало смены')}${shiftState.objectId ? ` · ${esc(objectName(shiftState.objectId))}` : ''}</div>
+        </div>
+        <span class="worker-shift-cta-arrow">${isError ? 'Повторить ›' : 'Статус ›'}</span>
+      `;
+      cta.onclick = () => {
+        if (typeof openWorkerShiftStatusSheet === 'function') openWorkerShiftStatusSheet(shiftState);
+      };
+      return;
+    }
+
+    if (workerShiftStateHasActiveSession?.(shiftState)) {
+      const openObjectId = shiftState.objectId;
       cta.style.display = 'flex';
       cta.className = 'worker-shift-cta worker-shift-cta-active';
       cta.innerHTML = `
         <div class="worker-shift-cta-text">
           <div class="worker-shift-cta-status">🟢 Смена идёт</div>
-          <div class="worker-shift-cta-object">${esc(obj ? obj['Объект'] : openSession.object_id)}</div>
+          <div class="worker-shift-cta-object">${esc(objectName(openObjectId))}</div>
         </div>
         <span class="worker-shift-cta-arrow">Завершить ›</span>
       `;
-      cta.onclick = () => _openObjectForShift(openSession.object_id, obj ? obj['Объект'] : '');
+      cta.onclick = () => _openObjectForShift(openObjectId, objectName(openObjectId));
       return;
     }
 
@@ -1158,8 +1185,11 @@ async function _loadWorkerShiftCta(objDataPromise) {
         <span class="worker-shift-cta-arrow">Начать ›</span>
       `;
       cta.onclick = () => {
-        if (typeof _openStagePickerThenStart === 'function' && single) {
-          _openStagePickerThenStart(single['ID объекта']);
+        if (typeof openWorkerShiftFlow === 'function') {
+          openWorkerShiftFlow({
+            objectId: single ? single['ID объекта'] : null,
+            entryPoint: 'home',
+          });
         } else if (typeof _openWorkerObjectPicker === 'function') {
           _openWorkerObjectPicker();
         }

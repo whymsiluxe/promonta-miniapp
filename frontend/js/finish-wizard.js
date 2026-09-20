@@ -776,15 +776,20 @@ async function _fwQueueFinishOutbox(record) {
 
 function _fwMarkFinishConfirmed(record, notify) {
   _setActiveCheckinSession(record.objectId, { id: record.sessionId, finished: true });
-  if (typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
-  if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
-    _loadWorkerShiftCta();
-  }
+  _fwRefreshWorkerShiftSurfaces();
   if (typeof _updateTodayPlanBar === 'function') {
     _updateTodayPlanBar({ has_plan: false });
     window._todayPlanState = null;
   }
   if (notify) showToast('Смена завершена', 'success');
+}
+
+function _fwRefreshWorkerShiftSurfaces() {
+  if (typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
+  if (typeof _refreshWorkerCheckinFabIcon === 'function') _refreshWorkerCheckinFabIcon();
+  if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
+    _loadWorkerShiftCta();
+  }
 }
 
 async function _retryFinishOutboxRecords() {
@@ -840,6 +845,7 @@ async function _fwSubmitFinish() {
     finishRecord = _fwBuildFinishOutboxRecord();
     if (!navigator.onLine) {
       await _fwQueueFinishOutbox(finishRecord);
+      _fwRefreshWorkerShiftSurfaces();
       _fwCloseWizardAfterSuccess();
       showToast('Финиш сохранён в офлайн-очередь', 'success');
       return;
@@ -854,6 +860,7 @@ async function _fwSubmitFinish() {
     if (finishRecord && _fwIsTransientFinishError(e)) {
       try {
         await _fwQueueFinishOutbox(finishRecord);
+        _fwRefreshWorkerShiftSurfaces();
         _fwCloseWizardAfterSuccess();
         showToast('Связь сорвалась — финиш сохранён в офлайн-очередь', 'success');
         return;

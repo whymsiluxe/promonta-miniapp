@@ -4,10 +4,12 @@
 // объект без захода в детейл-страницу объекта.
 
 let _workerCheckinObjectId = null;
+let _workerShiftStatusOverlayUnregister = null;
 
 function closeWorkerShiftPickers() {
   document.getElementById('worker-object-picker-modal')?.remove();
   document.getElementById('worker-stage-picker-modal')?.remove();
+  closeWorkerShiftStatusSheet();
 }
 
 function initWorkerCheckinFab() {
@@ -36,22 +38,33 @@ function initWorkerCheckinFab() {
 // через тап по FAB.
 async function _workerCheckinTap() {
   if (currentRole !== 'worker') return;
-  await _openCheckinStatusScreen();
+  await openWorkerShiftFlow({ entryPoint: 'fab' });
 }
 
 async function _openCheckinStatusScreen() {
-  const activeObjectId = await _findActiveWorkerCheckinObjectId();
-  if (activeObjectId) {
-    let objectName = activeObjectId;
-    try {
-      const data = await api('/api/objects');
-      const obj = (data.objects || []).find(o => o['ID объекта'] === activeObjectId);
-      if (obj) objectName = obj['Объект'] || activeObjectId;
-    } catch (e) {}
-    switchView('objects');
-    if (typeof openStagesView === 'function') openStagesView(activeObjectId, objectName);
+  await openWorkerShiftFlow({ entryPoint: 'status' });
+}
+
+async function openWorkerShiftFlow({ objectId = null, entryPoint = 'fab' } = {}) {
+  const shiftState = typeof resolveWorkerShiftState === 'function'
+    ? await resolveWorkerShiftState()
+    : { state: null };
+
+  if (workerShiftStateHasActiveSession?.(shiftState)) {
+    await _openWorkerShiftObject(shiftState.objectId);
     return;
   }
+
+  if (workerShiftStateIsPending?.(shiftState) || shiftState.state === WORKER_SHIFT_STATE.SYNC_ERROR) {
+    openWorkerShiftStatusSheet(shiftState);
+    return;
+  }
+
+  if (objectId) {
+    _openStagePickerThenStart(objectId);
+    return;
+  }
+
   await _openWorkerObjectPicker();
 }
 
@@ -60,30 +73,104 @@ async function _openCheckinStatusScreen() {
 // смена", но stages-view той же сессии её не видел). Синхронизирует localStorage
 // заодно, чтобы synchronous-читатели (_getActiveCheckinSession) не расходились.
 async function _findActiveWorkerCheckinObjectId() {
+  const shiftState = typeof resolveWorkerShiftState === 'function'
+    ? await resolveWorkerShiftState()
+    : null;
+  return workerShiftStateHasActiveSession?.(shiftState) ? shiftState.objectId : null;
+}
+
+async function _openWorkerShiftObject(objectId) {
+  if (!objectId) return;
+  let objectName = objectId;
   try {
-    const data = await api('/api/checkin');
-    // 24.07: не фильтровать по дате — сервер (Europe/Berlin) и клиент (UTC) расходятся
-    // на границе полуночи CEST, ложно скрывая только что открытую смену. "Открыта"
-    // определяется исключительно finish_at.
-    const open = (data.sessions || []).find(s => s.finish_at === null || s.finish_at === undefined);
-    if (open) {
-      _setActiveCheckinSession(open.object_id, { id: open.id, finished: false });
-      return open.object_id;
+    const data = await api('/api/objects');
+    const obj = (data.objects || []).find(o => String(o['ID объекта']) === String(objectId));
+    if (obj) objectName = obj['Объект'] || objectId;
+  } catch (e) {}
+  switchView('objects');
+  if (typeof openStagesView === 'function') openStagesView(objectId, objectName);
+}
+
+function _workerShiftStatusCopy(shiftState) {
+  if (shiftState?.state === WORKER_SHIFT_STATE.START_PENDING_SYNC) {
+    return {
+      title: 'Начало смены ожидает синхронизации',
+      body: 'Старт уже сохранён в очереди. Когда связь вернётся, он отправится автоматически.',
+      action: 'Открыть объект',
+    };
+  }
+  if (shiftState?.state === WORKER_SHIFT_STATE.FINISH_PENDING_SYNC) {
+    return {
+      title: 'Завершение смены ожидает синхронизации',
+      body: 'Финиш уже сохранён в очереди. Повторно завершать смену не нужно.',
+      action: 'Открыть объект',
+    };
+  }
+  return {
+    title: 'Нужна ручная синхронизация',
+    body: shiftState?.error || 'Последняя отправка не прошла. Можно запустить повтор вручную.',
+    action: 'Повторить',
+  };
+}
+
+function closeWorkerShiftStatusSheet() {
+  const modal = document.getElementById('worker-shift-status-modal');
+  if (modal) modal.remove();
+  if (_workerShiftStatusOverlayUnregister) {
+    _workerShiftStatusOverlayUnregister();
+    _workerShiftStatusOverlayUnregister = null;
+  }
+}
+
+function _closeWorkerShiftStatusSheetInternal() {
+  document.getElementById('worker-shift-status-modal')?.remove();
+  _workerShiftStatusOverlayUnregister = null;
+}
+
+function openWorkerShiftStatusSheet(shiftState) {
+  closeWorkerShiftStatusSheet();
+  const copy = _workerShiftStatusCopy(shiftState);
+  const canRetry = shiftState?.state === WORKER_SHIFT_STATE.SYNC_ERROR && shiftState.outboxRecord?.id;
+  const modal = document.createElement('div');
+  modal.id = 'worker-shift-status-modal';
+  modal.dataset.noSwipe = '1';
+  modal.innerHTML = `
+    <div class="worker-picker-inner">
+      <div class="worker-picker-header">
+        <span class="worker-picker-title">${esc(copy.title)}</span>
+        <button class="worker-picker-close" data-shift-status-close type="button">✕</button>
+      </div>
+      <div class="worker-picker-list">
+        <div class="worker-picker-item" style="display:block;">
+          <span class="worker-picker-item-stage">${esc(copy.body)}</span>
+        </div>
+      </div>
+      <div class="worker-picker-add-row">
+        <button class="form-submit-btn" data-shift-status-primary type="button">${esc(copy.action)}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('[data-shift-status-close]')?.addEventListener('click', closeWorkerShiftStatusSheet);
+  modal.querySelector('[data-shift-status-primary]')?.addEventListener('click', async () => {
+    if (canRetry) {
+      await promontaOutboxManualRetry(shiftState.outboxRecord.id);
+      if (shiftState.outboxRecord.kind === WORKER_SHIFT_OUTBOX_KIND_FINISH && typeof _retryFinishOutboxRecords === 'function') {
+        await _retryFinishOutboxRecords();
+      } else if (typeof _retryCheckinOutbox === 'function') {
+        await _retryCheckinOutbox();
+      }
+      closeWorkerShiftStatusSheet();
+      showToast('Повтор синхронизации запущен', 'success');
+      await _refreshWorkerCheckinFabIcon();
+      if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) _loadWorkerShiftCta();
+      return;
     }
-    return null;
-  } catch (e) {
-    // сеть недоступна — локальный fallback, лучше устаревший статус чем никакой
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key || !key.startsWith('checkin_session_')) continue;
-      try {
-        const session = JSON.parse(localStorage.getItem(key));
-        if (session && !session.finished) {
-          return key.replace('checkin_session_', '');
-        }
-      } catch (e2) {}
-    }
-    return null;
+    closeWorkerShiftStatusSheet();
+    if (shiftState?.objectId) await _openWorkerShiftObject(shiftState.objectId);
+  });
+  if (typeof NavigationManager !== 'undefined') {
+    _workerShiftStatusOverlayUnregister = NavigationManager.registerOverlay(() => _closeWorkerShiftStatusSheetInternal());
   }
 }
 
@@ -220,9 +307,13 @@ async function _refreshWorkerCheckinFabIcon() {
   const icon = document.getElementById('nav-start-fab-icon');
   const fab = document.getElementById('nav-start-fab');
   if (!icon || !fab) return;
-  const active = await _findActiveWorkerCheckinObjectId();
-  icon.textContent = active ? '■' : '▶';
-  fab.classList.toggle('active-session', !!active);
+  const shiftState = typeof resolveWorkerShiftState === 'function'
+    ? await resolveWorkerShiftState()
+    : null;
+  const active = workerShiftStateHasActiveSession?.(shiftState);
+  const pending = workerShiftStateIsPending?.(shiftState);
+  icon.textContent = pending ? '…' : (active ? '■' : '▶');
+  fab.classList.toggle('active-session', !!active || !!pending);
 }
 
 // checkin.js вызывает refreshCheckinButtons() после успешного старта/финиша —
