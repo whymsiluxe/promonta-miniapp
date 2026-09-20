@@ -807,7 +807,7 @@ function attachStagesRowHandlers(stages) {
 
   document.querySelectorAll('.stage-row-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Удалить этап?')) return;
+      if (!await promontaConfirm('Удалить этап?', { danger: true })) return;
       const stageNum = btn.dataset.num;
       const rowNum = _stageRowIndexMap[stageNum];
       try {

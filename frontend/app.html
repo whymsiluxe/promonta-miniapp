@@ -1727,6 +1727,26 @@ header h1 {
   background: color-mix(in srgb, var(--danger, #b3403a) 10%, transparent);
   color: var(--danger, #b3403a); font-size: 0.85rem;
 }
+/* 18.09 (audit finding): promontaConfirm() -- reusable replacement for window.confirm(),
+   see shared.js. Sits inside the shared .bottom-sheet-overlay/.bottom-sheet-panel layer
+   (no new overlay chrome needed), only the confirm-specific inner content is new here. */
+.promonta-confirm-panel { padding: 1.1rem 1.1rem calc(1.1rem + env(safe-area-inset-bottom)); }
+.promonta-confirm-title { font-size: 1.05rem; font-weight: 700; margin-top: 0.5rem; }
+.promonta-confirm-message { font-size: 0.92rem; color: var(--text-light); margin-top: 0.4rem; line-height: 1.4; }
+.promonta-confirm-actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
+.promonta-confirm-actions button {
+  flex: 1; height: 52px; border-radius: 16px; font-size: 1rem; font-weight: 650;
+  font-family: inherit; cursor: pointer; border: none;
+}
+.promonta-confirm-actions .obj-confirm-cancel {
+  background: var(--bg-app); color: var(--text-main); border: 1px solid var(--border-color);
+}
+.promonta-confirm-actions .obj-confirm-ok {
+  background: var(--primary); color: var(--ivory, #fff);
+}
+.promonta-confirm-actions .obj-confirm-ok.promonta-confirm-danger {
+  background: var(--danger, #b3403a);
+}
 .obj-stage-add-sheet-network-error strong { display: block; margin-bottom: 0.15rem; }
 .obj-stage-add-sheet-network-error span { color: var(--text-light); font-size: 0.8rem; }
 .obj-stage-add-retry-btn {

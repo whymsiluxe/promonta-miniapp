@@ -342,7 +342,7 @@ async function _loadProfileTeam() {
     listEl.innerHTML = (rows || '') + (pendingRows || '') || 'Пока никого нет.';
     listEl.querySelectorAll('.profile-team-revoke-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
-        if (!confirm('Убрать доступ этому работнику?')) return;
+        if (!await promontaConfirm('Убрать доступ этому работнику?', { danger: true })) return;
         try {
           await api(`/api/roles/${btn.dataset.uid}`, { method: 'DELETE' });
           hapticImpact('medium');

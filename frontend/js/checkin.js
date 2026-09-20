@@ -697,8 +697,8 @@ function initCheckinControls() {
     document.getElementById('checkin-photo-input').click();
   });
   document.getElementById('checkin-preview-confirm-btn').addEventListener('click', _confirmCheckinPreview);
-  document.getElementById('checkin-preview-close').addEventListener('click', () => {
-    if (confirm('Отменить фото-фиксацию?')) _closeCheckinPreviewModal();
+  document.getElementById('checkin-preview-close').addEventListener('click', async () => {
+    if (await promontaConfirm('Отменить фото-фиксацию?')) _closeCheckinPreviewModal();
   });
   document.getElementById('checkin-analyze-btn').addEventListener('click', runCheckinAnalysis);
 
