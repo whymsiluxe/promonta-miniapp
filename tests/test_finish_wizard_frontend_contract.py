@@ -82,3 +82,16 @@ def test_finish_wizard_sends_geo_accuracy_metadata():
     assert "if (_fwFinishGeo.accuracy) fields.accuracy = _fwFinishGeo.accuracy;" in src
     assert "if (_fwFinishGeo.timestamp) fields.geo_timestamp = _fwFinishGeo.timestamp;" in src
     assert "Object.entries(record.fields || {}).forEach(([key, value]) => formData.append(key, value || ''))" in src
+
+
+def test_finish_wizard_loads_frozen_finish_context_before_plan_fact():
+    src = _source(FINISH_WIZARD)
+
+    assert "`/api/checkin/${sessionId}/finish-context`" in src
+    assert "let _fwContextState = 'idle';" in src
+    assert "if (_fwContextState === 'loading') return ['context-loading'];" in src
+    assert "if (_fwContextState === 'error') return ['context-error'];" in src
+    assert "function _fwReadCachedFinishContext(sessionId)" in src
+    assert "_fwApplyFinishContext(cached, 'offline_cached')" in src
+    assert "const planState = window._todayPlanState" not in src
+    assert "_fwDailyPlanItems = planState.plan.items" not in src

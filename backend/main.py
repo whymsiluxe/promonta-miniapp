@@ -8618,6 +8618,62 @@ def list_checkins(object_id: str = '', date: str = '', user: dict = Depends(get_
     return {"sessions": items}
 
 
+@app.get("/api/checkin/{session_id}/finish-context")
+def checkin_finish_context(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    items = _load_checkin_meta()
+    session = next((i for i in items if i.get('id') == session_id), None)
+    if not session:
+        raise HTTPException(404, "Сессия не найдена")
+    if role != 'owner' and str(session.get('user_id')) != str(user['id']):
+        raise HTTPException(403, "Нет доступа к этой смене")
+
+    plan_id = session.get('daily_plan_id') or ''
+    if not plan_id:
+        return {
+            "session_id": session_id,
+            "object_id": session.get("object_id") or "",
+            "has_plan": False,
+        }
+
+    store = dpl.get_store_snapshot()
+    worker_id = str(session.get('user_id'))
+    acceptance_id = session.get('daily_plan_acceptance_id') or ''
+    acceptance = store["acceptances"].get(acceptance_id) if acceptance_id else None
+    if not acceptance:
+        acceptance = next(
+            (a for a in store["acceptances"].values()
+             if a.get("daily_plan_id") == plan_id and str(a.get("worker_id")) == worker_id),
+            None,
+        )
+    if not acceptance:
+        raise HTTPException(409, "Принятый план смены не найден")
+
+    plan = store["daily_plans"].get(plan_id)
+    if not plan:
+        raise HTTPException(409, "План смены не найден")
+
+    snapshot = acceptance.get("accepted_context_snapshot") or {}
+    items_snapshot = dpl.get_accepted_snapshot(plan_id, worker_id)
+    return {
+        "session_id": session_id,
+        "object_id": session.get("object_id") or "",
+        "has_plan": True,
+        "plan": {
+            "id": plan_id,
+            "version": acceptance.get("plan_version") or snapshot.get("plan_version") or plan.get("version") or 0,
+            "object_id": snapshot.get("object_id") or plan.get("object_id") or "",
+            "date": snapshot.get("date") or plan.get("date") or "",
+            "stage_key": snapshot.get("stage_key") or plan.get("stage_key") or "",
+            "items": items_snapshot,
+        },
+        "acceptance": {
+            "id": acceptance.get("id") or "",
+            "plan_version": acceptance.get("plan_version") or snapshot.get("plan_version") or 0,
+            "accepted_at": acceptance.get("accepted_at"),
+        },
+    }
+
+
 @app.get("/api/checkin/{session_id}/photo/{which}/{index}")
 def get_checkin_photo(session_id: str, which: str, index: int, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     items = _load_checkin_meta()

@@ -18,6 +18,9 @@ let _fwDefects = []; // [{description}]
 let _fwPauseMinutes = 30;
 let _fwFinishGeo = null; // {lat, lon, accuracy, timestamp}
 let _fwOverlayUnregister = null;
+let _fwContextState = 'idle'; // loading | loaded_with_plan | loaded_without_plan | offline_cached | error
+let _fwContextError = '';
+let _fwFinishContext = null;
 // 03.08 (ТЗ Задача 1): персистентный на весь wizard-flow idempotency key -- раньше
 // генерировался заново на КАЖДЫЙ вызов _fwSubmitFinish(), так что retry после сетевой
 // ошибки/таймаута слал НОВЫЙ ключ и backend не мог распознать повтор того же запроса.
@@ -28,7 +31,7 @@ let _finishOutboxRetrying = false;
 // Round 3: daily plan state for this shift
 let _fwDailyPlanId = '';
 let _fwDailyPlanVersion = 0;
-let _fwDailyPlanItems = []; // plan.items from window._todayPlanState
+let _fwDailyPlanItems = []; // frozen accepted items from /finish-context
 let _fwItemResults = []; // [{item_id, status, actual_quantity, unit, reason_code, comment}]
 let _fwTomorrowIssues = []; // selected issue keys
 let _fwTomorrowComment = '';
@@ -59,6 +62,8 @@ const _FW_PLAN_STATUS_LABELS = {
 // ── Step sequence ──────────────────────────────────────────────────────────────
 
 function _fwStepSequence() {
+  if (_fwContextState === 'loading') return ['context-loading'];
+  if (_fwContextState === 'error') return ['context-error'];
   if (_fwDailyPlanItems.length > 0) {
     return ['photo', 'summary', 'plan-fact', 'extra', 'needs', 'tomorrow-prep', 'geo', 'review'];
   }
@@ -118,24 +123,84 @@ function openFinishShiftWizard(sessionId, objectId) {
   _fwTomorrowIssues = [];
   _fwTomorrowComment = '';
   _fwExtraDraftOpen = false;
-  const planState = window._todayPlanState;
-  if (planState?.has_plan && planState.acceptance && planState.plan?.items?.length) {
-    _fwDailyPlanItems = planState.plan.items;
-    _fwDailyPlanId = planState.plan.id || '';
-    _fwDailyPlanVersion = planState.plan.version || 0;
-  }
+  _fwContextState = 'loading';
+  _fwContextError = '';
+  _fwFinishContext = null;
 
   document.getElementById('finish-wizard-modal').style.display = 'flex';
   if (typeof NavigationManager !== 'undefined' && !_fwOverlayUnregister) {
     _fwOverlayUnregister = NavigationManager.registerOverlay(() => _fwCloseWizardInternal());
   }
   _fwRenderStep();
+  _fwLoadFinishContext(sessionId, objectId);
+}
+
+function _fwFinishContextCacheKey(sessionId) {
+  return `finish_context_${sessionId}`;
+}
+
+function _fwReadCachedFinishContext(sessionId) {
+  try {
+    const raw = localStorage.getItem(_fwFinishContextCacheKey(sessionId));
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function _fwWriteCachedFinishContext(sessionId, data) {
+  try {
+    localStorage.setItem(_fwFinishContextCacheKey(sessionId), JSON.stringify(data));
+  } catch (e) {}
+}
+
+function _fwApplyFinishContext(data, state) {
+  _fwFinishContext = data || null;
+  _fwDailyPlanItems = [];
+  _fwDailyPlanId = '';
+  _fwDailyPlanVersion = 0;
+
+  if (data?.has_plan && data.plan?.items?.length) {
+    _fwDailyPlanItems = data.plan.items;
+    _fwDailyPlanId = data.plan.id || '';
+    _fwDailyPlanVersion = data.plan.version || 0;
+    _fwContextState = state || 'loaded_with_plan';
+    return;
+  }
+  _fwContextState = state || 'loaded_without_plan';
+}
+
+async function _fwLoadFinishContext(sessionId, objectId) {
+  try {
+    const data = await api(`/api/checkin/${sessionId}/finish-context`);
+    if (_fwSessionId !== sessionId) return;
+    _fwApplyFinishContext(data, data?.has_plan ? 'loaded_with_plan' : 'loaded_without_plan');
+    if (data?.has_plan) _fwWriteCachedFinishContext(sessionId, data);
+    _fwStep = 1;
+    _fwRenderStep();
+  } catch (e) {
+    if (_fwSessionId !== sessionId) return;
+    const cached = _fwReadCachedFinishContext(sessionId);
+    if (cached?.has_plan && (!objectId || String(cached.object_id || cached.plan?.object_id || '') === String(objectId))) {
+      _fwApplyFinishContext(cached, 'offline_cached');
+      _fwStep = 1;
+      _fwRenderStep();
+      return;
+    }
+    _fwContextState = 'error';
+    _fwContextError = e.message || 'Не удалось загрузить контекст смены';
+    _fwStep = 1;
+    _fwRenderStep();
+  }
 }
 
 function _fwCloseWizardInternal() {
   _fwStopVoiceRecording();
   _fwClearPhotoUrls();
   document.getElementById('finish-wizard-modal').style.display = 'none';
+  _fwContextState = 'idle';
+  _fwContextError = '';
+  _fwFinishContext = null;
   _fwOverlayUnregister = null;
 }
 
@@ -173,6 +238,8 @@ function _fwRenderStep() {
   progressEl.textContent = `Шаг ${_fwStep} из ${seq.length}`;
 
   const TITLES = {
+    'context-loading': 'Подготовка',
+    'context-error': 'Контекст смены',
     'photo': 'Фото результата',
     'summary': 'Что сделано',
     'plan-fact': 'Выполнение плана',
@@ -185,7 +252,9 @@ function _fwRenderStep() {
   const key = _fwCurrentKey();
   titleEl.textContent = TITLES[key] || '';
 
-  if (key === 'photo') body.innerHTML = _fwRenderStep1();
+  if (key === 'context-loading') body.innerHTML = _fwRenderContextLoading();
+  else if (key === 'context-error') body.innerHTML = _fwRenderContextError();
+  else if (key === 'photo') body.innerHTML = _fwRenderStep1();
   else if (key === 'summary') body.innerHTML = _fwRenderStep2();
   else if (key === 'plan-fact') body.innerHTML = _fwRenderStepPlanFact();
   else if (key === 'extra') body.innerHTML = _fwRenderStep3();
@@ -195,6 +264,41 @@ function _fwRenderStep() {
   else if (key === 'review') body.innerHTML = _fwRenderStep6();
 
   _fwWireStep();
+}
+
+function _fwRenderContextLoading() {
+  return `
+    <div class="fw-hint">Загружаю контекст смены и принятый план.</div>
+    <div class="fw-review-card">
+      <div style="font-weight:700;">Подготовка отчёта…</div>
+      <div style="color:var(--text-light);margin-top:0.35rem;">План-факт будет собран из версии плана, принятой при старте смены.</div>
+    </div>
+  `;
+}
+
+function _fwRenderContextError() {
+  return `
+    <div class="fw-hint">Не удалось загрузить контекст смены. Это не считается отсутствием плана.</div>
+    <div class="fw-review-card">
+      <div style="font-weight:700;color:var(--red);">Контекст недоступен</div>
+      <div style="color:var(--text-light);margin-top:0.35rem;">${esc(_fwContextError || 'Проверь связь и попробуй ещё раз.')}</div>
+    </div>
+    <div class="fw-nav">
+      <button class="fw-back-btn" id="fw-context-close" type="button">Закрыть</button>
+      <button class="fw-next-btn" id="fw-context-retry" type="button">Повторить</button>
+    </div>
+  `;
+}
+
+function _fwWireContextError() {
+  document.getElementById('fw-context-close')?.addEventListener('click', _fwCloseWizard);
+  document.getElementById('fw-context-retry')?.addEventListener('click', () => {
+    _fwContextState = 'loading';
+    _fwContextError = '';
+    _fwStep = 1;
+    _fwRenderStep();
+    _fwLoadFinishContext(_fwSessionId, _fwObjectId);
+  });
 }
 
 // ---------- Step 1: Фото ----------
@@ -980,7 +1084,8 @@ function _fwWireVoiceButton(btnId, onTranscript) {
 
 function _fwWireStep() {
   const key = _fwCurrentKey();
-  if (key === 'photo') _fwWireStep1();
+  if (key === 'context-error') _fwWireContextError();
+  else if (key === 'photo') _fwWireStep1();
   else if (key === 'summary') _fwWireStep2();
   else if (key === 'plan-fact') _fwWireStepPlanFact();
   else if (key === 'extra') _fwWireStep3();
