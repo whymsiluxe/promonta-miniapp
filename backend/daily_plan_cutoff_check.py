@@ -39,7 +39,7 @@ import json
 import logging
 import os
 import sys
-from datetime import timedelta
+from datetime import date, timedelta
 
 logging.basicConfig(
     format='%(asctime)s [daily_plan_cutoff_check] %(levelname)s %(message)s',
@@ -75,6 +75,17 @@ def _save_state(state: dict) -> None:
 
 
 def _find_workers_without_plan(backend, dpl, target_date: str) -> set:
+    # 18.09 (audit finding): a legacy/undated assignment (no date_from/date_to --
+    # historically meant "no expiry", not "explicitly scheduled on every single
+    # day forever") on a non-working day (weekend, holiday_exceptions in
+    # work_calendar.json) used to still trigger "plan not published" -- there was
+    # never going to BE a plan for that day, nobody asked for one. An assignment
+    # with EXPLICIT dates covering target_date is trusted as intentional (the
+    # owner scheduled work on that specific day on purpose, weekend or not) and
+    # still alerts either way.
+    target_date_obj = date.fromisoformat(target_date)
+    target_is_working_day = dpl.is_working_day(target_date_obj)
+
     assignments = backend._load_assignments()
     workers_without_plan = set()
     for object_id, candidates in assignments.items():
@@ -82,7 +93,10 @@ def _find_workers_without_plan(backend, dpl, target_date: str) -> set:
             if backend._assignment_status(a) != 'accepted':
                 continue
             d_from, d_to = a.get('date_from', ''), a.get('date_to', '')
-            if d_from and d_to and not (d_from <= target_date <= d_to):
+            has_explicit_dates = bool(d_from and d_to)
+            if has_explicit_dates and not (d_from <= target_date <= d_to):
+                continue
+            if not has_explicit_dates and not target_is_working_day:
                 continue
             worker_id = str(a.get('user_id', ''))
             if not worker_id:

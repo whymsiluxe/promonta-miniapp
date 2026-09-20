@@ -22,18 +22,21 @@ BACKEND_DIR = os.path.join(REPO_ROOT, 'backend')
 
 
 def _parse_manifest():
-    """Parse BACKEND_PY_LIBS, BACKEND_JS_FILES, BACKEND_SUBPROCESS_SCRIPTS from manifest.sh."""
+    """Parse BACKEND_PY_LIBS, BACKEND_JS_FILES, BACKEND_SUBPROCESS_SCRIPTS,
+    BACKEND_STANDALONE_SCRIPTS from manifest.sh."""
     with open(MANIFEST_PATH, encoding='utf-8') as f:
         content = f.read()
     py_match = re.search(r'BACKEND_PY_LIBS=\(([^)]+)\)', content, re.DOTALL)
     js_match = re.search(r'BACKEND_JS_FILES=\(([^)]+)\)', content, re.DOTALL)
     subproc_match = re.search(r'BACKEND_SUBPROCESS_SCRIPTS=\(([^)]+)\)', content, re.DOTALL)
+    standalone_match = re.search(r'BACKEND_STANDALONE_SCRIPTS=\(([^)]+)\)', content, re.DOTALL)
     core_match = re.search(r'BACKEND_CORE_DIR="([^"]+)"', content)
     py_libs = re.findall(r'"([^"]+\.py)"', py_match.group(1)) if py_match else []
     js_files = re.findall(r'"([^"]+\.js)"', js_match.group(1)) if js_match else []
     subprocess_scripts = re.findall(r'"([^"]+\.py)"', subproc_match.group(1)) if subproc_match else []
+    standalone_scripts = re.findall(r'"([^"]+\.py)"', standalone_match.group(1)) if standalone_match else []
     core_dir = core_match.group(1) if core_match else 'core'
-    return py_libs, js_files, core_dir, subprocess_scripts
+    return py_libs, js_files, core_dir, subprocess_scripts, standalone_scripts
 
 
 class ManifestCompletenessTests(unittest.TestCase):
@@ -41,7 +44,8 @@ class ManifestCompletenessTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.py_libs, cls.js_files, cls.core_dir, cls.subprocess_scripts = _parse_manifest()
+        (cls.py_libs, cls.js_files, cls.core_dir, cls.subprocess_scripts,
+         cls.standalone_scripts) = _parse_manifest()
 
     def test_manifest_file_exists(self):
         self.assertTrue(os.path.isfile(MANIFEST_PATH), f"manifest.sh not found at {MANIFEST_PATH}")
@@ -81,6 +85,41 @@ class ManifestCompletenessTests(unittest.TestCase):
                 capture_output=True, text=True
             )
             self.assertEqual(result.returncode, 0, f"py_compile failed for {f}: {result.stderr}")
+
+    def test_standalone_scripts_in_manifest(self):
+        """18.09 (audit finding): systemd-timer-only scripts, never imported by
+        main.py, must still be tracked so deploy.sh can ship them -- before this
+        they required a one-off manual `cp` after every repo edit, meaning a
+        merged-and-CI-green change could sit un-deployed on the live timer
+        indefinitely (configuration drift)."""
+        self.assertIn('cleanup_old_attachments.py', self.standalone_scripts)
+        self.assertIn('daily_plan_cutoff_check.py', self.standalone_scripts)
+
+    def test_all_standalone_scripts_exist_and_compile(self):
+        for f in self.standalone_scripts:
+            path = os.path.join(BACKEND_DIR, f)
+            self.assertTrue(os.path.isfile(path), f"Manifest lists {f} but backend/{f} does not exist")
+            result = subprocess.run(
+                [sys.executable, '-m', 'py_compile', path],
+                capture_output=True, text=True
+            )
+            self.assertEqual(result.returncode, 0, f"py_compile failed for {f}: {result.stderr}")
+
+    def test_deploy_sh_actually_deploys_standalone_scripts(self):
+        """A manifest entry alone doesn't ship anything -- deploy.sh must call
+        the function that copies BACKEND_STANDALONE_SCRIPTS into the runtime
+        dir, or the manifest is just documentation with no effect."""
+        deploy_sh_path = os.path.join(REPO_ROOT, 'scripts', 'deploy.sh')
+        with open(deploy_sh_path, encoding='utf-8') as f:
+            deploy_content = f.read()
+        self.assertIn('deploy_standalone_scripts', deploy_content,
+                      "deploy.sh must call deploy_standalone_scripts() so "
+                      "BACKEND_STANDALONE_SCRIPTS entries actually get shipped")
+        runtime_manifest_path = os.path.join(REPO_ROOT, 'scripts', 'runtime_manifest.sh')
+        with open(runtime_manifest_path, encoding='utf-8') as f:
+            runtime_content = f.read()
+        self.assertIn('deploy_standalone_scripts()', runtime_content,
+                      "runtime_manifest.sh must define deploy_standalone_scripts()")
 
     def test_core_dir_exists(self):
         core_path = os.path.join(BACKEND_DIR, self.core_dir)
@@ -154,7 +193,8 @@ class DeployRollbackRoundTripTests(unittest.TestCase):
     """Simulate backup → mutate → rollback and verify hashes match original."""
 
     def setUp(self):
-        self.py_libs, self.js_files, self.core_dir, self.subprocess_scripts = _parse_manifest()
+        (self.py_libs, self.js_files, self.core_dir, self.subprocess_scripts,
+         self.standalone_scripts) = _parse_manifest()
         self.old_serving = tempfile.mkdtemp(prefix='rollback_test_old_')
         self.backup_dir = tempfile.mkdtemp(prefix='rollback_test_backup_')
         self.new_repo = tempfile.mkdtemp(prefix='rollback_test_repo_')

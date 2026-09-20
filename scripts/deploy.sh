@@ -176,6 +176,11 @@ BACKUP_READY=1
 echo "== 10/14 Копирование backend в serving-путь =="
 backend_runtime_deploy "$REPO_DIR/backend" "$BACKEND_SERVING_DIR"
 backend_runtime_syntax_check "$BACKEND_SERVING_DIR"
+# 18.09 (audit finding): standalone systemd-timer scripts (cleanup_old_attachments.py,
+# daily_plan_cutoff_check.py) used to require a manual `cp` after every repo edit --
+# now part of the regular deploy so the repo is the actual source of truth for what
+# the timers run, not a snapshot someone remembers to refresh.
+deploy_standalone_scripts "$REPO_DIR/backend" "$BACKEND_SERVING_DIR"
 # Version-файл для /api/health -- version/commit видны в ответе без git subprocess
 # на каждый запрос (main.py читает VERSION рядом с собой, см. APP_VERSION_FILE).
 cat > "${BACKEND_SERVING_DIR}/VERSION" <<EOF

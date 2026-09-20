@@ -110,6 +110,31 @@ backend_runtime_restore() {
   done < "$manifest"
 }
 
+# 18.09 (audit finding): standalone scripts (systemd-timer-only, never imported
+# by main.py -- see BACKEND_STANDALONE_SCRIPTS in manifest.sh) are copied here
+# so the repo stays the real source of truth for what a timer actually runs.
+# Deliberately NOT part of backend_runtime_backup/restore -- these files are not
+# imported by the running app, so a bad edit to one of them can't break
+# main.py's own startup/serving, and doesn't need the same rollback safety net
+# (worst case: a broken standalone script fails its own next systemd run,
+# logged, app itself is unaffected).
+deploy_standalone_scripts() {
+  local repo_backend_dir="$1"
+  local serving_dir="$2"
+  local entry src dst
+
+  for entry in "${BACKEND_STANDALONE_SCRIPTS[@]}"; do
+    src="${repo_backend_dir}/${entry}"
+    dst="${serving_dir}/${entry}"
+    if [[ ! -f "$src" ]]; then
+      echo "ОШИБКА: standalone script отсутствует в repo backend: $src" >&2
+      return 1
+    fi
+    cp "$src" "$dst"
+    chmod +x "$dst"
+  done
+}
+
 backend_runtime_syntax_check() {
   local backend_dir="$1"
   local py_files=()
