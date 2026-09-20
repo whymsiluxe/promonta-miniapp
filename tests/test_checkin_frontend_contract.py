@@ -73,6 +73,17 @@ def test_home_idle_shift_cta_uses_shared_start_flow():
     assert "_openWorkerObjectPicker();" in src
 
 
+def test_worker_start_fab_base_position_uses_measured_nav_height_not_magic_number():
+    # 18.09 (audit finding): .nav-item-start's base (non-radio-mini) position was
+    # bottom: calc(max(14px, safe-area) + 96px) -- a fixed number not tied to the
+    # bottom-nav's actual rendered height. Now uses --app-bottom-nav-height, same
+    # measured-height pattern already used by .objects-fab and the radio-mini-visible
+    # override for this same element.
+    html = _source(APP_HTML)
+    assert "bottom: calc(var(--app-bottom-nav-height, 70px) + max(10px, env(safe-area-inset-bottom)) + 20px);\n  z-index: 60;" in html
+    assert "bottom: calc(max(14px, env(safe-area-inset-bottom)) + 96px);" not in html
+
+
 def test_worker_start_fab_moves_above_radio_mini_player_everywhere():
     html = _source(APP_HTML)
     radio_js = _source(RADIO_PLAYER_JS)
