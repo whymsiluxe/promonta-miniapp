@@ -57,6 +57,30 @@ function _getGeolocation() {
 // для мест, где нельзя ждать — сама запись сессии при старте/финише не меняется.
 let _checkinButtonsGeneration = 0;
 
+// 18.09 (audit finding): after Start/Finish is queued offline, the modal/wizard
+// closed and NO local session state reflected the fact that a submission was
+// already in flight -- Home/FAB/stages-view kept showing "Смена не начата"
+// (or "Смена начата" for Finish), so the worker could tap Start/Finish again
+// and queue a SECOND outbox record for the same shift with a different
+// idempotency key (the server's dedup-by-idempotency-key can't catch that --
+// it's a genuinely different key). Checks both outbox kinds for this object,
+// excluding dead_letter (a permanently-failed record must not block a fresh
+// retry attempt forever).
+async function _findPendingCheckinOutboxRecord(objectId) {
+  if (typeof promontaOutboxList !== 'function') return null;
+  const [startRecords, finishRecords] = await Promise.all([
+    promontaOutboxList(CHECKIN_OUTBOX_KIND_START).catch(() => []),
+    typeof CHECKIN_OUTBOX_KIND_FINISH !== 'undefined'
+      ? promontaOutboxList(CHECKIN_OUTBOX_KIND_FINISH).catch(() => [])
+      : Promise.resolve([]),
+  ]);
+  const pendingStart = startRecords.find(r => r.objectId === objectId && r.state !== 'dead_letter');
+  if (pendingStart) return { kind: 'start', record: pendingStart };
+  const pendingFinish = finishRecords.find(r => r.objectId === objectId && r.state !== 'dead_letter');
+  if (pendingFinish) return { kind: 'finish', record: pendingFinish };
+  return null;
+}
+
 async function refreshCheckinButtons() {
   const objectId = _stagesCurrentObjectId;
   const startBtn = document.getElementById('checkin-start-btn');
@@ -74,6 +98,26 @@ async function refreshCheckinButtons() {
   // более новый вызов — этот результат считается устаревшим и отбрасывается, независимо
   // от того совпадает ли objectId.
   const myGeneration = ++_checkinButtonsGeneration;
+
+  // 18.09: checked BEFORE the network/session lookup below -- a pending outbox
+  // record means Start or Finish was already queued for this object and must
+  // gate the buttons regardless of what the server currently reports (the
+  // server hasn't seen this submission yet at all).
+  const pending = await _findPendingCheckinOutboxRecord(objectId);
+  if (myGeneration !== _checkinButtonsGeneration) return;
+  if (pending) {
+    startBtn.disabled = true;
+    finishBtn.disabled = true;
+    analyzeBtn.style.display = 'none';
+    const pauseBtnEl = document.getElementById('checkin-pause-toggle-btn');
+    if (pauseBtnEl) pauseBtnEl.style.display = 'none';
+    if (pending.kind === 'start') {
+      startBtn.textContent = '⏳ Начало смены ожидает синхронизации';
+    } else {
+      finishBtn.textContent = '⏳ Завершение смены ожидает синхронизации';
+    }
+    return;
+  }
 
   let session = null;
   try {
@@ -110,6 +154,7 @@ async function refreshCheckinButtons() {
     startBtn.disabled = true;
     startBtn.textContent = '▶ Смена начата';
     finishBtn.disabled = false;
+    finishBtn.textContent = '■ Финиш смены'; // restore from a possible "⏳ ..." pending-sync label above
     analyzeBtn.style.display = 'none';
     if (pauseBtn) {
       pauseBtn.style.display = 'flex';
