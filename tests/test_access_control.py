@@ -130,6 +130,18 @@ class InitDataHmacTests(unittest.TestCase):
 class CrossWorkerAuthorizationTests(unittest.TestCase):
     """Release-аудит Этап 3: Worker A не может трогать данные Worker B."""
 
+    def setUp(self):
+        # 20.09: abwesenheit-мутации ушли под update_json_transaction(), которая
+        # читает файл напрямую -- patch.object(_load_abwesenheit) на её путь больше
+        # не влияет. Изолированный временный стор вместо мока.
+        import tempfile as _tf
+        self._abw_tmp = _tf.mkdtemp(prefix='abw-acl-')
+        self._abw_orig = backend.ABWESENHEIT_FILE
+        backend.ABWESENHEIT_FILE = os.path.join(self._abw_tmp, 'abwesenheit.json')
+
+    def tearDown(self):
+        backend.ABWESENHEIT_FILE = self._abw_orig
+
     def test_worker_cannot_return_another_workers_tool(self):
         tl = backend._load_repo_tools_lib()
         from unittest.mock import patch
@@ -145,20 +157,23 @@ class CrossWorkerAuthorizationTests(unittest.TestCase):
             self.assertEqual(ctx.exception.status_code, 403)
 
     def test_worker_cannot_close_another_workers_absence(self):
-        from unittest.mock import patch
-        entry = {'id': 'abw-1', 'user_id': '222', 'status': 'approved'}
-        with patch.object(backend, '_load_abwesenheit', return_value=[entry]):
-            with self.assertRaises(HTTPException) as ctx:
-                backend.close_abwesenheit(entry_id='abw-1', user={'id': 111}, role='worker')
-            self.assertEqual(ctx.exception.status_code, 403)
+        entry = {'id': 'abw-1', 'user_id': '222', 'status': 'approved',
+                 'date_from': '2026-09-01', 'date_to': '2026-09-02'}
+        backend._save_abwesenheit([entry])
+        with self.assertRaises(HTTPException) as ctx:
+            backend.close_abwesenheit(entry_id='abw-1', user={'id': 111}, role='worker')
+        self.assertEqual(ctx.exception.status_code, 403)
 
     def test_worker_cannot_delete_another_workers_absence(self):
-        from unittest.mock import patch
-        entry = {'id': 'abw-1', 'user_id': '222', 'status': 'approved'}
-        with patch.object(backend, '_load_abwesenheit', return_value=[entry]):
-            with self.assertRaises(HTTPException) as ctx:
-                backend.delete_abwesenheit(entry_id='abw-1', user={'id': 111}, role='worker')
-            self.assertEqual(ctx.exception.status_code, 403)
+        entry = {'id': 'abw-1', 'user_id': '222', 'status': 'approved',
+                 'date_from': '2026-09-01', 'date_to': '2026-09-02'}
+        backend._save_abwesenheit([entry])
+        with self.assertRaises(HTTPException) as ctx:
+            backend.delete_abwesenheit(entry_id='abw-1', user={'id': 111}, role='worker')
+        self.assertEqual(ctx.exception.status_code, 403)
+        # запрет должен не только вернуть 403, но и оставить запись на месте
+        with open(backend.ABWESENHEIT_FILE, encoding='utf-8') as f:
+            self.assertEqual(len(json.load(f)), 1)
 
     def test_worker_cannot_delete_another_workers_chat_message(self):
         from unittest.mock import patch
@@ -196,12 +211,13 @@ class CrossWorkerAuthorizationTests(unittest.TestCase):
         # Контрольная проверка -- owner-роль обходит все эти self-only ограничения
         # (иначе тесты выше могли бы случайно проверять "всегда 403", а не именно
         # cross-user изоляцию).
-        from unittest.mock import patch
-        entry = {'id': 'abw-1', 'user_id': '222', 'status': 'approved'}
-        with patch.object(backend, '_load_abwesenheit', return_value=[entry]), \
-             patch.object(backend, '_save_abwesenheit'):
-            result = backend.delete_abwesenheit(entry_id='abw-1', user={'id': 999}, role='owner')
-            self.assertEqual(result, {"status": "ok"})
+        entry = {'id': 'abw-1', 'user_id': '222', 'status': 'approved',
+                 'date_from': '2026-09-01', 'date_to': '2026-09-02'}
+        backend._save_abwesenheit([entry])
+        result = backend.delete_abwesenheit(entry_id='abw-1', user={'id': 999}, role='owner')
+        self.assertEqual(result, {"status": "ok"})
+        with open(backend.ABWESENHEIT_FILE, encoding='utf-8') as f:
+            self.assertEqual(json.load(f), [])
 
 
 class DirectFileAccessTests(unittest.TestCase):

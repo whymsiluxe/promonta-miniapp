@@ -48,12 +48,26 @@ def get_values(rng):
     return json.load(urllib.request.urlopen(req, timeout=20)).get('values', [])
 
 
+def _formula_safe(value):
+    """20.09 (найдено аудитом): то же, что objekte_lib._formula_safe -- при
+    valueInputOption=USER_ENTERED ячейка, начинающаяся с =, +, -, @, выполняется
+    как формула в сессии того, кто откроет таблицу. Сюда приходят названия и
+    комментарии инструментов, вводимые работниками."""
+    if isinstance(value, str) and value and value[0] in ('=', '+', '-', '@'):
+        return "'" + value
+    return value
+
+
+def _formula_safe_rows(values):
+    return [[_formula_safe(cell) for cell in row] for row in values]
+
+
 def append_row(sheet_name, row):
     t = _token()
     rng_enc = urllib.parse.quote(f'{sheet_name}!A:Z', safe='')
     req = urllib.request.Request(
         f'https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/{rng_enc}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
-        data=json.dumps({'values': [row]}).encode(), method='POST',
+        data=json.dumps({'values': _formula_safe_rows([row])}).encode(), method='POST',
         headers={'Authorization': f'Bearer {t}', 'Content-Type': 'application/json'})
     urllib.request.urlopen(req, timeout=20)
 
@@ -63,7 +77,7 @@ def update_range(rng, values):
     rng_enc = urllib.parse.quote(rng, safe='')
     req = urllib.request.Request(
         f'https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/{rng_enc}?valueInputOption=USER_ENTERED',
-        data=json.dumps({'values': values}).encode(), method='PUT',
+        data=json.dumps({'values': _formula_safe_rows(values)}).encode(), method='PUT',
         headers={'Authorization': f'Bearer {t}', 'Content-Type': 'application/json'})
     urllib.request.urlopen(req, timeout=20)
 

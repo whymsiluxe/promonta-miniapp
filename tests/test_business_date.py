@@ -146,45 +146,51 @@ class DashboardTodayBoundaryTests(unittest.TestCase):
 
 
 class AbwesenheitBusinessDateBoundaryTests(unittest.TestCase):
+    """20.09: стор пишется через реальный временный файл, а не patch.object на
+    _load/_save -- мутации ушли под update_json_transaction(), которая читает файл
+    напрямую, мимо запатченного загрузчика."""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.mkdtemp(prefix='abw-bizdate-')
+        self._orig_file = backend.ABWESENHEIT_FILE
+        backend.ABWESENHEIT_FILE = os.path.join(self._tmp, 'abwesenheit.json')
+
+    def tearDown(self):
+        backend.ABWESENHEIT_FILE = self._orig_file
+
+    def _stored(self):
+        import json
+        with open(backend.ABWESENHEIT_FILE, encoding='utf-8') as f:
+            return json.load(f)
+
     def test_close_abwesenheit_uses_berlin_business_today(self):
-        entry = {
+        backend._save_abwesenheit([{
             'id': 'abw-1', 'user_id': '10', 'name': 'Ivan',
             'date_from': '2026-08-01', 'date_to': '2026-08-31',
             'open_ended': True, 'status': 'approved',
-        }
-        saved = {}
+        }])
 
-        def fake_save(items):
-            saved['items'] = items
-
-        with patch.object(backend, 'business_now', return_value=MIDNIGHT_EDGE_BERLIN), \
-             patch.object(backend, '_load_abwesenheit', return_value=[entry]), \
-             patch.object(backend, '_save_abwesenheit', side_effect=fake_save):
+        with patch.object(backend, 'business_now', return_value=MIDNIGHT_EDGE_BERLIN):
             result = backend.close_abwesenheit('abw-1', user=WORKER_A, role='worker')
 
         self.assertEqual(result['date_to'], MIDNIGHT_EDGE_BERLIN_DATE)
         self.assertFalse(result['open_ended'])
-        self.assertEqual(saved['items'][0]['date_to'], MIDNIGHT_EDGE_BERLIN_DATE)
+        self.assertEqual(self._stored()[0]['date_to'], MIDNIGHT_EDGE_BERLIN_DATE)
 
     def test_auto_close_open_ended_uses_berlin_business_today(self):
-        entry = {
+        backend._save_abwesenheit([{
             'id': 'abw-1', 'user_id': '10', 'name': 'Ivan',
             'date_from': MIDNIGHT_EDGE_UTC_DATE, 'date_to': MIDNIGHT_EDGE_UTC_DATE,
             'open_ended': True, 'status': 'approved',
-        }
-        saved = {}
-
-        def fake_save(items):
-            saved['items'] = items
+        }])
 
         with patch.object(backend, 'business_now', return_value=MIDNIGHT_EDGE_BERLIN), \
-             patch.object(backend, '_load_abwesenheit', return_value=[entry]), \
-             patch.object(backend, '_save_abwesenheit', side_effect=fake_save), \
              patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker'}), \
              patch.object(backend, 'send_telegram_message'):
             backend._auto_close_expired_open_ended_abwesenheit()
 
-        self.assertFalse(saved['items'][0]['open_ended'])
+        self.assertFalse(self._stored()[0]['open_ended'])
 
 
 if __name__ == '__main__':

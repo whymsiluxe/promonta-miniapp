@@ -78,7 +78,22 @@ async function _findActiveWorkerCheckinObjectId() {
     // определяется исключительно finish_at.
     const open = (data.sessions || []).find(s => s.finish_at === null || s.finish_at === undefined);
     if (open) {
-      _setActiveCheckinSession(open.object_id, { id: open.id, finished: false });
+      // 20.09 (P0, найдено аудитом): здесь писался усечённый объект
+      // { id, finished } -- без pauseAccumulatedSeconds/startAt/startAccuracy.
+      // Эта функция вызывается из обёртки над refreshCheckinButtons ПОСЛЕ
+      // оригинала, то есть систематически затирала полную сессию, только что
+      // записанную checkin.js. finish-wizard читает паузу именно из localStorage
+      // (_fwPauseMinutes), поэтому в отчёт о смене уходил pause_minutes = 0 --
+      // реальная пауза пропадала из учёта рабочих часов. Пишем те же поля, что
+      // и checkin.js::refreshCheckinButtons, из того же ответа /api/checkin.
+      _setActiveCheckinSession(open.object_id, {
+        id: open.id,
+        finished: false,
+        startAt: open.start_at || null,
+        pauseStartedAt: open.pause_started_at || null,
+        pauseAccumulatedSeconds: open.pause_accumulated_seconds || 0,
+        startAccuracy: open.start_accuracy != null ? Number(open.start_accuracy) : null,
+      });
       return open.object_id;
     }
     return null;

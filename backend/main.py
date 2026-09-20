@@ -1221,7 +1221,12 @@ def get_user_card(target_id: str, user: dict = Depends(get_current_user), role: 
         "has_avatar": has_avatar,
     }
     if role == 'owner' and roles[target_id] != 'owner':
-        today = datetime.now().strftime('%Y-%m-%d')
+        # 20.09 (найдено аудитом): здесь оставался datetime.now() = UTC сервера, хотя
+        # s['date'] пишется checkin_start'ом как _today_berlin_str(). Вечером после
+        # 00:00 CEST (23:00 UTC) сравнение шло со ВЧЕРАШНЕЙ датой, и владелец видел
+        # "смена не идёт" у работника на живой ночной смене. Остальные call-sites
+        # перевели на business_today_str() ещё 03.08, этот пропустили.
+        today = business_today_str()
         sessions = [s for s in _load_checkin_meta() if str(s.get('user_id')) == target_id and s.get('date') == today]
         open_session = next((s for s in sessions if s.get('finish_at') is None), None)
         rows = _cached_get_used_range('Объекты')
@@ -8249,7 +8254,21 @@ async def checkin_finish(
             elapsed = max(0, int(time.time()) - session['pause_started_at'])
             session['pause_accumulated_seconds'] = session.get('pause_accumulated_seconds', 0) + elapsed
             session['pause_started_at'] = None
-        session['pause_minutes'] = max(0, int(pause_minutes or 0))
+        # 20.09 (P0, найдено аудитом): раньше здесь стояло просто
+        # `session['pause_minutes'] = pause_minutes` -- клиентское значение молча
+        # затирало серверный подсчёт строкой выше. А клиент его регулярно присылает
+        # нулём: worker-checkin-fab.js переопределяет refreshCheckinButtons обёрткой,
+        # которая после оригинала перезаписывает localStorage-сессию усечённым
+        # объектом {id, finished} без pauseAccumulatedSeconds -- и finish-wizard
+        # читает паузу именно оттуда. Итог: реальная пауза 45 мин уходила в учёт
+        # часов как 0, завышая оплачиваемое время.
+        # Сервер -- источник истины: он сам инкрементит pause_accumulated_seconds на
+        # каждом pause/resume и только что закрыл висящую паузу выше. Берём максимум,
+        # а не серверное значение безусловно: у ручных сессий (checkin_manual) сервер
+        # паузу не отслеживает вообще, там единственный источник -- поле из формы.
+        _client_pause_min = max(0, int(pause_minutes or 0))
+        _server_pause_min = round(int(session.get('pause_accumulated_seconds') or 0) / 60)
+        session['pause_minutes'] = max(_client_pause_min, _server_pause_min)
         # P0 fix (owner review): persist the raw execution report INSIDE the same
         # checkin_meta write that commits finish_at -- previously daily_plan_report
         # only existed as a request Form parameter, never durably stored anywhere
@@ -9069,6 +9088,16 @@ def _load_abwesenheit() -> list:
 
 
 def _save_abwesenheit(items: list):
+    """ВНИМАНИЕ: не использовать в обработчиках запросов для read-modify-write.
+
+    20.09: все шесть мутаций стора переведены на update_json_transaction(), которая
+    делает read-modify-write под ОДНИМ локом. Пара _load_abwesenheit() → мутация →
+    _save_abwesenheit() выглядит безопасной симметрией, но именно она и была той
+    гонкой, из-за которой терялись одобрения владельца и воскресали удалённые
+    заявки (auto-close при открытии календаря пишет свой снимок поверх чужого).
+
+    Остаётся как полная перезапись стора: используется тестовыми фикстурами для
+    подготовки состояния, где конкурентности нет по определению."""
     _atomic_write_json(ABWESENHEIT_FILE, items)
 
 
@@ -9156,9 +9185,10 @@ def create_abwesenheit(body: AbwesenheitBody, user: dict = Depends(get_current_u
         "created_at": int(time.time()),
         "status": "pending",
     }
-    items = _load_abwesenheit()
-    items.append(entry)
-    _save_abwesenheit(items)
+    # 20.09: append под локом -- параллельная заявка другого работника (или
+    # auto-close при открытии календаря владельцем) писала свой снимок поверх,
+    # и одна из двух заявок просто исчезала.
+    update_json_transaction(ABWESENHEIT_FILE, [], lambda items: items.append(entry))
     _notify_owner_abwesenheit_pending(entry)
     return entry
 
@@ -9166,16 +9196,17 @@ def create_abwesenheit(body: AbwesenheitBody, user: dict = Depends(get_current_u
 @app.patch("/api/abwesenheit/{entry_id}/close")
 def close_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     """Worker закрывает открытую запись досрочно ('поправился раньше'), owner может закрыть любую."""
-    items = _load_abwesenheit()
-    entry = next((i for i in items if i['id'] == entry_id), None)
-    if not entry:
-        raise HTTPException(404, "Запись не найдена")
-    if entry['user_id'] != str(user['id']) and role != 'owner':
-        raise HTTPException(403, "Можно закрывать только свои записи")
-    entry['date_to'] = business_today_str()
-    entry['open_ended'] = False
-    _save_abwesenheit(items)
-    return entry
+    def _mutate(items):
+        entry = next((i for i in items if i.get('id') == entry_id), None)
+        if not entry:
+            raise HTTPException(404, "Запись не найдена")
+        if entry['user_id'] != str(user['id']) and role != 'owner':
+            raise HTTPException(403, "Можно закрывать только свои записи")
+        entry['date_to'] = business_today_str()
+        entry['open_ended'] = False
+        return dict(entry)
+
+    return update_json_transaction(ABWESENHEIT_FILE, [], _mutate)
 
 
 class AbwesenheitStatusBody(BaseModel):
@@ -9192,19 +9223,27 @@ def update_abwesenheit_status(entry_id: str, body: AbwesenheitStatusBody,
                                user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
     if body.status not in ('approved', 'rejected'):
         raise HTTPException(400, "status должен быть approved или rejected")
-    items = _load_abwesenheit()
-    entry = next((i for i in items if i['id'] == entry_id), None)
-    if not entry:
-        raise HTTPException(404, "Запись не найдена")
-    entry['status'] = body.status
-    _save_abwesenheit(items)
+
+    # 20.09: read-modify-write под одним локом. Раньше load/save шли раздельно --
+    # параллельный DELETE/close/auto-close той же записи (или просто открытие
+    # календаря владельцем, оно дёргает _auto_close_expired_open_ended) писал свой
+    # снимок поверх, и решение владельца терялось МОЛЧА: push и critical-alert ниже
+    # уже отправлены, а в файле осталось старое 'pending'.
+    def _mutate(items):
+        entry = next((i for i in items if i.get('id') == entry_id), None)
+        if not entry:
+            raise HTTPException(404, "Запись не найдена")
+        entry['status'] = body.status
+        return dict(entry)
+
+    entry = update_json_transaction(ABWESENHEIT_FILE, [], _mutate)
     _notify_worker_abwesenheit_decision(entry)
     _create_critical_alert(
         target_user_id=entry['user_id'],
         kind='abwesenheit_decision',
         title=f"Отсутствие {entry['date_from']}—{entry['date_to']}: "
               f"{'одобрено' if body.status == 'approved' else 'не одобрено'}",
-        ref_id=entry['id'],
+        ref_id=entry.get('id', ''),
     )
     return entry
 
@@ -9219,40 +9258,45 @@ def update_abwesenheit_dates(entry_id: str, body: AbwesenheitMoveBody,
     their temporary visibility window to the end of the new month.
     """
     _validate_date_str(body.date_from, 'date_from')
-    items = _load_abwesenheit()
-    entry = next((i for i in items if i['id'] == entry_id), None)
-    if not entry:
-        raise HTTPException(404, "Запись не найдена")
-    if entry['user_id'] != str(user['id']) and role != 'owner':
-        raise HTTPException(403, "Можно переносить только свои записи")
 
-    if body.date_to:
-        _validate_date_str(body.date_to, 'date_to')
-        date_to = body.date_to
-    elif entry.get('open_ended'):
-        date_to = _month_end(body.date_from)
-    else:
-        # 17.09 (real bug found finishing this endpoint off): frontend's
-        # _moveAbwesenheitEntry() computes and sends an explicit date_to that
-        # preserves the entry's original span -- but if date_to is omitted (any
-        # other/future caller, or a client that only sends date_from), this used
-        # to collapse a multi-day entry down to a single day (date_to = date_from)
-        # instead of preserving its original duration. Backend must not depend on
-        # the client remembering to do this -- compute the shift from the
-        # ORIGINAL entry's own span before it gets overwritten below.
-        original_span_days = (datetime.strptime(entry['date_to'], '%Y-%m-%d').date()
-                               - datetime.strptime(entry['date_from'], '%Y-%m-%d').date()).days
-        original_span_days = max(0, original_span_days)
-        new_from_date = datetime.strptime(body.date_from, '%Y-%m-%d').date()
-        date_to = (new_from_date + timedelta(days=original_span_days)).isoformat()
-    if date_to < body.date_from:
-        raise HTTPException(400, "date_to не может быть раньше date_from")
+    # 20.09: перенос даты идёт под тем же локом, что и остальные мутации стора --
+    # раньше параллельный approve/close/delete этой же записи терялся (или
+    # воскрешал уже удалённую), см. соседние endpoint'ы.
+    def _mutate(items):
+        entry = next((i for i in items if i.get('id') == entry_id), None)
+        if not entry:
+            raise HTTPException(404, "Запись не найдена")
+        if entry['user_id'] != str(user['id']) and role != 'owner':
+            raise HTTPException(403, "Можно переносить только свои записи")
 
-    entry['date_from'] = body.date_from
-    entry['date_to'] = date_to
-    entry['updated_at'] = int(time.time())
-    _save_abwesenheit(items)
-    return entry
+        if body.date_to:
+            _validate_date_str(body.date_to, 'date_to')
+            date_to = body.date_to
+        elif entry.get('open_ended'):
+            date_to = _month_end(body.date_from)
+        else:
+            # 17.09 (real bug found finishing this endpoint off): frontend's
+            # _moveAbwesenheitEntry() computes and sends an explicit date_to that
+            # preserves the entry's original span -- but if date_to is omitted (any
+            # other/future caller, or a client that only sends date_from), this used
+            # to collapse a multi-day entry down to a single day (date_to = date_from)
+            # instead of preserving its original duration. Backend must not depend on
+            # the client remembering to do this -- compute the shift from the
+            # ORIGINAL entry's own span before it gets overwritten below.
+            original_span_days = (datetime.strptime(entry['date_to'], '%Y-%m-%d').date()
+                                   - datetime.strptime(entry['date_from'], '%Y-%m-%d').date()).days
+            original_span_days = max(0, original_span_days)
+            new_from_date = datetime.strptime(body.date_from, '%Y-%m-%d').date()
+            date_to = (new_from_date + timedelta(days=original_span_days)).isoformat()
+        if date_to < body.date_from:
+            raise HTTPException(400, "date_to не может быть раньше date_from")
+
+        entry['date_from'] = body.date_from
+        entry['date_to'] = date_to
+        entry['updated_at'] = int(time.time())
+        return dict(entry)
+
+    return update_json_transaction(ABWESENHEIT_FILE, [], _mutate)
 
 
 def _auto_close_expired_open_ended_abwesenheit():
@@ -9260,13 +9304,20 @@ def _auto_close_expired_open_ended_abwesenheit():
     до конца месяца без уведомления. Ленивая проверка при каждом GET (не отдельный
     systemd timer) — закрывает просроченные и пушит worker'у + owner'у."""
     today_str = business_today_str()
-    items = _load_abwesenheit()
-    expired = [i for i in items if i.get('open_ended') and i['date_to'] < today_str]
+
+    # 20.09: этот auto-close дёргается на КАЖДЫЙ GET календаря, то есть чаще всех
+    # остальных мутаций -- именно он был главным источником затирания чужих
+    # изменений (владелец открывает календарь ровно в тот момент, когда работник
+    # подаёт/закрывает заявку). Под локом и с копиями записей наружу.
+    def _mutate(items):
+        expired_local = [i for i in items if i.get('open_ended') and i['date_to'] < today_str]
+        for entry in expired_local:
+            entry['open_ended'] = False
+        return [dict(e) for e in expired_local]
+
+    expired = update_json_transaction(ABWESENHEIT_FILE, [], _mutate)
     if not expired:
         return
-    for entry in expired:
-        entry['open_ended'] = False
-    _save_abwesenheit(items)
 
     roles = _load_roles()
     owner_ids = [uid for uid, r in roles.items() if r == 'owner']
@@ -9323,14 +9374,18 @@ def list_all_abwesenheit(user: dict = Depends(get_current_user), role: str = Dep
 
 @app.delete("/api/abwesenheit/{entry_id}")
 def delete_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    items = _load_abwesenheit()
-    entry = next((i for i in items if i['id'] == entry_id), None)
-    if not entry:
-        raise HTTPException(404, "Запись не найдена")
-    if entry['user_id'] != str(user['id']) and role != 'owner':
-        raise HTTPException(403, "Можно удалять только свои записи")
-    items = [i for i in items if i['id'] != entry_id]
-    _save_abwesenheit(items)
+    def _mutate(items):
+        entry = next((i for i in items if i.get('id') == entry_id), None)
+        if not entry:
+            raise HTTPException(404, "Запись не найдена")
+        if entry['user_id'] != str(user['id']) and role != 'owner':
+            raise HTTPException(403, "Можно удалять только свои записи")
+        # мутация IN-PLACE: update_json_transaction пишет тот же объект, что передал
+        # в mutator -- переприсваивание локального имени (items = [...]) его бы не
+        # затронуло и удаление молча не сохранилось бы.
+        items[:] = [i for i in items if i.get('id') != entry_id]
+
+    update_json_transaction(ABWESENHEIT_FILE, [], _mutate)
     return {"status": "ok"}
 
 

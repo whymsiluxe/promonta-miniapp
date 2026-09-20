@@ -3,13 +3,18 @@
 code before being finished off and shipped -- see docs/HANDOFF for context). No
 existing test file covered this endpoint directly.
 
-Same style as tests/test_business_date.py -- route handlers called directly,
-patch.object on the real backend module.
+20.09: switched from patch.object(_load_abwesenheit/_save_abwesenheit) to a real
+isolated store file. The endpoint now does its read-modify-write inside
+update_json_transaction() (one lock, no lost updates), which reads the file
+directly -- a patched _load_abwesenheit is simply not on that path anymore. Writing
+a real temp file also makes these tests exercise the actual persistence path
+instead of asserting against a fake save callback.
 """
+import json
 import os
 import sys
+import tempfile
 import unittest
-from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
@@ -32,84 +37,95 @@ def _entry(**overrides):
 
 
 class AbwesenheitMoveEndpointTests(unittest.TestCase):
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix='abw-move-')
+        self._orig_file = backend.ABWESENHEIT_FILE
+        backend.ABWESENHEIT_FILE = os.path.join(self._tmp, 'abwesenheit.json')
+
+    def tearDown(self):
+        backend.ABWESENHEIT_FILE = self._orig_file
+
+    def _seed(self, items):
+        backend._save_abwesenheit(items)
+
+    def _stored(self):
+        with open(backend.ABWESENHEIT_FILE, encoding='utf-8') as f:
+            return json.load(f)
+
     def test_worker_can_move_own_entry_preserving_duration(self):
-        entry = _entry()
-        saved = {}
-
-        def fake_save(items):
-            saved['items'] = items
-
-        with patch.object(backend, '_load_abwesenheit', return_value=[entry]), \
-             patch.object(backend, '_save_abwesenheit', side_effect=fake_save):
-            body = backend.AbwesenheitMoveBody(date_from='2026-09-15')
-            result = backend.update_abwesenheit_dates('abw-1', body, user=WORKER, role='worker')
+        self._seed([_entry()])
+        body = backend.AbwesenheitMoveBody(date_from='2026-09-15')
+        result = backend.update_abwesenheit_dates('abw-1', body, user=WORKER, role='worker')
 
         # original span was 2 days (10th to 12th) -- moving to 15th must keep that span
         self.assertEqual(result['date_from'], '2026-09-15')
         self.assertEqual(result['date_to'], '2026-09-17')
-        self.assertEqual(saved['items'][0]['date_from'], '2026-09-15')
+        self.assertEqual(self._stored()[0]['date_from'], '2026-09-15')
 
     def test_open_ended_entry_move_extends_to_month_end(self):
-        entry = _entry(date_from='2026-09-10', date_to='2026-09-30', open_ended=True)
-        saved = {}
-
-        def fake_save(items):
-            saved['items'] = items
-
-        with patch.object(backend, '_load_abwesenheit', return_value=[entry]), \
-             patch.object(backend, '_save_abwesenheit', side_effect=fake_save):
-            body = backend.AbwesenheitMoveBody(date_from='2026-10-05')
-            result = backend.update_abwesenheit_dates('abw-1', body, user=WORKER, role='worker')
+        self._seed([_entry(date_from='2026-09-10', date_to='2026-09-30', open_ended=True)])
+        body = backend.AbwesenheitMoveBody(date_from='2026-10-05')
+        result = backend.update_abwesenheit_dates('abw-1', body, user=WORKER, role='worker')
 
         self.assertEqual(result['date_from'], '2026-10-05')
         self.assertEqual(result['date_to'], '2026-10-31')
 
     def test_explicit_date_to_overrides_duration_preservation(self):
-        entry = _entry()
-        with patch.object(backend, '_load_abwesenheit', return_value=[entry]), \
-             patch.object(backend, '_save_abwesenheit'):
-            body = backend.AbwesenheitMoveBody(date_from='2026-09-15', date_to='2026-09-20')
-            result = backend.update_abwesenheit_dates('abw-1', body, user=WORKER, role='worker')
+        self._seed([_entry()])
+        body = backend.AbwesenheitMoveBody(date_from='2026-09-15', date_to='2026-09-20')
+        result = backend.update_abwesenheit_dates('abw-1', body, user=WORKER, role='worker')
         self.assertEqual(result['date_to'], '2026-09-20')
 
     def test_other_worker_cannot_move_someone_elses_entry(self):
-        entry = _entry()
-        with patch.object(backend, '_load_abwesenheit', return_value=[entry]):
-            with self.assertRaises(HTTPException) as ctx:
-                body = backend.AbwesenheitMoveBody(date_from='2026-09-15')
-                backend.update_abwesenheit_dates('abw-1', body, user=OTHER_WORKER, role='worker')
+        self._seed([_entry()])
+        with self.assertRaises(HTTPException) as ctx:
+            body = backend.AbwesenheitMoveBody(date_from='2026-09-15')
+            backend.update_abwesenheit_dates('abw-1', body, user=OTHER_WORKER, role='worker')
         self.assertEqual(ctx.exception.status_code, 403)
+        # rejected request must not have written anything
+        self.assertEqual(self._stored()[0]['date_from'], '2026-09-10')
 
     def test_owner_can_move_any_workers_entry(self):
-        entry = _entry()
-        with patch.object(backend, '_load_abwesenheit', return_value=[entry]), \
-             patch.object(backend, '_save_abwesenheit'):
-            body = backend.AbwesenheitMoveBody(date_from='2026-09-15')
-            result = backend.update_abwesenheit_dates('abw-1', body, user=OWNER, role='owner')
+        self._seed([_entry()])
+        body = backend.AbwesenheitMoveBody(date_from='2026-09-15')
+        result = backend.update_abwesenheit_dates('abw-1', body, user=OWNER, role='owner')
         self.assertEqual(result['date_from'], '2026-09-15')
 
     def test_nonexistent_entry_404s(self):
-        with patch.object(backend, '_load_abwesenheit', return_value=[]):
-            with self.assertRaises(HTTPException) as ctx:
-                body = backend.AbwesenheitMoveBody(date_from='2026-09-15')
-                backend.update_abwesenheit_dates('missing', body, user=WORKER, role='worker')
+        self._seed([])
+        with self.assertRaises(HTTPException) as ctx:
+            body = backend.AbwesenheitMoveBody(date_from='2026-09-15')
+            backend.update_abwesenheit_dates('missing', body, user=WORKER, role='worker')
         self.assertEqual(ctx.exception.status_code, 404)
 
     def test_explicit_date_to_before_date_from_rejected(self):
-        entry = _entry()
-        with patch.object(backend, '_load_abwesenheit', return_value=[entry]):
-            with self.assertRaises(HTTPException) as ctx:
-                body = backend.AbwesenheitMoveBody(date_from='2026-09-20', date_to='2026-09-15')
-                backend.update_abwesenheit_dates('abw-1', body, user=WORKER, role='worker')
+        self._seed([_entry()])
+        with self.assertRaises(HTTPException) as ctx:
+            body = backend.AbwesenheitMoveBody(date_from='2026-09-20', date_to='2026-09-15')
+            backend.update_abwesenheit_dates('abw-1', body, user=WORKER, role='worker')
         self.assertEqual(ctx.exception.status_code, 400)
 
     def test_invalid_date_format_rejected(self):
-        entry = _entry()
-        with patch.object(backend, '_load_abwesenheit', return_value=[entry]):
-            with self.assertRaises(HTTPException) as ctx:
-                body = backend.AbwesenheitMoveBody(date_from='not-a-date')
-                backend.update_abwesenheit_dates('abw-1', body, user=WORKER, role='worker')
+        self._seed([_entry()])
+        with self.assertRaises(HTTPException) as ctx:
+            body = backend.AbwesenheitMoveBody(date_from='not-a-date')
+            backend.update_abwesenheit_dates('abw-1', body, user=WORKER, role='worker')
         self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_legacy_entry_without_id_does_not_break_lookup(self):
+        # 20.09 (live prod bug): abwesenheit.json holds legacy rows with no 'id'
+        # key at all. The lookup used i['id'], so the generator raised KeyError on
+        # the first such row before ever reaching the requested entry -- every
+        # single-entry operation 500'd regardless of which entry was targeted.
+        self._seed([
+            {'user_id': '100', 'date_from': '2026-08-05', 'date_to': '2026-08-06',
+             'reason': 'Krankheit', 'status': 'approved'},  # legacy, no 'id'
+            _entry(),
+        ])
+        body = backend.AbwesenheitMoveBody(date_from='2026-09-15')
+        result = backend.update_abwesenheit_dates('abw-1', body, user=WORKER, role='worker')
+        self.assertEqual(result['date_from'], '2026-09-15')
 
 
 if __name__ == '__main__':

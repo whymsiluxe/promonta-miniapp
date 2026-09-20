@@ -116,12 +116,37 @@ def get_values(rng):
     return json.load(urllib.request.urlopen(req, timeout=20)).get('values', [])
 
 
+def _formula_safe(value):
+    """20.09 (найдено аудитом): записи идут с valueInputOption=USER_ENTERED, то есть
+    Sheets ИНТЕРПРЕТИРУЕТ ячейку, начинающуюся с =, +, -, @ как живую формулу.
+    Тексты в эти ячейки приходят прямо от работников (название этапа, описание
+    дефекта, заголовок потребности, отчёт о смене) -- то есть работник мог вписать
+    =IMPORTRANGE(...) / =HYPERLINK(...) и формула выполнилась бы в сессии ВЛАДЕЛЬЦА
+    при открытии таблицы. Утечка здесь опаснее, чем через API: в этой же таблице
+    лежат бюджеты, которые от работников намеренно скрыты (_serialize_object_for_worker).
+
+    Тот же приём уже применён в main.py::_csv_safe для CSV-экспорта -- там про эту
+    атаку знали, но защиту к Sheets-зеркалу не применили. Префикс апострофом: Sheets
+    его не отображает и не выполняет содержимое как формулу.
+
+    Экранируем, а не переключаемся на valueInputOption=RAW: даты/время/числа
+    (Zeiterfassung: date_str, start_time, str(hours)) при RAW остались бы текстом и
+    сломали бы формулы владельца, которые по этим колонкам считают."""
+    if isinstance(value, str) and value and value[0] in ('=', '+', '-', '@'):
+        return "'" + value
+    return value
+
+
+def _formula_safe_rows(values):
+    return [[_formula_safe(cell) for cell in row] for row in values]
+
+
 def append_row(sheet_name, row):
     t = _token()
     rng_enc = urllib.parse.quote(f'{sheet_name}!A:Z', safe='')
     req = urllib.request.Request(
         f'https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/{rng_enc}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
-        data=json.dumps({'values': [row]}).encode(), method='POST',
+        data=json.dumps({'values': _formula_safe_rows([row])}).encode(), method='POST',
         headers={'Authorization': f'Bearer {t}', 'Content-Type': 'application/json'})
     urllib.request.urlopen(req, timeout=20)
 
@@ -131,7 +156,7 @@ def update_range(rng, values):
     rng_enc = urllib.parse.quote(rng, safe='')
     req = urllib.request.Request(
         f'https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/{rng_enc}?valueInputOption=USER_ENTERED',
-        data=json.dumps({'values': values}).encode(), method='PUT',
+        data=json.dumps({'values': _formula_safe_rows(values)}).encode(), method='PUT',
         headers={'Authorization': f'Bearer {t}', 'Content-Type': 'application/json'})
     urllib.request.urlopen(req, timeout=20)
 
