@@ -35,6 +35,35 @@ def test_worker_stage_picker_has_real_modal_layer():
     assert "if (opts.isTabSwitch && typeof closeWorkerShiftPickers === 'function') closeWorkerShiftPickers();" in html
 
 
+def test_worker_shift_pickers_registered_with_navigation_manager():
+    # 18.09 audit finding: neither picker told NavigationManager about itself, so
+    # Telegram BackButton/hardware-back had no way to know it should close the
+    # picker first instead of leaving the app / going to the previous route.
+    fab = _source(WORKER_CHECKIN_FAB_JS)
+
+    assert "_workerObjectPickerUnregisterOverlay" in fab
+    assert "_workerStagePickerUnregisterOverlay" in fab
+    assert "_workerObjectPickerUnregisterOverlay = NavigationManager.registerOverlay(close);" in fab
+    assert "_workerStagePickerUnregisterOverlay = NavigationManager.registerOverlay(close);" in fab
+    # closeWorkerShiftPickers() (the tab-switch cleanup path) must also unregister,
+    # not just remove the DOM node -- otherwise a stale overlay-stack entry survives
+    # a tab-switch close and a later Back press calls a close() bound to an already
+    # gone element.
+    assert "if (_workerObjectPickerUnregisterOverlay) { _workerObjectPickerUnregisterOverlay(); _workerObjectPickerUnregisterOverlay = null; }" in fab
+    assert "if (_workerStagePickerUnregisterOverlay) { _workerStagePickerUnregisterOverlay(); _workerStagePickerUnregisterOverlay = null; }" in fab
+
+
+def test_stage_picker_reregister_guard_avoids_duplicate_overlay_entries():
+    # The stage picker re-renders itself in place after "add stage" (same modal id,
+    # fresh DOM node) -- it must only call registerOverlay() on the FIRST render, not
+    # on every re-render, or the Back-stack would grow one duplicate entry per stage
+    # added in a single session.
+    fab = _source(WORKER_CHECKIN_FAB_JS)
+
+    assert "const isFirstOpen = !_workerStagePickerUnregisterOverlay;" in fab
+    assert "if (isFirstOpen && typeof NavigationManager !== 'undefined') {" in fab
+
+
 def test_home_idle_shift_cta_uses_shared_start_flow():
     src = _source(HOME_JS)
 

@@ -5,9 +5,20 @@
 
 let _workerCheckinObjectId = null;
 
+// 18.09 (audit finding): neither picker was registered with NavigationManager,
+// so Telegram BackButton/hardware-back didn't know to close the picker first --
+// same class of bug already fixed elsewhere via registerOverlay() (see
+// object-info.js's _openAddStageSheet). One unregister-holder per modal;
+// cleared whenever that modal closes through ANY path (✕/item click/skip/
+// tab-switch), never left dangling for a second open to silently double-up.
+let _workerObjectPickerUnregisterOverlay = null;
+let _workerStagePickerUnregisterOverlay = null;
+
 function closeWorkerShiftPickers() {
   document.getElementById('worker-object-picker-modal')?.remove();
   document.getElementById('worker-stage-picker-modal')?.remove();
+  if (_workerObjectPickerUnregisterOverlay) { _workerObjectPickerUnregisterOverlay(); _workerObjectPickerUnregisterOverlay = null; }
+  if (_workerStagePickerUnregisterOverlay) { _workerStagePickerUnregisterOverlay(); _workerStagePickerUnregisterOverlay = null; }
 }
 
 function initWorkerCheckinFab() {
@@ -116,7 +127,7 @@ async function _openWorkerObjectPicker() {
     <div class="worker-picker-inner">
       <div class="worker-picker-header">
         <span class="worker-picker-title">Выберите объект</span>
-        <button class="worker-picker-close" onclick="document.getElementById('worker-object-picker-modal').remove()">✕</button>
+        <button class="worker-picker-close" id="worker-object-picker-close-btn">✕</button>
       </div>
       <div class="worker-picker-list">
         ${objects.map(o => `
@@ -129,9 +140,22 @@ async function _openWorkerObjectPicker() {
     </div>
   `;
   document.body.appendChild(modal);
+
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    modal.remove();
+    if (_workerObjectPickerUnregisterOverlay) { _workerObjectPickerUnregisterOverlay(); _workerObjectPickerUnregisterOverlay = null; }
+  };
+  if (typeof NavigationManager !== 'undefined') {
+    _workerObjectPickerUnregisterOverlay = NavigationManager.registerOverlay(close);
+  }
+
+  modal.querySelector('#worker-object-picker-close-btn').addEventListener('click', close);
   modal.querySelectorAll('.worker-picker-item').forEach(item => {
     item.addEventListener('click', () => {
-      modal.remove();
+      close();
       _openStagePickerThenStart(item.dataset.oid);
     });
   });
@@ -156,7 +180,16 @@ async function _openStagePickerThenStart(objectId) {
 // 28.07: owner request -- добавление нового этапа прямо из picker'а (не только выбор
 // существующего), внизу списка. Отдельная функция, чтобы после создания этапа можно
 // было перерисовать тот же picker с обновлённым списком без дублирования разметки.
+// 18.09 (audit finding): registerOverlay() only on the FIRST render, not on every
+// re-render after adding a stage -- re-rendering removes+recreates the DOM node but
+// must keep the SAME overlay-stack entry, otherwise re-registering on every add-stage
+// submit would pile up duplicate Back-stack entries. The registered close callback
+// looks up #worker-stage-picker-modal BY ID each time it runs (not a closure over the
+// specific `modal` element created THIS render) -- otherwise a Telegram Back press
+// after a re-render would call a stale close() bound to an already-removed element and
+// silently do nothing visible while still unregistering the overlay.
 function _renderStagePickerModal(objectId, stages) {
+  const isFirstOpen = !_workerStagePickerUnregisterOverlay;
   const existing = document.getElementById('worker-stage-picker-modal');
   if (existing) existing.remove();
 
@@ -184,13 +217,22 @@ function _renderStagePickerModal(objectId, stages) {
     </div>
   `;
   document.body.appendChild(modal);
+
+  const close = () => {
+    document.getElementById('worker-stage-picker-modal')?.remove();
+    if (_workerStagePickerUnregisterOverlay) { _workerStagePickerUnregisterOverlay(); _workerStagePickerUnregisterOverlay = null; }
+  };
+  if (isFirstOpen && typeof NavigationManager !== 'undefined') {
+    _workerStagePickerUnregisterOverlay = NavigationManager.registerOverlay(close);
+  }
+
   modal.querySelector('[data-stage-skip]').addEventListener('click', () => {
-    modal.remove();
+    close();
     _startWorkerCheckin(objectId, null);
   });
   modal.querySelectorAll('.worker-picker-item').forEach(item => {
     item.addEventListener('click', () => {
-      modal.remove();
+      close();
       _startWorkerCheckin(objectId, item.dataset.stageName);
     });
   });
