@@ -67,11 +67,18 @@ const _FW_PLAN_STATUS_LABELS = {
 // ── Step sequence ──────────────────────────────────────────────────────────────
 
 function _fwStepSequence() {
-  if (_fwContextState === 'loading') return ['context-loading'];
-  if (_fwContextState === 'error') return ['context-error'];
-  if (_fwDailyPlanItems.length > 0) {
-    return ['photo', 'summary', 'extra', 'review']; // tomorrow-prep контент — внутри 'extra', только если есть DailyPlan (см. _fwRenderStep3)
-  }
+  // 21.09 (merged from upstream, owner review finding): context-loading/error
+  // used to be full-screen gates BEFORE the first render -- worker couldn't
+  // even start adding photos while /finish-context was still in flight, and a
+  // fetch failure blocked Finish entirely even though a plan-less shift is a
+  // completely normal, always-supported case (checkin_finish itself never
+  // required a plan). Photos never needed daily-plan items at all; only the
+  // 'summary' step's plan-fact section does, and it already renders gracefully
+  // with an empty list (see _fwRenderStepSummaryPlanFact) and re-renders
+  // itself once the background fetch resolves or fails. A failed fetch with no
+  // usable cache just leaves the item checklist empty -- same as a shift that
+  // was never plan-linked -- the error is surfaced inline (review screen), not
+  // as a wizard-blocking screen.
   return ['photo', 'summary', 'extra', 'review'];
 }
 
@@ -102,7 +109,7 @@ function _fwClearPhotoUrls() {
   _fwPhotoUrls = new WeakMap();
 }
 
-function openFinishShiftWizard(sessionId, objectId) {
+async function openFinishShiftWizard(sessionId, objectId) {
   _fwStopVoiceRecording();
   _fwClearPhotoUrls();
   _fwStep = 1;
@@ -130,7 +137,9 @@ function openFinishShiftWizard(sessionId, objectId) {
   _fwTomorrowIssues = [];
   _fwTomorrowComment = '';
   _fwExtraDraftOpen = false;
-  _fwContextState = 'loading';
+  // 'idle', not 'loading' -- _fwStepSequence() no longer gates on context state
+  // (see comment there), so this never needs to hold up the first render.
+  _fwContextState = 'idle';
   _fwContextError = '';
   _fwFinishContext = null;
 
@@ -138,7 +147,7 @@ function openFinishShiftWizard(sessionId, objectId) {
   if (typeof NavigationManager !== 'undefined' && !_fwOverlayUnregister) {
     _fwOverlayUnregister = NavigationManager.registerOverlay(() => _fwCloseWizardInternal());
   }
-  _fwRenderStep();
+  _fwRenderStep(); // render immediately with an empty item list -- don't block modal open on the network
   _fwLoadFinishContext(sessionId, objectId);
   // 21.09 (Worker UX V2, Этап 8, AUTO-CAPTURE PRINCIPLE): геолокация — то, что
   // система может получить сама, не требует отдельного блокирующего экрана.
@@ -227,9 +236,12 @@ async function _fwLoadFinishContext(sessionId, objectId) {
       _fwRenderStep();
       return;
     }
+    // 21.09 (owner review finding): no cache and the fetch failed -- treated
+    // the same as "this shift was never plan-linked" (has_plan=false is a
+    // normal state, not an error), not as a wizard-blocking screen. The
+    // failure is still recorded for an inline note on the review step.
     _fwContextState = 'error';
     _fwContextError = e.message || 'Не удалось загрузить контекст смены';
-    _fwStep = 1;
     _fwRenderStep();
   }
 }
@@ -281,8 +293,6 @@ function _fwRenderStep() {
   progressEl.textContent = `Шаг ${_fwStep} из ${seq.length}`;
 
   const TITLES = {
-    'context-loading': 'Подготовка',
-    'context-error': 'Контекст смены',
     'photo': 'Фото результата',
     'summary': 'Что сделано',
     'extra': 'Проблемы и завтра',
@@ -291,49 +301,12 @@ function _fwRenderStep() {
   const key = _fwCurrentKey();
   titleEl.textContent = TITLES[key] || '';
 
-  if (key === 'context-loading') body.innerHTML = _fwRenderContextLoading();
-  else if (key === 'context-error') body.innerHTML = _fwRenderContextError();
-  else if (key === 'photo') body.innerHTML = _fwRenderStep1();
+  if (key === 'photo') body.innerHTML = _fwRenderStep1();
   else if (key === 'summary') body.innerHTML = _fwRenderStepSummaryPlanFact();
   else if (key === 'extra') body.innerHTML = _fwRenderStep3();
   else if (key === 'review') body.innerHTML = _fwRenderStep6();
 
   _fwWireStep();
-}
-
-function _fwRenderContextLoading() {
-  return `
-    <div class="fw-hint">Загружаю контекст смены и принятый план.</div>
-    <div class="fw-review-card">
-      <div style="font-weight:700;">Подготовка отчёта…</div>
-      <div style="color:var(--text-light);margin-top:0.35rem;">План-факт будет собран из версии плана, принятой при старте смены.</div>
-    </div>
-  `;
-}
-
-function _fwRenderContextError() {
-  return `
-    <div class="fw-hint">Не удалось загрузить контекст смены. Это не считается отсутствием плана.</div>
-    <div class="fw-review-card">
-      <div style="font-weight:700;color:var(--red);">Контекст недоступен</div>
-      <div style="color:var(--text-light);margin-top:0.35rem;">${esc(_fwContextError || 'Проверь связь и попробуй ещё раз.')}</div>
-    </div>
-    <div class="fw-nav">
-      <button class="fw-back-btn" id="fw-context-close" type="button">Закрыть</button>
-      <button class="fw-next-btn" id="fw-context-retry" type="button">Повторить</button>
-    </div>
-  `;
-}
-
-function _fwWireContextError() {
-  document.getElementById('fw-context-close')?.addEventListener('click', _fwCloseWizard);
-  document.getElementById('fw-context-retry')?.addEventListener('click', () => {
-    _fwContextState = 'loading';
-    _fwContextError = '';
-    _fwStep = 1;
-    _fwRenderStep();
-    _fwLoadFinishContext(_fwSessionId, _fwObjectId);
-  });
 }
 
 // ---------- Step 1: Фото ----------
@@ -742,6 +715,7 @@ function _fwRenderStep6() {
     <div class="fw-summary-section"><b>Потребности:</b><ul>${needsHtml}</ul></div>
     <div class="fw-summary-section"><b>Дефекты:</b><ul>${defectsHtml}</ul></div>
     <div class="fw-summary-section"><b>Пауза за смену:</b> ${_fwPauseMinutes > 0 ? `${_fwPauseMinutes} мин.` : 'без пауз'}</div>
+    ${_fwContextState === 'error' ? `<div class="fw-summary-section" style="color:var(--text-light);">⚠️ Не удалось проверить план смены (${esc(_fwContextError || 'нет связи')}) — завершение работает без плана, как обычно.</div>` : ''}
     <div class="fw-summary-section" id="fw-geo-summary-row">
       <b>Геолокация:</b> ${
         _fwGeoState === 'success' ? '📍 определена'
@@ -1081,8 +1055,7 @@ function _fwWireVoiceButton(btnId, onTranscript) {
 
 function _fwWireStep() {
   const key = _fwCurrentKey();
-  if (key === 'context-error') _fwWireContextError();
-  else if (key === 'photo') _fwWireStep1();
+  if (key === 'photo') _fwWireStep1();
   else if (key === 'summary') _fwWireStepSummaryPlanFact();
   else if (key === 'extra') _fwWireStep3();
   else if (key === 'review') _fwWireStep6();

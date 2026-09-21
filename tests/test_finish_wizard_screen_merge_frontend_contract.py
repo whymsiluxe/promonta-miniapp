@@ -39,7 +39,11 @@ def test_wizard_is_exactly_four_screens_regardless_of_daily_plan():
     body = _fn(src, "function _fwStepSequence(")
 
     assert "['photo', 'summary', 'extra', 'review']" in body
-    assert body.count("['photo', 'summary', 'extra', 'review']") == 2
+    # 21.09 (owner review finding): _fwStepSequence() no longer branches on
+    # _fwDailyPlanItems.length at all -- the sequence is unconditional now
+    # (the with-plan/without-plan split collapsed once context-loading/error
+    # stopped gating step count too, see test_finish_wizard_frontend_contract.py).
+    assert body.count("['photo', 'summary', 'extra', 'review']") == 1
     assert "'plan-fact'" not in body
     assert "'needs'" not in body
     assert "'tomorrow-prep'" not in body

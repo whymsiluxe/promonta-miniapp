@@ -1,3 +1,25 @@
+"""Tests for GET /api/checkin/{session_id}/finish-context (18.09, audit finding).
+
+Before this endpoint existed, finish-wizard.js read window._todayPlanState --
+the LIVE current DailyPlan -- to show the worker their task list at Finish. If
+the owner amended the plan after this worker started their shift, Finish would
+show the amended item list, not what this worker actually accepted and started
+against. checkin_finish() itself already validates against the immutable
+accepted_context_snapshot (Round 1.2 #2, daily_plan_lib.py) -- this endpoint
+closes the same gap on the read side by giving the frontend the matching
+frozen item list to display.
+
+20.09 (merged from upstream c23894d): upstream independently added a second
+route registration for the same path/function name pair with a different
+(flat, not nested-under-"plan") response shape -- get_checkin_finish_context().
+FastAPI silently used whichever was registered first and left the other dead;
+this is the same "shift-state logic re-fragments across files" risk class the
+architecture guard test (test_worker_shift_state_architecture_guard.py) covers
+for the frontend resolver, just at the route level. The duplicate was deleted;
+this file only tests the one surviving function, whose nested plan.{id,
+version, items} shape is what finish-wizard.js's _fwApplyFinishContext()
+actually reads.
+"""
 import os
 import sys
 import tempfile
@@ -113,3 +135,6 @@ class CheckinFinishContextTests(unittest.TestCase):
             result = backend.checkin_finish_context('sess-stale', user=WORKER, role='worker')
         self.assertFalse(result['has_plan'])
 
+
+if __name__ == '__main__':
+    unittest.main()

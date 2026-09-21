@@ -48,6 +48,12 @@ def get_values(rng):
     return json.load(urllib.request.urlopen(req, timeout=20)).get('values', [])
 
 
+# 20.09 (found by audit, hardened during merge): same as objekte_lib's version
+# -- under valueInputOption=USER_ENTERED, a cell starting with =, +, -, @
+# executes as a formula in whoever opens the sheet. Tool names/comments here
+# are worker-entered. A leading +/- is only escaped when the rest of the
+# string isn't a plain numeric literal -- a naive "any leading -/+" check
+# would corrupt real negative numbers by turning them into escaped text.
 def _sheets_formula_safe(value):
     if not isinstance(value, str):
         return value

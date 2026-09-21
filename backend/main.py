@@ -8276,6 +8276,15 @@ async def checkin_finish(
             elapsed = max(0, int(time.time()) - session['pause_started_at'])
             session['pause_accumulated_seconds'] = session.get('pause_accumulated_seconds', 0) + elapsed
             session['pause_started_at'] = None
+        # 20.09 (P0, found by audit, hardened further during merge): the client
+        # pause_minutes Form param must never be trusted directly -- a worker
+        # (or a stale localStorage session missing pauseAccumulatedSeconds, see
+        # worker-checkin-fab.js's refreshCheckinButtons wrapper) can send 0 and
+        # silently erase a real 45-minute pause from payroll. The server has
+        # just closed any hanging pause above and _photo_pause_minutes() reads
+        # pause_accumulated_seconds unconditionally when present -- the client
+        # value is never consulted, not even as a max() floor, so it can't be
+        # used to inflate paid hours either.
         session['pause_minutes'] = _photo_pause_minutes(session)
         # P0 fix (owner review): persist the raw execution report INSIDE the same
         # checkin_meta write that commits finish_at -- previously daily_plan_report
@@ -9116,7 +9125,7 @@ def _load_abwesenheit() -> list:
 def _save_abwesenheit(items: list):
     """ВНИМАНИЕ: не использовать в обработчиках запросов для read-modify-write.
 
-    20.09 (merged from upstream c23894d): все мутации стора переведены на
+    20.09 (merged from upstream c23894d): все шесть мутаций стора переведены на
     update_json_transaction(), которая делает read-modify-write под ОДНИМ
     локом. Пара _load_abwesenheit() → мутация → _save_abwesenheit() выглядит
     безопасной симметрией, но именно она и была гонкой, из-за которой терялись

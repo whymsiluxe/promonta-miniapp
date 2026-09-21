@@ -116,6 +116,28 @@ def get_values(rng):
     return json.load(urllib.request.urlopen(req, timeout=20)).get('values', [])
 
 
+# 20.09 (found by audit, hardened during merge): writes go through
+# valueInputOption=USER_ENTERED, so Sheets INTERPRETS a cell starting with
+# =, +, -, @ as a live formula. This text comes directly from workers (stage
+# name, defect description, need title, shift report) -- a worker could type
+# =IMPORTRANGE(...) / =HYPERLINK(...) and it would execute in the OWNER's
+# session on opening the sheet. The leak here is worse than via the API: this
+# same sheet holds budgets deliberately hidden from workers
+# (_serialize_object_for_worker).
+#
+# The same pattern is already applied in main.py::_csv_safe for CSV export --
+# that one knew about this attack, this Sheets mirror didn't. Apostrophe
+# prefix: Sheets doesn't display or execute the cell content as a formula.
+#
+# Escaping, not switching to valueInputOption=RAW: dates/times/numbers
+# (Zeiterfassung: date_str, start_time, str(hours)) would stay text under RAW
+# and break the owner's formulas that sum these columns.
+#
+# A leading +/- is only escaped when the REST of the string isn't a plain
+# numeric literal -- a naive "any string starting with -/+" check (upstream's
+# original _formula_safe) would corrupt real negative numbers like "-150.00"
+# in Zeiterfassung by prefixing them with an apostrophe and turning them into
+# text Sheets can no longer sum.
 def _sheets_formula_safe(value):
     if not isinstance(value, str):
         return value

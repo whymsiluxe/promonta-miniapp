@@ -1865,6 +1865,17 @@ function closeChatThread() {
   // все шаги ниже безопасны при уже закрытом состоянии (querySelectorAll на пусто,
   // classList.remove на отсутствующий класс, unregister === null проверяется).
   _closeChatMessageOverlays();
+  // 20.09 (P0, найдено аудитом): голосовая запись переживала закрытие треда.
+  // closeChatThread чистила всё остальное состояние, но не трогала recorder --
+  // микрофон оставался ОТКРЫТЫМ после ухода с экрана (индикатор записи горит),
+  // _voiceTimerInterval тикал вечно, а _voiceRecordingThreadKey сохранял ключ
+  // закрытого треда: нажатие "стоп" позже отправляло аудио НЕ туда. Плюс
+  // _startVoiceRecording падал с "Запись уже идёт" во всех остальных тредах --
+  // голосовые ломались до перезапуска приложения. _stopVoiceRecording(false)
+  // гасит таймер, останавливает треки микрофона и возвращает UI, ничего не отправляя.
+  if (_voiceRecorder) _stopVoiceRecording(false);
+  _voiceRecordingThreadKey = null;
+  _voiceRecordingThread = null;
   _chatThreadLoadSeq += 1;
   _setChatThreadLoading(false);
   _stopVoiceRecording(false);

@@ -56,6 +56,17 @@ def test_worker_shift_pickers_registered_with_navigation_manager():
     assert "if (_workerStagePickerOverlayUnregister) { _workerStagePickerOverlayUnregister(); _workerStagePickerOverlayUnregister = null; }" in fab
 
 
+def test_object_picker_close_is_reentrancy_guarded():
+    # 20.09 (merged from upstream 4a69bc6): close() is reachable both from a
+    # user click and from NavigationManager's Back-stack unregister callback --
+    # a fast double-fire must not remove the modal twice or null out an
+    # already-null overlay handle.
+    fab = _source(WORKER_CHECKIN_FAB_JS)
+    assert "let _closedObjectPicker = false;" in fab
+    assert "if (_closedObjectPicker) return;" in fab
+    assert "_closedObjectPicker = true;" in fab
+
+
 def test_stage_picker_reregister_guard_avoids_duplicate_overlay_entries():
     # The stage picker re-renders itself in place after "add stage" (same modal id,
     # fresh DOM node) -- it must only call registerOverlay() on the FIRST render, not
@@ -91,6 +102,17 @@ def test_worker_shift_state_resolver_prioritizes_outbox_before_server():
     assert "api(path)" in src
     assert "async function openWorkerShiftFlow" in fab
     assert "openWorkerShiftStatusSheet(shiftState)" in fab
+
+
+def test_worker_start_fab_base_position_uses_measured_nav_height_not_magic_number():
+    # 18.09 (audit finding): .nav-item-start's base (non-radio-mini) position was
+    # bottom: calc(max(14px, safe-area) + 96px) -- a fixed number not tied to the
+    # bottom-nav's actual rendered height. Now uses --app-bottom-nav-height, same
+    # measured-height pattern already used by .objects-fab and the radio-mini-visible
+    # override for this same element.
+    html = _source(APP_HTML)
+    assert "bottom: calc(var(--app-bottom-nav-height, 70px) + max(10px, env(safe-area-inset-bottom)) + 20px);\n  z-index: 60;" in html
+    assert "bottom: calc(max(14px, env(safe-area-inset-bottom)) + 96px);" not in html
 
 
 def test_worker_start_fab_base_position_uses_measured_nav_height_not_magic_number():

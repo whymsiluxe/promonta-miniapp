@@ -5,6 +5,15 @@
 
 let _workerCheckinObjectId = null;
 let _workerShiftStatusOverlayUnregister = null;
+
+// 18.09 (audit finding, merged from upstream 4a69bc6, adapted to this branch's
+// own variable names -- functionally equivalent implementation, not a
+// duplicate): neither picker was registered with NavigationManager, so
+// Telegram BackButton/hardware-back didn't know to close the picker first --
+// same class of bug already fixed elsewhere via registerOverlay() (see
+// object-info.js's _openAddStageSheet). One unregister-holder per modal;
+// cleared whenever that modal closes through ANY path (✕/item click/skip/
+// tab-switch), never left dangling for a second open to silently double-up.
 let _workerObjectPickerOverlayUnregister = null;
 let _workerStagePickerOverlayUnregister = null;
 
@@ -87,6 +96,30 @@ async function _openWorkerShiftObject(objectId) {
   if (!objectId) return;
   let objectName = objectId;
   try {
+    // 20.09 (P0, найдено аудитом): до этого фикса здесь писался усечённый
+    // объект { id, finished } -- без pauseAccumulatedSeconds/startAt/
+    // startAccuracy. Эта функция вызывается из обёртки над
+    // refreshCheckinButtons ПОСЛЕ оригинала, то есть систематически затирала
+    // полную сессию, только что записанную checkin.js. finish-wizard читает
+    // паузу именно из localStorage (_fwPauseMinutes), поэтому в отчёт о смене
+    // уходил pause_minutes = 0 -- реальная пауза пропадала из учёта рабочих
+    // часов. Пишем те же поля, что и checkin.js::refreshCheckinButtons, из
+    // того же ответа /api/checkin, ПЕРЕД тем как резолвить имя объекта ниже.
+    const checkinData = await api('/api/checkin');
+    // 24.07: не фильтровать по дате — сервер (Europe/Berlin) и клиент (UTC)
+    // расходятся на границе полуночи CEST, ложно скрывая только что открытую
+    // смену. "Открыта" определяется исключительно finish_at.
+    const open = (checkinData.sessions || []).find(s => s.finish_at === null || s.finish_at === undefined);
+    if (open) {
+      _setActiveCheckinSession(open.object_id, {
+        id: open.id,
+        finished: false,
+        startAt: open.start_at || null,
+        pauseStartedAt: open.pause_started_at || null,
+        pauseAccumulatedSeconds: open.pause_accumulated_seconds || 0,
+        startAccuracy: open.start_accuracy != null ? Number(open.start_accuracy) : null,
+      });
+    }
     const data = await api('/api/objects');
     const obj = (data.objects || []).find(o => String(o['ID объекта']) === String(objectId));
     if (obj) objectName = obj['Объект'] || objectId;
@@ -220,7 +253,15 @@ async function _openWorkerObjectPicker() {
     </div>
   `;
   document.body.appendChild(modal);
+  // 20.09 (merged from upstream 4a69bc6): re-entrancy guard -- close() can be
+  // reached both from a user click and from NavigationManager's Back-stack
+  // unregister callback; without this a fast double-fire (e.g. click landing
+  // right as Back is processed) could remove the modal twice or unregister an
+  // already-null overlay handle.
+  let _closedObjectPicker = false;
   const _closeObjectPicker = () => {
+    if (_closedObjectPicker) return;
+    _closedObjectPicker = true;
     modal.remove();
     if (_workerObjectPickerOverlayUnregister) { _workerObjectPickerOverlayUnregister(); _workerObjectPickerOverlayUnregister = null; }
   };
@@ -255,6 +296,14 @@ async function _openStagePickerThenStart(objectId) {
 // 28.07: owner request -- добавление нового этапа прямо из picker'а (не только выбор
 // существующего), внизу списка. Отдельная функция, чтобы после создания этапа можно
 // было перерисовать тот же picker с обновлённым списком без дублирования разметки.
+// 18.09 (audit finding): registerOverlay() only on the FIRST render, not on every
+// re-render after adding a stage -- re-rendering removes+recreates the DOM node but
+// must keep the SAME overlay-stack entry, otherwise re-registering on every add-stage
+// submit would pile up duplicate Back-stack entries. The registered close callback
+// looks up #worker-stage-picker-modal BY ID each time it runs (not a closure over the
+// specific `modal` element created THIS render) -- otherwise a Telegram Back press
+// after a re-render would call a stale close() bound to an already-removed element and
+// silently do nothing visible while still unregistering the overlay.
 function _renderStagePickerModal(objectId, stages) {
   const existing = document.getElementById('worker-stage-picker-modal');
   const isFirstRender = !existing;
@@ -285,7 +334,7 @@ function _renderStagePickerModal(objectId, stages) {
   `;
   document.body.appendChild(modal);
   const _closeStagePicker = () => {
-    modal.remove();
+    document.getElementById('worker-stage-picker-modal')?.remove();
     if (_workerStagePickerOverlayUnregister) { _workerStagePickerOverlayUnregister(); _workerStagePickerOverlayUnregister = null; }
   };
   modal.querySelector('[data-stage-skip]').addEventListener('click', () => {

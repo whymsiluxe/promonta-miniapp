@@ -89,8 +89,14 @@ def test_finish_wizard_loads_frozen_finish_context_before_plan_fact():
 
     assert "`/api/checkin/${sessionId}/finish-context`" in src
     assert "let _fwContextState = 'idle';" in src
-    assert "if (_fwContextState === 'loading') return ['context-loading'];" in src
-    assert "if (_fwContextState === 'error') return ['context-error'];" in src
+    # 21.09 (owner review finding): context-loading is no longer a full-screen
+    # gate before the first render -- Photos never needed daily-plan items,
+    # only the 'summary' step's plan-fact section does, and that renders
+    # gracefully with an empty list while the fetch is still in flight. Only a
+    # genuine terminal failure with no usable cache still gets special
+    # handling, and even that no longer blocks the wizard (see
+    # test_finish_wizard_screen_merge_frontend_contract.py).
+    assert "if (_fwContextState === 'loading') return ['context-loading'];" not in src
     assert "function _fwReadCachedFinishContext(sessionId)" in src
     assert "_fwApplyFinishContext(cached, 'offline_cached')" in src
     assert "const planState = window._todayPlanState" not in src
