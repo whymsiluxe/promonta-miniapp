@@ -8869,6 +8869,16 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
     <div id="obj-detail-panel-chat" class="obj-detail-panel"></div>
     <div id="obj-detail-panel-info" class="obj-detail-panel" style="display:none;"></div>
     <div id="obj-detail-panel-stages" class="obj-detail-panel" style="display:none;"></div>
+    <!-- Object Detail V2 (Этап 7, step 1): internal zone containers for the future
+         Обзор/Работа/Медиа/Чат tab bar -- NOT wired into #obj-detail-tabs yet, not
+         production-visible. Kept alongside the legacy chat/info/stages panels above
+         (untouched) until Работа is a functional superset of #stages-view and
+         Обзор/Медиа have real content -- see docs/OBJECT_DETAIL_V2_IMPLEMENTATION_PLAN.md.
+         'work' reuses the existing stages renderer (renderObjectStagesTab) directly;
+         its own container here stays empty/unused until the visible tab bar switches. -->
+    <div id="obj-detail-panel-overview" class="obj-detail-panel" style="display:none;"></div>
+    <div id="obj-detail-panel-work" class="obj-detail-panel" style="display:none;"></div>
+    <div id="obj-detail-panel-media" class="obj-detail-panel" style="display:none;"></div>
   </div>
 
   <div id="stages-view">

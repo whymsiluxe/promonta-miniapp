@@ -1033,6 +1033,40 @@ function _initObjDetailTab(tab) {
   panel.innerHTML = `<div style="padding:2rem 0;text-align:center;color:var(--text-light)">Загрузка…</div>`;
 }
 
+// ── Object Detail V2 (Этап 7, step 1) — internal zone routing layer ────────────
+//
+// docs/OBJECT_DETAIL_V2_IMPLEMENTATION_PLAN.md's corrected migration order: this
+// architecture is added BEFORE the visible tab bar changes, not the other way
+// around -- #obj-detail-tabs/_objDetailTabClick above still drive the production
+// chat/info/stages UI unchanged. ZONE_RENDERERS and _renderObjectDetailZone() are
+// not called from anywhere yet; they exist so the eventual "switch the visible
+// tab bar to Обзор|Работа|Медиа|Чат" commit is a routing change, not a rewrite.
+//
+// 'work' maps to the EXISTING renderObjectStagesTab -- Работа does not get its
+// own stage-list implementation, it reuses the live one (see the migration doc's
+// "reuse, don't duplicate" findings for Start/Finish/stage-list). 'chat' maps to
+// the existing embedObjectChat, same reasoning. 'overview' and 'media' are real
+// panel containers (see app.html's obj-detail-panel-overview/-media) but have no
+// content yet -- they are not populated until steps 4-5 of the migration order,
+// and the tab bar switch does not happen until they do.
+// Lazy-resolved (not bound directly to the function references at module-parse
+// time) -- objects.js loads BEFORE object-info.js (see app.html's script order),
+// so renderObjectStagesTab/embedObjectChat don't exist yet when this file itself
+// is first parsed. Same defensive pattern as the rest of this codebase's
+// typeof X === 'function' cross-file calls.
+const ZONE_RENDERERS = {
+  overview: null, // populated in migration step 5 (Обзор) -- see plan doc
+  work: (objectId) => (typeof renderObjectStagesTab === 'function' ? renderObjectStagesTab(objectId) : null),
+  media: null, // populated in migration step 4 (Медиа) -- see plan doc
+  chat: (objectId, objectName) => (typeof embedObjectChat === 'function' ? embedObjectChat(objectId, objectName) : null),
+};
+
+function _renderObjectDetailZone(zone) {
+  const renderer = ZONE_RENDERERS[zone];
+  if (typeof renderer !== 'function') return;
+  renderer(_objDetailCurrentId, _objDetailCurrentName);
+}
+
 function _objectHistoryTimeLabel(at) {
   if (!at) return '';
   const d = new Date(String(at).endsWith('Z') ? at : at + 'Z');
