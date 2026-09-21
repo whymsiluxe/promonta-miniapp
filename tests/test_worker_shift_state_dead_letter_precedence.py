@@ -1,19 +1,31 @@
-"""Regression coverage for a P0 found in owner review of the fix-shift-start /
-origin/main merge: resolveWorkerShiftState() used to check dead_letter outbox
-records BEFORE ever asking the server.
+"""Regression coverage for a P0 found across two rounds of owner review of the
+fix-shift-start / origin/main merge: resolveWorkerShiftState() used to check
+dead_letter outbox records BEFORE ever asking the server (round 1), and then
+-- even after that fix -- still checked dead_letter before a valid LOCAL
+active session when the server itself was unreachable (round 3).
 
-Concretely: a worker whose Finish permanently failed to sync yesterday (now
-sitting as a dead_letter record for OBJECT-A) would see "⚠️ Ошибка
-синхронизации" and have Start/Finish disabled TODAY on OBJECT-B, even though
-the server has a perfectly normal ACTIVE session open for them right now --
-the resolver never got that far, because the stale dead_letter from an
+Concretely (round 1): a worker whose Finish permanently failed to sync
+yesterday (now sitting as a dead_letter record for OBJECT-A) would see "⚠️
+Ошибка синхронизации" and have Start/Finish disabled TODAY on OBJECT-B, even
+though the server has a perfectly normal ACTIVE session open for them right
+now -- the resolver never got that far, because the stale dead_letter from an
 unrelated, already-finished shift short-circuited the whole function first.
 
-The fix splits dead_letter handling out of _resolveWorkerShiftOutboxState()
-(which now only resolves LIVE pending records) into a separate
-_findDeadLetterShiftRecord(), consulted by resolveWorkerShiftState() only
-AFTER the server has had a chance to answer -- a dead_letter is a recovery
-concern, not proof that no current shift can be resolved.
+Concretely (round 3): the same bug class survived in the OFFLINE branch --
+when the server call itself throws (no connectivity), the resolver fell
+straight to dead_letter, before ever checking whether localStorage already
+has a valid ACTIVE/PAUSED session for a DIFFERENT, unrelated object. A worker
+genuinely mid-shift on OBJECT-B, with an old dead_letter from OBJECT-A's
+already-finished Finish still in the outbox, would see the same false
+SYNC_ERROR the moment connectivity dropped.
+
+Final precedence: live pending outbox -> server (if reachable) -> [server
+unreachable: local ACTIVE/PAUSED first (dead_letter surfaced only as a
+non-blocking syncWarning alongside it), otherwise dead_letter as a real
+block] -> localStorage fallback for whatever's left. See the runtime test
+(node-worker-shift-state-dead-letter-offline.js) for the actual state-machine
+behavior across concrete scenarios -- this file covers the structural
+placement in source.
 """
 from pathlib import Path
 
@@ -62,27 +74,57 @@ def test_dead_letter_lookup_is_a_separate_function():
     assert "WORKER_SHIFT_STATE.SYNC_ERROR" in body
 
 
-def test_resolver_checks_server_before_dead_letter():
+def test_resolver_checks_pending_then_server_before_any_dead_letter_lookup():
     body = _fn(_source(), "async function resolveWorkerShiftState(options = {})")
     pending_idx = body.index("_resolveWorkerShiftOutboxState(objectId)")
     server_idx = body.index("await api(path)")
-    dead_letter_idx = body.index("_findDeadLetterShiftRecord(objectId)")
-    local_idx = body.index("_resolveWorkerShiftLocalState(objectId, serverError)")
+    first_dead_letter_idx = body.index("_findDeadLetterShiftRecord(objectId)")
 
-    assert pending_idx < server_idx < dead_letter_idx < local_idx, (
-        "Precedence must be: live pending outbox -> server -> dead_letter "
-        "(recovery signal, not a block) -> localStorage fallback. A stale "
+    assert pending_idx < server_idx < first_dead_letter_idx, (
+        "Precedence must start: live pending outbox -> server. A stale "
         "dead_letter from an unrelated shift must never be checked before "
         "the server gets a chance to report the CURRENT real state."
     )
 
 
+def test_dead_letter_is_checked_in_both_the_offline_and_online_branches():
+    # 21.09 round 3: dead_letter is now consulted in TWO places -- once inside
+    # the offline branch (server unreachable), gated behind a local-active-
+    # session check first, and once in the online/fallback branch (server
+    # reachable but reported no session, or the offline branch found no
+    # local active session to protect). Both must exist; a single lookup
+    # would mean one of the two branches regressed back to skipping it.
+    body = _fn(_source(), "async function resolveWorkerShiftState(options = {})")
+    assert body.count("_findDeadLetterShiftRecord(objectId)") == 2
+
+
+def test_offline_branch_checks_local_active_session_before_its_dead_letter_lookup():
+    # The offline branch (if (serverError) { ... }) must resolve local state
+    # and check workerShiftStateHasActiveSession() BEFORE consulting
+    # dead_letter -- a real local ACTIVE/PAUSED session takes precedence over
+    # an unrelated stale sync failure.
+    body = _fn(_source(), "async function resolveWorkerShiftState(options = {})")
+    if_server_error_idx = body.index("if (serverError) {")
+    local_state_idx = body.index("_resolveWorkerShiftLocalState(objectId, serverError)", if_server_error_idx)
+    has_active_idx = body.index("workerShiftStateHasActiveSession(localState)", if_server_error_idx)
+    offline_dead_letter_idx = body.index("_findDeadLetterShiftRecord(objectId)", if_server_error_idx)
+
+    assert if_server_error_idx < local_state_idx < has_active_idx < offline_dead_letter_idx
+
+
+def test_offline_branch_returns_local_state_annotated_with_sync_warning_not_overridden():
+    # A dead_letter found alongside a valid local active session must be
+    # surfaced as a non-blocking annotation, not replace the real state.
+    body = _fn(_source(), "async function resolveWorkerShiftState(options = {})")
+    assert "{ ...localState, syncWarning: deadLetterWhileOffline }" in body
+
+
 def test_dead_letter_only_consulted_after_the_server_try_block():
-    # The dead_letter lookup must be positioned textually after the try/catch
+    # The dead_letter lookups must be positioned textually after the try/catch
     # that calls the server, not inside an early branch that could return
     # before the server was actually attempted.
     body = _fn(_source(), "async function resolveWorkerShiftState(options = {})")
     try_idx = body.index("try {")
     catch_idx = body.index("} catch (e) {\n    serverError = e;\n  }")
-    dead_letter_idx = body.index("_findDeadLetterShiftRecord(objectId)")
-    assert try_idx < catch_idx < dead_letter_idx
+    first_dead_letter_idx = body.index("_findDeadLetterShiftRecord(objectId)")
+    assert try_idx < catch_idx < first_dead_letter_idx

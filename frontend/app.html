@@ -10067,10 +10067,13 @@ function applyRoleNav() {
     workerNav.dataset.roleActive = 'hidden';
     if (checkinFab) checkinFab.style.display = 'none';
   }
-  // 28.07: owner request -- Документы не нужны воркеру в меню "Ещё" (не его рабочий
-  // инструмент), только владельцу.
-  const docsMenuItem = document.getElementById('profile-more-documents');
-  if (docsMenuItem) docsMenuItem.style.display = currentRole === 'worker' ? 'none' : '';
+  // 21.09 (owner review, reverted): 28.07's "worker doesn't need Documents"
+  // hide was dead code (missing id, never actually ran) until this session's
+  // merge accidentally revived it by fixing the selector. That old decision
+  // predates and contradicts Worker UX V2's "Ещё" redesign, which
+  // deliberately keeps Documents in the Работа group for both roles
+  // (Календарь / Мои часы / Инструменты / Документы) -- reviving a stale
+  // hide is not the same as a fresh decision to remove it. Left un-hidden.
   const activeView = document.querySelector('.view.active')?.id?.replace(/^view-/, '') || 'home';
   _syncBottomNavActive(activeView);
   _applyBottomNavHeight();

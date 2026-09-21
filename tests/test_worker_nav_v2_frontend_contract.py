@@ -117,17 +117,23 @@ def test_worker_tab_order_matches_bottom_nav_worker_dom_order():
     assert views_in_dom_order == ['home', 'objects', 'chat', 'more']
 
 
-def test_profile_more_documents_id_exists_so_the_worker_hide_toggle_actually_runs():
-    # 21.09 (owner review finding): applyRoleNav() reads
-    # document.getElementById('profile-more-documents') to hide "Документы"
-    # from the worker's "Ещё" menu (28.07: not their tool, owner-only) -- but
-    # the more-menu-item never had that id, so getElementById() always
-    # returned null and the hide never ran. Documents silently stayed visible
-    # to workers this whole time.
+def test_worker_more_menu_keeps_documents_visible():
+    # 21.09 (owner review, reverted a same-session regression): a dead 28.07
+    # selector (document.getElementById('profile-more-documents'), missing
+    # its id) was fixed in an earlier commit this session, which
+    # inadvertently REVIVED a stale "hide Documents from workers" decision --
+    # that decision predates and contradicts Worker UX V2's "Ещё" redesign,
+    # which deliberately keeps Documents in the Работа group for both roles
+    # (Календарь / Мои часы / Инструменты / Документы). Reviving a fix for a
+    # bug is not the same as making a fresh product decision to remove a
+    # feature -- Documents must stay visible to workers unless that's an
+    # explicit, current decision.
     html = _source()
-    assert 'id="profile-more-documents" onclick="switchView(\'documents\')"' in html
-    assert "const docsMenuItem = document.getElementById('profile-more-documents');" in html
-    assert "docsMenuItem.style.display = currentRole === 'worker' ? 'none' : '';" in html
+    assert "docsMenuItem.style.display" not in html
+    more_start = html.index('id="view-more"')
+    more_end = html.index('id="view-profile"')
+    more_html = html[more_start:more_end]
+    assert "Документы" in more_html
 
 
 def test_navigation_manager_root_fallback_still_targets_home_unchanged():

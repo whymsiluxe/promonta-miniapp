@@ -449,7 +449,7 @@ async function _sendCheckinStartOutboxRecord(record) {
     // caching matters most -- the worker may already be mid-shift by the time
     // connectivity returns, so this can't wait for the online Start path's
     // own prefetch (which never ran for a queued Start).
-    if (typeof _prefetchFinishContextAfterStart === 'function') _prefetchFinishContextAfterStart(session.id);
+    if (typeof _prefetchFinishContextAfterStart === 'function') _prefetchFinishContextAfterStart(session.id, session);
     return session;
   } finally {
     _stagesCurrentObjectId = previousObjectId;
@@ -650,7 +650,7 @@ async function _confirmCheckinPreview() {
     _setCheckinSyncStatus('');
     _refreshWorkerShiftSurfaces();
     _closeCheckinPreviewModal();
-    if (typeof _prefetchFinishContextAfterStart === 'function') _prefetchFinishContextAfterStart(session.id);
+    if (typeof _prefetchFinishContextAfterStart === 'function') _prefetchFinishContextAfterStart(session.id, session);
   } catch (e) {
     // Файлы и idempotency-key НЕ сбрасываются — повторный тап "Подтвердить" безопасен (дедуп на сервере),
     // не нужно переснимать фото заново при плохой связи. Geo-ошибка — отдельный случай:

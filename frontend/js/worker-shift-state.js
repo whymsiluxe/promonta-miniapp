@@ -227,11 +227,35 @@ async function resolveWorkerShiftState(options = {}) {
     serverError = e;
   }
 
-  // 21.09 (P0, owner review finding): dead_letter is consulted only here --
-  // the server was reachable and confirmed there is no open/finished session
-  // for this object (or the server call itself failed), so a stale send
-  // failure is now relevant recovery information rather than a false block
-  // on an otherwise-normal session the server would have reported above.
+  // 21.09 (P0, owner review finding round 3): when the server itself is
+  // UNREACHABLE (serverError set), a valid local ACTIVE/PAUSED session must
+  // be trusted BEFORE an unrelated dead_letter gets a chance to override it.
+  // Without this ordering: worker is genuinely mid-shift on OBJECT-B
+  // (localStorage has the real session), an old dead_letter from OBJECT-A's
+  // unrelated failed Finish is still sitting in the outbox, and connectivity
+  // drops -- the worker would see "⚠️ Ошибка синхронизации" and lose
+  // Start/Finish on a shift that is, locally, perfectly fine. This is the
+  // same class of bug the original P0 fixed (dead_letter must never override
+  // a real session it doesn't belong to), just for the offline branch this
+  // function's OTHER branch (server reachable) doesn't go through.
+  if (serverError) {
+    const localState = _resolveWorkerShiftLocalState(objectId, serverError);
+    if (workerShiftStateHasActiveSession(localState)) {
+      const deadLetterWhileOffline = await _findDeadLetterShiftRecord(objectId).catch(() => null);
+      // Surfaced as a non-blocking warning alongside the real local state,
+      // not as a state override -- the worker's actual ACTIVE/PAUSED shift
+      // must still be usable (Pause/Finish enabled) while a stale recovery
+      // notice is shown separately if the UI chooses to render it.
+      return deadLetterWhileOffline ? { ...localState, syncWarning: deadLetterWhileOffline } : localState;
+    }
+  }
+
+  // 21.09 (P0, owner review finding): dead_letter is consulted here when the
+  // server WAS reachable and confirmed there is no open/finished session for
+  // this object, or when the server failed AND there is no valid local
+  // active session to protect -- a stale send failure is relevant recovery
+  // information in both of those cases, not a false block on an otherwise-
+  // normal session the server (or localStorage) would already have reported.
   const deadLetter = await _findDeadLetterShiftRecord(objectId).catch(() => null);
   if (deadLetter) return deadLetter;
 

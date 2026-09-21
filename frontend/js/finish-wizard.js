@@ -203,22 +203,29 @@ function _fwWriteCachedFinishContext(sessionId, data) {
   } catch (e) {}
 }
 
-// 21.09 (P0, owner review finding, round 2): the offline cache above was
-// write-on-read only -- written the FIRST time Finish Wizard successfully
-// fetched /finish-context online. Real failure mode this missed: Start
-// online -> full day of work -> network drops before Finish is opened even
-// once -- there is nothing to fall back to, and Finish would land on
-// _fwContextState = 'error' with an empty plan checklist even though the
-// worker DID accept a plan at Start and the server DOES have the frozen
-// snapshot, just unreachable right now. Called right after a CONFIRMED
-// online Start (checkin.js's _confirmCheckinPreview) so the cache exists
-// before the day even begins, not only after it's needed. Best-effort and
-// silent: a plan-less shift legitimately has nothing to cache (finish-context
-// returns has_plan:false, matching the graceful no-plan path either way), and
-// a failed prefetch just means Finish falls back to the same online-fetch
-// path it always had -- this never blocks or affects the Start flow itself.
-async function _prefetchFinishContextAfterStart(sessionId) {
+// 21.09 (P0, owner review finding, round 2 then hardened round 3): the
+// offline cache above was write-on-read only -- written the FIRST time
+// Finish Wizard successfully fetched /finish-context online. Real failure
+// mode this missed: Start online -> full day of work -> network drops
+// before Finish is opened even once -- there is nothing to fall back to.
+//
+// Round 2's fix (a second GET /finish-context request fired right after
+// Start) was still non-deterministic: if connectivity dropped in the
+// (typically short, but real) window between Start succeeding and that
+// second request completing, the cache still wouldn't exist. Round 3:
+// checkin_start()'s response now embeds the exact same finish-context shape
+// directly (backend/main.py's _build_finish_context(), shared with the GET
+// endpoint) -- prefer that zero-extra-round-trip field when the caller
+// already has it (startResponse), and only fall back to a live GET request
+// when it doesn't (e.g. a Start success path that hasn't been updated to
+// pass it through, or a defensive call site).
+async function _prefetchFinishContextAfterStart(sessionId, startResponse) {
   if (!sessionId) return;
+  if (startResponse && Object.prototype.hasOwnProperty.call(startResponse, 'finish_context')) {
+    const embedded = startResponse.finish_context;
+    if (embedded?.has_plan) _fwWriteCachedFinishContext(sessionId, embedded);
+    return;
+  }
   try {
     const data = await api(`/api/checkin/${sessionId}/finish-context`);
     if (data?.has_plan) _fwWriteCachedFinishContext(sessionId, data);

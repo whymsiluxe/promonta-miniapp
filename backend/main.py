@@ -8114,8 +8114,22 @@ async def checkin_start(
         except Exception as e:
             print(f'WARNING: checkin-start feed post failed: {e}')
 
-    _idempotency_save(idempotency_key, entry)
-    return entry
+    # 21.09 (owner review finding, round 3): embed the SAME frozen accepted-plan
+    # snapshot GET /finish-context returns, right in the Start response -- a
+    # deterministic, zero-extra-round-trip alternative to the frontend's
+    # best-effort prefetch (_prefetchFinishContextAfterStart), which can fail to
+    # complete if connectivity drops between Start succeeding and that second
+    # request landing. A copy, not a mutation of `entry` -- this is a response-
+    # only field, not part of what gets persisted to checkin_meta.json.
+    response = dict(entry)
+    try:
+        response['finish_context'] = _build_finish_context(entry)
+    except Exception as e:
+        print(f'WARNING: checkin-start finish-context prefetch failed: {e}')
+        response['finish_context'] = None
+
+    _idempotency_save(idempotency_key, response)
+    return response
 
 
 @app.post("/api/checkin/{session_id}/pause")
@@ -8654,15 +8668,18 @@ def list_checkins(object_id: str = '', date: str = '', user: dict = Depends(get_
     return {"sessions": items}
 
 
-@app.get("/api/checkin/{session_id}/finish-context")
-def checkin_finish_context(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    items = _load_checkin_meta()
-    session = next((i for i in items if i.get('id') == session_id), None)
-    if not session:
-        raise HTTPException(404, "Сессия не найдена")
-    if role != 'owner' and str(session.get('user_id')) != str(user['id']):
-        raise HTTPException(403, "Нет доступа к этой смене")
-
+def _build_finish_context(session: dict) -> dict:
+    """Shared shape-builder for the frozen accepted-plan snapshot shown/submitted
+    at Finish. 21.09 (owner review finding, round 3): extracted out of
+    checkin_finish_context() so checkin_start() can embed the SAME shape in its
+    own response -- see the finish_context field there. Before this, a plan-
+    linked Start followed immediately by an offline stretch (network drops
+    before Finish is opened even once) had nothing to fall back to: the
+    frontend's own prefetch (_prefetchFinishContextAfterStart) is a second,
+    best-effort network round-trip that can simply fail to complete before
+    connectivity is lost. Embedding this directly in the Start response makes
+    the offline cache deterministic -- no second round-trip needed at all."""
+    session_id = session.get('id') or ''
     plan_id = session.get('daily_plan_id') or ''
     if not plan_id:
         return {
@@ -8714,6 +8731,17 @@ def checkin_finish_context(session_id: str, user: dict = Depends(get_current_use
             "accepted_at": acceptance.get("accepted_at"),
         },
     }
+
+
+@app.get("/api/checkin/{session_id}/finish-context")
+def checkin_finish_context(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    items = _load_checkin_meta()
+    session = next((i for i in items if i.get('id') == session_id), None)
+    if not session:
+        raise HTTPException(404, "Сессия не найдена")
+    if role != 'owner' and str(session.get('user_id')) != str(user['id']):
+        raise HTTPException(403, "Нет доступа к этой смене")
+    return _build_finish_context(session)
 
 
 @app.get("/api/checkin/{session_id}/photo/{which}/{index}")
