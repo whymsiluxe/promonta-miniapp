@@ -8666,12 +8666,18 @@ def checkin_finish_context(session_id: str, user: dict = Depends(get_current_use
              if a.get("daily_plan_id") == plan_id and str(a.get("worker_id")) == worker_id),
             None,
         )
-    if not acceptance:
-        raise HTTPException(409, "Принятый план смены не найден")
-
-    plan = store["daily_plans"].get(plan_id)
-    if not plan:
-        raise HTTPException(409, "План смены не найден")
+    # 18.09 (audit finding, merged from upstream 170bf24): a session referencing
+    # a plan/acceptance that no longer resolves cleanly (deleted plan, acceptance
+    # id drift) must not turn Finish into a hard error -- same "not a plan-linked
+    # shift, carry on" fallback checkin_start already uses elsewhere. Was a 409
+    # here, which could block a worker from finishing their shift at all.
+    plan = store["daily_plans"].get(plan_id) if acceptance else None
+    if not acceptance or not plan:
+        return {
+            "session_id": session_id,
+            "object_id": session.get("object_id") or "",
+            "has_plan": False,
+        }
 
     snapshot = acceptance.get("accepted_context_snapshot") or {}
     items_snapshot = dpl.get_accepted_snapshot(plan_id, worker_id)
