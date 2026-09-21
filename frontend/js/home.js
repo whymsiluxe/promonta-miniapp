@@ -1057,6 +1057,25 @@ async function initWorkerHomeView(slot) {
 
     <div id="worker-problems-card" class="worker-problems-card"></div>
 
+    <div class="worker-quick-actions">
+      <div class="wqa-item" onclick="_workerQuickActionPhoto()">
+        <div class="wqa-icon">📷</div>
+        <div class="wqa-label">Фото</div>
+      </div>
+      <div class="wqa-item" onclick="_workerQuickActionNeed()">
+        <div class="wqa-icon">📝</div>
+        <div class="wqa-label">Потребность</div>
+      </div>
+      <div class="wqa-item" onclick="_workerQuickActionDefect()">
+        <div class="wqa-icon">⚠️</div>
+        <div class="wqa-label">Дефект</div>
+      </div>
+      <div class="wqa-item" onclick="_workerQuickActionChat()">
+        <div class="wqa-icon">💬</div>
+        <div class="wqa-label">Чат</div>
+      </div>
+    </div>
+
     <div class="worker-tile-grid">
       <div class="worker-tile" id="worker-tile-messages" onclick="switchView('chat')">
         <span class="worker-tile-badge" id="worker-tile-messages-badge" style="display:none">0</span>

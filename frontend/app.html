@@ -5530,6 +5530,21 @@ body.view-objects-active .radio-mini-player {
 .wp-empty-sub { font-size: 0.82rem; color: var(--text-light); margin-top: 0.2rem; }
 .wp-loading { font-size: 0.85rem; color: var(--text-light); }
 
+/* ── Worker Home — быстрые полевые действия (Worker UX V2, Этап 6).
+   Фото/Потребность/Дефект/Чат -- каждая ведёт в уже существующий canonical
+   flow через resolveWorkerActionObject() (worker-quick-actions.js). ── */
+.worker-quick-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin: 0.75rem; }
+.wqa-item {
+  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 0.75rem 0.4rem;
+  cursor: pointer;
+}
+.wqa-icon { font-size: 1.4rem; }
+.wqa-label { font-size: 0.78rem; font-weight: 600; color: var(--text-main); text-align: center; }
+
 /* ── Check-in FAB — плавающий, отдельно от bottom-nav (21.07 IA), worker-only.
    Позиция низ-справа, не конфликтует с будущим Radio FAB (низ-слева, batch 13). ── */
 .nav-item-start {
@@ -5649,7 +5664,8 @@ body.view-locked .mangel-fab, body.keyboard-open .mangel-fab { display: none; }
 /* ── Worker object/stage picker modal (Фаза 10.14) ── */
 #worker-object-picker-modal,
 #worker-stage-picker-modal,
-#worker-shift-status-modal {
+#worker-shift-status-modal,
+#worker-quick-action-picker-modal {
   position: fixed;
   inset: 0;
   z-index: 1800;
@@ -9758,6 +9774,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 <script src="js/checkin.js"></script>
 <script src="js/finish-wizard.js"></script>
 <script src="js/worker-checkin-fab.js"></script>
+<script src="js/worker-quick-actions.js"></script>
 <script src="js/today-plan.js"></script>
 <script src="js/contracts.js"></script>
 <script src="js/kontrol-day.js"></script>
