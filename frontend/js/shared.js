@@ -758,3 +758,57 @@ function _bindTouchSafeSend(sendBtn, inputEl, sendFn) {
     sendFn();
   });
 }
+
+// 18.09 (audit finding): 10 call sites across the app used the native browser
+// confirm() for a destructive/interrupting action -- a jarring OS-chrome popup
+// on top of an otherwise fully custom iOS-like UI, and not stylable/brandable.
+// promontaConfirm() is the one reusable replacement: builds a
+// .bottom-sheet-overlay/.bottom-sheet-panel dynamically (same CSS every other
+// bottom sheet in the app already uses -- stage-add-sheet, new-object-sheet,
+// abw-reason-sheet -- nothing new to style), registers with NavigationManager
+// so Telegram Back closes it like every other overlay, and resolves a Promise
+// instead of blocking the JS thread synchronously the way window.confirm()
+// does. Call sites migrate from `if (!confirm(msg)) return;` (sync) to
+// `if (!await promontaConfirm(msg)) return;` (async) -- same early-return
+// shape, one extra `await`.
+function promontaConfirm(message, { title = 'Подтвердите действие', confirmLabel = 'Да', cancelLabel = 'Отмена', danger = false } = {}) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'bottom-sheet-overlay promonta-confirm-overlay';
+    overlay.dataset.noSwipe = '1';
+    overlay.innerHTML = `
+      <div class="bottom-sheet-panel promonta-confirm-panel">
+        <div class="bottom-sheet-handle"></div>
+        <div class="promonta-confirm-title">${esc(title)}</div>
+        <div class="promonta-confirm-message">${esc(message)}</div>
+        <div class="promonta-confirm-actions">
+          <button class="obj-confirm-cancel" id="promonta-confirm-cancel-btn" type="button">${esc(cancelLabel)}</button>
+          <button class="obj-confirm-ok${danger ? ' promonta-confirm-danger' : ''}" id="promonta-confirm-ok-btn" type="button">${esc(confirmLabel)}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    // Same open-transition pattern as every other .bottom-sheet-overlay (see
+    // app.html's own comment on why .open needs a rAF-deferred add, not an
+    // immediate one, to actually transition instead of snapping).
+    requestAnimationFrame(() => overlay.classList.add('open'));
+
+    let unregisterOverlay = null;
+    let settled = false;
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      overlay.classList.remove('open');
+      setTimeout(() => overlay.remove(), 240); // matches .bottom-sheet-panel transition duration
+      if (unregisterOverlay) { unregisterOverlay(); unregisterOverlay = null; }
+      resolve(result);
+    };
+    if (typeof NavigationManager !== 'undefined') {
+      unregisterOverlay = NavigationManager.registerOverlay(() => settle(false));
+    }
+
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) settle(false); });
+    overlay.querySelector('#promonta-confirm-cancel-btn').addEventListener('click', () => settle(false));
+    overlay.querySelector('#promonta-confirm-ok-btn').addEventListener('click', () => settle(true));
+  });
+}

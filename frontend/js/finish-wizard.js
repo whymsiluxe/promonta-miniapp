@@ -244,8 +244,11 @@ function _fwCloseWizardInternal() {
   _fwOverlayUnregister = null;
 }
 
-function _fwCloseWizard() {
-  if (_fwStep > 1 && !confirm('Прервать завершение смены? Введённые данные будут потеряны.')) return;
+async function _fwCloseWizard() {
+  // 18.09 (audit finding): was window.confirm() -- a jarring OS-chrome popup on
+  // top of an otherwise fully custom iOS-like wizard UI. promontaConfirm() (shared.js)
+  // is the reusable replacement, same early-return shape, async instead of sync.
+  if (_fwStep > 1 && !await promontaConfirm('Прервать завершение смены? Введённые данные будут потеряны.', { danger: true })) return;
   if (_fwOverlayUnregister) {
     const unregister = _fwOverlayUnregister;
     _fwOverlayUnregister = null;

@@ -142,7 +142,7 @@ function _attachDocumentGalleryCardHandlers(grid) {
   grid.querySelectorAll('[data-doc-gallery-delete]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const doc = _docGalleryDocs.find(d => d.id === btn.dataset.docGalleryDelete);
-      if (!doc || !confirm(`Удалить документ «${doc.name || doc.file}»?`)) return;
+      if (!doc || !await promontaConfirm(`Удалить документ «${doc.name || doc.file}»?`, { danger: true })) return;
       btn.disabled = true;
       try {
         await api(`/api/objects/${encodeURIComponent(doc.object_id)}/documents/${encodeURIComponent(doc.id)}`, { method: 'DELETE' });
