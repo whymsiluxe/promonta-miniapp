@@ -217,6 +217,27 @@ header h1 {
   cursor: pointer;
 }
 
+/* ── "Ещё" (Worker UX V2, Этап 4) — utility hub, крупные строки-ссылки ── */
+.more-menu { padding: 0.5rem 1rem 1.5rem; }
+.more-menu-group { margin-bottom: 1.5rem; }
+.more-menu-title {
+  font-size: 0.8rem; font-weight: 600; color: var(--text-light);
+  text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 0 0.25rem 0.5rem;
+}
+.more-menu-item {
+  display: flex; align-items: center; gap: 0.75rem;
+  min-height: 56px;
+  padding: 0 1rem;
+  background: var(--bg-white);
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+}
+.more-menu-group .more-menu-item:first-of-type { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.more-menu-group .more-menu-item:last-of-type { border-radius: 0 0 var(--radius-lg) var(--radius-lg); border-bottom: none; }
+.more-menu-icon { font-size: 1.3rem; flex-shrink: 0; }
+.more-menu-label { font-size: 0.95rem; font-weight: 500; }
+
 /* ── Карточки (Объекты + Инструмент) ── */
 .cards {
   display: flex;
@@ -2805,25 +2826,60 @@ header h1 {
 
 /* ── Лента ── */
 #feed-list { display: flex; flex-direction: column; gap: var(--spacing-sm); padding: 0 1rem; }
+#feed-weather-content #feed-list { padding: 0 0.75rem 1rem; gap: 0.65rem; }
 
 /* ── Weather compact rows (10.32) — свёрнутый вид ленты "Инфо" ── */
 /* Раунд 5 §12: секции серьёзности в Инфо-ленте. Красная левая полоса — только для
    критичного (экстремальная жара/шторм); янтарь — предупреждения; спокойный — информация.
    Никакого одинокого жёлтого треугольника без подписи: заголовок секции = текст. */
-.wx-sev-section { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.9rem; }
-.wx-sev-head { font-size: var(--font-secondary, 15px); font-weight: 700; color: var(--text-light); padding: 0 0.2rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.wx-sev-section { display: flex; flex-direction: column; gap: 0.65rem; margin-bottom: 1rem; }
+.wx-sev-head { font-size: var(--font-secondary, 15px); font-weight: 800; color: var(--text-light); padding: 0 0.35rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .wx-sev-critical .wx-sev-head { color: var(--red, #c0392b); }
 .wx-sev-warning .wx-sev-head { color: var(--c-brass, #B38B4D); }
-.wx-sev-critical .wx-compact-row { border-left: 3px solid var(--red, #c0392b); }
-.wx-sev-warning .wx-compact-row { border-left: 3px solid var(--c-brass, #B38B4D); }
-.wx-compact-row { background: var(--bg-card); border-radius: var(--radius-lg); overflow: hidden; }
-.wx-compact-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 0.9rem; cursor: pointer; }
-.wx-compact-icon { font-size: 1.4rem; flex-shrink: 0; }
-.wx-compact-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
-.wx-compact-object { font-weight: 700; font-size: 0.9rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wx-compact-risk { font-size: 0.8rem; color: var(--text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wx-compact-temp { font-weight: 700; font-size: 1.05rem; color: var(--text-main); flex-shrink: 0; }
-.wx-compact-date { font-size: 0.7rem; color: var(--text-light); flex-shrink: 0; margin-left: 6px; }
+.wx-sev-critical .wx-compact-row { border-left-color: var(--red, #c0392b); }
+.wx-sev-warning .wx-compact-row { border-left-color: var(--c-brass, #B38B4D); }
+.wx-compact-row {
+  --wx-hue: var(--accent);
+  background: var(--ios-surface, var(--bg-card));
+  border: 1px solid var(--ios-border, var(--border-color));
+  border-left: 4px solid color-mix(in srgb, var(--wx-hue) 72%, var(--ios-border, var(--border-color)));
+  border-radius: var(--ios-radius-card, 12px);
+  overflow: hidden;
+  box-shadow: var(--ios-shadow-card, var(--shadow-sm));
+}
+.wx-compact-head { display: flex; align-items: center; gap: 0.72rem; min-height: 92px; padding: 0.9rem 0.85rem; cursor: pointer; }
+.wx-compact-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--wx-hue) 10%, var(--ios-grouped-surface, var(--bg-card-raised)));
+  font-size: 1.26rem;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.16);
+}
+.wx-compact-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.wx-compact-primary { display: flex; align-items: baseline; gap: 0.45rem; min-width: 0; flex-wrap: wrap; }
+.wx-compact-risk-title { font-weight: 850; font-size: 1.12rem; line-height: 1.08; color: var(--text-main); letter-spacing: 0; }
+.wx-compact-metric { font-size: 0.82rem; font-weight: 800; color: var(--wx-hue); white-space: nowrap; }
+.wx-compact-risk-detail { font-size: 0.92rem; line-height: 1.28; color: var(--text-main); overflow-wrap: anywhere; }
+.wx-compact-meta { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; font-size: 0.74rem; font-weight: 700; color: var(--text-light); }
+.wx-compact-meta span + span::before { content: "·"; margin-right: 0.45rem; opacity: 0.7; }
+.wx-compact-object { color: var(--text-main); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wx-compact-temp {
+  min-width: 44px;
+  padding: 0.35rem 0.45rem;
+  border-radius: 10px;
+  background: var(--ios-grouped-surface, var(--bg-card-raised));
+  border: 1px solid var(--ios-border, var(--border-color));
+  color: var(--text-main);
+  font-weight: 900;
+  font-size: 1.02rem;
+  text-align: center;
+  flex-shrink: 0;
+}
 .wx-compact-detail { border-top: 1px solid var(--border-color); }
 .wx-compact-row.expanded .wx-post { border-radius: 0; }
 
@@ -9295,6 +9351,51 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
   </div>
 </div>
 
+<!-- ═══════════ MORE (Worker UX V2, Этап 4) — utility hub, никакой бизнес-логики
+     не дублируется: каждая карточка просто переключает на уже существующий view. ═══════════ -->
+<div class="view" id="view-more">
+  <header><h1>Ещё</h1></header>
+  <div class="more-menu">
+    <div class="more-menu-group">
+      <div class="more-menu-title">Работа</div>
+      <div class="more-menu-item" onclick="switchView('abwesenheit')">
+        <span class="more-menu-icon">📅</span>
+        <span class="more-menu-label">Календарь и отсутствие</span>
+      </div>
+      <div class="more-menu-item" onclick="_openProfileTab('me')">
+        <span class="more-menu-icon">🕐</span>
+        <span class="more-menu-label">Мои часы</span>
+      </div>
+      <div class="more-menu-item" onclick="switchView('tools')">
+        <span class="more-menu-icon">🧰</span>
+        <span class="more-menu-label">Инструменты</span>
+      </div>
+      <div class="more-menu-item" onclick="switchView('documents')">
+        <span class="more-menu-icon">📄</span>
+        <span class="more-menu-label">Документы</span>
+      </div>
+    </div>
+    <div class="more-menu-group">
+      <div class="more-menu-title">Аккаунт</div>
+      <div class="more-menu-item" onclick="switchView('profile')">
+        <span class="more-menu-icon">👤</span>
+        <span class="more-menu-label">Профиль</span>
+      </div>
+      <div class="more-menu-item" onclick="_openProfileTab('settings')">
+        <span class="more-menu-icon">⚙️</span>
+        <span class="more-menu-label">Настройки</span>
+      </div>
+    </div>
+    <div class="more-menu-group">
+      <div class="more-menu-title">Компания</div>
+      <div class="more-menu-item" onclick="switchView('feed')">
+        <span class="more-menu-icon">📰</span>
+        <span class="more-menu-label">Лента</span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════ PROFILE (заглушка Фазы 1, полная инфографика — Фаза 8) ═══════════ -->
 <div class="view" id="view-profile">
   <header><h1>Профиль</h1></header>
@@ -9551,26 +9652,22 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
 </div>
 
 <div class="bottom-nav" id="bottom-nav-worker" data-role-active="hidden">
-  <div class="nav-item" data-view="feed">
-    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 10h10M4 14h12M4 18h8" stroke-linecap="round"/></svg>
-    <span class="nav-label">Лента</span>
-  </div>
   <div class="nav-item active" data-view="home">
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 10v10h14V10" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 20v-6h6v6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    <span class="nav-label">Главная</span>
+    <span class="nav-label">Сегодня</span>
+  </div>
+  <div class="nav-item" data-view="objects">
+    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16" stroke-linecap="round"/></svg>
+    <span class="nav-label">Объекты</span>
   </div>
   <div class="nav-item" data-view="chat">
     <span class="nav-badge" id="chat-nav-badge-worker"></span>
     <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/></svg>
     <span class="nav-label">Чат</span>
   </div>
-  <div class="nav-item" data-view="objects">
-    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16" stroke-linecap="round"/></svg>
-    <span class="nav-label">Объекты</span>
-  </div>
-  <div class="nav-item" data-view="profile">
-    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c1.5-4 5-6 7.5-6s6 2 7.5 6" stroke-linecap="round"/></svg>
-    <span class="nav-label">Профиль</span>
+  <div class="nav-item" data-view="more">
+    <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+    <span class="nav-label">Ещё</span>
   </div>
 </div>
 
@@ -9684,7 +9781,7 @@ const loadedViews = new Set();
 // 24.07 (Phase 0.5): NavigationManager стек — push для программных переходов вглубь
 // (открытие детейла из списка), replaceRoot для клика по nav-таб (не растим стек бесконечно
 // при простой смене вкладки), ничего не трогаем при возврате через .back() (fromBack).
-const TAB_ORDER = ['feed', 'home', 'chat', 'objects', 'profile'];
+const TAB_ORDER = ['feed', 'home', 'chat', 'objects', 'profile', 'more'];
 let _lastActiveTabView = null;
 
 function _activeBottomNavEl() {
@@ -9819,6 +9916,16 @@ function switchView(viewName, opts = {}) {
 document.querySelectorAll('.nav-item[data-view]').forEach(item => {
   item.addEventListener('click', () => switchView(item.dataset.view, { isTabSwitch: true }));
 });
+
+// Worker UX V2, Этап 4 (view-more): открыть Профиль сразу на нужном саб-табе.
+// Не дублирует логику переключения панелей из _bindProfileTabs() — просто
+// кликает по уже существующей .profile-tab, тем же путём, что и обычный тап юзера.
+function _openProfileTab(tab) {
+  switchView('profile');
+  requestAnimationFrame(() => {
+    document.querySelector(`#profile-tabs .profile-tab[data-tab="${tab}"]`)?.click();
+  });
+}
 
 function applyRoleNav() {
   const ownerNav = document.getElementById('bottom-nav-owner');
