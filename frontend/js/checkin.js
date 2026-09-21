@@ -178,12 +178,29 @@ let _activeShiftTimerInterval = null;
 let _activeShiftStartAt = null;
 let _activeShiftPauseStartedAt = null;
 let _activeShiftPauseAccumulated = 0;
+let _activeShiftVisibilityListenerAttached = false;
 
 function _stopActiveShiftTimer() {
   if (_activeShiftTimerInterval) {
     clearInterval(_activeShiftTimerInterval);
     _activeShiftTimerInterval = null;
   }
+}
+
+// 21.09 (hardening): таймер выше — чистый client setInterval, seed'ится один раз
+// из последнего server-ответа и после этого free-run'ит без ресинка. Если пауза
+// произошла с другого устройства/владельцем пока экран остаётся открытым (не было
+// перехода/повторного открытия stages-view, что обычно триггерит refreshCheckinButtons),
+// таймер продолжает считать смену активной до следующего естественного триггера.
+// Фикс: досверяться с сервером при возврате видимости вкладки/приложения.
+function _attachActiveShiftVisibilityResync() {
+  if (_activeShiftVisibilityListenerAttached) return;
+  _activeShiftVisibilityListenerAttached = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (!_activeShiftTimerInterval) return;
+    if (typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
+  });
 }
 
 function _formatShiftDuration(totalSeconds) {
@@ -230,6 +247,7 @@ function _updateActiveShiftPanel(activeSession, objectId) {
   if (!_activeShiftTimerInterval) {
     _activeShiftTimerInterval = setInterval(_tickActiveShiftTimer, 1000);
   }
+  _attachActiveShiftVisibilityResync();
 
   const gpsEl = document.getElementById('active-shift-gps-status');
   if (gpsEl) {
