@@ -1,6 +1,7 @@
 # Backlog
 
-**Last updated**: 2026-09-18. Consolidated from ~15 historical PLAN/HANDOFF/
+**Last updated**: 2026-09-21 (added 2 Worker UX V2 follow-ups, see P1).
+Prior consolidation: 2026-09-18, from ~15 historical PLAN/HANDOFF/
 UNIFIED_AUTONOMOUS_MASTER_PLAN files after reading each one in full and
 verifying every candidate item against the real code (`git log`, `grep`),
 not taken on the source doc's word. See [CURRENT_STATE.md](CURRENT_STATE.md)
@@ -13,6 +14,27 @@ the full original list for comparison.
 
 ## P1 — worth doing soon
 
+- **Object Detail V2 migration (Worker UX V2 Этап 7).** Reorganize worker
+  object-detail from 3 tabs + 10+ stacked sections into `Обзор|Работа|
+  Медиа|Чат`. NOT done as code in the 2026-09-21 session — a mapping audit
+  found real risk factors (owner/worker interleaved in the same render
+  functions, a chat panel that physically moves DOM nodes with 2
+  already-documented bugs in its history, DOM-anchor-hardcoded section
+  order, near-zero test coverage on ~3000 lines) high enough that the plan's
+  own "reusable panels + follow-up doc" escape hatch was used instead. Exact
+  target section->zone mapping and a risk-ordered migration order (Медиа ->
+  Работа -> Обзор -> Чат) are in `docs/OBJECT_DETAIL_V2.md`. Two decisions
+  need to be made explicitly before starting: `#stages-view`'s legacy status,
+  and which owner-only "Обзор" content (if any) becomes worker-visible.
+- **Finish Wizard screen merges (Worker UX V2 Этап 8, remainder).** Geo
+  auto-capture was merged into the review screen already (2026-09-21,
+  `ff87cd6`), bringing the wizard from 6/8 steps to 5/7. The plan's 3-4
+  screen target still needs summary+plan-fact merged into one screen, and
+  extra-works+needs/defects+tomorrow-prep merged into another
+  ("Проблемы и завтра"). Left separate on purpose — each merge means
+  reconciling independent validation/nav-row markup and wire handlers, a
+  real risk to the still-live idempotency/outbox/offline submit path this
+  same file (`finish-wizard.js`) owns.
 - **Swipe-to-reply in chat.** Reply currently only works via long-press →
   menu → "↩ Ответить" (`grep swipe frontend/js/chat.js` empty). Quick win if
   picked up, not blocking anything.

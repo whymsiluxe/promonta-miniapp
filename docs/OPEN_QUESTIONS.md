@@ -1,6 +1,7 @@
 # Open Questions
 
-**Last updated**: 2026-09-18. Consolidated from `OPEN_QUESTIONS.md`,
+**Last updated**: 2026-09-21 (added Q3, Object Detail V2 decisions).
+Prior consolidation: 2026-09-18, from `OPEN_QUESTIONS.md`,
 `OPEN_QUESTIONS_09sep2026.md`, `OPEN_QUESTIONS_11sep2026.md` after reading
 each in full and verifying against the real code — items already answered
 by the owner or already resolved in code (even where the doc itself wasn't
@@ -53,6 +54,34 @@ direction, kept here only in case the owner wants a stricter gate later
 
 *Source*: `docs/OPEN_QUESTIONS_11sep2026.md` (Q3, Phase 4) → resolved
 2026-09-18 per owner's evening-reminder framing.
+
+---
+
+## 3. Object Detail V2 (Worker UX V2 Этап 7) — two decisions blocking the migration
+
+Found 2026-09-21 while mapping the current object-detail screen before
+attempting the plan's `Обзор|Работа|Медиа|Чат` reorganization (see
+`docs/OBJECT_DETAIL_V2.md` for the full audit). Both need an explicit owner
+answer before that migration can start safely — deferred on purpose rather
+than guessed:
+
+1. **`#stages-view` (`app.html:8851`, `objects.js:826-888`
+   `openStagesView`/`closeStagesView`) looks legacy/half-dead.** No active
+   call sites found from current click handlers — the live path is
+   `openObjectDetail(..., 'stages', ...)` (`objects.js:452`), a different
+   mechanism. Is `#stages-view` still needed for something not found in this
+   pass, or safe to remove in its own small commit before the bigger
+   reorganization?
+2. **Which owner-only "Обзор" content (if any) becomes worker-visible?**
+   `_renderObjControlCenter()` (`object-info.js:280-384`, the closest thing
+   to an existing "Обзор" dashboard) is entirely gated
+   `currentRole === 'owner'` — including `team&shifts`, which shows other
+   workers' shift status. Worker UX V2's target "Обзор" wants active
+   shift/recent activity visible to the worker, but showing the full
+   control-center (including who else is on shift, budget-adjacent tiles)
+   was never explicitly asked for and shouldn't be assumed.
+
+*Source*: `docs/OBJECT_DETAIL_V2.md`, written 2026-09-21 during Этап 7 spike.
 
 ---
 
