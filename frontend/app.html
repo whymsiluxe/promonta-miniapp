@@ -5486,6 +5486,50 @@ body.view-objects-active .radio-mini-player {
 .worker-shift-cta-active .worker-shift-cta-arrow { color: #fff; }
 .worker-shift-cta-idle .worker-shift-cta-arrow { color: var(--accent); }
 
+/* ── Worker Home — DailyPlan compact preview card (Worker UX V2, Этап 5) ──
+   Тап открывает уже существующий today-plan-screen overlay (_openPlanCard()) --
+   эта карточка только читает window._todayPlanState, ничего не грузит сама. ── */
+.worker-daily-plan-card {
+  margin: 0.75rem 0.75rem 0;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+.wdp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+.wdp-title { font-weight: 700; font-size: 0.95rem; color: var(--text-main); }
+.wdp-chip { font-size: 0.78rem; font-weight: 600; color: var(--text-light); background: var(--bg-card-raised); border-radius: 999px; padding: 0.2rem 0.6rem; }
+.wdp-chip-warn { color: #fff; background: var(--accent); }
+.wdp-items { list-style: none; margin: 0 0 0.6rem; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.wdp-item { font-size: 0.88rem; color: var(--text-main); padding-left: 0.9rem; position: relative; }
+.wdp-item::before { content: '•'; position: absolute; left: 0; color: var(--text-light); }
+.wdp-item-more { color: var(--text-light); font-style: italic; }
+.wdp-open-btn { border: none; background: none; color: var(--accent); font-weight: 700; font-size: 0.88rem; padding: 0; cursor: pointer; }
+
+/* ── Worker Home — единый Problems-блок (Worker UX V2, Этап 5). Агрегирует
+   critical/important alerts + открытые Потребности + открытые Дефекты --
+   каждая строка ведёт в уже существующий canonical экран, не новый store. ── */
+.worker-problems-card {
+  margin: 0.75rem 0.75rem 0;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+.wp-header { margin-bottom: 0.6rem; }
+.wp-title { font-weight: 700; font-size: 0.95rem; color: var(--text-main); }
+.wp-top-row { display: flex; align-items: center; gap: 0.65rem; }
+.wp-top-icon { font-size: 1.3rem; flex-shrink: 0; }
+.wp-top-title { font-size: 0.92rem; font-weight: 600; color: var(--text-main); }
+.wp-top-sub { font-size: 0.8rem; color: var(--text-light); margin-top: 0.1rem; }
+.wp-more { font-size: 0.82rem; color: var(--text-light); margin-top: 0.5rem; }
+.wp-empty { text-align: center; padding: 0.4rem 0; }
+.wp-empty-title { font-weight: 700; font-size: 0.95rem; color: var(--text-main); }
+.wp-empty-sub { font-size: 0.82rem; color: var(--text-light); margin-top: 0.2rem; }
+.wp-loading { font-size: 0.85rem; color: var(--text-light); }
+
 /* ── Check-in FAB — плавающий, отдельно от bottom-nav (21.07 IA), worker-only.
    Позиция низ-справа, не конфликтует с будущим Radio FAB (низ-слева, batch 13). ── */
 .nav-item-start {
@@ -9855,6 +9899,9 @@ function switchView(viewName, opts = {}) {
   // objects-list-view хранит своё display независимо от .view.active, поэтому уходя с
   // таба Объекты нужно явно пересчитать видимость, иначе FAB остаётся висеть поверх Home/Chat/etc.
   if (typeof refreshObjectsFabVisibility === 'function') refreshObjectsFabVisibility();
+  // Worker UX V2, Этап 5: скрыть persistent DailyPlan-бар только на Today, где
+  // тот же статус уже показан в компактной карточке -- см. today-plan.js.
+  if (typeof _syncTodayPlanBarForView === 'function') _syncTodayPlanBarForView(viewName);
 
   const isFullView = viewName === 'chat' || viewName === 'ai';
   // 24.07: nav-bar больше НЕ скрывается в чате — юзер явно попросил видеть его на всех

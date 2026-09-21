@@ -624,6 +624,22 @@ function _startShiftFromPlan(plan) {
 
 // ── Persistent bar ────────────────────────────────────────────────────────────
 
+// Worker UX V2, Этап 5: Today (view-home) уже shows the same plan status inside
+// its own compact DailyPlan card -- showing the persistent bar there too would
+// be a visible duplicate on the same screen. Called from switchView() on every
+// tab switch; re-runs _updateTodayPlanBar() with the last known data to restore
+// the bar's normal display when leaving Home, so this never fights the bar's
+// own display:none/flex logic with a separate CSS override.
+function _syncTodayPlanBarForView(viewName) {
+  const bar = document.getElementById('today-plan-bar');
+  if (!bar) return;
+  if (viewName === 'home') {
+    bar.style.display = 'none';
+    return;
+  }
+  if (_todayPlanState) _updateTodayPlanBar(_todayPlanState);
+}
+
 function _updateTodayPlanBar(data) {
   const bar = document.getElementById('today-plan-bar');
   if (!bar) return;
