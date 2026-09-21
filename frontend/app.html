@@ -9967,9 +9967,18 @@ function switchView(viewName, opts = {}) {
     }
   } catch (e) {}
 
+  // 21.09 (P1, owner review finding): Home used to be gated by loadedViews
+  // like every other tab (init once, never again this session) -- but
+  // initHomeView() ALREADY has its own re-entry logic for this (initWorkerHomeView
+  // fully re-runs every call for workers; _homeLoaded short-circuits repeats for
+  // owners, whose dashboard is heavier). The loadedViews gate sat OUTSIDE that and
+  // defeated it: a worker who created a Defect, then returned to Today, saw the
+  // Problems card still say "Проблем нет" until a full app reload, because
+  // initHomeView() (and therefore _loadWorkerProblemsCard/_renderWorkerDailyPlanCard)
+  // never ran a second time all session.
+  if (viewName === 'home') initHomeView();
   if (!loadedViews.has(viewName)) {
     loadedViews.add(viewName);
-    if (viewName === 'home') initHomeView();
     if (viewName === 'objects') initObjectsView();
     if (viewName === 'mangel') initMangelView();
     if (viewName === 'tasks') initTasksView();

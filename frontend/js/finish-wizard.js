@@ -846,9 +846,15 @@ async function _fwQueueFinishOutbox(record) {
 function _fwMarkFinishConfirmed(record, notify) {
   _setActiveCheckinSession(record.objectId, { id: record.sessionId, finished: true });
   _fwRefreshWorkerShiftSurfaces();
-  if (typeof _updateTodayPlanBar === 'function') {
+  window._todayPlanState = null;
+  // 21.09 (P1, owner review finding): use the shared surfaces updater, not
+  // _updateTodayPlanBar() alone -- otherwise Today's compact DailyPlan card
+  // (home.js) kept showing the just-finished shift's plan until Home was
+  // re-entered/re-initialized.
+  if (typeof _updateWorkerDailyPlanSurfaces === 'function') {
+    _updateWorkerDailyPlanSurfaces({ has_plan: false });
+  } else if (typeof _updateTodayPlanBar === 'function') {
     _updateTodayPlanBar({ has_plan: false });
-    window._todayPlanState = null;
   }
   if (notify) showToast('Смена завершена', 'success');
 }

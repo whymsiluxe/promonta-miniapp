@@ -49,8 +49,20 @@ def test_context_resolution_priority_order_matches_plan():
     # assignment -> 4. else ambiguous (triggers picker)
     assert active_idx < detail_idx < single_idx < ambiguous_idx
     assert "resolveWorkerShiftState" in body
-    assert "_stagesCurrentObjectId" in body
+    assert "_workerActionCurrentObjectDetailId" in body
     assert "eligible.length === 1" in body
+
+
+def test_object_detail_context_checks_the_real_active_screen_not_a_stale_var():
+    # 21.09 (P0, owner review finding): _stagesCurrentObjectId (objects.js) is
+    # set by openStagesView() but never cleared by closeStagesView() -- its
+    # mere existence is not proof Object Detail is the current screen. Must
+    # check the stages-view DOM element's own 'open' class instead.
+    src = _source(QA_JS)
+    body = _fn(src, "function _workerActionCurrentObjectDetailId(")
+    assert "document.getElementById('stages-view')" in body
+    assert "stagesView.classList.contains('open')" in body
+    assert "_stagesCurrentObjectId" in body
 
 
 def test_ambiguous_context_opens_picker_not_silent_attach():

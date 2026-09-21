@@ -11,6 +11,23 @@
 // Каждое действие вызывает уже существующий canonical flow -- не строит вторую
 // реализацию форм Потребности/Дефекта/Фото/Чата.
 
+// 21.09 (P0, owner review finding): _stagesCurrentObjectId (objects.js) is
+// set by openStagesView() but never cleared by closeStagesView() -- it stays
+// set to whatever object the worker last looked at, indefinitely. A worker
+// who opened OBJECT-A's stages, left, and later tapped a quick action from
+// Today with no active shift would get silently attributed to OBJECT-A
+// again, even though they're nowhere near that screen anymore. The real
+// signal for "is Object Detail actually the current screen" is the
+// stages-view DOM element's own 'open' class (same pattern objects.js itself
+// already uses elsewhere, see the stagesViewOpen check in loadObjects()),
+// not the stale variable's mere existence.
+function _workerActionCurrentObjectDetailId() {
+  const stagesView = document.getElementById('stages-view');
+  if (!stagesView || !stagesView.classList.contains('open')) return null;
+  if (typeof _stagesCurrentObjectId === 'undefined' || !_stagesCurrentObjectId) return null;
+  return _stagesCurrentObjectId;
+}
+
 async function resolveWorkerActionObject() {
   try {
     const shiftState = typeof resolveWorkerShiftState === 'function'
@@ -22,8 +39,9 @@ async function resolveWorkerActionObject() {
     }
   } catch (e) {}
 
-  if (typeof _stagesCurrentObjectId !== 'undefined' && _stagesCurrentObjectId) {
-    return { objectId: String(_stagesCurrentObjectId), source: 'object_detail' };
+  const detailObjectId = _workerActionCurrentObjectDetailId();
+  if (detailObjectId) {
+    return { objectId: String(detailObjectId), source: 'object_detail' };
   }
 
   try {

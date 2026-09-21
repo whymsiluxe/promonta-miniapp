@@ -42,6 +42,16 @@ async function _findPendingCheckinOutboxRecord(objectId, kind) {
   }));
 }
 
+// 21.09 (P0, owner review finding): only the LIVE pending records are
+// resolved here now -- dead_letter records are looked up separately by
+// _findDeadLetterShiftRecord() and consulted by resolveWorkerShiftState()
+// only as a last resort, AFTER the server has had a chance to answer. Before
+// this split, a dead_letter from a completely different, already-finished
+// shift (e.g. yesterday's Finish that permanently failed to sync) made this
+// function return SYNC_ERROR unconditionally, before the server was ever
+// asked -- so a worker with a perfectly normal ACTIVE shift on the server
+// today would see "⚠️ Ошибка синхронизации" and have Start/Finish disabled,
+// because of an unrelated stale error from a previous shift.
 async function _resolveWorkerShiftOutboxState(objectId) {
   if (typeof promontaOutboxList !== 'function') return null;
   const [finishRecords, startRecords] = await Promise.all([
@@ -70,6 +80,21 @@ async function _resolveWorkerShiftOutboxState(objectId) {
       outboxRecord: startPending,
     };
   }
+
+  return null;
+}
+
+// Separated from the pending check above -- a dead_letter record is a
+// RECOVERY concern (needs a manual retry/dismiss), not proof that no shift
+// can currently be resolved. Called only when neither a live pending record
+// nor the server itself could answer.
+async function _findDeadLetterShiftRecord(objectId) {
+  if (typeof promontaOutboxList !== 'function') return null;
+  const [finishRecords, startRecords] = await Promise.all([
+    promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_FINISH).catch(() => []),
+    promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_START).catch(() => []),
+  ]);
+  const filterByObject = record => !objectId || String(record.objectId) === String(objectId);
 
   const finishDead = _workerShiftNewest(finishRecords.filter(record => filterByObject(record) && record.state === 'dead_letter'));
   if (finishDead) {
@@ -162,6 +187,9 @@ function _resolveWorkerShiftLocalState(objectId, serverError) {
 
 async function resolveWorkerShiftState(options = {}) {
   const objectId = options.objectId || null;
+  // 21.09 (P0, owner review finding): live pending records only -- see
+  // _resolveWorkerShiftOutboxState's comment. A dead_letter no longer short-
+  // circuits this before the server is even asked.
   const outboxState = await _resolveWorkerShiftOutboxState(objectId).catch(() => null);
   if (outboxState) return outboxState;
 
@@ -198,6 +226,14 @@ async function resolveWorkerShiftState(options = {}) {
   } catch (e) {
     serverError = e;
   }
+
+  // 21.09 (P0, owner review finding): dead_letter is consulted only here --
+  // the server was reachable and confirmed there is no open/finished session
+  // for this object (or the server call itself failed), so a stale send
+  // failure is now relevant recovery information rather than a false block
+  // on an otherwise-normal session the server would have reported above.
+  const deadLetter = await _findDeadLetterShiftRecord(objectId).catch(() => null);
+  if (deadLetter) return deadLetter;
 
   return _resolveWorkerShiftLocalState(objectId, serverError);
 }
