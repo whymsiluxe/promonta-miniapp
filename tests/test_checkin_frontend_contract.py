@@ -6,6 +6,7 @@ APP_HTML = ROOT / "frontend" / "app.html"
 CHECKIN_JS = ROOT / "frontend" / "js" / "checkin.js"
 HOME_JS = ROOT / "frontend" / "js" / "home.js"
 WORKER_CHECKIN_FAB_JS = ROOT / "frontend" / "js" / "worker-checkin-fab.js"
+WORKER_SHIFT_STATE_JS = ROOT / "frontend" / "js" / "worker-shift-state.js"
 RADIO_PLAYER_JS = ROOT / "frontend" / "js" / "components" / "radio-player.js"
 
 
@@ -27,7 +28,7 @@ def test_worker_stage_picker_has_real_modal_layer():
     html = _source(APP_HTML)
     fab = _source(WORKER_CHECKIN_FAB_JS)
 
-    assert "#worker-object-picker-modal,\n#worker-stage-picker-modal" in html
+    assert "#worker-object-picker-modal,\n#worker-stage-picker-modal,\n#worker-shift-status-modal" in html
     assert "z-index: 1800" in html
     assert "modal.id = 'worker-stage-picker-modal'" in fab
     assert "modal.dataset.noSwipe = '1';" in fab
@@ -36,21 +37,34 @@ def test_worker_stage_picker_has_real_modal_layer():
 
 
 def test_worker_shift_pickers_registered_with_navigation_manager():
-    # 18.09 audit finding: neither picker told NavigationManager about itself, so
+    # 18.09 audit finding (merged from upstream 4a69bc6, adapted to this
+    # branch's own variable names -- functionally equivalent implementation,
+    # not a duplicate): neither picker told NavigationManager about itself, so
     # Telegram BackButton/hardware-back had no way to know it should close the
     # picker first instead of leaving the app / going to the previous route.
     fab = _source(WORKER_CHECKIN_FAB_JS)
 
-    assert "_workerObjectPickerUnregisterOverlay" in fab
-    assert "_workerStagePickerUnregisterOverlay" in fab
-    assert "_workerObjectPickerUnregisterOverlay = NavigationManager.registerOverlay(close);" in fab
-    assert "_workerStagePickerUnregisterOverlay = NavigationManager.registerOverlay(close);" in fab
+    assert "_workerObjectPickerOverlayUnregister" in fab
+    assert "_workerStagePickerOverlayUnregister" in fab
+    assert "_workerObjectPickerOverlayUnregister = NavigationManager.registerOverlay(_closeObjectPicker);" in fab
+    assert "_workerStagePickerOverlayUnregister = NavigationManager.registerOverlay(_closeStagePicker);" in fab
     # closeWorkerShiftPickers() (the tab-switch cleanup path) must also unregister,
     # not just remove the DOM node -- otherwise a stale overlay-stack entry survives
     # a tab-switch close and a later Back press calls a close() bound to an already
     # gone element.
-    assert "if (_workerObjectPickerUnregisterOverlay) { _workerObjectPickerUnregisterOverlay(); _workerObjectPickerUnregisterOverlay = null; }" in fab
-    assert "if (_workerStagePickerUnregisterOverlay) { _workerStagePickerUnregisterOverlay(); _workerStagePickerUnregisterOverlay = null; }" in fab
+    assert "if (_workerObjectPickerOverlayUnregister) { _workerObjectPickerOverlayUnregister(); _workerObjectPickerOverlayUnregister = null; }" in fab
+    assert "if (_workerStagePickerOverlayUnregister) { _workerStagePickerOverlayUnregister(); _workerStagePickerOverlayUnregister = null; }" in fab
+
+
+def test_object_picker_close_is_reentrancy_guarded():
+    # 20.09 (merged from upstream 4a69bc6): close() is reachable both from a
+    # user click and from NavigationManager's Back-stack unregister callback --
+    # a fast double-fire must not remove the modal twice or null out an
+    # already-null overlay handle.
+    fab = _source(WORKER_CHECKIN_FAB_JS)
+    assert "let _closedObjectPicker = false;" in fab
+    assert "if (_closedObjectPicker) return;" in fab
+    assert "_closedObjectPicker = true;" in fab
 
 
 def test_stage_picker_reregister_guard_avoids_duplicate_overlay_entries():
@@ -60,17 +74,45 @@ def test_stage_picker_reregister_guard_avoids_duplicate_overlay_entries():
     # added in a single session.
     fab = _source(WORKER_CHECKIN_FAB_JS)
 
-    assert "const isFirstOpen = !_workerStagePickerUnregisterOverlay;" in fab
-    assert "if (isFirstOpen && typeof NavigationManager !== 'undefined') {" in fab
+    assert "const isFirstRender = !existing;" in fab
+    assert "if (isFirstRender && typeof NavigationManager !== 'undefined') {" in fab
 
 
 def test_home_idle_shift_cta_uses_shared_start_flow():
     src = _source(HOME_JS)
 
-    assert "if (typeof _openStagePickerThenStart === 'function' && single)" in src
-    assert "_openStagePickerThenStart(single['ID объекта']);" in src
-    assert "else if (typeof _openWorkerObjectPicker === 'function')" in src
-    assert "_openWorkerObjectPicker();" in src
+    assert "resolveWorkerShiftState()" in src
+    assert "WORKER_SHIFT_STATE.START_PENDING_SYNC" in src
+    assert "WORKER_SHIFT_STATE.FINISH_PENDING_SYNC" in src
+    assert "openWorkerShiftFlow({" in src
+    assert "entryPoint: 'home'" in src
+
+
+def test_worker_shift_state_resolver_prioritizes_outbox_before_server():
+    html = _source(APP_HTML)
+    src = _source(WORKER_SHIFT_STATE_JS)
+    fab = _source(WORKER_CHECKIN_FAB_JS)
+
+    assert '<script src="js/worker-shift-state.js"></script>' in html
+    assert "async function resolveWorkerShiftState(options = {})" in src
+    assert "promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_FINISH)" in src
+    assert "promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_START)" in src
+    assert "state: WORKER_SHIFT_STATE.FINISH_PENDING_SYNC" in src
+    assert "state: WORKER_SHIFT_STATE.START_PENDING_SYNC" in src
+    assert "api(path)" in src
+    assert "async function openWorkerShiftFlow" in fab
+    assert "openWorkerShiftStatusSheet(shiftState)" in fab
+
+
+def test_worker_start_fab_base_position_uses_measured_nav_height_not_magic_number():
+    # 18.09 (audit finding): .nav-item-start's base (non-radio-mini) position was
+    # bottom: calc(max(14px, safe-area) + 96px) -- a fixed number not tied to the
+    # bottom-nav's actual rendered height. Now uses --app-bottom-nav-height, same
+    # measured-height pattern already used by .objects-fab and the radio-mini-visible
+    # override for this same element.
+    html = _source(APP_HTML)
+    assert "bottom: calc(var(--app-bottom-nav-height, 70px) + max(10px, env(safe-area-inset-bottom)) + 20px);\n  z-index: 60;" in html
+    assert "bottom: calc(max(14px, env(safe-area-inset-bottom)) + 96px);" not in html
 
 
 def test_worker_start_fab_base_position_uses_measured_nav_height_not_magic_number():

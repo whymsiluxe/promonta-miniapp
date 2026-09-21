@@ -3,18 +3,19 @@
 code before being finished off and shipped -- see docs/HANDOFF for context). No
 existing test file covered this endpoint directly.
 
-20.09: switched from patch.object(_load_abwesenheit/_save_abwesenheit) to a real
-isolated store file. The endpoint now does its read-modify-write inside
-update_json_transaction() (one lock, no lost updates), which reads the file
-directly -- a patched _load_abwesenheit is simply not on that path anymore. Writing
-a real temp file also makes these tests exercise the actual persistence path
-instead of asserting against a fake save callback.
+20.09 (merged from upstream c23894d): switched from patch.object(_load_abwesenheit/
+_save_abwesenheit) to a real isolated store file. The endpoint now does its
+read-modify-write inside update_json_transaction() (one lock, no lost updates),
+which reads the file directly -- a patched _load_abwesenheit is simply not on that
+path anymore. Writing a real temp file also makes these tests exercise the actual
+persistence path instead of asserting against a fake save callback.
 """
 import json
 import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
@@ -34,6 +35,33 @@ def _entry(**overrides):
     }
     e.update(overrides)
     return e
+
+
+class AbwesenheitLegacyIdMigrationTests(unittest.TestCase):
+    """Этап 0.5 hardening (this branch, pre-existing): migration for legacy
+    abwesenheit rows without an 'id' key, distinct from -- but closely related
+    to -- the KeyError lookup bug upstream found and fixed below."""
+
+    def test_legacy_entries_without_id_are_migrated_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'abwesenheit.json')
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump([
+                    {'user_id': '10', 'date_from': '2026-09-10', 'status': 'approved'},
+                    {'id': 'keep-me', 'user_id': '20', 'date_from': '2026-09-11', 'status': 'pending'},
+                ], f)
+
+            with patch.object(backend, 'ABWESENHEIT_FILE', path):
+                migrated = backend._migrate_abwesenheit_legacy_ids()
+                migrated_again = backend._migrate_abwesenheit_legacy_ids()
+
+            with open(path, encoding='utf-8') as f:
+                items = json.load(f)
+
+        self.assertEqual(migrated, 1)
+        self.assertEqual(migrated_again, 0)
+        self.assertTrue(items[0].get('id'))
+        self.assertEqual(items[1]['id'], 'keep-me')
 
 
 class AbwesenheitMoveEndpointTests(unittest.TestCase):
@@ -114,10 +142,11 @@ class AbwesenheitMoveEndpointTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
 
     def test_legacy_entry_without_id_does_not_break_lookup(self):
-        # 20.09 (live prod bug): abwesenheit.json holds legacy rows with no 'id'
-        # key at all. The lookup used i['id'], so the generator raised KeyError on
-        # the first such row before ever reaching the requested entry -- every
-        # single-entry operation 500'd regardless of which entry was targeted.
+        # 20.09 (live prod bug, merged from upstream c23894d): abwesenheit.json
+        # holds legacy rows with no 'id' key at all. The lookup used i['id'], so
+        # the generator raised KeyError on the first such row before ever
+        # reaching the requested entry -- every single-entry operation 500'd
+        # regardless of which entry was targeted.
         self._seed([
             {'user_id': '100', 'date_from': '2026-08-05', 'date_to': '2026-08-06',
              'reason': 'Krankheit', 'status': 'approved'},  # legacy, no 'id'

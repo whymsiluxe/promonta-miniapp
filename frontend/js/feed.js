@@ -41,18 +41,21 @@ function pickWeatherIcon(riskText) {
 }
 
 function _riskType(riskText) {
-  if (riskText.includes('жар')) return 'heat';
-  if (riskText.includes('заморозки')) return 'frost';
-  if (riskText.includes('дождь')) return 'rain';
-  if (riskText.includes('ветер')) return 'wind';
-  if (riskText.includes('холодно')) return 'cold';
+  const text = String(riskText || '').toLowerCase();
+  if (text.includes('жар')) return 'heat';
+  if (text.includes('заморозки') || text.includes('мороз')) return 'frost';
+  if (text.includes('дождь') || text.includes('ливень') || text.includes('осад')) return 'rain';
+  if (text.includes('ветер') || text.includes('шторм')) return 'wind';
+  if (text.includes('холодно') || text.includes('холод')) return 'cold';
   return 'warn';
 }
 
 // Доминантный тип: жару по tmax, остальное по тексту. Экстр.жара>ветер>мороз>жара>дождь>холод.
 function _dominantWxType(entry) {
-  const all = entry.forecast.flatMap(d => d.risks).map(_riskType);
-  const tmax = (entry.wave && entry.wave.length) ? Math.max(...entry.wave.map(d => d.tmax)) : null;
+  const forecast = Array.isArray(entry.forecast) ? entry.forecast : [];
+  const wave = Array.isArray(entry.wave) ? entry.wave : [];
+  const all = forecast.flatMap(d => d.risks || []).map(_riskType);
+  const tmax = wave.length ? Math.max(...wave.map(d => d.tmax).filter(v => typeof v === 'number')) : null;
   if (weatherHeatKind(tmax) === 'extreme_heat') return 'extreme_heat';
   if (all.includes('wind')) return 'wind';
   if (all.includes('frost')) return 'frost';
@@ -119,7 +122,8 @@ function _wxPrimaryLabel(entry) {
     const tmax = (entry.wave && entry.wave.length) ? Math.max(...entry.wave.map(d => d.tmax)) : null;
     return weatherHeatLabel(tmax) || WX_TYPES[type].label;
   }
-  return (entry.forecast[0] && entry.forecast[0].risks[0]) || WX_TYPES[type].label;
+  const firstRiskDay = (entry.forecast || []).find(d => d.risks && d.risks.length);
+  return (firstRiskDay && firstRiskDay.risks[0]) || WX_TYPES[type].label;
 }
 
 function fmtFeedDate(iso) {
@@ -282,23 +286,87 @@ function renderWeatherCityTabs() {
 
 let _wxExpandedIdx = null;
 
+function _wxWaveValue(wave, field, mode) {
+  const values = (wave || []).map(d => d && d[field]).filter(v => typeof v === 'number' && !isNaN(v));
+  if (!values.length) return null;
+  return mode === 'min' ? Math.min(...values) : Math.max(...values);
+}
+
+function _wxAlertForecastDay(entry, kind) {
+  const forecast = Array.isArray(entry.forecast) ? entry.forecast : [];
+  if (!forecast.length) return null;
+  if (kind === 'heat' || kind === 'extreme_heat') {
+    const tmax = _wxWaveValue(entry.wave || [], 'tmax', 'max');
+    const day = (entry.wave || []).find(d => d.tmax === tmax);
+    return forecast.find(f => f.date === day?.date) || forecast[0];
+  }
+  return forecast.find(day => (day.risks || []).some(r => _riskType(r) === kind)) ||
+    forecast.find(day => day.risks && day.risks.length) ||
+    forecast[0];
+}
+
+function _wxWaveForDate(entry, date) {
+  const wave = Array.isArray(entry.wave) ? entry.wave : [];
+  return wave.find(d => d.date === date) || wave[0] || null;
+}
+
+function _wxAlertSummary(entry) {
+  const kind = _dominantWxType(entry);
+  const type = WX_TYPES[kind] || WX_TYPES.warn;
+  const wave = Array.isArray(entry.wave) ? entry.wave : [];
+  const alertDay = _wxAlertForecastDay(entry, kind);
+  const alertWave = _wxWaveForDate(entry, alertDay?.date);
+  const tmax = _wxWaveValue(wave, 'tmax', 'max');
+  const tmin = _wxWaveValue(wave, 'tmin', 'min');
+  const precip = alertWave && typeof alertWave.precip_prob === 'number'
+    ? alertWave.precip_prob
+    : _wxWaveValue(wave, 'precip_prob', 'max');
+  const wind = alertWave && typeof alertWave.wind === 'number'
+    ? alertWave.wind
+    : _wxWaveValue(wave, 'wind', 'max');
+  const risks = alertDay && alertDay.risks && alertDay.risks.length ? alertDay.risks : [];
+  const rawDetail = risks[0] || _wxPrimaryLabel(entry);
+  const title = (kind === 'heat' || kind === 'extreme_heat')
+    ? (weatherHeatLabel(tmax) || type.label)
+    : type.label;
+  let metric = '';
+  if (kind === 'rain') metric = precip !== null ? `${Math.round(precip)}% дождя` : 'Осадки';
+  else if (kind === 'wind') metric = wind !== null ? `${Math.round(wind)} км/ч` : 'Порывы';
+  else if (kind === 'cold' || kind === 'frost') metric = tmin !== null ? `до ${Math.round(tmin)}°` : 'Температура';
+  else if (kind === 'heat' || kind === 'extreme_heat') metric = tmax !== null ? `до ${Math.round(tmax)}°` : 'Температура';
+  else metric = rawDetail && rawDetail !== title ? rawDetail : '';
+  const tempLabel = alertWave && typeof alertWave.tmax === 'number' ? `${Math.round(alertWave.tmax)}°` : '';
+  return {
+    kind,
+    type,
+    title,
+    metric,
+    detail: rawDetail,
+    dateLabel: alertDay ? fmtForecastDay(alertDay.date, alertDay.day_offset) : '',
+    tempLabel,
+  };
+}
+
 function _renderCompactWeatherRow(entry, idx) {
-  const type = WX_TYPES[_dominantWxType(entry)];
-  const today = entry.wave && entry.wave[0];
-  const tempNow = today ? Math.round(today.tmax) : null;
-  const topRisk = _wxPrimaryLabel(entry);
+  const summary = _wxAlertSummary(entry);
   const expanded = _wxExpandedIdx === idx;
-  const dateLabel = entry.created ? fmtFeedDate(entry.created) : '';
   return `
-  <div class="wx-compact-row ${expanded ? 'expanded' : ''}" data-wx-idx="${idx}">
+  <div class="wx-compact-row wx-risk-${summary.kind} ${expanded ? 'expanded' : ''}" data-wx-idx="${idx}" style="--wx-hue:${summary.type.hue}">
     <div class="wx-compact-head">
-      <span class="wx-compact-icon">${type.icon}</span>
-      <div class="wx-compact-text">
-        <span class="wx-compact-object">${esc(entry.object)}</span>
-        <span class="wx-compact-risk">${esc(topRisk)}</span>
+      <span class="wx-compact-icon" aria-hidden="true">${summary.type.icon}</span>
+      <div class="wx-compact-body">
+        <div class="wx-compact-primary">
+          <span class="wx-compact-risk-title">${esc(summary.title)}</span>
+          ${summary.metric ? `<span class="wx-compact-metric">${esc(summary.metric)}</span>` : ''}
+        </div>
+        <div class="wx-compact-risk-detail">${esc(summary.detail)}</div>
+        <div class="wx-compact-meta">
+          <span class="wx-compact-object">${esc(entry.object)}</span>
+          ${summary.dateLabel ? `<span>${esc(summary.dateLabel)}</span>` : ''}
+          ${entry.created ? `<span>${fmtFeedDate(entry.created)}</span>` : ''}
+        </div>
       </div>
-      ${dateLabel ? `<span class="wx-compact-date">${dateLabel}</span>` : ''}
-      ${tempNow !== null ? `<span class="wx-compact-temp">${tempNow}°</span>` : ''}
+      ${summary.tempLabel ? `<span class="wx-compact-temp">${esc(summary.tempLabel)}</span>` : ''}
     </div>
     ${expanded ? `<div class="wx-compact-detail">${renderFeedCard(entry, idx)}</div>` : ''}
   </div>`;
@@ -648,9 +716,13 @@ async function loadFeedPhotos() {
   }
 }
 
-async function _uploadFeedPhoto(files) {
+async function _uploadFeedPhoto(files, objectId) {
   const formData = new FormData();
   for (const f of files) formData.append('files', f);
+  // 21.09 (Worker UX V2, Этап 6): backend уже принимал object_id (main.py
+  // upload_feed_photo), фронт его никогда не передавал -- нужно для quick-action
+  // "Фото", привязывающего снимок к контекстно резолвленному объекту.
+  if (objectId) formData.append('object_id', objectId);
   try {
     await fetch(`${API_BASE}/api/feed/photos`, {
       method: 'POST',

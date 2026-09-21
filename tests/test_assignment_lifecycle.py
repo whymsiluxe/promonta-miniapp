@@ -686,7 +686,7 @@ class ProductionPackageImportTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         out = result.stdout
 
-        self.assertIn('ROUTES 186', out, out)  # 18.09: +1 for GET /api/checkin/{session_id}/finish-context
+        self.assertIn('ROUTES 186', out, out)  # 20.09: +1 for GET /api/checkin/{session_id}/finish-context (frozen accepted-plan snapshot)
 
         self.assertIn('MINIAPP_FILE', out)
         miniapp_file_line = next(l for l in out.splitlines() if l.startswith('MINIAPP_FILE'))

@@ -116,29 +116,43 @@ def get_values(rng):
     return json.load(urllib.request.urlopen(req, timeout=20)).get('values', [])
 
 
-def _formula_safe(value):
-    """20.09 (найдено аудитом): записи идут с valueInputOption=USER_ENTERED, то есть
-    Sheets ИНТЕРПРЕТИРУЕТ ячейку, начинающуюся с =, +, -, @ как живую формулу.
-    Тексты в эти ячейки приходят прямо от работников (название этапа, описание
-    дефекта, заголовок потребности, отчёт о смене) -- то есть работник мог вписать
-    =IMPORTRANGE(...) / =HYPERLINK(...) и формула выполнилась бы в сессии ВЛАДЕЛЬЦА
-    при открытии таблицы. Утечка здесь опаснее, чем через API: в этой же таблице
-    лежат бюджеты, которые от работников намеренно скрыты (_serialize_object_for_worker).
-
-    Тот же приём уже применён в main.py::_csv_safe для CSV-экспорта -- там про эту
-    атаку знали, но защиту к Sheets-зеркалу не применили. Префикс апострофом: Sheets
-    его не отображает и не выполняет содержимое как формулу.
-
-    Экранируем, а не переключаемся на valueInputOption=RAW: даты/время/числа
-    (Zeiterfassung: date_str, start_time, str(hours)) при RAW остались бы текстом и
-    сломали бы формулы владельца, которые по этим колонкам считают."""
-    if isinstance(value, str) and value and value[0] in ('=', '+', '-', '@'):
+# 20.09 (found by audit, hardened during merge): writes go through
+# valueInputOption=USER_ENTERED, so Sheets INTERPRETS a cell starting with
+# =, +, -, @ as a live formula. This text comes directly from workers (stage
+# name, defect description, need title, shift report) -- a worker could type
+# =IMPORTRANGE(...) / =HYPERLINK(...) and it would execute in the OWNER's
+# session on opening the sheet. The leak here is worse than via the API: this
+# same sheet holds budgets deliberately hidden from workers
+# (_serialize_object_for_worker).
+#
+# The same pattern is already applied in main.py::_csv_safe for CSV export --
+# that one knew about this attack, this Sheets mirror didn't. Apostrophe
+# prefix: Sheets doesn't display or execute the cell content as a formula.
+#
+# Escaping, not switching to valueInputOption=RAW: dates/times/numbers
+# (Zeiterfassung: date_str, start_time, str(hours)) would stay text under RAW
+# and break the owner's formulas that sum these columns.
+#
+# A leading +/- is only escaped when the REST of the string isn't a plain
+# numeric literal -- a naive "any string starting with -/+" check (upstream's
+# original _formula_safe) would corrupt real negative numbers like "-150.00"
+# in Zeiterfassung by prefixing them with an apostrophe and turning them into
+# text Sheets can no longer sum.
+def _sheets_formula_safe(value):
+    if not isinstance(value, str):
+        return value
+    stripped = value.lstrip()
+    if not stripped:
+        return value
+    if stripped[0] in ('=', '@'):
+        return "'" + value
+    if stripped[0] in ('+', '-') and not re.fullmatch(r'[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)', stripped):
         return "'" + value
     return value
 
 
-def _formula_safe_rows(values):
-    return [[_formula_safe(cell) for cell in row] for row in values]
+def _sanitize_sheet_values(values):
+    return [[_sheets_formula_safe(cell) for cell in row] for row in values]
 
 
 def append_row(sheet_name, row):
@@ -146,7 +160,7 @@ def append_row(sheet_name, row):
     rng_enc = urllib.parse.quote(f'{sheet_name}!A:Z', safe='')
     req = urllib.request.Request(
         f'https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/{rng_enc}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
-        data=json.dumps({'values': _formula_safe_rows([row])}).encode(), method='POST',
+        data=json.dumps({'values': _sanitize_sheet_values([row])}).encode(), method='POST',
         headers={'Authorization': f'Bearer {t}', 'Content-Type': 'application/json'})
     urllib.request.urlopen(req, timeout=20)
 
@@ -156,7 +170,7 @@ def update_range(rng, values):
     rng_enc = urllib.parse.quote(rng, safe='')
     req = urllib.request.Request(
         f'https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/{rng_enc}?valueInputOption=USER_ENTERED',
-        data=json.dumps({'values': _formula_safe_rows(values)}).encode(), method='PUT',
+        data=json.dumps({'values': _sanitize_sheet_values(values)}).encode(), method='PUT',
         headers={'Authorization': f'Bearer {t}', 'Content-Type': 'application/json'})
     urllib.request.urlopen(req, timeout=20)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Учёт инструмента — отдельная Google Sheet, не связана с Objekte&Kosten."""
-import json, time, urllib.request, urllib.parse
+import json, re, time, urllib.request, urllib.parse
 from datetime import datetime
 
 SHEETS_CRED = '/home/promonta/agent/.sheets.json'
@@ -48,18 +48,27 @@ def get_values(rng):
     return json.load(urllib.request.urlopen(req, timeout=20)).get('values', [])
 
 
-def _formula_safe(value):
-    """20.09 (найдено аудитом): то же, что objekte_lib._formula_safe -- при
-    valueInputOption=USER_ENTERED ячейка, начинающаяся с =, +, -, @, выполняется
-    как формула в сессии того, кто откроет таблицу. Сюда приходят названия и
-    комментарии инструментов, вводимые работниками."""
-    if isinstance(value, str) and value and value[0] in ('=', '+', '-', '@'):
+# 20.09 (found by audit, hardened during merge): same as objekte_lib's version
+# -- under valueInputOption=USER_ENTERED, a cell starting with =, +, -, @
+# executes as a formula in whoever opens the sheet. Tool names/comments here
+# are worker-entered. A leading +/- is only escaped when the rest of the
+# string isn't a plain numeric literal -- a naive "any leading -/+" check
+# would corrupt real negative numbers by turning them into escaped text.
+def _sheets_formula_safe(value):
+    if not isinstance(value, str):
+        return value
+    stripped = value.lstrip()
+    if not stripped:
+        return value
+    if stripped[0] in ('=', '@'):
+        return "'" + value
+    if stripped[0] in ('+', '-') and not re.fullmatch(r'[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)', stripped):
         return "'" + value
     return value
 
 
-def _formula_safe_rows(values):
-    return [[_formula_safe(cell) for cell in row] for row in values]
+def _sanitize_sheet_values(values):
+    return [[_sheets_formula_safe(cell) for cell in row] for row in values]
 
 
 def append_row(sheet_name, row):
@@ -67,7 +76,7 @@ def append_row(sheet_name, row):
     rng_enc = urllib.parse.quote(f'{sheet_name}!A:Z', safe='')
     req = urllib.request.Request(
         f'https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/{rng_enc}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
-        data=json.dumps({'values': _formula_safe_rows([row])}).encode(), method='POST',
+        data=json.dumps({'values': _sanitize_sheet_values([row])}).encode(), method='POST',
         headers={'Authorization': f'Bearer {t}', 'Content-Type': 'application/json'})
     urllib.request.urlopen(req, timeout=20)
 
@@ -77,7 +86,7 @@ def update_range(rng, values):
     rng_enc = urllib.parse.quote(rng, safe='')
     req = urllib.request.Request(
         f'https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/{rng_enc}?valueInputOption=USER_ENTERED',
-        data=json.dumps({'values': _formula_safe_rows(values)}).encode(), method='PUT',
+        data=json.dumps({'values': _sanitize_sheet_values(values)}).encode(), method='PUT',
         headers={'Authorization': f'Bearer {t}', 'Content-Type': 'application/json'})
     urllib.request.urlopen(req, timeout=20)
 

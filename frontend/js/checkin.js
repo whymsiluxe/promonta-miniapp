@@ -57,30 +57,6 @@ function _getGeolocation() {
 // для мест, где нельзя ждать — сама запись сессии при старте/финише не меняется.
 let _checkinButtonsGeneration = 0;
 
-// 18.09 (audit finding): after Start/Finish is queued offline, the modal/wizard
-// closed and NO local session state reflected the fact that a submission was
-// already in flight -- Home/FAB/stages-view kept showing "Смена не начата"
-// (or "Смена начата" for Finish), so the worker could tap Start/Finish again
-// and queue a SECOND outbox record for the same shift with a different
-// idempotency key (the server's dedup-by-idempotency-key can't catch that --
-// it's a genuinely different key). Checks both outbox kinds for this object,
-// excluding dead_letter (a permanently-failed record must not block a fresh
-// retry attempt forever).
-async function _findPendingCheckinOutboxRecord(objectId) {
-  if (typeof promontaOutboxList !== 'function') return null;
-  const [startRecords, finishRecords] = await Promise.all([
-    promontaOutboxList(CHECKIN_OUTBOX_KIND_START).catch(() => []),
-    typeof CHECKIN_OUTBOX_KIND_FINISH !== 'undefined'
-      ? promontaOutboxList(CHECKIN_OUTBOX_KIND_FINISH).catch(() => [])
-      : Promise.resolve([]),
-  ]);
-  const pendingStart = startRecords.find(r => r.objectId === objectId && r.state !== 'dead_letter');
-  if (pendingStart) return { kind: 'start', record: pendingStart };
-  const pendingFinish = finishRecords.find(r => r.objectId === objectId && r.state !== 'dead_letter');
-  if (pendingFinish) return { kind: 'finish', record: pendingFinish };
-  return null;
-}
-
 async function refreshCheckinButtons() {
   const objectId = _stagesCurrentObjectId;
   const startBtn = document.getElementById('checkin-start-btn');
@@ -99,49 +75,37 @@ async function refreshCheckinButtons() {
   // от того совпадает ли objectId.
   const myGeneration = ++_checkinButtonsGeneration;
 
-  // 18.09: checked BEFORE the network/session lookup below -- a pending outbox
-  // record means Start or Finish was already queued for this object and must
-  // gate the buttons regardless of what the server currently reports (the
-  // server hasn't seen this submission yet at all).
-  const pending = await _findPendingCheckinOutboxRecord(objectId);
-  if (myGeneration !== _checkinButtonsGeneration) return;
-  if (pending) {
-    startBtn.disabled = true;
-    finishBtn.disabled = true;
-    analyzeBtn.style.display = 'none';
-    const pauseBtnEl = document.getElementById('checkin-pause-toggle-btn');
-    if (pauseBtnEl) pauseBtnEl.style.display = 'none';
-    if (pending.kind === 'start') {
-      startBtn.textContent = '⏳ Начало смены ожидает синхронизации';
-    } else {
-      finishBtn.textContent = '⏳ Завершение смены ожидает синхронизации';
-    }
-    return;
-  }
-
   let session = null;
+  let shiftState = null;
   try {
-    const data = await api(`/api/checkin?object_id=${encodeURIComponent(objectId)}`);
+    shiftState = typeof resolveWorkerShiftState === 'function'
+      ? await resolveWorkerShiftState()
+      : null;
+    if (shiftState
+      && !workerShiftStateHasActiveSession?.(shiftState)
+      && !workerShiftStateIsPending?.(shiftState)
+      && shiftState.state !== WORKER_SHIFT_STATE.SYNC_ERROR
+      && typeof resolveWorkerShiftState === 'function') {
+      shiftState = await resolveWorkerShiftState({ objectId });
+    }
     if (myGeneration !== _checkinButtonsGeneration) return;
-    // 24.07: НЕ фильтровать по дате здесь — сервер (Europe/Berlin) и клиент (UTC через
-    // toISOString) расходятся в дате на границе полуночи CEST, что ложно скрывало только
-    // что открытую смену. "Открыта" определяется исключительно finish_at, не датой.
-    const sessions = data.sessions || [];
-    const open = sessions.find(s => s.finish_at === null || s.finish_at === undefined);
-    if (open) {
+    if (workerShiftStateHasActiveSession?.(shiftState) && String(shiftState.objectId) === String(objectId)) {
+      const open = shiftState.session || {};
       session = {
-        id: open.id, finished: false,
-        startAt: open.start_at || null,
-        pauseStartedAt: open.pause_started_at || null,
-        pauseAccumulatedSeconds: open.pause_accumulated_seconds || 0,
+        id: shiftState.sessionId || open.id,
+        finished: false,
+        startAt: open.start_at || open.startAt || null,
+        pauseStartedAt: open.pause_started_at || open.pauseStartedAt || null,
+        pauseAccumulatedSeconds: open.pause_accumulated_seconds || open.pauseAccumulatedSeconds || 0,
         // 17.09 (audit finding): server already saves+returns this, the GPS
         // status display just never read it -- see _updateActiveShiftPanel.
-        startAccuracy: open.start_accuracy != null ? Number(open.start_accuracy) : null,
+        startAccuracy: open.start_accuracy != null ? Number(open.start_accuracy) : (open.startAccuracy ?? null),
       };
-    } else if (sessions.length) {
-      session = { id: sessions[sessions.length - 1].id, finished: true };
+      _setActiveCheckinSession(objectId, session);
+    } else if (shiftState?.state === WORKER_SHIFT_STATE.FINISHED) {
+      session = { id: shiftState.sessionId, finished: true };
+      _setActiveCheckinSession(objectId, session);
     }
-    if (session) _setActiveCheckinSession(objectId, session);
   } catch (e) {
     // сеть недоступна — используем последнее известное локальное состояние, не блокируем UI
     session = _getActiveCheckinSession(objectId);
@@ -150,7 +114,35 @@ async function refreshCheckinButtons() {
 
   const pauseBtn = document.getElementById('checkin-pause-toggle-btn');
 
-  if (session && !session.finished) {
+  if (shiftState?.state === WORKER_SHIFT_STATE.START_PENDING_SYNC) {
+    startBtn.disabled = true;
+    startBtn.textContent = '⏳ Старт ожидает синхронизации';
+    finishBtn.disabled = true;
+    analyzeBtn.style.display = 'none';
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    _updateActiveShiftPanel(null, objectId);
+  } else if (shiftState?.state === WORKER_SHIFT_STATE.FINISH_PENDING_SYNC) {
+    startBtn.disabled = true;
+    startBtn.textContent = '⏳ Финиш ожидает синхронизации';
+    finishBtn.disabled = true;
+    analyzeBtn.style.display = 'none';
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    _updateActiveShiftPanel(null, objectId);
+  } else if (shiftState?.state === WORKER_SHIFT_STATE.SYNC_ERROR) {
+    startBtn.disabled = true;
+    startBtn.textContent = '⚠️ Ошибка синхронизации';
+    finishBtn.disabled = true;
+    analyzeBtn.style.display = 'none';
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    _updateActiveShiftPanel(null, objectId);
+  } else if (workerShiftStateHasActiveSession?.(shiftState) && String(shiftState.objectId) !== String(objectId)) {
+    startBtn.disabled = true;
+    startBtn.textContent = '▶ Смена уже идёт';
+    finishBtn.disabled = true;
+    analyzeBtn.style.display = 'none';
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    _updateActiveShiftPanel(null, objectId);
+  } else if (session && !session.finished) {
     startBtn.disabled = true;
     startBtn.textContent = '▶ Смена начата';
     finishBtn.disabled = false;
@@ -187,12 +179,29 @@ let _activeShiftTimerInterval = null;
 let _activeShiftStartAt = null;
 let _activeShiftPauseStartedAt = null;
 let _activeShiftPauseAccumulated = 0;
+let _activeShiftVisibilityListenerAttached = false;
 
 function _stopActiveShiftTimer() {
   if (_activeShiftTimerInterval) {
     clearInterval(_activeShiftTimerInterval);
     _activeShiftTimerInterval = null;
   }
+}
+
+// 21.09 (hardening): таймер выше — чистый client setInterval, seed'ится один раз
+// из последнего server-ответа и после этого free-run'ит без ресинка. Если пауза
+// произошла с другого устройства/владельцем пока экран остаётся открытым (не было
+// перехода/повторного открытия stages-view, что обычно триггерит refreshCheckinButtons),
+// таймер продолжает считать смену активной до следующего естественного триггера.
+// Фикс: досверяться с сервером при возврате видимости вкладки/приложения.
+function _attachActiveShiftVisibilityResync() {
+  if (_activeShiftVisibilityListenerAttached) return;
+  _activeShiftVisibilityListenerAttached = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (!_activeShiftTimerInterval) return;
+    if (typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
+  });
 }
 
 function _formatShiftDuration(totalSeconds) {
@@ -239,6 +248,7 @@ function _updateActiveShiftPanel(activeSession, objectId) {
   if (!_activeShiftTimerInterval) {
     _activeShiftTimerInterval = setInterval(_tickActiveShiftTimer, 1000);
   }
+  _attachActiveShiftVisibilityResync();
 
   const gpsEl = document.getElementById('active-shift-gps-status');
   if (gpsEl) {
@@ -434,6 +444,12 @@ async function _sendCheckinStartOutboxRecord(record) {
     if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
       _loadWorkerShiftCta();
     }
+    // 21.09 (P0, owner review finding): a Start that was queued offline and
+    // only just synced now is exactly the case where proactive finish-context
+    // caching matters most -- the worker may already be mid-shift by the time
+    // connectivity returns, so this can't wait for the online Start path's
+    // own prefetch (which never ran for a queued Start).
+    if (typeof _prefetchFinishContextAfterStart === 'function') _prefetchFinishContextAfterStart(session.id, session);
     return session;
   } finally {
     _stagesCurrentObjectId = previousObjectId;
@@ -583,6 +599,14 @@ function _setCheckinSyncStatus(text, isError) {
   _checkinSyncStatusEl.style.display = text ? 'block' : 'none';
 }
 
+function _refreshWorkerShiftSurfaces() {
+  if (typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
+  if (typeof _refreshWorkerCheckinFabIcon === 'function') _refreshWorkerCheckinFabIcon();
+  if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
+    _loadWorkerShiftCta();
+  }
+}
+
 async function _confirmCheckinPreview() {
   if (!_checkinPreviewFiles.length) return;
   if (_checkinPendingAction !== 'start') {
@@ -606,6 +630,7 @@ async function _confirmCheckinPreview() {
       _checkinSelectedStageName = null;
       _setCheckinSyncStatus('Нет связи — старт сохранён в очередь и отправится автоматически', false);
       showToast('Старт сохранён в офлайн-очередь', 'success');
+      _refreshWorkerShiftSurfaces();
       _closeCheckinPreviewModal();
     } catch (e) {
       _setCheckinSyncStatus('Не удалось сохранить офлайн: ' + e.message, true);
@@ -623,16 +648,9 @@ async function _confirmCheckinPreview() {
     _checkinSelectedStageName = null;
     hapticImpact('light');
     _setCheckinSyncStatus('');
-    refreshCheckinButtons();
-    // 24.07: после старта/финиша через FAB (не заходя в объект) карточка "Смена
-    // идёт/не начата" на Home оставалась устаревшей, пока юзер не уходил с Home и не
-    // возвращался — initWorkerHomeView() перерисовывается только при switchView('home'),
-    // а тут юзер физически остаётся на том же view. Обновляем карточку напрямую, если
-    // она есть в DOM прямо сейчас.
-    if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
-      _loadWorkerShiftCta();
-    }
+    _refreshWorkerShiftSurfaces();
     _closeCheckinPreviewModal();
+    if (typeof _prefetchFinishContextAfterStart === 'function') _prefetchFinishContextAfterStart(session.id, session);
   } catch (e) {
     // Файлы и idempotency-key НЕ сбрасываются — повторный тап "Подтвердить" безопасен (дедуп на сервере),
     // не нужно переснимать фото заново при плохой связи. Geo-ошибка — отдельный случай:
@@ -646,6 +664,7 @@ async function _confirmCheckinPreview() {
         _checkinSelectedStageName = null;
         _setCheckinSyncStatus('Связь сорвалась — старт сохранён в очередь', false);
         showToast('Старт сохранён в офлайн-очередь', 'success');
+        _refreshWorkerShiftSurfaces();
         _closeCheckinPreviewModal();
         return;
       } catch (queueErr) {

@@ -1,6 +1,8 @@
 # Current State
 
-**Last updated**: 2026-09-18. This is the single place to check first — if
+**Last updated**: 2026-09-21 (Worker UX V2 session, branch `fix-shift-start`,
+NOT merged to `main` yet — see new section below). Prior baseline was
+2026-09-18. This is the single place to check first — if
 it contradicts anything elsewhere in `docs/`, this file wins for "what's
 true right now." Everything else in `docs/` with a date in its filename
 (`*_09sep2026.md`, `*_11sep2026.md`, `*_13sep2026.md`, `HANDOFF*.md`,
@@ -18,15 +20,18 @@ carries a one-line `SUPERSEDED` pointer at the top.
 - **Repo**: https://github.com/whymsiluxe/promonta-miniapp — still **PUBLIC**
   (owner has declined to make it private twice; not an oversight, a standing
   decision — see OPEN_QUESTIONS.md).
-- **Branch**: `main`. Working tree clean.
-- **Deployed = HEAD**: production backend confirms `commit` in
-  `GET /api/health` matches `git rev-parse HEAD` on the VPS repo as of this
-  writing (`201ef52`). `scripts/deploy.sh` is the only deploy path; both
-  manual sessions and the autonomous Codex runner use it directly on the VPS
-  repo (no separate CI/CD deploy pipeline).
-- **CI**: green on every commit for the last several days (`gh run list`),
-  covers full pytest + backend/core + frontend/js subdirs + deploy-manifest
-  drift detection (closed 2026-09-17, commit `2676d11`).
+- **Branch**: `fix-shift-start`, **NOT pushed to origin, NOT merged to
+  `main`** — exists only in the local repo clone as of this writing. Contains
+  the Worker UX V2 work below (Этапы 0.5-8 of `UNIFIED_STEP_BY_STEP_PLAN_v1.1.md`).
+  `main` last commit: `7f4a9a7`.
+- **Deployed = HEAD**: NOT verified this session, and cannot be true —
+  the VPS can only be running `main` or an earlier pushed branch, since
+  `fix-shift-start` was never pushed. Verify `GET /api/health` `commit`
+  field against `git rev-parse HEAD` before assuming any of this work is
+  live; it is not, until pushed/merged/deployed.
+- **CI**: green on `main` as of this writing (`gh run list`, last 3 runs all
+  `success`) — but `fix-shift-start` has never run CI (never pushed), so
+  none of this session's commits have been verified by CI yet.
 
 ## Stack (unchanged, still accurate)
 
@@ -35,10 +40,15 @@ backend (`backend/main.py`) + flat JSON file storage under
 `MINIAPP_DATA_ROOT` (no database) + Google Sheets for object/tool data via
 `objekte_lib.py`/`tools_lib.py`. Full detail: [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Scale, as of 2026-09-18
+## Scale, as of 2026-09-21 (on `fix-shift-start`, not `main`)
 
-- Tests: **886 passed, 1 skipped** (`PROMONTA_ENV=test pytest tests/ -q`).
-- Routes: **185** (`backend/main.py`).
+- Tests: **950 passed, 1 skipped, 1 pre-existing unrelated failure**
+  (`test_assignment_lifecycle.py::ProductionPackageImportTests::
+  test_production_layout_resolves_module_identities_correctly` — hardcodes
+  an expected route count of 185, actual is 186; predates this session,
+  not caused by it, not fixed here since the test's own expected-value
+  assumption is what's stale, not the code).
+- Routes: **186** (`backend/main.py`, measured this session).
 - `backend/main.py`: **10092 lines** — still one file, no router split.
 - `frontend/app.html`: **10521 lines** — still one file, most feature logic
   already lives in `frontend/js/*.js` modules, but a meaningful amount
@@ -82,6 +92,73 @@ checkin/chat/tasks/defects/tools/abwesenheit feature set:
   and tested but gated behind `CONTRACTS_DRIVE_FOLDER_ID`, unset in
   production. Owner has explicitly said not to enable it yet (2026-09-18) —
   this is a live decision, not an oversight; see BACKLOG.md.
+
+## Worker UX V2 (2026-09-21 session, `fix-shift-start` branch)
+
+Following `UNIFIED_STEP_BY_STEP_PLAN_v1.1.md`. Status per stage:
+
+- **Этап 0.5 Hardening**: done. Fixed a real active-shift timer desync gap
+  (checkin.js free-runs client-side with no resync on tab/app visibility
+  return); Sheets formula sanitization and legacy abwesenheit-id migration
+  were already implemented pre-session, only verified.
+- **Этапы 1-3 (Shift State/Contextual Start/Safe Finish)**: were already
+  closed before this session (see `FACT_CHECK_REPORT.md` in the Codex
+  outputs dir) — one real gap found and fixed (NavigationManager
+  registration for object/stage pickers).
+- **Этап 4 (navigation)**: done. Worker bottom-nav: 5 tabs
+  (Лента/Главная/Чат/Объекты/Профиль) -> 4 (Сегодня/Объекты/Чат/Ещё). Owner
+  nav untouched. New `view-more` utility hub re-links to existing
+  views/sub-tabs, no duplicated screens. `data-view="home"` id kept, only
+  its label changed to "Сегодня" — NavigationManager's root fallback
+  needed zero changes.
+- **Этап 5 ("Сегодня" operational panel)**: done. DailyPlan compact preview
+  card (reads `window._todayPlanState`, opens the existing canonical
+  overlay — does not duplicate today-plan.js's fetch/polling/offline-cache/
+  acceptance logic) + a unified Problems card (aggregates existing
+  `/api/alerts` + `/api/tasks` + `/api/mangel/counts`, ranked
+  critical>important>needs>defects, no new store) replacing 3 separate
+  legacy tiles. Persistent DailyPlan bar suppressed only while on Home
+  (compact card already shows the same status there).
+- **Этап 6 (contextual quick actions)**: done. New
+  `frontend/js/worker-quick-actions.js`: Фото/Потребность/Дефект/Чат, with
+  context resolution in the plan's exact priority order (active shift ->
+  Object Detail -> single eligible assignment -> picker). Every action
+  reuses an existing form/endpoint; `_uploadFeedPhoto()` gained an optional
+  `objectId` param (backend already accepted the field, client never sent
+  it before).
+- **Этап 7 (object-detail 4 zones)**: **docs only, no code**. A mapping
+  audit found the plan's own premise wrong before any refactor started —
+  there are 3 tabs today (Чат/Инфо/План работ), not 8; what looked like "8
+  tabs" is 10+ sections stacked in one "Инфо" tab, with owner/worker
+  rendering interleaved in the same functions (not two render trees), a
+  chat panel that physically moves DOM nodes between parents (2
+  already-documented subtle bugs in its history), and near-zero test
+  coverage on ~3000 lines of interlinked code. See
+  `docs/OBJECT_DETAIL_V2.md` for the exact target section->zone mapping
+  and a risk-ordered migration plan for whoever picks this up next.
+- **Этап 8 (Finish Wizard simplification)**: **done**. Removed the
+  standalone blocking "Геолокация" step (AUTO-CAPTURE PRINCIPLE — capture
+  now starts in the background on wizard open, status folds into the
+  existing Сводка/review screen with inline retry). Merged summary+plan-fact
+  into one screen and extra-works+needs/defects+tomorrow-prep into another
+  ("Проблемы и завтра"), each sub-block keeping its original markup/
+  validation, only the screen containers and single next-button handler
+  merged. Wizard is now exactly 4 screens (Фото/Что сделано-план-факт/
+  Проблемы и завтра/Сводка) regardless of whether a DailyPlan exists —
+  matches the plan's 3-4 screen target, down from 6/8.
+- **Этап 9 (object timeline direction)**: docs only, as the plan specifies.
+  See `docs/OBJECT_TIMELINE_DIRECTION.md` — documents the 8 existing
+  `_append_object_history` event kinds and a real gap found (checkin
+  start/pause, task creation, daily-plan create/accept don't log to object
+  history at all, while checkin finish and defect creation do).
+- **Этап 10 (this update)**: in progress — see this section plus
+  BACKLOG.md/OPEN_QUESTIONS.md updates alongside it.
+
+Not done: manual iPhone Telegram checklist (back button, active-nav
+highlighting, safe-area, keyboard behavior on real hardware) — cannot be
+automated from this environment, explicitly flagged, not silently skipped.
+Feature freeze has NOT been declared — Этап 7 code and the remaining Finish
+Wizard screen merges are still open.
 
 ## Known blockers / standing decisions (not bugs — explicit choices)
 

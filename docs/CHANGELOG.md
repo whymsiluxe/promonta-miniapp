@@ -1,5 +1,86 @@
 # Changelog
 
+## 2026-09-21 (Worker UX V2 — Этапы 4-9, branch `fix-shift-start`)
+
+Tests: 943 passed, 1 skipped, 1 pre-existing unrelated failure (stale route
+count assumption in `test_assignment_lifecycle.py`, not caused by this
+work). Branch NOT pushed to origin, NOT merged to `main` — see
+CURRENT_STATE.md for exact status.
+
+### Frontend
+- **Этап 4 (navigation)**: worker bottom-nav simplified from 5 tabs
+  (Лента/Главная/Чат/Объекты/Профиль) to 4 (Сегодня/Объекты/Чат/Ещё). Owner
+  nav completely unchanged. New `view-more` utility hub re-links to
+  existing views (Календарь/Мои часы/Инструменты/Документы/Настройки/Лента)
+  with no duplicated rendering.
+- **Этап 5 ("Сегодня" operational panel)**: DailyPlan compact preview card
+  (reuses `window._todayPlanState`, opens the existing canonical overlay)
+  and a unified Problems card (aggregates existing alerts/needs/defects
+  sources, ranked, no new store) replace 3 separate legacy Home tiles.
+  Persistent DailyPlan bar suppressed only on Home to avoid showing the
+  same status twice on one screen.
+- **Этап 6 (contextual quick actions)**: new
+  `frontend/js/worker-quick-actions.js` — Фото/Потребность/Дефект/Чат, with
+  context resolution (active shift -> Object Detail -> single assignment ->
+  picker) matching the plan exactly. Every action reuses an existing
+  form/endpoint.
+- **Этап 8 (Finish Wizard, partial)**: removed the standalone blocking
+  "Геолокация" step — capture now runs in the background from wizard-open,
+  status folds into the existing Сводка/review screen. Wizard down from
+  6/8 steps to 5/7.
+
+### Docs (no code)
+- **Этап 7 (object-detail 4 zones)**: `docs/OBJECT_DETAIL_V2.md` — planned,
+  not implemented. Audit found the plan's "8 tabs" premise doesn't match
+  reality (3 tabs + 10+ stacked sections) and several concrete high-risk
+  factors; used the plan's own escape hatch for risky refactors.
+- **Этап 9 (object timeline direction)**: `docs/OBJECT_TIMELINE_DIRECTION.md`
+  — documents the 8 existing Object History event kinds and a real gap
+  (checkin start/pause, task creation, daily-plan create/accept don't log
+  to it).
+- **Этап 10**: this entry + `CURRENT_STATE.md`/`BACKLOG.md`/
+  `OPEN_QUESTIONS.md` updated with the same findings.
+
+### Tests
+- `tests/test_worker_nav_v2_frontend_contract.py` (7),
+  `tests/test_worker_today_operational_frontend_contract.py` (8),
+  `tests/test_worker_quick_actions_frontend_contract.py` (8),
+  `tests/test_finish_wizard_geo_autocapture_frontend_contract.py` (5).
+
+## 2026-09-21 (Shift hardening Этап 0.5 — pre-Worker-UX-V2 gate)
+
+Tests: targeted (`test_checkin_pause_authority.py` + `test_attachment_retention_cleanup.py`,
+11 passed); full suite passed (`911 passed, 1 skipped`, 1 pre-existing
+unrelated failure — routes-count assertion off by one, not touched here).
+
+### Frontend
+- Fixed a real desync gap in the active-shift live duration timer
+  (`checkin.js`): it seeds once from the server and free-ran client-side with
+  no resync. Added a `visibilitychange` handler that forces
+  `refreshCheckinButtons()` when the tab/app regains focus while the timer is
+  running, so a pause toggled elsewhere (owner action, another device) is
+  reflected without needing to leave and reopen the screen.
+
+### Backend / audit findings (documented, not silently patched)
+- Sheets formula-injection sanitization (`_sheets_formula_safe`) and the
+  legacy-abwesenheit-id migration (`_migrate_abwesenheit_legacy_ids`) were
+  already implemented and correct — verified, no change needed.
+- Voice/audio files (`transcribe_audio/`, `chat_attachments/`) are stored
+  permanently by deliberate product decision, not as temp files — confirmed
+  against `docs/plan-phases/02-product-flows-worker.md:37`. The real gap:
+  `cleanup_old_attachments.py`'s `DIRS` list covers
+  `chat_attachments/critical_alert_photos/checkin_photos` but not
+  `transcribe_audio/`, while `docs/DATA_RETENTION_POLICY.md` claims a 90-day
+  retention for voice too. Not fixed here — flagged for an explicit decision,
+  pinned by a guard test so it can't silently drift either direction.
+
+### Tests
+- Added `tests/test_checkin_pause_authority.py` — pause/resume timestamp
+  toggle contract (server-authoritative), plus permission/state guards.
+- Added `tests/test_attachment_retention_cleanup.py` — age-based cleanup
+  behavior, error resilience, and a guard test documenting the
+  `transcribe_audio/` retention gap above.
+
 ## 2026-09-17 (Document gallery P2 slice)
 
 Tests: focused document gallery/object UI contracts passed (`17 passed`); full

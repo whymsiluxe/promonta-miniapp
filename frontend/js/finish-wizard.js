@@ -1,7 +1,10 @@
 // Finish-shift wizard (B3, 27.07). Отдельный файл от checkin.js -- не смешиваем с
 // существующим checkin-preview-modal (тот остаётся для start-shift, более простой flow).
-// Round 3 (07.09): динамическая последовательность шагов -- без плана 6 шагов,
-// с планом 8 шагов (добавляется plan-fact + tomorrow-prep).
+// 21.09 (Worker UX V2, Этап 8): 4 экрана всегда (Фото -> Что сделано/план-факт ->
+// Проблемы и завтра -> Сводка), было 6/8 в зависимости от наличия DailyPlan.
+// Геолокация больше не отдельный экран -- собирается в фоне (AUTO-CAPTURE PRINCIPLE),
+// статус показан в Сводке. Каждый под-блок (план-факт/потребности/дефекты/завтра)
+// сохранил свою исходную разметку/id/валидацию, объединены только контейнеры экранов.
 let _fwVoiceNoteFileId = ''; // 28.07: owner request -- голосовое "Что сделано" сохраняется как аудио, не только текстом
 // Voice-ввод на шагах 2-4 через /api/transcribe (см. B4). AI/voice текст всегда editable,
 // ничего не отправляется без явного подтверждения юзера (owner requirement).
@@ -17,7 +20,12 @@ let _fwNeeds = []; // [{category, description}]
 let _fwDefects = []; // [{description}]
 let _fwPauseMinutes = 30;
 let _fwFinishGeo = null; // {lat, lon, accuracy, timestamp}
+let _fwGeoState = 'loading'; // loading | success | error
+let _fwGeoCapturePromise = null; // single in-flight _getGeolocation() promise, null when idle
 let _fwOverlayUnregister = null;
+let _fwContextState = 'idle'; // loading | loaded_with_plan | loaded_without_plan | offline_cached | error
+let _fwContextError = '';
+let _fwFinishContext = null;
 // 03.08 (ТЗ Задача 1): персистентный на весь wizard-flow idempotency key -- раньше
 // генерировался заново на КАЖДЫЙ вызов _fwSubmitFinish(), так что retry после сетевой
 // ошибки/таймаута слал НОВЫЙ ключ и backend не мог распознать повтор того же запроса.
@@ -28,7 +36,7 @@ let _finishOutboxRetrying = false;
 // Round 3: daily plan state for this shift
 let _fwDailyPlanId = '';
 let _fwDailyPlanVersion = 0;
-let _fwDailyPlanItems = []; // plan.items from window._todayPlanState
+let _fwDailyPlanItems = []; // frozen accepted items from /finish-context
 let _fwItemResults = []; // [{item_id, status, actual_quantity, unit, reason_code, comment}]
 let _fwTomorrowIssues = []; // selected issue keys
 let _fwTomorrowComment = '';
@@ -59,10 +67,19 @@ const _FW_PLAN_STATUS_LABELS = {
 // ── Step sequence ──────────────────────────────────────────────────────────────
 
 function _fwStepSequence() {
-  if (_fwDailyPlanItems.length > 0) {
-    return ['photo', 'summary', 'plan-fact', 'extra', 'needs', 'tomorrow-prep', 'geo', 'review'];
-  }
-  return ['photo', 'summary', 'extra', 'needs', 'geo', 'review'];
+  // 21.09 (merged from upstream, owner review finding): context-loading/error
+  // used to be full-screen gates BEFORE the first render -- worker couldn't
+  // even start adding photos while /finish-context was still in flight, and a
+  // fetch failure blocked Finish entirely even though a plan-less shift is a
+  // completely normal, always-supported case (checkin_finish itself never
+  // required a plan). Photos never needed daily-plan items at all; only the
+  // 'summary' step's plan-fact section does, and it already renders gracefully
+  // with an empty list (see _fwRenderStepSummaryPlanFact) and re-renders
+  // itself once the background fetch resolves or fails. A failed fetch with no
+  // usable cache just leaves the item checklist empty -- same as a shift that
+  // was never plan-linked -- the error is surfaced inline (review screen), not
+  // as a wizard-blocking screen.
+  return ['photo', 'summary', 'extra', 'review'];
 }
 
 function _fwCurrentKey() { return _fwStepSequence()[_fwStep - 1]; }
@@ -109,6 +126,8 @@ async function openFinishShiftWizard(sessionId, objectId) {
   const activeSession = typeof _getActiveCheckinSession === 'function' ? _getActiveCheckinSession(objectId) : null;
   _fwPauseMinutes = Math.round((activeSession?.pauseAccumulatedSeconds || 0) / 60);
   _fwFinishGeo = null;
+  _fwGeoState = 'loading';
+  _fwGeoCapturePromise = null;
 
   // Round 3: load accepted daily plan for this shift
   _fwDailyPlanItems = [];
@@ -118,35 +137,148 @@ async function openFinishShiftWizard(sessionId, objectId) {
   _fwTomorrowIssues = [];
   _fwTomorrowComment = '';
   _fwExtraDraftOpen = false;
+  // 'idle', not 'loading' -- _fwStepSequence() no longer gates on context state
+  // (see comment there), so this never needs to hold up the first render.
+  _fwContextState = 'idle';
+  _fwContextError = '';
+  _fwFinishContext = null;
 
   document.getElementById('finish-wizard-modal').style.display = 'flex';
   if (typeof NavigationManager !== 'undefined' && !_fwOverlayUnregister) {
     _fwOverlayUnregister = NavigationManager.registerOverlay(() => _fwCloseWizardInternal());
   }
   _fwRenderStep(); // render immediately with an empty item list -- don't block modal open on the network
+  _fwLoadFinishContext(sessionId, objectId);
+  // 21.09 (Worker UX V2, Этап 8, AUTO-CAPTURE PRINCIPLE): геолокация — то, что
+  // система может получить сама, не требует отдельного блокирующего экрана.
+  // Раньше был отдельный шаг "geo" ПОСЛЕ review-контента; теперь запрашивается
+  // в фоне сразу при открытии wizard (параллельно с фото/summary), к моменту
+  // просмотра Сводки обычно уже готова. Кнопка "Завершить" (_fwSubmitFinish)
+  // по-прежнему требует непустую _fwFinishGeo -- сам submit-контракт не менялся.
+  _fwStartBackgroundGeoCapture(sessionId);
+}
 
-  // 18.09 (audit finding): used to read window._todayPlanState -- the LIVE
-  // current plan -- which could differ from what THIS worker actually accepted
-  // and started their shift against if the owner amended the plan in between.
-  // /finish-context returns the frozen accepted-snapshot items instead (the
-  // same immutable snapshot checkin_finish() already validates against on
-  // submit, Round 1.2 #2) -- Finish now shows and submits against what was
-  // actually accepted at Start, not whatever the plan currently says.
-  try {
-    const ctx = await api(`/api/checkin/${sessionId}/finish-context`);
-    // Stale response guard: the wizard may have been closed/reopened for a
-    // different session while this request was in flight.
-    if (_fwSessionId !== sessionId) return;
-    if (ctx.has_plan && ctx.items?.length) {
-      _fwDailyPlanItems = ctx.items;
-      _fwDailyPlanId = ctx.plan_id || '';
-      _fwDailyPlanVersion = ctx.plan_version || 0;
-      _fwRenderStep();
+// Единственная точка входа для сбора geo -- вызывается при открытии wizard И
+// как retry с review-экрана. Один in-flight promise на sessionId (не плодит
+// параллельные getCurrentPosition() при повторном тапе "Повторить" пока
+// первый запрос ещё не резолвился) + явный state loading/success/error
+// (раньше был только implicit null/truthy _fwFinishGeo, неотличимый от
+// "ещё грузится"). Stale-session guard -- тот же паттерн что
+// _fwLoadFinishContext (`if (_fwSessionId !== sessionId) return;`), чтобы
+// поздний geo-response не записался в уже другую/новую сессию wizard.
+function _fwStartBackgroundGeoCapture(sessionId) {
+  if (_fwGeoCapturePromise) return _fwGeoCapturePromise;
+  _fwGeoState = 'loading';
+  _fwGeoCapturePromise = _getGeolocation().then(geo => {
+    if (_fwSessionId !== sessionId) return; // wizard закрыт/переоткрыт для другой смены за это время
+    if (geo.lat && geo.lon) {
+      _fwFinishGeo = geo;
+      _fwGeoState = 'success';
+    } else {
+      _fwFinishGeo = null;
+      _fwGeoState = 'error';
     }
+    _fwGeoCapturePromise = null;
+    if (_fwCurrentKey() === 'review') _fwRenderStep();
+  });
+  return _fwGeoCapturePromise;
+}
+
+function _fwFinishContextCacheKey(sessionId) {
+  return `finish_context_${sessionId}`;
+}
+
+function _fwReadCachedFinishContext(sessionId) {
+  try {
+    const raw = localStorage.getItem(_fwFinishContextCacheKey(sessionId));
+    return raw ? JSON.parse(raw) : null;
   } catch (e) {
-    // Non-fatal -- Finish still works without a plan item checklist, same as
-    // when a shift was started with no plan linked at all.
-    console.warn('finish-context load failed', e);
+    return null;
+  }
+}
+
+function _fwWriteCachedFinishContext(sessionId, data) {
+  try {
+    localStorage.setItem(_fwFinishContextCacheKey(sessionId), JSON.stringify(data));
+  } catch (e) {}
+}
+
+// 21.09 (P0, owner review finding, round 2 then hardened round 3): the
+// offline cache above was write-on-read only -- written the FIRST time
+// Finish Wizard successfully fetched /finish-context online. Real failure
+// mode this missed: Start online -> full day of work -> network drops
+// before Finish is opened even once -- there is nothing to fall back to.
+//
+// Round 2's fix (a second GET /finish-context request fired right after
+// Start) was still non-deterministic: if connectivity dropped in the
+// (typically short, but real) window between Start succeeding and that
+// second request completing, the cache still wouldn't exist. Round 3:
+// checkin_start()'s response now embeds the exact same finish-context shape
+// directly (backend/main.py's _build_finish_context(), shared with the GET
+// endpoint) -- prefer that zero-extra-round-trip field when the caller
+// already has it (startResponse), and only fall back to a live GET request
+// when it doesn't (e.g. a Start success path that hasn't been updated to
+// pass it through, or a defensive call site).
+async function _prefetchFinishContextAfterStart(sessionId, startResponse) {
+  if (!sessionId) return;
+  // 21.09 (owner review finding, round 4): checking mere field PRESENCE
+  // (hasOwnProperty) is not enough -- checkin_start()'s own best-effort
+  // try/except around _build_finish_context() can legitimately send back
+  // `finish_context: null` if that call raised server-side. hasOwnProperty
+  // would still be true for a null value, so this used to return early
+  // without ever falling back to a live GET, silently leaving no cache at
+  // all instead of at least attempting the round-2 fallback path.
+  if (startResponse?.finish_context != null) {
+    const embedded = startResponse.finish_context;
+    if (embedded?.has_plan) _fwWriteCachedFinishContext(sessionId, embedded);
+    return;
+  }
+  try {
+    const data = await api(`/api/checkin/${sessionId}/finish-context`);
+    if (data?.has_plan) _fwWriteCachedFinishContext(sessionId, data);
+  } catch (e) { /* non-fatal -- Finish still works via its own online fetch/cache-miss path */ }
+}
+
+function _fwApplyFinishContext(data, state) {
+  _fwFinishContext = data || null;
+  _fwDailyPlanItems = [];
+  _fwDailyPlanId = '';
+  _fwDailyPlanVersion = 0;
+
+  if (data?.has_plan && data.plan?.items?.length) {
+    _fwDailyPlanItems = data.plan.items;
+    _fwDailyPlanId = data.plan.id || '';
+    _fwDailyPlanVersion = data.plan.version || 0;
+    _fwContextState = state || 'loaded_with_plan';
+    return;
+  }
+  _fwContextState = state || 'loaded_without_plan';
+}
+
+async function _fwLoadFinishContext(sessionId, objectId) {
+  try {
+    const data = await api(`/api/checkin/${sessionId}/finish-context`);
+    if (_fwSessionId !== sessionId) return;
+    _fwApplyFinishContext(data, data?.has_plan ? 'loaded_with_plan' : 'loaded_without_plan');
+    if (data?.has_plan) _fwWriteCachedFinishContext(sessionId, data);
+    _fwStep = 1;
+    _fwRenderStep();
+  } catch (e) {
+    if (_fwSessionId !== sessionId) return;
+    const cached = _fwReadCachedFinishContext(sessionId);
+    if (cached?.has_plan && (!objectId || String(cached.object_id || cached.plan?.object_id || '') === String(objectId))) {
+      _fwApplyFinishContext(cached, 'offline_cached');
+      _fwStep = 1;
+      _fwRenderStep();
+      return;
+    }
+    // 21.09 (owner review finding): no cache and the fetch failed -- treated
+    // the same as "this shift was never plan-linked" (has_plan=false is a
+    // normal state, not an error), not as a wizard-blocking screen. The
+    // failure is still recorded for an inline note on the review step.
+    _fwContextState = 'error';
+    _fwContextError = e.message || 'Не удалось загрузить контекст смены';
+    _fwRenderStep();
   }
 }
 
@@ -154,6 +286,9 @@ function _fwCloseWizardInternal() {
   _fwStopVoiceRecording();
   _fwClearPhotoUrls();
   document.getElementById('finish-wizard-modal').style.display = 'none';
+  _fwContextState = 'idle';
+  _fwContextError = '';
+  _fwFinishContext = null;
   _fwOverlayUnregister = null;
 }
 
@@ -196,23 +331,15 @@ function _fwRenderStep() {
   const TITLES = {
     'photo': 'Фото результата',
     'summary': 'Что сделано',
-    'plan-fact': 'Выполнение плана',
-    'extra': 'Доп. работы',
-    'needs': 'Потребности и проблемы',
-    'tomorrow-prep': 'Готовность на завтра',
-    'geo': 'Геолокация',
+    'extra': 'Проблемы и завтра',
     'review': 'Сводка',
   };
   const key = _fwCurrentKey();
   titleEl.textContent = TITLES[key] || '';
 
   if (key === 'photo') body.innerHTML = _fwRenderStep1();
-  else if (key === 'summary') body.innerHTML = _fwRenderStep2();
-  else if (key === 'plan-fact') body.innerHTML = _fwRenderStepPlanFact();
+  else if (key === 'summary') body.innerHTML = _fwRenderStepSummaryPlanFact();
   else if (key === 'extra') body.innerHTML = _fwRenderStep3();
-  else if (key === 'needs') body.innerHTML = _fwRenderStep4();
-  else if (key === 'tomorrow-prep') body.innerHTML = _fwRenderStepTomorrowPrep();
-  else if (key === 'geo') body.innerHTML = _fwRenderStep5();
   else if (key === 'review') body.innerHTML = _fwRenderStep6();
 
   _fwWireStep();
@@ -274,61 +401,14 @@ function _fwWireStep1() {
   });
 }
 
-// ---------- Step 2: Что сделано (voice) ----------
-function _fwRenderStep2() {
-  const canContinue = !!_fwWorkSummary.trim();
-  return `
-    <div class="fw-hint">Опиши, что сделано за смену. Можно надиктовать голосом и поправить текст.</div>
-    <textarea id="fw-work-summary" class="mangel-textarea" rows="4" placeholder="Например: оштукатурили стену в комнате 2, установили 3 окна">${esc(_fwWorkSummary)}</textarea>
-    ${_fwVoiceButtonHtml('fw-voice-summary')}
-    <div class="fw-field-error" id="fw-summary-error" style="display:none;">Заполни короткий отчёт по смене</div>
-    <div class="fw-nav-row">
-      <button class="fw-back-btn" id="fw-back-2" type="button">← Назад</button>
-      <button class="submit-btn fw-next-btn" id="fw-next-2" type="button" ${canContinue ? '' : 'disabled'}>Далее</button>
-    </div>
-  `;
-}
-
-function _fwWireStep2() {
-  const textarea = document.getElementById('fw-work-summary');
-  const nextBtn = document.getElementById('fw-next-2');
-  const errorEl = document.getElementById('fw-summary-error');
-  const syncSummary = () => {
-    _fwWorkSummary = textarea.value;
-    const ok = !!_fwWorkSummary.trim();
-    if (nextBtn) nextBtn.disabled = !ok;
-    if (errorEl && ok) errorEl.style.display = 'none';
-  };
-  textarea?.addEventListener('input', syncSummary);
-  _fwWireVoiceButton('fw-voice-summary', (text, fileId) => {
-    textarea.value = (textarea.value ? textarea.value + ' ' : '') + text;
-    syncSummary();
-    if (fileId) _fwVoiceNoteFileId = fileId;
-  });
-  document.getElementById('fw-back-2')?.addEventListener('click', () => _fwNavBack());
-  document.getElementById('fw-next-2')?.addEventListener('click', () => {
-    _fwWorkSummary = textarea.value.trim();
-    if (!_fwWorkSummary) {
-      if (errorEl) errorEl.style.display = 'block';
-      showToast('Заполни, что сделано за смену', 'error');
-      textarea.focus();
-      return;
-    }
-    _fwNavNext();
-  });
-}
-
-// ---------- Step plan-fact: Выполнение плана (Round 3) ----------
-function _fwRenderStepPlanFact() {
-  if (!_fwDailyPlanItems.length) {
-    return `<div class="fw-hint">Плановых пунктов нет.</div>
-      <div class="fw-nav-row">
-        <button class="fw-back-btn" id="fw-back-pf" type="button">← Назад</button>
-        <button class="submit-btn fw-next-btn" id="fw-next-pf" type="button">Далее</button>
-      </div>`;
-  }
-
-  const itemsHtml = _fwDailyPlanItems.map((item, idx) => {
+// ---------- Step "summary": Что сделано + план-факт (Worker UX V2, Этап 8) ----------
+// 21.09: раньше два отдельных экрана ("Что сделано" -> "Выполнение плана"),
+// объединены в один скролл-экран с общей кнопкой "Далее" — цель плана 3-4
+// экрана вместо 6-8. Каждый под-блок сохранил свою исходную разметку/id
+// (fw-work-summary/fw-status-btn/... не переименованы), меняется только то,
+// что они теперь рендерятся и валидируются вместе, одной кнопкой.
+function _fwRenderStepSummaryPlanFact() {
+  const planItemsHtml = _fwDailyPlanItems.length ? _fwDailyPlanItems.map((item, idx) => {
     const result = _fwItemResults.find(r => r.item_id === item.id) || {};
     const status = result.status || '';
     const btns = ['done', 'partial', 'not_done', 'blocked'].map(s =>
@@ -348,20 +428,43 @@ function _fwRenderStepPlanFact() {
             rows="1" placeholder="Комментарий" style="margin-top:0.25rem;">${esc(result.comment || '')}</textarea>
         ` : ''}
       </div>`;
-  }).join('');
+  }).join('') : '';
+
+  const canContinue = !!_fwWorkSummary.trim();
 
   return `
-    <div class="fw-hint">Отметь, что удалось сделать по плану.</div>
-    <div class="fw-plan-items">${itemsHtml}</div>
+    <div class="fw-hint">Опиши, что сделано за смену. Можно надиктовать голосом и поправить текст.</div>
+    <textarea id="fw-work-summary" class="mangel-textarea" rows="4" placeholder="Например: оштукатурили стену в комнате 2, установили 3 окна">${esc(_fwWorkSummary)}</textarea>
+    ${_fwVoiceButtonHtml('fw-voice-summary')}
+    <div class="fw-field-error" id="fw-summary-error" style="display:none;">Заполни короткий отчёт по смене</div>
+    ${_fwDailyPlanItems.length ? `
+      <div class="fw-hint" style="margin-top:1rem;">Отметь, что удалось сделать по плану.</div>
+      <div class="fw-plan-items">${planItemsHtml}</div>
+    ` : ''}
     <div class="fw-nav-row">
-      <button class="fw-back-btn" id="fw-back-pf" type="button">← Назад</button>
-      <button class="submit-btn fw-next-btn" id="fw-next-pf" type="button">Далее</button>
+      <button class="fw-back-btn" id="fw-back-summary" type="button">← Назад</button>
+      <button class="submit-btn fw-next-btn" id="fw-next-summary" type="button" ${canContinue ? '' : 'disabled'}>Далее</button>
     </div>
   `;
 }
 
-function _fwWireStepPlanFact() {
-  document.getElementById('fw-back-pf')?.addEventListener('click', () => _fwNavBack());
+function _fwWireStepSummaryPlanFact() {
+  const textarea = document.getElementById('fw-work-summary');
+  const nextBtn = document.getElementById('fw-next-summary');
+  const errorEl = document.getElementById('fw-summary-error');
+  const syncSummary = () => {
+    _fwWorkSummary = textarea.value;
+    const ok = !!_fwWorkSummary.trim();
+    if (nextBtn) nextBtn.disabled = !ok;
+    if (errorEl && ok) errorEl.style.display = 'none';
+  };
+  textarea?.addEventListener('input', syncSummary);
+  _fwWireVoiceButton('fw-voice-summary', (text, fileId) => {
+    textarea.value = (textarea.value ? textarea.value + ' ' : '') + text;
+    syncSummary();
+    if (fileId) _fwVoiceNoteFileId = fileId;
+  });
+  document.getElementById('fw-back-summary')?.addEventListener('click', () => _fwNavBack());
 
   document.querySelectorAll('.fw-status-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -374,6 +477,7 @@ function _fwWireStepPlanFact() {
         _fwItemResults.push(result);
       }
       result.status = status;
+      _fwWorkSummary = textarea.value; // сохранить перед re-render (перерисовка теряет незакоммиченный ввод иначе)
       _fwRenderStep();
     });
   });
@@ -392,39 +496,73 @@ function _fwWireStepPlanFact() {
     });
   });
 
-  document.getElementById('fw-next-pf')?.addEventListener('click', () => {
-    // Snapshot current input values before re-render
-    document.querySelectorAll('.fw-qty-input').forEach(inp => {
-      const result = _fwItemResults.find(r => r.item_id === inp.dataset.item);
-      if (result && inp.value !== '') result.actual_quantity = parseFloat(inp.value);
-    });
-    document.querySelectorAll('.fw-comment-input').forEach(ta => {
-      const result = _fwItemResults.find(r => r.item_id === ta.dataset.item);
-      if (result) result.comment = ta.value.trim();
-    });
-    const missing = _fwDailyPlanItems.filter(item => {
-      const result = _fwItemResults.find(r => r.item_id === item.id);
-      return !result?.status;
-    });
-    if (missing.length) {
-      showToast('Отметь выполнение каждого пункта плана', 'error');
+  document.getElementById('fw-next-summary')?.addEventListener('click', () => {
+    _fwWorkSummary = textarea.value.trim();
+    if (!_fwWorkSummary) {
+      if (errorEl) errorEl.style.display = 'block';
+      showToast('Заполни, что сделано за смену', 'error');
+      textarea.focus();
       return;
     }
+
+    if (_fwDailyPlanItems.length) {
+      // Snapshot current input values before re-render/navigation
+      document.querySelectorAll('.fw-qty-input').forEach(inp => {
+        const result = _fwItemResults.find(r => r.item_id === inp.dataset.item);
+        if (result && inp.value !== '') result.actual_quantity = parseFloat(inp.value);
+      });
+      document.querySelectorAll('.fw-comment-input').forEach(ta => {
+        const result = _fwItemResults.find(r => r.item_id === ta.dataset.item);
+        if (result) result.comment = ta.value.trim();
+      });
+      const missing = _fwDailyPlanItems.filter(item => {
+        const result = _fwItemResults.find(r => r.item_id === item.id);
+        return !result?.status;
+      });
+      if (missing.length) {
+        showToast('Отметь выполнение каждого пункта плана', 'error');
+        return;
+      }
+    }
+
     _fwNavNext();
   });
 }
 
-// ---------- Step 3: Доп. работы (structured list) ----------
+// ---------- Step "extra": Проблемы и завтра (Worker UX V2, Этап 8) ----------
+// 21.09: раньше три отдельных экрана (Доп. работы -> Потребности/Дефекты ->
+// Готовность на завтра), объединены в один скролл-экран с общей кнопкой
+// "Далее" — все три под-блока были и остаются полностью опциональными
+// (ни один не блокировал "Далее" раньше), поэтому объединённая кнопка не
+// добавляет новую валидацию, только один снапшот вместо трёх последовательных.
 function _fwRenderStep3() {
-  const itemsHtml = _fwExtraWorks.map((w, i) => `
+  const extraItemsHtml = _fwExtraWorks.map((w, i) => `
     <div class="fw-list-item" data-idx="${i}">
       <div class="fw-list-item-desc">${esc(w.description)}</div>
       <div class="fw-list-item-meta">${w.zone ? esc(w.zone) + ' · ' : ''}${w.time_estimate ? esc(w.time_estimate) : ''}${w.needs_approval ? ' · нужно согласование' : ''}</div>
       <button class="fw-list-item-remove" data-idx="${i}" type="button">✕</button>
     </div>`).join('');
+
+  const catButtons = FW_NEED_CATEGORIES.map(c =>
+    `<button class="fw-cat-btn" data-cat="${c.key}" type="button">${esc(c.label)}</button>`).join('');
+  const needsHtml = _fwNeeds.map((n, i) => `
+    <div class="fw-list-item" data-idx="${i}">
+      <div class="fw-list-item-desc">${esc(FW_NEED_CATEGORIES.find(c => c.key === n.category)?.label || n.category)}: ${esc(n.description)}</div>
+      <button class="fw-need-remove" data-idx="${i}" type="button">✕</button>
+    </div>`).join('');
+  const defectsHtml = _fwDefects.map((d, i) => `
+    <div class="fw-list-item" data-idx="${i}">
+      <div class="fw-list-item-desc">⚠️ ${esc(d.description)}</div>
+      <button class="fw-defect-remove" data-idx="${i}" type="button">✕</button>
+    </div>`).join('');
+
+  const issuesBtns = _FW_TOMORROW_ISSUES.map(issue =>
+    `<button class="fw-issue-btn${_fwTomorrowIssues.includes(issue.key) ? ' fw-issue-btn--active' : ''}" data-issue="${issue.key}" type="button">${esc(issue.label)}</button>`
+  ).join('');
+
   return `
     <div class="fw-hint">Были ли доп. работы вне плана?</div>
-    <div class="fw-list">${itemsHtml || '<div class="fw-empty">Пока не добавлено</div>'}</div>
+    <div class="fw-list">${extraItemsHtml || '<div class="fw-empty">Пока не добавлено</div>'}</div>
     <div id="fw-extra-work-form" style="display:${_fwExtraDraftOpen ? 'block' : 'none'};">
       <textarea id="fw-extra-desc" class="mangel-textarea" rows="2" placeholder="Описание работы"></textarea>
       ${_fwVoiceButtonHtml('fw-voice-extra')}
@@ -434,6 +572,32 @@ function _fwRenderStep3() {
       <button class="submit-btn" id="fw-extra-save" type="button" style="margin-top:0.5rem;">Добавить пункт</button>
     </div>
     <button class="fw-add-photo-btn" id="fw-add-extra-btn" type="button">+ Добавить работу</button>
+
+    <div class="fw-hint" style="margin-top:1rem;">Что мешало работе или что нужно?</div>
+    <div class="fw-cat-row">${catButtons}</div>
+    <div id="fw-need-form" style="display:none;">
+      <textarea id="fw-need-desc" class="mangel-textarea" rows="2" placeholder="Опиши, что нужно"></textarea>
+      ${_fwVoiceButtonHtml('fw-voice-need')}
+      <button class="submit-btn" id="fw-need-save" type="button" style="margin-top:0.5rem;">Добавить</button>
+    </div>
+    <div class="fw-list">${needsHtml}</div>
+
+    <div class="fw-hint" style="margin-top:0.75rem;">Дефекты, которые заметил:</div>
+    <div id="fw-defect-form" style="display:none;">
+      <textarea id="fw-defect-desc" class="mangel-textarea" rows="2" placeholder="Опиши дефект"></textarea>
+      ${_fwVoiceButtonHtml('fw-voice-defect')}
+      <button class="submit-btn" id="fw-defect-save" type="button" style="margin-top:0.5rem;">Добавить дефект</button>
+    </div>
+    <div class="fw-list">${defectsHtml}</div>
+    <button class="fw-add-photo-btn" id="fw-add-defect-btn" type="button">+ Сообщить о дефекте</button>
+
+    ${_fwDailyPlanItems.length ? `
+      <div class="fw-hint" style="margin-top:1rem;">Отметь проблемы с готовностью на завтра (если есть).</div>
+      <div class="fw-issue-btns">${issuesBtns}</div>
+      <textarea id="fw-tomorrow-comment" class="mangel-textarea" rows="2"
+        placeholder="Комментарий (опционально)" style="margin-top:0.5rem;">${esc(_fwTomorrowComment)}</textarea>
+    ` : ''}
+
     <div class="fw-nav-row">
       <button class="fw-back-btn" id="fw-back-3" type="button">← Назад</button>
       <button class="submit-btn fw-next-btn" id="fw-next-3" type="button">Далее</button>
@@ -441,7 +605,10 @@ function _fwRenderStep3() {
   `;
 }
 
+let _fwPendingNeedCategory = null;
+
 function _fwWireStep3() {
+  // -- Доп. работы --
   document.getElementById('fw-add-extra-btn')?.addEventListener('click', () => {
     _fwExtraDraftOpen = true;
     document.getElementById('fw-extra-work-form').style.display = 'block';
@@ -473,54 +640,8 @@ function _fwWireStep3() {
       _fwRenderStep();
     });
   });
-  document.getElementById('fw-back-3')?.addEventListener('click', () => _fwNavBack());
-  document.getElementById('fw-next-3')?.addEventListener('click', () => {
-    saveExtraDraft();
-    _fwNavNext();
-  });
-}
 
-// ---------- Step 4: Потребности/проблемы (structured, categorized) ----------
-function _fwRenderStep4() {
-  const catButtons = FW_NEED_CATEGORIES.map(c =>
-    `<button class="fw-cat-btn" data-cat="${c.key}" type="button">${esc(c.label)}</button>`).join('');
-  const needsHtml = _fwNeeds.map((n, i) => `
-    <div class="fw-list-item" data-idx="${i}">
-      <div class="fw-list-item-desc">${esc(FW_NEED_CATEGORIES.find(c => c.key === n.category)?.label || n.category)}: ${esc(n.description)}</div>
-      <button class="fw-need-remove" data-idx="${i}" type="button">✕</button>
-    </div>`).join('');
-  const defectsHtml = _fwDefects.map((d, i) => `
-    <div class="fw-list-item" data-idx="${i}">
-      <div class="fw-list-item-desc">⚠️ ${esc(d.description)}</div>
-      <button class="fw-defect-remove" data-idx="${i}" type="button">✕</button>
-    </div>`).join('');
-  return `
-    <div class="fw-hint">Что мешало работе или что нужно?</div>
-    <div class="fw-cat-row">${catButtons}</div>
-    <div id="fw-need-form" style="display:none;">
-      <textarea id="fw-need-desc" class="mangel-textarea" rows="2" placeholder="Опиши, что нужно"></textarea>
-      ${_fwVoiceButtonHtml('fw-voice-need')}
-      <button class="submit-btn" id="fw-need-save" type="button" style="margin-top:0.5rem;">Добавить</button>
-    </div>
-    <div class="fw-list">${needsHtml}</div>
-    <div class="fw-hint" style="margin-top:0.75rem;">Дефекты, которые заметил:</div>
-    <div id="fw-defect-form" style="display:none;">
-      <textarea id="fw-defect-desc" class="mangel-textarea" rows="2" placeholder="Опиши дефект"></textarea>
-      ${_fwVoiceButtonHtml('fw-voice-defect')}
-      <button class="submit-btn" id="fw-defect-save" type="button" style="margin-top:0.5rem;">Добавить дефект</button>
-    </div>
-    <div class="fw-list">${defectsHtml}</div>
-    <button class="fw-add-photo-btn" id="fw-add-defect-btn" type="button">+ Сообщить о дефекте</button>
-    <div class="fw-nav-row">
-      <button class="fw-back-btn" id="fw-back-4" type="button">← Назад</button>
-      <button class="submit-btn fw-next-btn" id="fw-next-4" type="button">Далее</button>
-    </div>
-  `;
-}
-
-let _fwPendingNeedCategory = null;
-
-function _fwWireStep4() {
+  // -- Потребности --
   document.querySelectorAll('.fw-cat-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       _fwPendingNeedCategory = btn.dataset.cat;
@@ -543,6 +664,7 @@ function _fwWireStep4() {
     btn.addEventListener('click', () => { _fwNeeds.splice(Number(btn.dataset.idx), 1); _fwRenderStep(); });
   });
 
+  // -- Дефекты --
   document.getElementById('fw-add-defect-btn')?.addEventListener('click', () => {
     document.getElementById('fw-defect-form').style.display = 'block';
   });
@@ -560,40 +682,7 @@ function _fwWireStep4() {
     btn.addEventListener('click', () => { _fwDefects.splice(Number(btn.dataset.idx), 1); _fwRenderStep(); });
   });
 
-  document.getElementById('fw-back-4')?.addEventListener('click', () => _fwNavBack());
-  document.getElementById('fw-next-4')?.addEventListener('click', () => {
-    const needText = document.getElementById('fw-need-desc')?.value.trim() || '';
-    if (needText && _fwPendingNeedCategory) {
-      _fwNeeds.push({ category: _fwPendingNeedCategory, description: needText });
-      _fwPendingNeedCategory = null;
-    }
-    const defectText = document.getElementById('fw-defect-desc')?.value.trim() || '';
-    if (defectText) _fwDefects.push({ description: defectText });
-    _fwNavNext();
-  });
-}
-
-// ---------- Step tomorrow-prep: Готовность на завтра (Round 3) ----------
-function _fwRenderStepTomorrowPrep() {
-  const issuesBtns = _FW_TOMORROW_ISSUES.map(issue =>
-    `<button class="fw-issue-btn${_fwTomorrowIssues.includes(issue.key) ? ' fw-issue-btn--active' : ''}" data-issue="${issue.key}" type="button">${esc(issue.label)}</button>`
-  ).join('');
-
-  return `
-    <div class="fw-hint">Отметь проблемы с готовностью на завтра (если есть).</div>
-    <div class="fw-issue-btns">${issuesBtns}</div>
-    <textarea id="fw-tomorrow-comment" class="mangel-textarea" rows="2"
-      placeholder="Комментарий (опционально)" style="margin-top:0.5rem;">${esc(_fwTomorrowComment)}</textarea>
-    <div class="fw-nav-row">
-      <button class="fw-back-btn" id="fw-back-tp" type="button">← Назад</button>
-      <button class="submit-btn fw-next-btn" id="fw-next-tp" type="button">Далее</button>
-    </div>
-  `;
-}
-
-function _fwWireStepTomorrowPrep() {
-  document.getElementById('fw-back-tp')?.addEventListener('click', () => _fwNavBack());
-
+  // -- Готовность на завтра --
   document.querySelectorAll('.fw-issue-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const key = btn.dataset.issue;
@@ -603,14 +692,24 @@ function _fwWireStepTomorrowPrep() {
       btn.classList.toggle('fw-issue-btn--active');
     });
   });
-
   document.getElementById('fw-tomorrow-comment')?.addEventListener('input', e => {
     _fwTomorrowComment = e.target.value.trim();
   });
 
-  document.getElementById('fw-next-tp')?.addEventListener('click', () => {
-    const ta = document.getElementById('fw-tomorrow-comment');
-    if (ta) _fwTomorrowComment = ta.value.trim();
+  document.getElementById('fw-back-3')?.addEventListener('click', () => _fwNavBack());
+  document.getElementById('fw-next-3')?.addEventListener('click', () => {
+    saveExtraDraft();
+
+    const needText = document.getElementById('fw-need-desc')?.value.trim() || '';
+    if (needText && _fwPendingNeedCategory) {
+      _fwNeeds.push({ category: _fwPendingNeedCategory, description: needText });
+      _fwPendingNeedCategory = null;
+    }
+    const defectText = document.getElementById('fw-defect-desc')?.value.trim() || '';
+    if (defectText) _fwDefects.push({ description: defectText });
+
+    const tomorrowTa = document.getElementById('fw-tomorrow-comment');
+    if (tomorrowTa) _fwTomorrowComment = tomorrowTa.value.trim();
     // Auto-create a Need for each selected issue (best-effort dedup by description)
     _fwTomorrowIssues.forEach(issueKey => {
       const issueLabel = _FW_TOMORROW_ISSUES.find(i => i.key === issueKey)?.label || issueKey;
@@ -620,46 +719,9 @@ function _fwWireStepTomorrowPrep() {
         _fwNeeds.push({ category: 'other', description: desc });
       }
     });
+
     _fwNavNext();
   });
-}
-
-// ---------- Step 5: Геолокация финиша (обязательна) ----------
-function _fwRenderStep5() {
-  return `
-    <div class="fw-hint">Нужна твоя геолокация, чтобы завершить смену.</div>
-    <div id="fw-geo-status" class="fw-geo-status">Определяем местоположение…</div>
-    <div class="fw-nav-row">
-      <button class="fw-back-btn" id="fw-back-5" type="button">← Назад</button>
-      <button class="submit-btn fw-next-btn" id="fw-next-5" type="button" disabled>Далее</button>
-    </div>
-  `;
-}
-
-async function _fwWireStep5() {
-  const statusEl = document.getElementById('fw-geo-status');
-  const nextBtn = document.getElementById('fw-next-5');
-  document.getElementById('fw-back-5')?.addEventListener('click', () => _fwNavBack());
-
-  const geo = await _getGeolocation();
-  if (geo.lat && geo.lon) {
-    _fwFinishGeo = geo;
-    statusEl.textContent = '📍 Местоположение определено';
-    statusEl.classList.add('fw-geo-ok');
-    nextBtn.disabled = false;
-    nextBtn.addEventListener('click', () => _fwNavNext());
-  } else {
-    _fwFinishGeo = null;
-    statusEl.textContent = 'Включи геолокацию, чтобы завершить смену';
-    statusEl.classList.add('fw-geo-error');
-    const retryBtn = document.createElement('button');
-    retryBtn.className = 'submit-btn';
-    retryBtn.type = 'button';
-    retryBtn.style.marginTop = '0.5rem';
-    retryBtn.textContent = 'Повторить';
-    retryBtn.addEventListener('click', () => _fwRenderStep());
-    statusEl.after(retryBtn);
-  }
 }
 
 // ---------- Step 6 (last): Сводка + отправка ----------
@@ -689,7 +751,14 @@ function _fwRenderStep6() {
     <div class="fw-summary-section"><b>Потребности:</b><ul>${needsHtml}</ul></div>
     <div class="fw-summary-section"><b>Дефекты:</b><ul>${defectsHtml}</ul></div>
     <div class="fw-summary-section"><b>Пауза за смену:</b> ${_fwPauseMinutes > 0 ? `${_fwPauseMinutes} мин.` : 'без пауз'}</div>
-    <div class="fw-summary-section"><b>Геолокация:</b> ${_fwFinishGeo ? '📍 определена' : '⚠️ не определена'}</div>
+    ${_fwContextState === 'error' ? `<div class="fw-summary-section" style="color:var(--text-light);">⚠️ Не удалось проверить план смены (${esc(_fwContextError || 'нет связи')}) — завершение работает без плана, как обычно.</div>` : ''}
+    <div class="fw-summary-section" id="fw-geo-summary-row">
+      <b>Геолокация:</b> ${
+        _fwGeoState === 'success' ? '📍 определена'
+        : _fwGeoState === 'loading' ? '⏳ определяем…'
+        : '⚠️ не удалось определить <button type="button" class="fw-geo-retry-btn" id="fw-geo-retry-btn">Повторить</button>'
+      }
+    </div>
     <div class="fw-nav-row">
       <button class="fw-back-btn" id="fw-back-6" type="button">← Назад</button>
       <button class="submit-btn fw-next-btn" id="fw-submit-finish" type="button">Завершить смену</button>
@@ -701,6 +770,7 @@ function _fwRenderStep6() {
 function _fwWireStep6() {
   document.getElementById('fw-back-6')?.addEventListener('click', () => _fwNavBack());
   document.getElementById('fw-submit-finish')?.addEventListener('click', _fwSubmitFinish);
+  document.getElementById('fw-geo-retry-btn')?.addEventListener('click', () => _fwStartBackgroundGeoCapture(_fwSessionId));
 }
 
 function _fwFinishOutboxId(idempotencyKey) {
@@ -811,15 +881,26 @@ async function _fwQueueFinishOutbox(record) {
 
 function _fwMarkFinishConfirmed(record, notify) {
   _setActiveCheckinSession(record.objectId, { id: record.sessionId, finished: true });
+  _fwRefreshWorkerShiftSurfaces();
+  window._todayPlanState = null;
+  // 21.09 (P1, owner review finding): use the shared surfaces updater, not
+  // _updateTodayPlanBar() alone -- otherwise Today's compact DailyPlan card
+  // (home.js) kept showing the just-finished shift's plan until Home was
+  // re-entered/re-initialized.
+  if (typeof _updateWorkerDailyPlanSurfaces === 'function') {
+    _updateWorkerDailyPlanSurfaces({ has_plan: false });
+  } else if (typeof _updateTodayPlanBar === 'function') {
+    _updateTodayPlanBar({ has_plan: false });
+  }
+  if (notify) showToast('Смена завершена', 'success');
+}
+
+function _fwRefreshWorkerShiftSurfaces() {
   if (typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
+  if (typeof _refreshWorkerCheckinFabIcon === 'function') _refreshWorkerCheckinFabIcon();
   if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
     _loadWorkerShiftCta();
   }
-  if (typeof _updateTodayPlanBar === 'function') {
-    _updateTodayPlanBar({ has_plan: false });
-    window._todayPlanState = null;
-  }
-  if (notify) showToast('Смена завершена', 'success');
 }
 
 async function _retryFinishOutboxRecords() {
@@ -862,9 +943,15 @@ async function _fwSubmitFinish() {
     return;
   }
   if (!_fwFinishGeo?.lat || !_fwFinishGeo?.lon) {
-    showToast('Нужна геолокация финиша', 'error');
-    _fwGoToStep(_fwStepSequence().indexOf('geo') + 1);
-    return;
+    // Дожидаемся существующий in-flight promise (см. _fwStartBackgroundGeoCapture) --
+    // если фоновый сбор уже идёт, ждём именно его, не стартуем второй параллельный
+    // getCurrentPosition(). Если он уже завершился с ошибкой (_fwGeoState === 'error'),
+    // это последняя синхронная попытка перед блокировкой submit.
+    await _fwStartBackgroundGeoCapture(_fwSessionId);
+    if (!_fwFinishGeo?.lat || !_fwFinishGeo?.lon) {
+      showToast('Нужна геолокация финиша — включи и попробуй снова', 'error');
+      return;
+    }
   }
   btn.disabled = true;
   btn.textContent = 'Отправка…';
@@ -875,6 +962,7 @@ async function _fwSubmitFinish() {
     finishRecord = _fwBuildFinishOutboxRecord();
     if (!navigator.onLine) {
       await _fwQueueFinishOutbox(finishRecord);
+      _fwRefreshWorkerShiftSurfaces();
       _fwCloseWizardAfterSuccess();
       showToast('Финиш сохранён в офлайн-очередь', 'success');
       return;
@@ -889,6 +977,7 @@ async function _fwSubmitFinish() {
     if (finishRecord && _fwIsTransientFinishError(e)) {
       try {
         await _fwQueueFinishOutbox(finishRecord);
+        _fwRefreshWorkerShiftSurfaces();
         _fwCloseWizardAfterSuccess();
         showToast('Связь сорвалась — финиш сохранён в офлайн-очередь', 'success');
         return;
@@ -1009,12 +1098,8 @@ function _fwWireVoiceButton(btnId, onTranscript) {
 function _fwWireStep() {
   const key = _fwCurrentKey();
   if (key === 'photo') _fwWireStep1();
-  else if (key === 'summary') _fwWireStep2();
-  else if (key === 'plan-fact') _fwWireStepPlanFact();
+  else if (key === 'summary') _fwWireStepSummaryPlanFact();
   else if (key === 'extra') _fwWireStep3();
-  else if (key === 'needs') _fwWireStep4();
-  else if (key === 'tomorrow-prep') _fwWireStepTomorrowPrep();
-  else if (key === 'geo') _fwWireStep5();
   else if (key === 'review') _fwWireStep6();
 }
 

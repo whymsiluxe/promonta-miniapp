@@ -441,6 +441,12 @@ async def _on_startup():
             print(f"[startup] Retried {retried} pending finish-outbox event(s)")
     except Exception as e:
         print(f"[startup] finish-outbox retry failed: {e}")
+    try:
+        migrated = _migrate_abwesenheit_legacy_ids()
+        if migrated:
+            print(f"[startup] Migrated {migrated} legacy abwesenheit id(s)")
+    except Exception as e:
+        print(f"[startup] abwesenheit legacy-id migration failed: {e}")
 
 
 @app.exception_handler(CorruptJsonError)
@@ -620,7 +626,12 @@ def _csv_safe(value) -> str:
     отравить CSV, который потом открывает owner. Префикс апострофом -- стандартный
     экранирующий приём, Excel показывает апостроф не отображая, LibreOffice тоже."""
     s = str(value)
-    if s and s[0] in ('=', '+', '-', '@'):
+    stripped = s.lstrip()
+    if not stripped:
+        return s
+    if stripped[0] in ('=', '@'):
+        return "'" + s
+    if stripped[0] in ('+', '-') and not re.fullmatch(r'[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)', stripped):
         return "'" + s
     return s
 
@@ -1221,11 +1232,12 @@ def get_user_card(target_id: str, user: dict = Depends(get_current_user), role: 
         "has_avatar": has_avatar,
     }
     if role == 'owner' and roles[target_id] != 'owner':
-        # 20.09 (найдено аудитом): здесь оставался datetime.now() = UTC сервера, хотя
-        # s['date'] пишется checkin_start'ом как _today_berlin_str(). Вечером после
-        # 00:00 CEST (23:00 UTC) сравнение шло со ВЧЕРАШНЕЙ датой, и владелец видел
-        # "смена не идёт" у работника на живой ночной смене. Остальные call-sites
-        # перевели на business_today_str() ещё 03.08, этот пропустили.
+        # 20.09 (merged from upstream c23894d): здесь оставался datetime.now() =
+        # UTC сервера, хотя s['date'] пишется checkin_start'ом как business_today_str()
+        # (Europe/Berlin). Вечером после 00:00 CEST (23:00 UTC) сравнение шло со
+        # ВЧЕРАШНЕЙ датой, и владелец видел "смена не идёт" у работника на живой
+        # ночной смене. Остальные call-sites перевели на business_today_str() ещё
+        # 03.08, этот пропустили.
         today = business_today_str()
         sessions = [s for s in _load_checkin_meta() if str(s.get('user_id')) == target_id and s.get('date') == today]
         open_session = next((s for s in sessions if s.get('finish_at') is None), None)
@@ -1405,6 +1417,16 @@ def get_avatar(user_id: str, user: dict = Depends(get_current_user)):
     raise HTTPException(404, "Аватар не найден")
 
 
+def _photo_pause_seconds(s: dict) -> int:
+    if s.get('pause_accumulated_seconds') is not None:
+        return max(0, int(s.get('pause_accumulated_seconds') or 0))
+    return max(0, int(s.get('pause_minutes') or 0)) * 60
+
+
+def _photo_pause_minutes(s: dict) -> int:
+    return round(_photo_pause_seconds(s) / 60)
+
+
 def _hours_from_session(s: dict) -> float:
     """Часы из check-in сессии: фото-сессия = finish-start-пауза, ручная = end-start-пауза.
     10.32: раньше фото-checkin паузу не вычитал вообще (только manual_entry) — юзер
@@ -1418,7 +1440,7 @@ def _hours_from_session(s: dict) -> float:
         except Exception:
             return 0.0
     if s.get('start_at') and s.get('finish_at'):
-        pause_seconds = int(s.get('pause_minutes') or 0) * 60
+        pause_seconds = _photo_pause_seconds(s)
         return max(0, (s['finish_at'] - s['start_at']) - pause_seconds) / 3600.0
     return 0.0
 
@@ -8092,8 +8114,22 @@ async def checkin_start(
         except Exception as e:
             print(f'WARNING: checkin-start feed post failed: {e}')
 
-    _idempotency_save(idempotency_key, entry)
-    return entry
+    # 21.09 (owner review finding, round 3): embed the SAME frozen accepted-plan
+    # snapshot GET /finish-context returns, right in the Start response -- a
+    # deterministic, zero-extra-round-trip alternative to the frontend's
+    # best-effort prefetch (_prefetchFinishContextAfterStart), which can fail to
+    # complete if connectivity drops between Start succeeding and that second
+    # request landing. A copy, not a mutation of `entry` -- this is a response-
+    # only field, not part of what gets persisted to checkin_meta.json.
+    response = dict(entry)
+    try:
+        response['finish_context'] = _build_finish_context(entry)
+    except Exception as e:
+        print(f'WARNING: checkin-start finish-context prefetch failed: {e}')
+        response['finish_context'] = None
+
+    _idempotency_save(idempotency_key, response)
+    return response
 
 
 @app.post("/api/checkin/{session_id}/pause")
@@ -8254,21 +8290,16 @@ async def checkin_finish(
             elapsed = max(0, int(time.time()) - session['pause_started_at'])
             session['pause_accumulated_seconds'] = session.get('pause_accumulated_seconds', 0) + elapsed
             session['pause_started_at'] = None
-        # 20.09 (P0, найдено аудитом): раньше здесь стояло просто
-        # `session['pause_minutes'] = pause_minutes` -- клиентское значение молча
-        # затирало серверный подсчёт строкой выше. А клиент его регулярно присылает
-        # нулём: worker-checkin-fab.js переопределяет refreshCheckinButtons обёрткой,
-        # которая после оригинала перезаписывает localStorage-сессию усечённым
-        # объектом {id, finished} без pauseAccumulatedSeconds -- и finish-wizard
-        # читает паузу именно оттуда. Итог: реальная пауза 45 мин уходила в учёт
-        # часов как 0, завышая оплачиваемое время.
-        # Сервер -- источник истины: он сам инкрементит pause_accumulated_seconds на
-        # каждом pause/resume и только что закрыл висящую паузу выше. Берём максимум,
-        # а не серверное значение безусловно: у ручных сессий (checkin_manual) сервер
-        # паузу не отслеживает вообще, там единственный источник -- поле из формы.
-        _client_pause_min = max(0, int(pause_minutes or 0))
-        _server_pause_min = round(int(session.get('pause_accumulated_seconds') or 0) / 60)
-        session['pause_minutes'] = max(_client_pause_min, _server_pause_min)
+        # 20.09 (P0, found by audit, hardened further during merge): the client
+        # pause_minutes Form param must never be trusted directly -- a worker
+        # (or a stale localStorage session missing pauseAccumulatedSeconds, see
+        # worker-checkin-fab.js's refreshCheckinButtons wrapper) can send 0 and
+        # silently erase a real 45-minute pause from payroll. The server has
+        # just closed any hanging pause above and _photo_pause_minutes() reads
+        # pause_accumulated_seconds unconditionally when present -- the client
+        # value is never consulted, not even as a max() floor, so it can't be
+        # used to inflate paid hours either.
+        session['pause_minutes'] = _photo_pause_minutes(session)
         # P0 fix (owner review): persist the raw execution report INSIDE the same
         # checkin_meta write that commits finish_at -- previously daily_plan_report
         # only existed as a request Form parameter, never durably stored anywhere
@@ -8588,7 +8619,7 @@ def export_stundenzettel(user_id: str = '', year: int = 0, month: int = 0,
             start = datetime.fromtimestamp(s['start_at']).strftime('%H:%M') if s.get('start_at') else ''
             finish = datetime.fromtimestamp(s['finish_at']).strftime('%H:%M') if s.get('finish_at') else 'не завершено'
         hours = round(_hours_from_session(s), 2)
-        pause = int(s.get('pause_minutes') or 0)
+        pause = int(s.get('pause_minutes') or 0) if s.get('manual_entry') else _photo_pause_minutes(s)
         writer.writerow([_csv_safe(s.get('date', '')), _csv_safe(s.get('object_id', '')), start, finish, pause, hours, kind])
 
     total_hours = round(sum(_hours_from_session(s) for s in sessions), 2)
@@ -8637,6 +8668,89 @@ def list_checkins(object_id: str = '', date: str = '', user: dict = Depends(get_
     return {"sessions": items}
 
 
+def _build_finish_context(session: dict) -> dict:
+    """Shared shape-builder for the frozen accepted-plan snapshot shown/submitted
+    at Finish. 21.09 (owner review finding, round 3): extracted out of
+    checkin_finish_context() so checkin_start() can embed the SAME shape in its
+    own response -- see the finish_context field there. Before this, a plan-
+    linked Start followed immediately by an offline stretch (network drops
+    before Finish is opened even once) had nothing to fall back to: the
+    frontend's own prefetch (_prefetchFinishContextAfterStart) is a second,
+    best-effort network round-trip that can simply fail to complete before
+    connectivity is lost. Embedding this directly in the Start response makes
+    the offline cache deterministic -- no second round-trip needed at all."""
+    session_id = session.get('id') or ''
+    plan_id = session.get('daily_plan_id') or ''
+    if not plan_id:
+        return {
+            "session_id": session_id,
+            "object_id": session.get("object_id") or "",
+            "has_plan": False,
+        }
+
+    store = dpl.get_store_snapshot()
+    worker_id = str(session.get('user_id'))
+    acceptance_id = session.get('daily_plan_acceptance_id') or ''
+    acceptance = store["acceptances"].get(acceptance_id) if acceptance_id else None
+    if not acceptance:
+        acceptance = next(
+            (a for a in store["acceptances"].values()
+             if a.get("daily_plan_id") == plan_id and str(a.get("worker_id")) == worker_id),
+            None,
+        )
+    # 18.09 (audit finding, merged from upstream 170bf24): a session referencing
+    # a plan/acceptance that no longer resolves cleanly (deleted plan, acceptance
+    # id drift) must not turn Finish into a hard error -- same "not a plan-linked
+    # shift, carry on" fallback checkin_start already uses elsewhere. Was a 409
+    # here, which could block a worker from finishing their shift at all.
+    plan = store["daily_plans"].get(plan_id) if acceptance else None
+    if not acceptance or not plan:
+        return {
+            "session_id": session_id,
+            "object_id": session.get("object_id") or "",
+            "has_plan": False,
+        }
+
+    snapshot = acceptance.get("accepted_context_snapshot") or {}
+    # 21.09 (owner review finding, round 4): pass the EXACT acceptance already
+    # resolved above -- without acceptance_id, get_accepted_snapshot() picked
+    # the first (effectively oldest) acceptance for (plan_id, worker_id),
+    # which after an amendment (accept v1 -> A1, amend -> v2, accept v2 -> A2)
+    # could return v1's items while this response correctly reports
+    # plan.version=2 from A2 above -- a real content/version mismatch in what
+    # Finish shows and submits as plan-fact.
+    items_snapshot = dpl.get_accepted_snapshot(plan_id, worker_id, acceptance_id=acceptance.get("id"))
+    return {
+        "session_id": session_id,
+        "object_id": session.get("object_id") or "",
+        "has_plan": True,
+        "plan": {
+            "id": plan_id,
+            "version": acceptance.get("plan_version") or snapshot.get("plan_version") or plan.get("version") or 0,
+            "object_id": snapshot.get("object_id") or plan.get("object_id") or "",
+            "date": snapshot.get("date") or plan.get("date") or "",
+            "stage_key": snapshot.get("stage_key") or plan.get("stage_key") or "",
+            "items": items_snapshot,
+        },
+        "acceptance": {
+            "id": acceptance.get("id") or "",
+            "plan_version": acceptance.get("plan_version") or snapshot.get("plan_version") or 0,
+            "accepted_at": acceptance.get("accepted_at"),
+        },
+    }
+
+
+@app.get("/api/checkin/{session_id}/finish-context")
+def checkin_finish_context(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    items = _load_checkin_meta()
+    session = next((i for i in items if i.get('id') == session_id), None)
+    if not session:
+        raise HTTPException(404, "Сессия не найдена")
+    if role != 'owner' and str(session.get('user_id')) != str(user['id']):
+        raise HTTPException(403, "Нет доступа к этой смене")
+    return _build_finish_context(session)
+
+
 @app.get("/api/checkin/{session_id}/photo/{which}/{index}")
 def get_checkin_photo(session_id: str, which: str, index: int, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     items = _load_checkin_meta()
@@ -8654,50 +8768,6 @@ def get_checkin_photo(session_id: str, which: str, index: int, user: dict = Depe
         raise HTTPException(404, "Файл отсутствует")
     from fastapi.responses import FileResponse
     return FileResponse(path)
-
-
-@app.get("/api/checkin/{session_id}/finish-context")
-def get_checkin_finish_context(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    """18.09 (audit finding): Finish Wizard used to read window._todayPlanState --
-    the LIVE current plan -- to show the worker their task list at Finish. If the
-    owner amended the plan after this worker started their shift, Finish would
-    show the amended (possibly different) item list, not what this worker actually
-    accepted and started against. checkin_finish() itself already validates against
-    the immutable accepted_context_snapshot (Round 1.2 #2) -- this endpoint gives
-    the frontend the matching frozen item list to DISPLAY, closing the same gap on
-    the read side that was already closed on the write side.
-    Returns has_plan=False (not 404) when the session has no daily_plan_id at all --
-    a completely valid state (shift started without a plan), not an error."""
-    items = _load_checkin_meta()
-    session = next((i for i in items if i.get('id') == session_id), None)
-    if not session:
-        raise HTTPException(404, "Сессия не найдена")
-    if role != 'owner' and str(session.get('user_id')) != str(user['id']):
-        raise HTTPException(403, "Нет доступа к этой смене")
-
-    plan_id = session.get('daily_plan_id') or ''
-    acceptance_id = session.get('daily_plan_acceptance_id') or ''
-    if not plan_id or not acceptance_id:
-        return {"has_plan": False}
-
-    worker_id_str = str(session['user_id'])
-    dp_store = dpl.get_store_snapshot()
-    acceptance = dp_store["acceptances"].get(acceptance_id)
-    if not acceptance or str(acceptance.get('worker_id')) != worker_id_str or acceptance.get('daily_plan_id') != plan_id:
-        # Session references an acceptance that no longer resolves cleanly --
-        # same "not a plan-linked shift, carry on" fallback checkin_start uses
-        # rather than a hard error on an otherwise normal Finish.
-        return {"has_plan": False}
-
-    plan = dpl.get_plan(plan_id)
-    frozen_items = dpl.get_accepted_snapshot(plan_id, worker_id_str)
-    return {
-        "has_plan": True,
-        "plan_id": plan_id,
-        "plan_version": acceptance.get('plan_version', 0),
-        "object_id": plan.get('object_id') if plan else acceptance.get('accepted_context_snapshot', {}).get('object_id'),
-        "items": frozen_items,
-    }
 
 
 # ---------- Zeiterfassung (ручной ввод времени, референс "Neue Zeit") — Фаза 4a ----------
@@ -9090,15 +9160,29 @@ def _load_abwesenheit() -> list:
 def _save_abwesenheit(items: list):
     """ВНИМАНИЕ: не использовать в обработчиках запросов для read-modify-write.
 
-    20.09: все шесть мутаций стора переведены на update_json_transaction(), которая
-    делает read-modify-write под ОДНИМ локом. Пара _load_abwesenheit() → мутация →
-    _save_abwesenheit() выглядит безопасной симметрией, но именно она и была той
-    гонкой, из-за которой терялись одобрения владельца и воскресали удалённые
-    заявки (auto-close при открытии календаря пишет свой снимок поверх чужого).
+    20.09 (merged from upstream c23894d): все шесть мутаций стора переведены на
+    update_json_transaction(), которая делает read-modify-write под ОДНИМ
+    локом. Пара _load_abwesenheit() → мутация → _save_abwesenheit() выглядит
+    безопасной симметрией, но именно она и была гонкой, из-за которой терялись
+    одобрения владельца и воскресали удалённые заявки (auto-close при открытии
+    календаря пишет свой снимок поверх чужого).
 
-    Остаётся как полная перезапись стора: используется тестовыми фикстурами для
-    подготовки состояния, где конкурентности нет по определению."""
+    Остаётся как полная перезапись стора: используется тестовыми фикстурами
+    для подготовки состояния, где конкурентности нет по определению."""
     _atomic_write_json(ABWESENHEIT_FILE, items)
+
+
+def _migrate_abwesenheit_legacy_ids() -> int:
+    def _mutate(items):
+        count = 0
+        if not isinstance(items, list):
+            return count
+        for entry in items:
+            if isinstance(entry, dict) and not entry.get('id'):
+                entry['id'] = uuid.uuid4().hex
+                count += 1
+        return count
+    return update_json_transaction(ABWESENHEIT_FILE, [], _mutate)
 
 
 class AbwesenheitBody(BaseModel):
@@ -9185,9 +9269,9 @@ def create_abwesenheit(body: AbwesenheitBody, user: dict = Depends(get_current_u
         "created_at": int(time.time()),
         "status": "pending",
     }
-    # 20.09: append под локом -- параллельная заявка другого работника (или
-    # auto-close при открытии календаря владельцем) писала свой снимок поверх,
-    # и одна из двух заявок просто исчезала.
+    # 20.09 (merged from upstream c23894d): append под локом -- параллельная
+    # заявка другого работника (или auto-close при открытии календаря
+    # владельцем) писала свой снимок поверх, и одна из двух заявок исчезала.
     update_json_transaction(ABWESENHEIT_FILE, [], lambda items: items.append(entry))
     _notify_owner_abwesenheit_pending(entry)
     return entry
@@ -9224,11 +9308,12 @@ def update_abwesenheit_status(entry_id: str, body: AbwesenheitStatusBody,
     if body.status not in ('approved', 'rejected'):
         raise HTTPException(400, "status должен быть approved или rejected")
 
-    # 20.09: read-modify-write под одним локом. Раньше load/save шли раздельно --
-    # параллельный DELETE/close/auto-close той же записи (или просто открытие
-    # календаря владельцем, оно дёргает _auto_close_expired_open_ended) писал свой
-    # снимок поверх, и решение владельца терялось МОЛЧА: push и critical-alert ниже
-    # уже отправлены, а в файле осталось старое 'pending'.
+    # 20.09 (merged from upstream c23894d): read-modify-write под одним локом.
+    # Раньше load/save шли раздельно -- параллельный DELETE/close/auto-close
+    # той же записи (или просто открытие календаря владельцем, оно дёргает
+    # _auto_close_expired_open_ended) писал свой снимок поверх, и решение
+    # владельца терялось МОЛЧА: push и critical-alert ниже уже отправлены, а
+    # в файле осталось старое 'pending'.
     def _mutate(items):
         entry = next((i for i in items if i.get('id') == entry_id), None)
         if not entry:
@@ -9259,9 +9344,10 @@ def update_abwesenheit_dates(entry_id: str, body: AbwesenheitMoveBody,
     """
     _validate_date_str(body.date_from, 'date_from')
 
-    # 20.09: перенос даты идёт под тем же локом, что и остальные мутации стора --
-    # раньше параллельный approve/close/delete этой же записи терялся (или
-    # воскрешал уже удалённую), см. соседние endpoint'ы.
+    # 20.09 (merged from upstream c23894d): перенос даты идёт под тем же
+    # локом, что и остальные мутации стора -- раньше параллельный
+    # approve/close/delete этой же записи терялся (или воскрешал уже
+    # удалённую), см. соседние endpoint'ы.
     def _mutate(items):
         entry = next((i for i in items if i.get('id') == entry_id), None)
         if not entry:
@@ -9305,10 +9391,11 @@ def _auto_close_expired_open_ended_abwesenheit():
     systemd timer) — закрывает просроченные и пушит worker'у + owner'у."""
     today_str = business_today_str()
 
-    # 20.09: этот auto-close дёргается на КАЖДЫЙ GET календаря, то есть чаще всех
-    # остальных мутаций -- именно он был главным источником затирания чужих
-    # изменений (владелец открывает календарь ровно в тот момент, когда работник
-    # подаёт/закрывает заявку). Под локом и с копиями записей наружу.
+    # 20.09 (merged from upstream c23894d): этот auto-close дёргается на
+    # КАЖДЫЙ GET календаря, то есть чаще всех остальных мутаций -- именно
+    # он был главным источником затирания чужих изменений (владелец
+    # открывает календарь ровно в тот момент, когда работник подаёт/
+    # закрывает заявку). Под локом и с копиями записей наружу.
     def _mutate(items):
         expired_local = [i for i in items if i.get('open_ended') and i['date_to'] < today_str]
         for entry in expired_local:
@@ -9374,15 +9461,18 @@ def list_all_abwesenheit(user: dict = Depends(get_current_user), role: str = Dep
 
 @app.delete("/api/abwesenheit/{entry_id}")
 def delete_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    # 20.09 (merged from upstream c23894d): переведён на update_json_transaction,
+    # как и остальные пять мутаций стора (тот же race: параллельный approve/close/
+    # auto-close этой же записи терялся под read-modify-write без лока).
     def _mutate(items):
         entry = next((i for i in items if i.get('id') == entry_id), None)
         if not entry:
             raise HTTPException(404, "Запись не найдена")
         if entry['user_id'] != str(user['id']) and role != 'owner':
             raise HTTPException(403, "Можно удалять только свои записи")
-        # мутация IN-PLACE: update_json_transaction пишет тот же объект, что передал
-        # в mutator -- переприсваивание локального имени (items = [...]) его бы не
-        # затронуло и удаление молча не сохранилось бы.
+        # мутация IN-PLACE: update_json_transaction пишет тот же объект, что
+        # передан в mutator -- переприсваивание локального имени (items = [...])
+        # его бы не затронуло, и удаление молча не сохранилось бы.
         items[:] = [i for i in items if i.get('id') != entry_id]
 
     update_json_transaction(ABWESENHEIT_FILE, [], _mutate)

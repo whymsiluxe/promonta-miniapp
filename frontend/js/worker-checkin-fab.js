@@ -4,21 +4,25 @@
 // объект без захода в детейл-страницу объекта.
 
 let _workerCheckinObjectId = null;
+let _workerShiftStatusOverlayUnregister = null;
 
-// 18.09 (audit finding): neither picker was registered with NavigationManager,
-// so Telegram BackButton/hardware-back didn't know to close the picker first --
+// 18.09 (audit finding, merged from upstream 4a69bc6, adapted to this branch's
+// own variable names -- functionally equivalent implementation, not a
+// duplicate): neither picker was registered with NavigationManager, so
+// Telegram BackButton/hardware-back didn't know to close the picker first --
 // same class of bug already fixed elsewhere via registerOverlay() (see
 // object-info.js's _openAddStageSheet). One unregister-holder per modal;
 // cleared whenever that modal closes through ANY path (✕/item click/skip/
 // tab-switch), never left dangling for a second open to silently double-up.
-let _workerObjectPickerUnregisterOverlay = null;
-let _workerStagePickerUnregisterOverlay = null;
+let _workerObjectPickerOverlayUnregister = null;
+let _workerStagePickerOverlayUnregister = null;
 
 function closeWorkerShiftPickers() {
   document.getElementById('worker-object-picker-modal')?.remove();
+  if (_workerObjectPickerOverlayUnregister) { _workerObjectPickerOverlayUnregister(); _workerObjectPickerOverlayUnregister = null; }
   document.getElementById('worker-stage-picker-modal')?.remove();
-  if (_workerObjectPickerUnregisterOverlay) { _workerObjectPickerUnregisterOverlay(); _workerObjectPickerUnregisterOverlay = null; }
-  if (_workerStagePickerUnregisterOverlay) { _workerStagePickerUnregisterOverlay(); _workerStagePickerUnregisterOverlay = null; }
+  if (_workerStagePickerOverlayUnregister) { _workerStagePickerOverlayUnregister(); _workerStagePickerOverlayUnregister = null; }
+  closeWorkerShiftStatusSheet();
 }
 
 function initWorkerCheckinFab() {
@@ -47,22 +51,33 @@ function initWorkerCheckinFab() {
 // через тап по FAB.
 async function _workerCheckinTap() {
   if (currentRole !== 'worker') return;
-  await _openCheckinStatusScreen();
+  await openWorkerShiftFlow({ entryPoint: 'fab' });
 }
 
 async function _openCheckinStatusScreen() {
-  const activeObjectId = await _findActiveWorkerCheckinObjectId();
-  if (activeObjectId) {
-    let objectName = activeObjectId;
-    try {
-      const data = await api('/api/objects');
-      const obj = (data.objects || []).find(o => o['ID объекта'] === activeObjectId);
-      if (obj) objectName = obj['Объект'] || activeObjectId;
-    } catch (e) {}
-    switchView('objects');
-    if (typeof openStagesView === 'function') openStagesView(activeObjectId, objectName);
+  await openWorkerShiftFlow({ entryPoint: 'status' });
+}
+
+async function openWorkerShiftFlow({ objectId = null, entryPoint = 'fab' } = {}) {
+  const shiftState = typeof resolveWorkerShiftState === 'function'
+    ? await resolveWorkerShiftState()
+    : { state: null };
+
+  if (workerShiftStateHasActiveSession?.(shiftState)) {
+    await _openWorkerShiftObject(shiftState.objectId);
     return;
   }
+
+  if (workerShiftStateIsPending?.(shiftState) || shiftState.state === WORKER_SHIFT_STATE.SYNC_ERROR) {
+    openWorkerShiftStatusSheet(shiftState);
+    return;
+  }
+
+  if (objectId) {
+    _openStagePickerThenStart(objectId);
+    return;
+  }
+
   await _openWorkerObjectPicker();
 }
 
@@ -71,21 +86,31 @@ async function _openCheckinStatusScreen() {
 // смена", но stages-view той же сессии её не видел). Синхронизирует localStorage
 // заодно, чтобы synchronous-читатели (_getActiveCheckinSession) не расходились.
 async function _findActiveWorkerCheckinObjectId() {
+  const shiftState = typeof resolveWorkerShiftState === 'function'
+    ? await resolveWorkerShiftState()
+    : null;
+  return workerShiftStateHasActiveSession?.(shiftState) ? shiftState.objectId : null;
+}
+
+async function _openWorkerShiftObject(objectId) {
+  if (!objectId) return;
+  let objectName = objectId;
   try {
-    const data = await api('/api/checkin');
-    // 24.07: не фильтровать по дате — сервер (Europe/Berlin) и клиент (UTC) расходятся
-    // на границе полуночи CEST, ложно скрывая только что открытую смену. "Открыта"
-    // определяется исключительно finish_at.
-    const open = (data.sessions || []).find(s => s.finish_at === null || s.finish_at === undefined);
+    // 20.09 (P0, найдено аудитом): до этого фикса здесь писался усечённый
+    // объект { id, finished } -- без pauseAccumulatedSeconds/startAt/
+    // startAccuracy. Эта функция вызывается из обёртки над
+    // refreshCheckinButtons ПОСЛЕ оригинала, то есть систематически затирала
+    // полную сессию, только что записанную checkin.js. finish-wizard читает
+    // паузу именно из localStorage (_fwPauseMinutes), поэтому в отчёт о смене
+    // уходил pause_minutes = 0 -- реальная пауза пропадала из учёта рабочих
+    // часов. Пишем те же поля, что и checkin.js::refreshCheckinButtons, из
+    // того же ответа /api/checkin, ПЕРЕД тем как резолвить имя объекта ниже.
+    const checkinData = await api('/api/checkin');
+    // 24.07: не фильтровать по дате — сервер (Europe/Berlin) и клиент (UTC)
+    // расходятся на границе полуночи CEST, ложно скрывая только что открытую
+    // смену. "Открыта" определяется исключительно finish_at.
+    const open = (checkinData.sessions || []).find(s => s.finish_at === null || s.finish_at === undefined);
     if (open) {
-      // 20.09 (P0, найдено аудитом): здесь писался усечённый объект
-      // { id, finished } -- без pauseAccumulatedSeconds/startAt/startAccuracy.
-      // Эта функция вызывается из обёртки над refreshCheckinButtons ПОСЛЕ
-      // оригинала, то есть систематически затирала полную сессию, только что
-      // записанную checkin.js. finish-wizard читает паузу именно из localStorage
-      // (_fwPauseMinutes), поэтому в отчёт о смене уходил pause_minutes = 0 --
-      // реальная пауза пропадала из учёта рабочих часов. Пишем те же поля, что
-      // и checkin.js::refreshCheckinButtons, из того же ответа /api/checkin.
       _setActiveCheckinSession(open.object_id, {
         id: open.id,
         finished: false,
@@ -94,22 +119,95 @@ async function _findActiveWorkerCheckinObjectId() {
         pauseAccumulatedSeconds: open.pause_accumulated_seconds || 0,
         startAccuracy: open.start_accuracy != null ? Number(open.start_accuracy) : null,
       });
-      return open.object_id;
     }
-    return null;
-  } catch (e) {
-    // сеть недоступна — локальный fallback, лучше устаревший статус чем никакой
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key || !key.startsWith('checkin_session_')) continue;
-      try {
-        const session = JSON.parse(localStorage.getItem(key));
-        if (session && !session.finished) {
-          return key.replace('checkin_session_', '');
-        }
-      } catch (e2) {}
+    const data = await api('/api/objects');
+    const obj = (data.objects || []).find(o => String(o['ID объекта']) === String(objectId));
+    if (obj) objectName = obj['Объект'] || objectId;
+  } catch (e) {}
+  switchView('objects');
+  if (typeof openStagesView === 'function') openStagesView(objectId, objectName);
+}
+
+function _workerShiftStatusCopy(shiftState) {
+  if (shiftState?.state === WORKER_SHIFT_STATE.START_PENDING_SYNC) {
+    return {
+      title: 'Начало смены ожидает синхронизации',
+      body: 'Старт уже сохранён в очереди. Когда связь вернётся, он отправится автоматически.',
+      action: 'Открыть объект',
+    };
+  }
+  if (shiftState?.state === WORKER_SHIFT_STATE.FINISH_PENDING_SYNC) {
+    return {
+      title: 'Завершение смены ожидает синхронизации',
+      body: 'Финиш уже сохранён в очереди. Повторно завершать смену не нужно.',
+      action: 'Открыть объект',
+    };
+  }
+  return {
+    title: 'Нужна ручная синхронизация',
+    body: shiftState?.error || 'Последняя отправка не прошла. Можно запустить повтор вручную.',
+    action: 'Повторить',
+  };
+}
+
+function closeWorkerShiftStatusSheet() {
+  const modal = document.getElementById('worker-shift-status-modal');
+  if (modal) modal.remove();
+  if (_workerShiftStatusOverlayUnregister) {
+    _workerShiftStatusOverlayUnregister();
+    _workerShiftStatusOverlayUnregister = null;
+  }
+}
+
+function _closeWorkerShiftStatusSheetInternal() {
+  document.getElementById('worker-shift-status-modal')?.remove();
+  _workerShiftStatusOverlayUnregister = null;
+}
+
+function openWorkerShiftStatusSheet(shiftState) {
+  closeWorkerShiftStatusSheet();
+  const copy = _workerShiftStatusCopy(shiftState);
+  const canRetry = shiftState?.state === WORKER_SHIFT_STATE.SYNC_ERROR && shiftState.outboxRecord?.id;
+  const modal = document.createElement('div');
+  modal.id = 'worker-shift-status-modal';
+  modal.dataset.noSwipe = '1';
+  modal.innerHTML = `
+    <div class="worker-picker-inner">
+      <div class="worker-picker-header">
+        <span class="worker-picker-title">${esc(copy.title)}</span>
+        <button class="worker-picker-close" data-shift-status-close type="button">✕</button>
+      </div>
+      <div class="worker-picker-list">
+        <div class="worker-picker-item" style="display:block;">
+          <span class="worker-picker-item-stage">${esc(copy.body)}</span>
+        </div>
+      </div>
+      <div class="worker-picker-add-row">
+        <button class="form-submit-btn" data-shift-status-primary type="button">${esc(copy.action)}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('[data-shift-status-close]')?.addEventListener('click', closeWorkerShiftStatusSheet);
+  modal.querySelector('[data-shift-status-primary]')?.addEventListener('click', async () => {
+    if (canRetry) {
+      await promontaOutboxManualRetry(shiftState.outboxRecord.id);
+      if (shiftState.outboxRecord.kind === WORKER_SHIFT_OUTBOX_KIND_FINISH && typeof _retryFinishOutboxRecords === 'function') {
+        await _retryFinishOutboxRecords();
+      } else if (typeof _retryCheckinOutbox === 'function') {
+        await _retryCheckinOutbox();
+      }
+      closeWorkerShiftStatusSheet();
+      showToast('Повтор синхронизации запущен', 'success');
+      await _refreshWorkerCheckinFabIcon();
+      if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) _loadWorkerShiftCta();
+      return;
     }
-    return null;
+    closeWorkerShiftStatusSheet();
+    if (shiftState?.objectId) await _openWorkerShiftObject(shiftState.objectId);
+  });
+  if (typeof NavigationManager !== 'undefined') {
+    _workerShiftStatusOverlayUnregister = NavigationManager.registerOverlay(() => _closeWorkerShiftStatusSheetInternal());
   }
 }
 
@@ -142,7 +240,7 @@ async function _openWorkerObjectPicker() {
     <div class="worker-picker-inner">
       <div class="worker-picker-header">
         <span class="worker-picker-title">Выберите объект</span>
-        <button class="worker-picker-close" id="worker-object-picker-close-btn">✕</button>
+        <button class="worker-picker-close" data-object-picker-close type="button">✕</button>
       </div>
       <div class="worker-picker-list">
         ${objects.map(o => `
@@ -155,25 +253,28 @@ async function _openWorkerObjectPicker() {
     </div>
   `;
   document.body.appendChild(modal);
-
-  let closed = false;
-  const close = () => {
-    if (closed) return;
-    closed = true;
+  // 20.09 (merged from upstream 4a69bc6): re-entrancy guard -- close() can be
+  // reached both from a user click and from NavigationManager's Back-stack
+  // unregister callback; without this a fast double-fire (e.g. click landing
+  // right as Back is processed) could remove the modal twice or unregister an
+  // already-null overlay handle.
+  let _closedObjectPicker = false;
+  const _closeObjectPicker = () => {
+    if (_closedObjectPicker) return;
+    _closedObjectPicker = true;
     modal.remove();
-    if (_workerObjectPickerUnregisterOverlay) { _workerObjectPickerUnregisterOverlay(); _workerObjectPickerUnregisterOverlay = null; }
+    if (_workerObjectPickerOverlayUnregister) { _workerObjectPickerOverlayUnregister(); _workerObjectPickerOverlayUnregister = null; }
   };
-  if (typeof NavigationManager !== 'undefined') {
-    _workerObjectPickerUnregisterOverlay = NavigationManager.registerOverlay(close);
-  }
-
-  modal.querySelector('#worker-object-picker-close-btn').addEventListener('click', close);
+  modal.querySelector('[data-object-picker-close]')?.addEventListener('click', _closeObjectPicker);
   modal.querySelectorAll('.worker-picker-item').forEach(item => {
     item.addEventListener('click', () => {
-      close();
+      _closeObjectPicker();
       _openStagePickerThenStart(item.dataset.oid);
     });
   });
+  if (typeof NavigationManager !== 'undefined') {
+    _workerObjectPickerOverlayUnregister = NavigationManager.registerOverlay(_closeObjectPicker);
+  }
 }
 
 // 27.07: перед стартом смены worker явно указывает, над каким этапом объекта
@@ -204,8 +305,8 @@ async function _openStagePickerThenStart(objectId) {
 // after a re-render would call a stale close() bound to an already-removed element and
 // silently do nothing visible while still unregistering the overlay.
 function _renderStagePickerModal(objectId, stages) {
-  const isFirstOpen = !_workerStagePickerUnregisterOverlay;
   const existing = document.getElementById('worker-stage-picker-modal');
+  const isFirstRender = !existing;
   if (existing) existing.remove();
 
   const modal = document.createElement('div');
@@ -232,25 +333,23 @@ function _renderStagePickerModal(objectId, stages) {
     </div>
   `;
   document.body.appendChild(modal);
-
-  const close = () => {
+  const _closeStagePicker = () => {
     document.getElementById('worker-stage-picker-modal')?.remove();
-    if (_workerStagePickerUnregisterOverlay) { _workerStagePickerUnregisterOverlay(); _workerStagePickerUnregisterOverlay = null; }
+    if (_workerStagePickerOverlayUnregister) { _workerStagePickerOverlayUnregister(); _workerStagePickerOverlayUnregister = null; }
   };
-  if (isFirstOpen && typeof NavigationManager !== 'undefined') {
-    _workerStagePickerUnregisterOverlay = NavigationManager.registerOverlay(close);
-  }
-
   modal.querySelector('[data-stage-skip]').addEventListener('click', () => {
-    close();
+    _closeStagePicker();
     _startWorkerCheckin(objectId, null);
   });
   modal.querySelectorAll('.worker-picker-item').forEach(item => {
     item.addEventListener('click', () => {
-      close();
+      _closeStagePicker();
       _startWorkerCheckin(objectId, item.dataset.stageName);
     });
   });
+  if (isFirstRender && typeof NavigationManager !== 'undefined') {
+    _workerStagePickerOverlayUnregister = NavigationManager.registerOverlay(_closeStagePicker);
+  }
   modal.querySelector('#worker-picker-add-stage-btn').addEventListener('click', async () => {
     const input = modal.querySelector('#worker-picker-new-stage-name');
     const name = input.value.trim();
@@ -277,9 +376,13 @@ async function _refreshWorkerCheckinFabIcon() {
   const icon = document.getElementById('nav-start-fab-icon');
   const fab = document.getElementById('nav-start-fab');
   if (!icon || !fab) return;
-  const active = await _findActiveWorkerCheckinObjectId();
-  icon.textContent = active ? '■' : '▶';
-  fab.classList.toggle('active-session', !!active);
+  const shiftState = typeof resolveWorkerShiftState === 'function'
+    ? await resolveWorkerShiftState()
+    : null;
+  const active = workerShiftStateHasActiveSession?.(shiftState);
+  const pending = workerShiftStateIsPending?.(shiftState);
+  icon.textContent = pending ? '…' : (active ? '■' : '▶');
+  fab.classList.toggle('active-session', !!active || !!pending);
 }
 
 // checkin.js вызывает refreshCheckinButtons() после успешного старта/финиша —

@@ -1052,6 +1052,30 @@ async function initWorkerHomeView(slot) {
   slot.innerHTML = `
     <div id="worker-shift-cta" class="worker-shift-cta" style="display:none"></div>
     <div id="home-radio-player-mount"></div>
+
+    <div id="worker-daily-plan-card" class="worker-daily-plan-card" style="display:none"></div>
+
+    <div id="worker-problems-card" class="worker-problems-card"></div>
+
+    <div class="worker-quick-actions">
+      <div class="wqa-item" onclick="_workerQuickActionPhoto()">
+        <div class="wqa-icon">📷</div>
+        <div class="wqa-label">Фото</div>
+      </div>
+      <div class="wqa-item" onclick="_workerQuickActionNeed()">
+        <div class="wqa-icon">📝</div>
+        <div class="wqa-label">Потребность</div>
+      </div>
+      <div class="wqa-item" onclick="_workerQuickActionDefect()">
+        <div class="wqa-icon">⚠️</div>
+        <div class="wqa-label">Дефект</div>
+      </div>
+      <div class="wqa-item" onclick="_workerQuickActionChat()">
+        <div class="wqa-icon">💬</div>
+        <div class="wqa-label">Чат</div>
+      </div>
+    </div>
+
     <div class="worker-tile-grid">
       <div class="worker-tile" id="worker-tile-messages" onclick="switchView('chat')">
         <span class="worker-tile-badge" id="worker-tile-messages-badge" style="display:none">0</span>
@@ -1063,23 +1087,8 @@ async function initWorkerHomeView(slot) {
         <div class="wt-icon wt-icon-tasks"><div class="wt-icon-sphere"></div><div class="wt-icon-check"></div></div>
         <div class="worker-tile-label">Задачи</div>
       </div>
-      <div class="worker-tile" id="worker-tile-important" onclick="_openWorkerAlerts('yellow')">
-        <span class="worker-tile-badge" id="worker-tile-important-badge" style="display:none">0</span>
-        <div class="wt-icon wt-icon-important"><div class="wt-icon-triangle"></div><div class="wt-icon-bang"></div></div>
-        <div class="worker-tile-label">Алерты важно</div>
-      </div>
-      <div class="worker-tile" id="worker-tile-critical" onclick="_openWorkerAlerts('red')">
-        <span class="worker-tile-badge" id="worker-tile-critical-badge" style="display:none">0</span>
-        <div class="wt-icon wt-icon-critical"><div class="wt-icon-sphere"></div><div class="wt-icon-bang"></div></div>
-        <div class="worker-tile-label">Алерты критично</div>
-      </div>
     </div>
 
-    <div class="worker-tile-wide" id="worker-tile-needs" onclick="switchView('tasks')">
-      <div class="wt-icon wt-icon-tasks"><div class="wt-icon-sphere"></div><div class="wt-icon-check"></div></div>
-      <div class="worker-tile-label">Потребности</div>
-      <span class="worker-tile-wide-arrow">›</span>
-    </div>
     <div class="worker-tile-wide" id="worker-tile-objects" onclick="switchView('objects')">
       <div class="wt-icon wt-icon-objects"><div class="wt-icon-sphere"></div><div class="wt-icon-blocks"><span></span><span></span><span></span></div></div>
       <div class="worker-tile-label">Объекты</div>
@@ -1101,6 +1110,8 @@ async function initWorkerHomeView(slot) {
   const _workerObjPromise = api('/api/objects').catch(() => ({ objects: [] }));
   _loadWorkerTileCounts(_workerObjPromise);
   _loadWorkerShiftCta(_workerObjPromise);
+  _renderWorkerDailyPlanCard();
+  _loadWorkerProblemsCard();
   initFeedTabs();
   if (typeof renderHomeRadioPlayer === 'function') renderHomeRadioPlayer();
 }
@@ -1113,23 +1124,50 @@ async function _loadWorkerShiftCta(objDataPromise) {
   const cta = document.getElementById('worker-shift-cta');
   if (!cta) return;
   try {
-    const [checkinData, objData] = await Promise.all([
-      api('/api/checkin'),
+    const [shiftState, objData] = await Promise.all([
+      typeof resolveWorkerShiftState === 'function' ? resolveWorkerShiftState() : Promise.resolve({ state: null }),
       objDataPromise || api('/api/objects'),
     ]);
-    const openSession = (checkinData.sessions || []).find(s => s.finish_at === null || s.finish_at === undefined);
-    if (openSession) {
-      const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(openSession.object_id));
+    const objectName = (objectId) => {
+      const obj = (objData.objects || []).find(o => String(o['ID объекта']) === String(objectId));
+      return obj ? (obj['Объект'] || objectId) : objectId;
+    };
+
+    if (shiftState?.state === WORKER_SHIFT_STATE.START_PENDING_SYNC
+      || shiftState?.state === WORKER_SHIFT_STATE.FINISH_PENDING_SYNC
+      || shiftState?.state === WORKER_SHIFT_STATE.SYNC_ERROR) {
+      const isError = shiftState.state === WORKER_SHIFT_STATE.SYNC_ERROR;
+      const isFinish = shiftState.pendingState === WORKER_SHIFT_STATE.FINISH_PENDING_SYNC
+        || shiftState.state === WORKER_SHIFT_STATE.FINISH_PENDING_SYNC;
+      cta.style.display = 'flex';
+      cta.className = isError
+        ? 'worker-shift-cta worker-shift-cta-idle'
+        : 'worker-shift-cta worker-shift-cta-active';
+      cta.innerHTML = `
+        <div class="worker-shift-cta-text">
+          <div class="worker-shift-cta-status">${isError ? '⚠️ Ошибка синхронизации' : '⏳ Ожидает синхронизации'}</div>
+          <div class="worker-shift-cta-object">${esc(isFinish ? 'Завершение смены' : 'Начало смены')}${shiftState.objectId ? ` · ${esc(objectName(shiftState.objectId))}` : ''}</div>
+        </div>
+        <span class="worker-shift-cta-arrow">${isError ? 'Повторить ›' : 'Статус ›'}</span>
+      `;
+      cta.onclick = () => {
+        if (typeof openWorkerShiftStatusSheet === 'function') openWorkerShiftStatusSheet(shiftState);
+      };
+      return;
+    }
+
+    if (workerShiftStateHasActiveSession?.(shiftState)) {
+      const openObjectId = shiftState.objectId;
       cta.style.display = 'flex';
       cta.className = 'worker-shift-cta worker-shift-cta-active';
       cta.innerHTML = `
         <div class="worker-shift-cta-text">
           <div class="worker-shift-cta-status">🟢 Смена идёт</div>
-          <div class="worker-shift-cta-object">${esc(obj ? obj['Объект'] : openSession.object_id)}</div>
+          <div class="worker-shift-cta-object">${esc(objectName(openObjectId))}</div>
         </div>
         <span class="worker-shift-cta-arrow">Завершить ›</span>
       `;
-      cta.onclick = () => _openObjectForShift(openSession.object_id, obj ? obj['Объект'] : '');
+      cta.onclick = () => _openObjectForShift(openObjectId, objectName(openObjectId));
       return;
     }
 
@@ -1158,8 +1196,11 @@ async function _loadWorkerShiftCta(objDataPromise) {
         <span class="worker-shift-cta-arrow">Начать ›</span>
       `;
       cta.onclick = () => {
-        if (typeof _openStagePickerThenStart === 'function' && single) {
-          _openStagePickerThenStart(single['ID объекта']);
+        if (typeof openWorkerShiftFlow === 'function') {
+          openWorkerShiftFlow({
+            objectId: single ? single['ID объекта'] : null,
+            entryPoint: 'home',
+          });
         } else if (typeof _openWorkerObjectPicker === 'function') {
           _openWorkerObjectPicker();
         }
@@ -1198,13 +1239,6 @@ async function _loadWorkerTileCounts(objDataPromise) {
     ).length;
     _setWorkerBadge('worker-tile-tasks-badge', myTasks);
   } catch (e) {}
-
-  try {
-    const alertsData = await api('/api/alerts');
-    const alerts = alertsData.alerts || [];
-    _setWorkerBadge('worker-tile-important-badge', alerts.filter(a => a.type === 'yellow').length);
-    _setWorkerBadge('worker-tile-critical-badge', alerts.filter(a => a.type === 'red').length);
-  } catch (e) {}
 }
 
 function _setWorkerBadge(elId, count) {
@@ -1212,6 +1246,117 @@ function _setWorkerBadge(elId, count) {
   if (!el) return;
   el.textContent = count;
   el.style.display = count > 0 ? 'flex' : 'none';
+}
+
+// Worker UX V2, Этап 5: compact DailyPlan preview на Today. Не дублирует
+// checkAndShowTodayPlan()/fetch/polling/offline-cache/acceptance -- та подсистема
+// (today-plan.js) остаётся canonical и уже вызывается раньше при старте приложения.
+// Здесь только читаем window._todayPlanState, который она уже загрузила, и открываем
+// её же существующий overlay по тапу (_openPlanCard()).
+function _renderWorkerDailyPlanCard() {
+  const card = document.getElementById('worker-daily-plan-card');
+  if (!card) return;
+  const data = window._todayPlanState;
+
+  if (!data || !data.has_plan || !data.plan || data.plan.status === 'draft') {
+    card.style.display = 'none';
+    return;
+  }
+
+  const plan = data.plan;
+  const accepted = !!data.acceptance;
+  const items = plan.items || [];
+  const done = items.filter(i => i.status === 'done').length;
+  const total = items.length;
+  const preview = items.slice(0, 3);
+
+  let statusLine;
+  if (!accepted) {
+    statusLine = '<span class="wdp-chip wdp-chip-warn">Требует принятия</span>';
+  } else if (total > 0) {
+    statusLine = `<span class="wdp-chip">${done} из ${total} выполнено</span>`;
+  } else {
+    statusLine = '<span class="wdp-chip">Принят</span>';
+  }
+
+  card.style.display = 'block';
+  card.innerHTML = `
+    <div class="wdp-header">
+      <span class="wdp-title">План на сегодня</span>
+      ${statusLine}
+    </div>
+    ${preview.length ? `<ul class="wdp-items">
+      ${preview.map(item => `<li class="wdp-item">${esc(item.title || '—')}</li>`).join('')}
+      ${total > preview.length ? `<li class="wdp-item wdp-item-more">ещё ${total - preview.length}</li>` : ''}
+    </ul>` : ''}
+    <button class="wdp-open-btn" type="button">Открыть план →</button>
+  `;
+  card.onclick = () => { if (typeof _openPlanCard === 'function') _openPlanCard(); };
+}
+
+// Worker UX V2, Этап 5: единый Problems-блок — агрегирует critical/important alerts,
+// открытые Потребности и открытые Дефекты. НЕ отдельный store: каждая строка читает
+// уже существующие источники (/api/alerts, /api/tasks, /api/mangel/counts) и ведёт
+// в уже существующий canonical экран того же типа. Ранжирование: critical > important
+// > needs > defects, самая приоритетная строка показывается первой.
+const WORKER_OPEN_TASK_STATUSES = new Set(['открыто', 'в работе', 'заказано']);
+
+async function _loadWorkerProblemsCard() {
+  const card = document.getElementById('worker-problems-card');
+  if (!card) return;
+  card.innerHTML = '<div class="wp-loading">Загрузка...</div>';
+
+  const rows = [];
+  try {
+    const alertsData = await api('/api/alerts');
+    const alerts = alertsData.alerts || [];
+    alerts.filter(a => a.type === 'red').forEach(a =>
+      rows.push({ rank: 0, icon: '🔴', title: a.title, subtitle: a.subtitle, action: () => _openWorkerAlerts('red') }));
+    alerts.filter(a => a.type === 'yellow').forEach(a =>
+      rows.push({ rank: 1, icon: '🟠', title: a.title, subtitle: a.subtitle, action: () => _openWorkerAlerts('yellow') }));
+  } catch (e) {}
+
+  try {
+    const tasksData = await api('/api/tasks');
+    const openTasks = (tasksData.tasks || []).filter(t => WORKER_OPEN_TASK_STATUSES.has(t.status));
+    openTasks.forEach(t =>
+      rows.push({ rank: 2, icon: '🟡', title: t.title, subtitle: 'Потребность', action: () => switchView('tasks') }));
+  } catch (e) {}
+
+  try {
+    const counts = await api('/api/mangel/counts');
+    const openDefects = (counts['gemeldet'] || 0) + (counts['in Bearbeitung'] || 0);
+    if (openDefects > 0) {
+      rows.push({ rank: 3, icon: '🟡', title: `${openDefects} ${openDefects === 1 ? 'дефект' : 'дефекта'}`, subtitle: 'Требуют внимания', action: () => switchView('mangel') });
+    }
+  } catch (e) {}
+
+  if (!rows.length) {
+    card.innerHTML = `
+      <div class="wp-empty">
+        <div class="wp-empty-title">Проблем нет</div>
+        <div class="wp-empty-sub">Все критичные вопросы закрыты</div>
+      </div>`;
+    card.onclick = null;
+    return;
+  }
+
+  rows.sort((a, b) => a.rank - b.rank);
+  const top = rows[0];
+  const rest = rows.length - 1;
+
+  card.innerHTML = `
+    <div class="wp-header"><span class="wp-title">Проблемы</span></div>
+    <div class="wp-top-row">
+      <span class="wp-top-icon">${top.icon}</span>
+      <div class="wp-top-text">
+        <div class="wp-top-title">${esc(top.title || '—')}</div>
+        ${top.subtitle ? `<div class="wp-top-sub">${esc(top.subtitle)}</div>` : ''}
+      </div>
+    </div>
+    ${rest > 0 ? `<div class="wp-more">ещё ${rest} ${rest === 1 ? 'проблема' : 'проблемы'}</div>` : ''}
+  `;
+  card.onclick = top.action;
 }
 
 

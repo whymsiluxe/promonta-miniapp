@@ -100,7 +100,7 @@ async function checkAndShowTodayPlan() {
       };
     }
     if (data.acceptance) _tpDbSave(data); // persist for offline fallback
-    _updateTodayPlanBar(data);
+    _updateWorkerDailyPlanSurfaces(data);
     if (_shouldShowPlanScreen(data)) {
       await _openTodayPlanScreen(data, { mandatory: true });
     }
@@ -120,7 +120,7 @@ async function checkAndShowTodayPlan() {
             daily_plan_acceptance_id: cached.acceptance.id,
           };
         }
-        _updateTodayPlanBar(_todayPlanState);
+        _updateWorkerDailyPlanSurfaces(_todayPlanState);
       }
     }
     // else: server error while online — skip silently, don't block app launch
@@ -211,7 +211,7 @@ function _startTodayPlanPolling() {
       _todayPlanState = data; window._todayPlanState = data;
       if (data.acceptance) _tpDbSave(data);
       // Clear offline flag if we just came back online
-      _updateTodayPlanBar(data);
+      _updateWorkerDailyPlanSurfaces(data);
       // Show screen if a new plan just appeared or version bumped (and screen is not open)
       if (!_planScreenOpen && _shouldShowPlanScreen(data)) {
         const prevVersion = prev?.plan?.version;
@@ -277,7 +277,7 @@ function _openTodayPlanScreen(data, { mandatory = true, day = 'today' } = {}) {
           const freshData = await api('/api/daily-plan/today');
           _todayPlanState = freshData; window._todayPlanState = freshData;
           if (freshData.acceptance) _tpDbSave(freshData);
-          _updateTodayPlanBar(freshData);
+          _updateWorkerDailyPlanSurfaces(freshData);
           if ((freshData.pending_amendments || []).length > 0) {
             // More amendments for this worker — re-render the screen
             screen.innerHTML = _renderScreenHTML(freshData, mandatory);
@@ -340,7 +340,7 @@ function _openTodayPlanScreen(data, { mandatory = true, day = 'today' } = {}) {
           });
           // Hide blocker btn after acceptance
           screen.querySelector('#tp-blocker-btn')?.remove();
-          _updateTodayPlanBar(_todayPlanState);
+          _updateWorkerDailyPlanSurfaces(_todayPlanState);
         } catch (e) {
           showToast('Не удалось принять план: ' + e.message, 'error');
           acceptBtn.disabled = false;
@@ -610,7 +610,12 @@ function _showBlockerForm(planId, onDone) {
 
 // Start shift from plan — skip object picker if plan has object_id
 function _startShiftFromPlan(plan) {
-  if (plan?.object_id && typeof _openStagePickerThenStart === 'function') {
+  if (typeof openWorkerShiftFlow === 'function') {
+    openWorkerShiftFlow({
+      objectId: plan?.object_id || null,
+      entryPoint: 'daily-plan',
+    });
+  } else if (plan?.object_id && typeof _openStagePickerThenStart === 'function') {
     _openStagePickerThenStart(plan.object_id);
   } else if (typeof _openWorkerObjectPicker === 'function') {
     _openWorkerObjectPicker();
@@ -619,9 +624,60 @@ function _startShiftFromPlan(plan) {
 
 // ── Persistent bar ────────────────────────────────────────────────────────────
 
+// Worker UX V2, Этап 5: Today (view-home) уже shows the same plan status inside
+// its own compact DailyPlan card -- showing the persistent bar there too would
+// be a visible duplicate on the same screen. Called from switchView() on every
+// tab switch; re-runs _updateTodayPlanBar() with the last known data to restore
+// the bar's normal display when leaving Home, so this never fights the bar's
+// own display:none/flex logic with a separate CSS override.
+function _syncTodayPlanBarForView(viewName) {
+  const bar = document.getElementById('today-plan-bar');
+  if (!bar) return;
+  if (viewName === 'home') {
+    bar.style.display = 'none';
+    return;
+  }
+  if (_todayPlanState) _updateTodayPlanBar(_todayPlanState);
+}
+
+// 21.09 (P1, owner review finding): _updateTodayPlanBar() used to
+// unconditionally set display:flex whenever called with plan data -- the
+// ONLY thing suppressing it on Home was _syncTodayPlanBarForView('home') on
+// tab-switch. Both the 60s poll (_startTodayPlanPolling) and the amendment-
+// accept flow call _updateTodayPlanBar() directly, bypassing that check, so
+// a worker who stayed on Home past one poll tick got the bar back alongside
+// the Home card showing the exact same status -- the duplicate this branch's
+// Today redesign was specifically built to remove. Checking the DOM here
+// (not a tracked "current view" variable -- none exists globally, see
+// switchView() in app.html) keeps this self-contained without threading
+// view state through every _updateTodayPlanBar() call site.
+function _isHomeViewCurrentlyActive() {
+  const homeView = document.getElementById('view-home');
+  return !!homeView && homeView.classList.contains('active');
+}
+
+// 21.09 (P1, owner review finding): single entry point for "plan data
+// changed, refresh everywhere it's displayed" -- the 60s poll and the
+// amendment-accept flow used to call _updateTodayPlanBar(data) directly and
+// nothing else, so home.js's _renderWorkerDailyPlanCard() (Today's compact
+// DailyPlan card) kept showing stale data (e.g. an old item count) until the
+// worker left and re-entered Home. _todayPlanState/window._todayPlanState
+// are set by the caller before this runs (same as before), this only adds
+// the two renders that were missing.
+function _updateWorkerDailyPlanSurfaces(data) {
+  _updateTodayPlanBar(data);
+  if (typeof _renderWorkerDailyPlanCard === 'function') _renderWorkerDailyPlanCard();
+}
+
 function _updateTodayPlanBar(data) {
   const bar = document.getElementById('today-plan-bar');
   if (!bar) return;
+
+  if (_isHomeViewCurrentlyActive()) {
+    bar.style.display = 'none';
+    document.body.classList.remove('today-plan-bar-visible');
+    return;
+  }
 
   if (!data || !data.has_plan || !data.plan) {
     bar.style.display = 'none';

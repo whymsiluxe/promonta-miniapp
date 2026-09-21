@@ -18,7 +18,7 @@ def _source(path: Path) -> str:
 def test_photo_step_does_not_skip_required_summary_step():
     src = _source(FINISH_WIZARD)
     start = src.index("function _fwWireStep1()")
-    end = src.index("// ---------- Step 2:", start)
+    end = src.index('// ---------- Step "summary":', start)
     step1 = src[start:end]
 
     assert step1.count("_fwNavNext();") == 1
@@ -82,3 +82,22 @@ def test_finish_wizard_sends_geo_accuracy_metadata():
     assert "if (_fwFinishGeo.accuracy) fields.accuracy = _fwFinishGeo.accuracy;" in src
     assert "if (_fwFinishGeo.timestamp) fields.geo_timestamp = _fwFinishGeo.timestamp;" in src
     assert "Object.entries(record.fields || {}).forEach(([key, value]) => formData.append(key, value || ''))" in src
+
+
+def test_finish_wizard_loads_frozen_finish_context_before_plan_fact():
+    src = _source(FINISH_WIZARD)
+
+    assert "`/api/checkin/${sessionId}/finish-context`" in src
+    assert "let _fwContextState = 'idle';" in src
+    # 21.09 (owner review finding): context-loading is no longer a full-screen
+    # gate before the first render -- Photos never needed daily-plan items,
+    # only the 'summary' step's plan-fact section does, and that renders
+    # gracefully with an empty list while the fetch is still in flight. Only a
+    # genuine terminal failure with no usable cache still gets special
+    # handling, and even that no longer blocks the wizard (see
+    # test_finish_wizard_screen_merge_frontend_contract.py).
+    assert "if (_fwContextState === 'loading') return ['context-loading'];" not in src
+    assert "function _fwReadCachedFinishContext(sessionId)" in src
+    assert "_fwApplyFinishContext(cached, 'offline_cached')" in src
+    assert "const planState = window._todayPlanState" not in src
+    assert "_fwDailyPlanItems = planState.plan.items" not in src
