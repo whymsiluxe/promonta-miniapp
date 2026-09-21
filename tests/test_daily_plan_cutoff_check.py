@@ -25,6 +25,7 @@ class DailyPlanCutoffCheckTests(unittest.TestCase):
 
         import main as backend
         self.backend = backend
+        self._orig_business_today = backend.business_today  # restored in tearDown
         # Re-point every store this test touches at the isolated tmp dir --
         # main.py module-level _FILE constants were computed at first import
         # (possibly by an earlier test) and won't auto-follow env var changes.
@@ -56,6 +57,14 @@ class DailyPlanCutoffCheckTests(unittest.TestCase):
 
         self.backend._save_roles({'1': 'owner', '555': 'worker'})
 
+    def tearDown(self):
+        # 18.09: business_today() is patched onto the shared cached `main`
+        # module by the is_working_day tests below (not instance-scoped) --
+        # left unpatched it leaks into every OTHER test in this class that
+        # runs afterward, since unittest doesn't reload the module between
+        # tests within one process.
+        self.backend.business_today = self._orig_business_today
+
     def _assign(self, worker_id: str, object_id: str = 'OBJ-1', date_from='', date_to=''):
         assignments = self.backend._load_assignments()
         assignments.setdefault(object_id, []).append({
@@ -63,6 +72,18 @@ class DailyPlanCutoffCheckTests(unittest.TestCase):
             'date_from': date_from, 'date_to': date_to,
         })
         self.backend._save_assignments(assignments)
+
+    def _assign_explicit_today_and_tomorrow(self, worker_id: str, object_id: str = 'OBJ-1'):
+        # 18.09: most tests need a worker whose assignment definitely covers
+        # today/tomorrow regardless of which day of the week the suite happens
+        # to run on (undated/legacy assignments are now exempt from the alert
+        # on non-working days -- see is_working_day() integration below) --
+        # explicit dates opt back into "always alerts" so these tests aren't
+        # flaky depending on whether CI runs on a weekend.
+        from datetime import timedelta
+        today = self.backend.business_today_str()
+        tomorrow = (self.backend.business_today() + timedelta(days=2)).strftime('%Y-%m-%d')
+        self._assign(worker_id, object_id, date_from=today, date_to=tomorrow)
 
     def _publish_plan(self, worker_id: str, date_str: str):
         body = self.backend.DailyPlanIn(
@@ -84,7 +105,7 @@ class DailyPlanCutoffCheckTests(unittest.TestCase):
         self.assertEqual(alerts, [])
 
     def test_worker_with_no_plan_triggers_alert(self):
-        self._assign('555')
+        self._assign_explicit_today_and_tomorrow('555')
         rc = self.script.main()
         self.assertEqual(rc, 0)
         alerts = self.backend._load_critical_alerts()
@@ -116,7 +137,7 @@ class DailyPlanCutoffCheckTests(unittest.TestCase):
         self.assertEqual(alerts, [])
 
     def test_idempotent_second_run_same_day_no_duplicate_alert(self):
-        self._assign('555')
+        self._assign_explicit_today_and_tomorrow('555')
         self.script.main()
         self.script.main()
         alerts = self.backend._load_critical_alerts()
@@ -162,7 +183,7 @@ class DailyPlanCutoffCheckTests(unittest.TestCase):
         # A worker assigned both today and tomorrow with no plan for either --
         # separate state keys mean the evening run doesn't suppress the morning
         # run for the same calendar day, and vice versa.
-        self._assign('555', date_from='', date_to='')
+        self._assign_explicit_today_and_tomorrow('555')
         rc_morning = self.script.main('morning')
         rc_evening = self.script.main('evening')
         self.assertEqual(rc_morning, 0)
@@ -170,6 +191,54 @@ class DailyPlanCutoffCheckTests(unittest.TestCase):
         alerts = self.backend._load_critical_alerts()
         kinds = sorted(a['kind'] for a in alerts)
         self.assertEqual(kinds, ['plan_overdue', 'plan_publish_reminder'])
+
+    # ── is_working_day integration (18.09, audit finding) ───────────────────
+
+    def test_undated_assignment_on_non_working_day_does_not_trigger_alert(self):
+        # A legacy/undated assignment (no date_from/date_to -- historically
+        # meant "no expiry", never "explicitly scheduled every single day
+        # forever") on a day the work calendar marks non-working must not
+        # alert -- there was never going to be a plan for that day, nobody
+        # asked for one.
+        from datetime import date
+        target = date(2026, 9, 19)  # a Saturday
+        self.assertFalse(self.dpl.is_working_day(target))
+        self._assign('555')  # undated
+        # Force "today" to that Saturday so the morning check targets it.
+        self.backend.business_today = lambda: target
+        rc = self.script.main('morning')
+        self.assertEqual(rc, 0)
+        alerts = self.backend._load_critical_alerts()
+        self.assertEqual(alerts, [])
+
+    def test_explicit_dated_assignment_on_non_working_day_still_triggers_alert(self):
+        # An assignment with EXPLICIT dates covering the target day is trusted
+        # as intentional (the owner scheduled work on that specific day on
+        # purpose, weekend or not) -- exempting undated assignments must not
+        # accidentally exempt a real, deliberate weekend assignment too.
+        from datetime import date
+        target = date(2026, 9, 19)  # a Saturday
+        self.assertFalse(self.dpl.is_working_day(target))
+        target_str = target.strftime('%Y-%m-%d')
+        self._assign('555', date_from=target_str, date_to=target_str)
+        self.backend.business_today = lambda: target
+        rc = self.script.main('morning')
+        self.assertEqual(rc, 0)
+        alerts = self.backend._load_critical_alerts()
+        self.assertEqual(len(alerts), 1)
+
+    def test_undated_assignment_on_working_day_still_triggers_alert(self):
+        # Sanity check the exemption is specific to non-working days, not a
+        # blanket "undated assignments never alert."
+        from datetime import date
+        target = date(2026, 9, 21)  # a Monday
+        self.assertTrue(self.dpl.is_working_day(target))
+        self._assign('555')  # undated
+        self.backend.business_today = lambda: target
+        rc = self.script.main('morning')
+        self.assertEqual(rc, 0)
+        alerts = self.backend._load_critical_alerts()
+        self.assertEqual(len(alerts), 1)
 
     def test_invalid_mode_rejected(self):
         rc = self.script.main('afternoon')
