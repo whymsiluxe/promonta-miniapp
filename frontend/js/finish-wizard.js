@@ -20,6 +20,8 @@ let _fwNeeds = []; // [{category, description}]
 let _fwDefects = []; // [{description}]
 let _fwPauseMinutes = 30;
 let _fwFinishGeo = null; // {lat, lon, accuracy, timestamp}
+let _fwGeoState = 'loading'; // loading | success | error
+let _fwGeoCapturePromise = null; // single in-flight _getGeolocation() promise, null when idle
 let _fwOverlayUnregister = null;
 let _fwContextState = 'idle'; // loading | loaded_with_plan | loaded_without_plan | offline_cached | error
 let _fwContextError = '';
@@ -117,6 +119,8 @@ function openFinishShiftWizard(sessionId, objectId) {
   const activeSession = typeof _getActiveCheckinSession === 'function' ? _getActiveCheckinSession(objectId) : null;
   _fwPauseMinutes = Math.round((activeSession?.pauseAccumulatedSeconds || 0) / 60);
   _fwFinishGeo = null;
+  _fwGeoState = 'loading';
+  _fwGeoCapturePromise = null;
 
   // Round 3: load accepted daily plan for this shift
   _fwDailyPlanItems = [];
@@ -142,17 +146,33 @@ function openFinishShiftWizard(sessionId, objectId) {
   // в фоне сразу при открытии wizard (параллельно с фото/summary), к моменту
   // просмотра Сводки обычно уже готова. Кнопка "Завершить" (_fwSubmitFinish)
   // по-прежнему требует непустую _fwFinishGeo -- сам submit-контракт не менялся.
-  _fwStartBackgroundGeoCapture();
+  _fwStartBackgroundGeoCapture(sessionId);
 }
 
-async function _fwStartBackgroundGeoCapture() {
-  const geo = await _getGeolocation();
-  if (geo.lat && geo.lon) {
-    _fwFinishGeo = geo;
-  } else {
-    _fwFinishGeo = null;
-  }
-  if (_fwCurrentKey() === 'review') _fwRenderStep();
+// Единственная точка входа для сбора geo -- вызывается при открытии wizard И
+// как retry с review-экрана. Один in-flight promise на sessionId (не плодит
+// параллельные getCurrentPosition() при повторном тапе "Повторить" пока
+// первый запрос ещё не резолвился) + явный state loading/success/error
+// (раньше был только implicit null/truthy _fwFinishGeo, неотличимый от
+// "ещё грузится"). Stale-session guard -- тот же паттерн что
+// _fwLoadFinishContext (`if (_fwSessionId !== sessionId) return;`), чтобы
+// поздний geo-response не записался в уже другую/новую сессию wizard.
+function _fwStartBackgroundGeoCapture(sessionId) {
+  if (_fwGeoCapturePromise) return _fwGeoCapturePromise;
+  _fwGeoState = 'loading';
+  _fwGeoCapturePromise = _getGeolocation().then(geo => {
+    if (_fwSessionId !== sessionId) return; // wizard закрыт/переоткрыт для другой смены за это время
+    if (geo.lat && geo.lon) {
+      _fwFinishGeo = geo;
+      _fwGeoState = 'success';
+    } else {
+      _fwFinishGeo = null;
+      _fwGeoState = 'error';
+    }
+    _fwGeoCapturePromise = null;
+    if (_fwCurrentKey() === 'review') _fwRenderStep();
+  });
+  return _fwGeoCapturePromise;
 }
 
 function _fwFinishContextCacheKey(sessionId) {
@@ -720,9 +740,11 @@ function _fwRenderStep6() {
     <div class="fw-summary-section"><b>Дефекты:</b><ul>${defectsHtml}</ul></div>
     <div class="fw-summary-section"><b>Пауза за смену:</b> ${_fwPauseMinutes > 0 ? `${_fwPauseMinutes} мин.` : 'без пауз'}</div>
     <div class="fw-summary-section" id="fw-geo-summary-row">
-      <b>Геолокация:</b> ${_fwFinishGeo
-        ? '📍 определена'
-        : '⏳ определяем… <button type="button" class="fw-geo-retry-btn" id="fw-geo-retry-btn">Повторить</button>'}
+      <b>Геолокация:</b> ${
+        _fwGeoState === 'success' ? '📍 определена'
+        : _fwGeoState === 'loading' ? '⏳ определяем…'
+        : '⚠️ не удалось определить <button type="button" class="fw-geo-retry-btn" id="fw-geo-retry-btn">Повторить</button>'
+      }
     </div>
     <div class="fw-nav-row">
       <button class="fw-back-btn" id="fw-back-6" type="button">← Назад</button>
@@ -735,7 +757,7 @@ function _fwRenderStep6() {
 function _fwWireStep6() {
   document.getElementById('fw-back-6')?.addEventListener('click', () => _fwNavBack());
   document.getElementById('fw-submit-finish')?.addEventListener('click', _fwSubmitFinish);
-  document.getElementById('fw-geo-retry-btn')?.addEventListener('click', () => _fwStartBackgroundGeoCapture());
+  document.getElementById('fw-geo-retry-btn')?.addEventListener('click', () => _fwStartBackgroundGeoCapture(_fwSessionId));
 }
 
 function _fwFinishOutboxId(idempotencyKey) {
@@ -888,9 +910,11 @@ async function _fwSubmitFinish() {
     return;
   }
   if (!_fwFinishGeo?.lat || !_fwFinishGeo?.lon) {
-    // Фоновый сбор (см. openFinishShiftWizard) обычно успевает к этому моменту;
-    // если нет — последняя попытка синхронно здесь, прежде чем блокировать submit.
-    await _fwStartBackgroundGeoCapture();
+    // Дожидаемся существующий in-flight promise (см. _fwStartBackgroundGeoCapture) --
+    // если фоновый сбор уже идёт, ждём именно его, не стартуем второй параллельный
+    // getCurrentPosition(). Если он уже завершился с ошибкой (_fwGeoState === 'error'),
+    // это последняя синхронная попытка перед блокировкой submit.
+    await _fwStartBackgroundGeoCapture(_fwSessionId);
     if (!_fwFinishGeo?.lat || !_fwFinishGeo?.lon) {
       showToast('Нужна геолокация финиша — включи и попробуй снова', 'error');
       return;

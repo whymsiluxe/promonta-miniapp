@@ -46,39 +46,78 @@ def test_geo_capture_starts_in_background_on_wizard_open():
     start = src.index("function openFinishShiftWizard(")
     end = src.index("\n}\n", start)
     body = src[start:end]
-    assert "_fwStartBackgroundGeoCapture();" in body
+    assert "_fwStartBackgroundGeoCapture(sessionId);" in body
 
-    fn_start = src.index("async function _fwStartBackgroundGeoCapture(")
+    fn_start = src.index("function _fwStartBackgroundGeoCapture(")
     fn_end = src.index("\n}\n", fn_start)
     fn_body = src[fn_start:fn_end]
-    assert "await _getGeolocation();" in fn_body
+    assert "_getGeolocation().then(" in fn_body
     # Re-renders the review screen once geo resolves, but only if the worker
     # is already looking at it -- must not yank them to a different step.
     assert "if (_fwCurrentKey() === 'review') _fwRenderStep();" in fn_body
 
 
-def test_review_screen_shows_geo_status_with_inline_retry_not_separate_screen():
+def test_geo_capture_is_a_single_in_flight_promise_with_explicit_state():
+    """Owner review finding: retry tapped while the background capture is
+    still pending must NOT start a second parallel getCurrentPosition() --
+    both callers (wizard-open and the review retry button) must await the
+    SAME promise, and the UI must be able to distinguish "still loading"
+    from "failed", not just null vs truthy _fwFinishGeo."""
+    src = _source()
+
+    assert "let _fwGeoState = 'loading'; // loading | success | error" in src
+    assert "let _fwGeoCapturePromise = null;" in src
+
+    fn_start = src.index("function _fwStartBackgroundGeoCapture(")
+    fn_end = src.index("\n}\n", fn_start)
+    fn_body = src[fn_start:fn_end]
+
+    # Guard: an existing in-flight promise is returned as-is, not replaced
+    assert "if (_fwGeoCapturePromise) return _fwGeoCapturePromise;" in fn_body
+    assert "_fwGeoState = 'loading';" in fn_body
+    assert "_fwGeoState = 'success';" in fn_body
+    assert "_fwGeoState = 'error';" in fn_body
+    assert "_fwGeoCapturePromise = null;" in fn_body  # cleared on resolve, allows a real retry after failure
+
+
+def test_geo_capture_has_stale_session_guard_matching_finish_context_pattern():
+    """Owner review finding: a late geo response must not attach coordinates
+    to a wizard session that has since closed/reopened for a different
+    shift -- same pattern already used by _fwLoadFinishContext."""
+    src = _source()
+    fn_start = src.index("function _fwStartBackgroundGeoCapture(")
+    fn_end = src.index("\n}\n", fn_start)
+    fn_body = src[fn_start:fn_end]
+    assert "if (_fwSessionId !== sessionId) return;" in fn_body
+
+
+def test_review_screen_distinguishes_loading_success_and_error_states():
     src = _source()
     start = src.index("function _fwRenderStep6(")
     end = src.index("\n}\n", start)
     body = src[start:end]
 
     assert "fw-geo-summary-row" in body
+    assert "_fwGeoState === 'success'" in body
+    assert "_fwGeoState === 'loading'" in body
     assert "определена" in body
+    assert "определяем" in body
     assert "fw-geo-retry-btn" in body
 
     wire_start = src.index("function _fwWireStep6(")
     wire_end = src.index("\n}\n", wire_start)
     wire_body = src[wire_start:wire_end]
-    assert "_fwStartBackgroundGeoCapture()" in wire_body
+    # Retry reuses the same single-entry-point function with the real
+    # session id, not a bare no-arg call that would defeat the stale-guard.
+    assert "_fwStartBackgroundGeoCapture(_fwSessionId)" in wire_body
 
 
-def test_submit_guard_retries_geo_once_more_before_blocking():
+def test_submit_guard_awaits_existing_in_flight_capture_before_blocking():
     src = _source()
     start = src.index("async function _fwSubmitFinish(")
     end = src.index("\n  btn.disabled = true;", start)
     body = src[start:end]
 
-    assert "await _fwStartBackgroundGeoCapture();" in body
+    assert "await _fwStartBackgroundGeoCapture(_fwSessionId);" in body
     # No longer navigates to a 'geo' step index that no longer exists
     assert "_fwStepSequence().indexOf('geo')" not in body
