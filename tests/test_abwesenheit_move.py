@@ -8,6 +8,8 @@ patch.object on the real backend module.
 """
 import os
 import sys
+import json
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -32,6 +34,27 @@ def _entry(**overrides):
 
 
 class AbwesenheitMoveEndpointTests(unittest.TestCase):
+    def test_legacy_entries_without_id_are_migrated_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'abwesenheit.json')
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump([
+                    {'user_id': '10', 'date_from': '2026-09-10', 'status': 'approved'},
+                    {'id': 'keep-me', 'user_id': '20', 'date_from': '2026-09-11', 'status': 'pending'},
+                ], f)
+
+            with patch.object(backend, 'ABWESENHEIT_FILE', path):
+                migrated = backend._migrate_abwesenheit_legacy_ids()
+                migrated_again = backend._migrate_abwesenheit_legacy_ids()
+
+            with open(path, encoding='utf-8') as f:
+                items = json.load(f)
+
+        self.assertEqual(migrated, 1)
+        self.assertEqual(migrated_again, 0)
+        self.assertTrue(items[0].get('id'))
+        self.assertEqual(items[1]['id'], 'keep-me')
+
     def test_worker_can_move_own_entry_preserving_duration(self):
         entry = _entry()
         saved = {}

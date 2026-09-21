@@ -92,6 +92,43 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
     def _session(self, session_id='s1', user_id='10'):
         return {'id': session_id, 'user_id': user_id, 'object_id': 'OBJ-1', 'date': '2026-08-15', 'finish_at': None}
 
+    async def _finish_session_with_server_pause(self, client_pause_minutes):
+        session = self._session()
+        session.update({
+            'start_at': 1000,
+            'pause_accumulated_seconds': 45 * 60,
+            'pause_started_at': None,
+        })
+        with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
+             patch.object(backend, '_save_checkin_meta'), \
+             patch.object(backend, '_save_checkin_photos', return_value=['OBJ-1/2026-08-15/a.jpg', 'OBJ-1/2026-08-15/b.jpg']), \
+             patch.object(backend, '_write_zeiterfassung_row'), \
+             patch.object(backend, '_append_object_history_best_effort'), \
+             patch.object(backend, '_upsert_checkin_feed_post'), \
+             patch.object(backend, '_load_worker_profiles', return_value={}), \
+             patch.object(backend, '_cached_get_used_range', return_value=None), \
+             patch.object(backend, '_idempotency_get', return_value=None), \
+             patch.object(backend, '_idempotency_save'), \
+             patch.object(backend.time, 'time', return_value=1000 + 8 * 3600):
+            fake_file = unittest.mock.MagicMock()
+            result = await backend.checkin_finish(
+                session_id='s1', lat='52.5', lon='13.4', done_summary='Работы выполнены',
+                extra_work='', extra_works='', needs='', defects='', next_day_needs='',
+                pause_minutes=client_pause_minutes, voice_note_file_id='', daily_plan_report='',
+                files=[fake_file, fake_file], user=WORKER_A, role='worker', idempotency_key='',
+            )
+        return result
+
+    async def test_finish_uses_server_pause_when_client_sends_zero(self):
+        result = await self._finish_session_with_server_pause(client_pause_minutes=0)
+        self.assertEqual(result['pause_minutes'], 45)
+        self.assertAlmostEqual(backend._hours_from_session(result), 7.25)
+
+    async def test_finish_does_not_let_client_inflate_photo_pause(self):
+        result = await self._finish_session_with_server_pause(client_pause_minutes=600)
+        self.assertEqual(result['pause_minutes'], 45)
+        self.assertAlmostEqual(backend._hours_from_session(result), 7.25)
+
     async def test_two_valid_photos_finish_succeeds(self):
         session = self._session()
         with patch.object(backend, '_load_checkin_meta', return_value=[session]), \

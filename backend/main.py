@@ -441,6 +441,12 @@ async def _on_startup():
             print(f"[startup] Retried {retried} pending finish-outbox event(s)")
     except Exception as e:
         print(f"[startup] finish-outbox retry failed: {e}")
+    try:
+        migrated = _migrate_abwesenheit_legacy_ids()
+        if migrated:
+            print(f"[startup] Migrated {migrated} legacy abwesenheit id(s)")
+    except Exception as e:
+        print(f"[startup] abwesenheit legacy-id migration failed: {e}")
 
 
 @app.exception_handler(CorruptJsonError)
@@ -620,7 +626,12 @@ def _csv_safe(value) -> str:
     отравить CSV, который потом открывает owner. Префикс апострофом -- стандартный
     экранирующий приём, Excel показывает апостроф не отображая, LibreOffice тоже."""
     s = str(value)
-    if s and s[0] in ('=', '+', '-', '@'):
+    stripped = s.lstrip()
+    if not stripped:
+        return s
+    if stripped[0] in ('=', '@'):
+        return "'" + s
+    if stripped[0] in ('+', '-') and not re.fullmatch(r'[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)', stripped):
         return "'" + s
     return s
 
@@ -1400,6 +1411,16 @@ def get_avatar(user_id: str, user: dict = Depends(get_current_user)):
     raise HTTPException(404, "Аватар не найден")
 
 
+def _photo_pause_seconds(s: dict) -> int:
+    if s.get('pause_accumulated_seconds') is not None:
+        return max(0, int(s.get('pause_accumulated_seconds') or 0))
+    return max(0, int(s.get('pause_minutes') or 0)) * 60
+
+
+def _photo_pause_minutes(s: dict) -> int:
+    return round(_photo_pause_seconds(s) / 60)
+
+
 def _hours_from_session(s: dict) -> float:
     """Часы из check-in сессии: фото-сессия = finish-start-пауза, ручная = end-start-пауза.
     10.32: раньше фото-checkin паузу не вычитал вообще (только manual_entry) — юзер
@@ -1413,7 +1434,7 @@ def _hours_from_session(s: dict) -> float:
         except Exception:
             return 0.0
     if s.get('start_at') and s.get('finish_at'):
-        pause_seconds = int(s.get('pause_minutes') or 0) * 60
+        pause_seconds = _photo_pause_seconds(s)
         return max(0, (s['finish_at'] - s['start_at']) - pause_seconds) / 3600.0
     return 0.0
 
@@ -8249,7 +8270,7 @@ async def checkin_finish(
             elapsed = max(0, int(time.time()) - session['pause_started_at'])
             session['pause_accumulated_seconds'] = session.get('pause_accumulated_seconds', 0) + elapsed
             session['pause_started_at'] = None
-        session['pause_minutes'] = max(0, int(pause_minutes or 0))
+        session['pause_minutes'] = _photo_pause_minutes(session)
         # P0 fix (owner review): persist the raw execution report INSIDE the same
         # checkin_meta write that commits finish_at -- previously daily_plan_report
         # only existed as a request Form parameter, never durably stored anywhere
@@ -8569,7 +8590,7 @@ def export_stundenzettel(user_id: str = '', year: int = 0, month: int = 0,
             start = datetime.fromtimestamp(s['start_at']).strftime('%H:%M') if s.get('start_at') else ''
             finish = datetime.fromtimestamp(s['finish_at']).strftime('%H:%M') if s.get('finish_at') else 'не завершено'
         hours = round(_hours_from_session(s), 2)
-        pause = int(s.get('pause_minutes') or 0)
+        pause = int(s.get('pause_minutes') or 0) if s.get('manual_entry') else _photo_pause_minutes(s)
         writer.writerow([_csv_safe(s.get('date', '')), _csv_safe(s.get('object_id', '')), start, finish, pause, hours, kind])
 
     total_hours = round(sum(_hours_from_session(s) for s in sessions), 2)
@@ -9084,6 +9105,19 @@ def _save_abwesenheit(items: list):
     _atomic_write_json(ABWESENHEIT_FILE, items)
 
 
+def _migrate_abwesenheit_legacy_ids() -> int:
+    def _mutate(items):
+        count = 0
+        if not isinstance(items, list):
+            return count
+        for entry in items:
+            if isinstance(entry, dict) and not entry.get('id'):
+                entry['id'] = uuid.uuid4().hex
+                count += 1
+        return count
+    return update_json_transaction(ABWESENHEIT_FILE, [], _mutate)
+
+
 class AbwesenheitBody(BaseModel):
     date_from: str
     date_to: str | None = None
@@ -9179,7 +9213,7 @@ def create_abwesenheit(body: AbwesenheitBody, user: dict = Depends(get_current_u
 def close_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     """Worker закрывает открытую запись досрочно ('поправился раньше'), owner может закрыть любую."""
     items = _load_abwesenheit()
-    entry = next((i for i in items if i['id'] == entry_id), None)
+    entry = next((i for i in items if i.get('id') == entry_id), None)
     if not entry:
         raise HTTPException(404, "Запись не найдена")
     if entry['user_id'] != str(user['id']) and role != 'owner':
@@ -9205,7 +9239,7 @@ def update_abwesenheit_status(entry_id: str, body: AbwesenheitStatusBody,
     if body.status not in ('approved', 'rejected'):
         raise HTTPException(400, "status должен быть approved или rejected")
     items = _load_abwesenheit()
-    entry = next((i for i in items if i['id'] == entry_id), None)
+    entry = next((i for i in items if i.get('id') == entry_id), None)
     if not entry:
         raise HTTPException(404, "Запись не найдена")
     entry['status'] = body.status
@@ -9232,7 +9266,7 @@ def update_abwesenheit_dates(entry_id: str, body: AbwesenheitMoveBody,
     """
     _validate_date_str(body.date_from, 'date_from')
     items = _load_abwesenheit()
-    entry = next((i for i in items if i['id'] == entry_id), None)
+    entry = next((i for i in items if i.get('id') == entry_id), None)
     if not entry:
         raise HTTPException(404, "Запись не найдена")
     if entry['user_id'] != str(user['id']) and role != 'owner':
@@ -9336,12 +9370,12 @@ def list_all_abwesenheit(user: dict = Depends(get_current_user), role: str = Dep
 @app.delete("/api/abwesenheit/{entry_id}")
 def delete_abwesenheit(entry_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
     items = _load_abwesenheit()
-    entry = next((i for i in items if i['id'] == entry_id), None)
+    entry = next((i for i in items if i.get('id') == entry_id), None)
     if not entry:
         raise HTTPException(404, "Запись не найдена")
     if entry['user_id'] != str(user['id']) and role != 'owner':
         raise HTTPException(403, "Можно удалять только свои записи")
-    items = [i for i in items if i['id'] != entry_id]
+    items = [i for i in items if i.get('id') != entry_id]
     _save_abwesenheit(items)
     return {"status": "ok"}
 

@@ -106,6 +106,22 @@ def test_chat_thread_skin_is_bound_to_reusable_detail_view():
         assert selector in html
 
 
+def test_close_chat_thread_cancels_active_voice_recording_without_sending():
+    js = _source(CHAT_JS)
+    start = js.index("function closeChatThread()")
+    end = js.index("\n// 04.08", start)
+    close_block = js[start:end]
+    stop_start = js.index("function _stopVoiceRecording(send)")
+    stop_end = js.index("\nasync function _sendVoiceMessage", stop_start)
+    stop_block = js[stop_start:stop_end]
+
+    assert "_stopVoiceRecording(false);" in close_block
+    assert close_block.index("_stopVoiceRecording(false);") < close_block.index("_chatActiveThread = null;")
+    assert "recorder.stream.getTracks().forEach(t => t.stop());" in stop_block
+    assert "if (!send) { recorder.stop(); return; }" in stop_block
+    assert "await _sendVoiceMessage(blob);" in stop_block
+
+
 def test_chat_hub_lists_accessible_empty_entity_threads_for_workers():
     js = _source(CHAT_JS)
 

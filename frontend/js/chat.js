@@ -1867,6 +1867,7 @@ function closeChatThread() {
   _closeChatMessageOverlays();
   _chatThreadLoadSeq += 1;
   _setChatThreadLoading(false);
+  _stopVoiceRecording(false);
 
   document.getElementById('chat-thread-detail-view').style.display = 'none';
   document.getElementById('chat-thread-list-view').style.display = 'flex';
