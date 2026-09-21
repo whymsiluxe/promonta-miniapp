@@ -5,10 +5,14 @@
 
 let _workerCheckinObjectId = null;
 let _workerShiftStatusOverlayUnregister = null;
+let _workerObjectPickerOverlayUnregister = null;
+let _workerStagePickerOverlayUnregister = null;
 
 function closeWorkerShiftPickers() {
   document.getElementById('worker-object-picker-modal')?.remove();
+  if (_workerObjectPickerOverlayUnregister) { _workerObjectPickerOverlayUnregister(); _workerObjectPickerOverlayUnregister = null; }
   document.getElementById('worker-stage-picker-modal')?.remove();
+  if (_workerStagePickerOverlayUnregister) { _workerStagePickerOverlayUnregister(); _workerStagePickerOverlayUnregister = null; }
   closeWorkerShiftStatusSheet();
 }
 
@@ -203,7 +207,7 @@ async function _openWorkerObjectPicker() {
     <div class="worker-picker-inner">
       <div class="worker-picker-header">
         <span class="worker-picker-title">Выберите объект</span>
-        <button class="worker-picker-close" onclick="document.getElementById('worker-object-picker-modal').remove()">✕</button>
+        <button class="worker-picker-close" data-object-picker-close type="button">✕</button>
       </div>
       <div class="worker-picker-list">
         ${objects.map(o => `
@@ -216,12 +220,20 @@ async function _openWorkerObjectPicker() {
     </div>
   `;
   document.body.appendChild(modal);
+  const _closeObjectPicker = () => {
+    modal.remove();
+    if (_workerObjectPickerOverlayUnregister) { _workerObjectPickerOverlayUnregister(); _workerObjectPickerOverlayUnregister = null; }
+  };
+  modal.querySelector('[data-object-picker-close]')?.addEventListener('click', _closeObjectPicker);
   modal.querySelectorAll('.worker-picker-item').forEach(item => {
     item.addEventListener('click', () => {
-      modal.remove();
+      _closeObjectPicker();
       _openStagePickerThenStart(item.dataset.oid);
     });
   });
+  if (typeof NavigationManager !== 'undefined') {
+    _workerObjectPickerOverlayUnregister = NavigationManager.registerOverlay(_closeObjectPicker);
+  }
 }
 
 // 27.07: перед стартом смены worker явно указывает, над каким этапом объекта
@@ -245,6 +257,7 @@ async function _openStagePickerThenStart(objectId) {
 // было перерисовать тот же picker с обновлённым списком без дублирования разметки.
 function _renderStagePickerModal(objectId, stages) {
   const existing = document.getElementById('worker-stage-picker-modal');
+  const isFirstRender = !existing;
   if (existing) existing.remove();
 
   const modal = document.createElement('div');
@@ -271,16 +284,23 @@ function _renderStagePickerModal(objectId, stages) {
     </div>
   `;
   document.body.appendChild(modal);
-  modal.querySelector('[data-stage-skip]').addEventListener('click', () => {
+  const _closeStagePicker = () => {
     modal.remove();
+    if (_workerStagePickerOverlayUnregister) { _workerStagePickerOverlayUnregister(); _workerStagePickerOverlayUnregister = null; }
+  };
+  modal.querySelector('[data-stage-skip]').addEventListener('click', () => {
+    _closeStagePicker();
     _startWorkerCheckin(objectId, null);
   });
   modal.querySelectorAll('.worker-picker-item').forEach(item => {
     item.addEventListener('click', () => {
-      modal.remove();
+      _closeStagePicker();
       _startWorkerCheckin(objectId, item.dataset.stageName);
     });
   });
+  if (isFirstRender && typeof NavigationManager !== 'undefined') {
+    _workerStagePickerOverlayUnregister = NavigationManager.registerOverlay(_closeStagePicker);
+  }
   modal.querySelector('#worker-picker-add-stage-btn').addEventListener('click', async () => {
     const input = modal.querySelector('#worker-picker-new-stage-name');
     const name = input.value.trim();
