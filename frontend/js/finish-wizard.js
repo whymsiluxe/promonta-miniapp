@@ -65,9 +65,9 @@ function _fwStepSequence() {
   if (_fwContextState === 'loading') return ['context-loading'];
   if (_fwContextState === 'error') return ['context-error'];
   if (_fwDailyPlanItems.length > 0) {
-    return ['photo', 'summary', 'plan-fact', 'extra', 'needs', 'tomorrow-prep', 'geo', 'review'];
+    return ['photo', 'summary', 'plan-fact', 'extra', 'needs', 'tomorrow-prep', 'review'];
   }
-  return ['photo', 'summary', 'extra', 'needs', 'geo', 'review'];
+  return ['photo', 'summary', 'extra', 'needs', 'review'];
 }
 
 function _fwCurrentKey() { return _fwStepSequence()[_fwStep - 1]; }
@@ -133,6 +133,23 @@ function openFinishShiftWizard(sessionId, objectId) {
   }
   _fwRenderStep();
   _fwLoadFinishContext(sessionId, objectId);
+  // 21.09 (Worker UX V2, Этап 8, AUTO-CAPTURE PRINCIPLE): геолокация — то, что
+  // система может получить сама, не требует отдельного блокирующего экрана.
+  // Раньше был отдельный шаг "geo" ПОСЛЕ review-контента; теперь запрашивается
+  // в фоне сразу при открытии wizard (параллельно с фото/summary), к моменту
+  // просмотра Сводки обычно уже готова. Кнопка "Завершить" (_fwSubmitFinish)
+  // по-прежнему требует непустую _fwFinishGeo -- сам submit-контракт не менялся.
+  _fwStartBackgroundGeoCapture();
+}
+
+async function _fwStartBackgroundGeoCapture() {
+  const geo = await _getGeolocation();
+  if (geo.lat && geo.lon) {
+    _fwFinishGeo = geo;
+  } else {
+    _fwFinishGeo = null;
+  }
+  if (_fwCurrentKey() === 'review') _fwRenderStep();
 }
 
 function _fwFinishContextCacheKey(sessionId) {
@@ -246,7 +263,6 @@ function _fwRenderStep() {
     'extra': 'Доп. работы',
     'needs': 'Потребности и проблемы',
     'tomorrow-prep': 'Готовность на завтра',
-    'geo': 'Геолокация',
     'review': 'Сводка',
   };
   const key = _fwCurrentKey();
@@ -260,7 +276,6 @@ function _fwRenderStep() {
   else if (key === 'extra') body.innerHTML = _fwRenderStep3();
   else if (key === 'needs') body.innerHTML = _fwRenderStep4();
   else if (key === 'tomorrow-prep') body.innerHTML = _fwRenderStepTomorrowPrep();
-  else if (key === 'geo') body.innerHTML = _fwRenderStep5();
   else if (key === 'review') body.innerHTML = _fwRenderStep6();
 
   _fwWireStep();
@@ -707,44 +722,6 @@ function _fwWireStepTomorrowPrep() {
   });
 }
 
-// ---------- Step 5: Геолокация финиша (обязательна) ----------
-function _fwRenderStep5() {
-  return `
-    <div class="fw-hint">Нужна твоя геолокация, чтобы завершить смену.</div>
-    <div id="fw-geo-status" class="fw-geo-status">Определяем местоположение…</div>
-    <div class="fw-nav-row">
-      <button class="fw-back-btn" id="fw-back-5" type="button">← Назад</button>
-      <button class="submit-btn fw-next-btn" id="fw-next-5" type="button" disabled>Далее</button>
-    </div>
-  `;
-}
-
-async function _fwWireStep5() {
-  const statusEl = document.getElementById('fw-geo-status');
-  const nextBtn = document.getElementById('fw-next-5');
-  document.getElementById('fw-back-5')?.addEventListener('click', () => _fwNavBack());
-
-  const geo = await _getGeolocation();
-  if (geo.lat && geo.lon) {
-    _fwFinishGeo = geo;
-    statusEl.textContent = '📍 Местоположение определено';
-    statusEl.classList.add('fw-geo-ok');
-    nextBtn.disabled = false;
-    nextBtn.addEventListener('click', () => _fwNavNext());
-  } else {
-    _fwFinishGeo = null;
-    statusEl.textContent = 'Включи геолокацию, чтобы завершить смену';
-    statusEl.classList.add('fw-geo-error');
-    const retryBtn = document.createElement('button');
-    retryBtn.className = 'submit-btn';
-    retryBtn.type = 'button';
-    retryBtn.style.marginTop = '0.5rem';
-    retryBtn.textContent = 'Повторить';
-    retryBtn.addEventListener('click', () => _fwRenderStep());
-    statusEl.after(retryBtn);
-  }
-}
-
 // ---------- Step 6 (last): Сводка + отправка ----------
 function _fwRenderStep6() {
   const extraWorksHtml = _fwExtraWorks.length
@@ -772,7 +749,11 @@ function _fwRenderStep6() {
     <div class="fw-summary-section"><b>Потребности:</b><ul>${needsHtml}</ul></div>
     <div class="fw-summary-section"><b>Дефекты:</b><ul>${defectsHtml}</ul></div>
     <div class="fw-summary-section"><b>Пауза за смену:</b> ${_fwPauseMinutes > 0 ? `${_fwPauseMinutes} мин.` : 'без пауз'}</div>
-    <div class="fw-summary-section"><b>Геолокация:</b> ${_fwFinishGeo ? '📍 определена' : '⚠️ не определена'}</div>
+    <div class="fw-summary-section" id="fw-geo-summary-row">
+      <b>Геолокация:</b> ${_fwFinishGeo
+        ? '📍 определена'
+        : '⏳ определяем… <button type="button" class="fw-geo-retry-btn" id="fw-geo-retry-btn">Повторить</button>'}
+    </div>
     <div class="fw-nav-row">
       <button class="fw-back-btn" id="fw-back-6" type="button">← Назад</button>
       <button class="submit-btn fw-next-btn" id="fw-submit-finish" type="button">Завершить смену</button>
@@ -784,6 +765,7 @@ function _fwRenderStep6() {
 function _fwWireStep6() {
   document.getElementById('fw-back-6')?.addEventListener('click', () => _fwNavBack());
   document.getElementById('fw-submit-finish')?.addEventListener('click', _fwSubmitFinish);
+  document.getElementById('fw-geo-retry-btn')?.addEventListener('click', () => _fwStartBackgroundGeoCapture());
 }
 
 function _fwFinishOutboxId(idempotencyKey) {
@@ -936,9 +918,13 @@ async function _fwSubmitFinish() {
     return;
   }
   if (!_fwFinishGeo?.lat || !_fwFinishGeo?.lon) {
-    showToast('Нужна геолокация финиша', 'error');
-    _fwGoToStep(_fwStepSequence().indexOf('geo') + 1);
-    return;
+    // Фоновый сбор (см. openFinishShiftWizard) обычно успевает к этому моменту;
+    // если нет — последняя попытка синхронно здесь, прежде чем блокировать submit.
+    await _fwStartBackgroundGeoCapture();
+    if (!_fwFinishGeo?.lat || !_fwFinishGeo?.lon) {
+      showToast('Нужна геолокация финиша — включи и попробуй снова', 'error');
+      return;
+    }
   }
   btn.disabled = true;
   btn.textContent = 'Отправка…';
@@ -1091,7 +1077,6 @@ function _fwWireStep() {
   else if (key === 'extra') _fwWireStep3();
   else if (key === 'needs') _fwWireStep4();
   else if (key === 'tomorrow-prep') _fwWireStepTomorrowPrep();
-  else if (key === 'geo') _fwWireStep5();
   else if (key === 'review') _fwWireStep6();
 }
 
