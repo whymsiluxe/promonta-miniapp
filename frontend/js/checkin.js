@@ -380,7 +380,17 @@ async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey, geo
     },
     body: formData,
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+  if (!res.ok) {
+    // 18.09 (audit finding): err.status must carry the real HTTP status code so
+    // promontaOutboxIsTransientError() (shared.js) can tell a permanent 4xx
+    // rejection apart from a transient 5xx/429 -- without this every HTTP error
+    // here looked identical to the outbox (a plain Error, no status), and got
+    // treated as permanent (straight to dead_letter) even for a retriable 502.
+    const detail = (await res.json().catch(() => ({}))).detail;
+    const err = new Error(detail || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 

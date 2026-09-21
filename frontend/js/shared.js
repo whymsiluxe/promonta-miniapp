@@ -479,9 +479,18 @@ async function promontaOutboxList(kind) {
 // the only way out once dead_letter, matching a normal outbox/DLQ pattern.
 const PROMONTA_OUTBOX_MAX_ATTEMPTS = 5;
 
+// 18.09 (audit finding): "any real HTTP response = permanent" was wrong -- a 502/503
+// from a flaky reverse proxy or a 429 rate-limit is just as retriable as a network
+// timeout, but was being sent straight to dead_letter after one failed attempt. Only
+// 4xx client errors (the request itself is wrong -- retrying won't fix it) are
+// permanent; request-timeout/rate-limit/5xx server errors are transient like a
+// network failure. err.status must be set by the caller from the real HTTP response
+// (res.status) for this to work at all -- see _uploadCheckinPhotos/_uploadFinishPhotos.
+const PROMONTA_OUTBOX_PERMANENT_STATUSES = new Set([400, 401, 403, 404, 409, 422]);
+
 function promontaOutboxIsTransientError(err) {
   const msg = String(err?.message || '');
-  if (err?.status) return false; // real HTTP response = server actually rejected it, not transient
+  if (err?.status) return !PROMONTA_OUTBOX_PERMANENT_STATUSES.has(err.status);
   return !navigator.onLine || err?.name === 'TypeError' || err?.name === 'TimeoutError' || /Failed to fetch|NetworkError/i.test(msg);
 }
 

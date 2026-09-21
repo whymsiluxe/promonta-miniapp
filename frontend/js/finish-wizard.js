@@ -833,9 +833,15 @@ async function _fwCreatePostFinishTickets(objectId, needs, defects) {
   }
 }
 
+// 18.09 (audit finding): this used to be its own copy of the transient-error
+// heuristic (no err.status awareness, same bug as shared.js's
+// promontaOutboxIsTransientError had before this pass), and it made a DIFFERENT
+// transient/permanent call than promontaOutboxRecordFailure() did for the exact
+// same kind of error on retry -- first-attempt and retry-from-outbox paths must
+// agree on what counts as retriable. Now a thin wrapper over the one shared
+// classification in shared.js, not a second copy that can drift from it.
 function _fwIsTransientFinishError(err) {
-  const msg = String(err?.message || '');
-  return !navigator.onLine || err?.name === 'TypeError' || err?.name === 'TimeoutError' || /Failed to fetch|NetworkError/i.test(msg);
+  return promontaOutboxIsTransientError(err);
 }
 
 async function _fwSendFinishOutboxRecord(record, { fromOutbox = false } = {}) {
@@ -844,7 +850,15 @@ async function _fwSendFinishOutboxRecord(record, { fromOutbox = false } = {}) {
     headers: { ..._authHeaders(), 'Idempotency-Key': record.idempotencyKey },
     body: _fwAppendFinishRecordFormData(record),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+  if (!res.ok) {
+    // err.status must carry the real HTTP status so promontaOutboxIsTransientError()
+    // can tell a permanent 4xx apart from a transient 5xx/429 -- see checkin.js's
+    // _uploadCheckinPhotos for the same fix applied to the start-shift upload path.
+    const detail = (await res.json().catch(() => ({}))).detail;
+    const err = new Error(detail || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   const session = await res.json();
   await _fwCreatePostFinishTickets(record.objectId, record.needs, record.defects);
   if (fromOutbox) await promontaOutboxDelete(record.id);
