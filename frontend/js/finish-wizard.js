@@ -203,6 +203,28 @@ function _fwWriteCachedFinishContext(sessionId, data) {
   } catch (e) {}
 }
 
+// 21.09 (P0, owner review finding, round 2): the offline cache above was
+// write-on-read only -- written the FIRST time Finish Wizard successfully
+// fetched /finish-context online. Real failure mode this missed: Start
+// online -> full day of work -> network drops before Finish is opened even
+// once -- there is nothing to fall back to, and Finish would land on
+// _fwContextState = 'error' with an empty plan checklist even though the
+// worker DID accept a plan at Start and the server DOES have the frozen
+// snapshot, just unreachable right now. Called right after a CONFIRMED
+// online Start (checkin.js's _confirmCheckinPreview) so the cache exists
+// before the day even begins, not only after it's needed. Best-effort and
+// silent: a plan-less shift legitimately has nothing to cache (finish-context
+// returns has_plan:false, matching the graceful no-plan path either way), and
+// a failed prefetch just means Finish falls back to the same online-fetch
+// path it always had -- this never blocks or affects the Start flow itself.
+async function _prefetchFinishContextAfterStart(sessionId) {
+  if (!sessionId) return;
+  try {
+    const data = await api(`/api/checkin/${sessionId}/finish-context`);
+    if (data?.has_plan) _fwWriteCachedFinishContext(sessionId, data);
+  } catch (e) { /* non-fatal -- Finish still works via its own online fetch/cache-miss path */ }
+}
+
 function _fwApplyFinishContext(data, state) {
   _fwFinishContext = data || null;
   _fwDailyPlanItems = [];

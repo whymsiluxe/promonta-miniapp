@@ -8,6 +8,7 @@ and `data-view="home"` id is preserved (only its label changed) so
 NavigationManager's root-fallback (navigation-manager.js: back() -> 'home')
 keeps working without modification.
 """
+import re
 from pathlib import Path
 
 
@@ -89,9 +90,44 @@ def test_open_profile_tab_helper_reuses_existing_tab_click_mechanism():
     assert '.click()' in body  # reuses the same path a real user tap takes
 
 
-def test_tab_order_includes_more_for_slide_direction():
+def test_tab_order_is_split_per_role_matching_each_navs_real_dom_order():
+    # 21.09 (owner review finding): a single shared TAB_ORDER (owner's DOM
+    # order) was also used for the worker tab-bar's slide-direction math, but
+    # bottom-nav-worker's real order is home/objects/chat/more, not
+    # feed/home/chat/objects/profile -- Объекты<->Чат visually goes
+    # left-to-right for a worker but TAB_ORDER.indexOf() said objects(3) >
+    # chat(2), animating the wrong direction. Not a functional break, just
+    # felt wrong -- but the fix is to key off the DOM each role actually has.
     src = _source()
-    assert "const TAB_ORDER = ['feed', 'home', 'chat', 'objects', 'profile', 'more'];" in src
+    assert "const OWNER_TAB_ORDER = ['feed', 'home', 'chat', 'objects', 'profile', 'more'];" in src
+    assert "const WORKER_TAB_ORDER = ['home', 'objects', 'chat', 'more'];" in src
+    assert "function _currentTabOrder()" in src
+    assert "currentRole === 'worker' ? WORKER_TAB_ORDER : OWNER_TAB_ORDER" in src
+    assert "const _tabOrder = _currentTabOrder();" in src
+    assert "_tabOrder.indexOf(_lastActiveTabView)" in src
+    assert "_tabOrder.indexOf(viewName)" in src
+
+
+def test_worker_tab_order_matches_bottom_nav_worker_dom_order():
+    html = _source()
+    nav_start = html.index('id="bottom-nav-worker"')
+    nav_end = html.index('Check-in FAB', nav_start)
+    nav_html = html[nav_start:nav_end]
+    views_in_dom_order = re.findall(r'data-view="(\w+)"', nav_html)
+    assert views_in_dom_order == ['home', 'objects', 'chat', 'more']
+
+
+def test_profile_more_documents_id_exists_so_the_worker_hide_toggle_actually_runs():
+    # 21.09 (owner review finding): applyRoleNav() reads
+    # document.getElementById('profile-more-documents') to hide "Документы"
+    # from the worker's "Ещё" menu (28.07: not their tool, owner-only) -- but
+    # the more-menu-item never had that id, so getElementById() always
+    # returned null and the hide never ran. Documents silently stayed visible
+    # to workers this whole time.
+    html = _source()
+    assert 'id="profile-more-documents" onclick="switchView(\'documents\')"' in html
+    assert "const docsMenuItem = document.getElementById('profile-more-documents');" in html
+    assert "docsMenuItem.style.display = currentRole === 'worker' ? 'none' : '';" in html
 
 
 def test_navigation_manager_root_fallback_still_targets_home_unchanged():

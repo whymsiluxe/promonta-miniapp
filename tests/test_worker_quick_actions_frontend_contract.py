@@ -53,16 +53,37 @@ def test_context_resolution_priority_order_matches_plan():
     assert "eligible.length === 1" in body
 
 
-def test_object_detail_context_checks_the_real_active_screen_not_a_stale_var():
-    # 21.09 (P0, owner review finding): _stagesCurrentObjectId (objects.js) is
-    # set by openStagesView() but never cleared by closeStagesView() -- its
-    # mere existence is not proof Object Detail is the current screen. Must
-    # check the stages-view DOM element's own 'open' class instead.
+def test_object_detail_context_requires_view_objects_active_and_stages_view_open():
+    # 21.09 (P0, owner review finding, round 2): checking #stages-view.open
+    # alone is not sufficient -- #stages-view is nested INSIDE #view-objects,
+    # and switchView('home') only toggles the top-level .view elements'
+    # 'active' class, never touching #stages-view. So a worker who opened
+    # OBJECT-A's stages, then tapped "Сегодня" in bottom-nav (view-objects
+    # goes inactive, but #stages-view keeps .open), then tapped a Home quick
+    # action would still get silently attributed to OBJECT-A. Both signals
+    # are required: #view-objects must be the CURRENT active screen, AND
+    # #stages-view must be open within it.
     src = _source(QA_JS)
     body = _fn(src, "function _workerActionCurrentObjectDetailId(")
+    assert "document.getElementById('view-objects')" in body
+    assert "viewObjects.classList.contains('active')" in body
     assert "document.getElementById('stages-view')" in body
     assert "stagesView.classList.contains('open')" in body
     assert "_stagesCurrentObjectId" in body
+
+    # The #view-objects.active check must gate BEFORE the stages-view check --
+    # an early return on a missing/inactive view-objects, not an afterthought.
+    view_objects_idx = body.index("viewObjects.classList.contains('active')")
+    stages_view_idx = body.index("stagesView.classList.contains('open')")
+    assert view_objects_idx < stages_view_idx
+
+
+def test_object_detail_context_also_supports_the_owner_style_detail_panel_id():
+    # Same view (#view-objects), a different in-view panel -- checked for
+    # completeness even though Quick Actions is worker-only today.
+    src = _source(QA_JS)
+    body = _fn(src, "function _workerActionCurrentObjectDetailId(")
+    assert "_objDetailCurrentId" in body
 
 
 def test_ambiguous_context_opens_picker_not_silent_attach():

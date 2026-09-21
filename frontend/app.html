@@ -9453,7 +9453,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
         <span class="more-menu-icon">🧰</span>
         <span class="more-menu-label">Инструменты</span>
       </div>
-      <div class="more-menu-item" onclick="switchView('documents')">
+      <div class="more-menu-item" id="profile-more-documents" onclick="switchView('documents')">
         <span class="more-menu-icon">📄</span>
         <span class="more-menu-label">Документы</span>
       </div>
@@ -9865,7 +9865,19 @@ const loadedViews = new Set();
 // 24.07 (Phase 0.5): NavigationManager стек — push для программных переходов вглубь
 // (открытие детейла из списка), replaceRoot для клика по nav-таб (не растим стек бесконечно
 // при простой смене вкладки), ничего не трогаем при возврате через .back() (fromBack).
-const TAB_ORDER = ['feed', 'home', 'chat', 'objects', 'profile', 'more'];
+// 21.09 (owner review finding): единый TAB_ORDER не совпадал с реальным визуальным
+// порядком worker-таб-бара (bottom-nav-worker: home, objects, chat, more) -- он был
+// списан с owner-порядка (feed, home, chat, objects, profile). Переход Объекты↔Чат
+// у worker'а физически идёт слева направо на экране, но TAB_ORDER.indexOf() считал
+// objects(3) > chat(2) и запускал анимацию в обратную сторону. Функционально не
+// ломалось, но ощущалось неправильно. Порядок для анимации теперь берётся из
+// реального активного nav-бара (роль определяет, какой bottom-nav сейчас не hidden),
+// не из одного захардкоженного списка.
+const OWNER_TAB_ORDER = ['feed', 'home', 'chat', 'objects', 'profile', 'more'];
+const WORKER_TAB_ORDER = ['home', 'objects', 'chat', 'more'];
+function _currentTabOrder() {
+  return currentRole === 'worker' ? WORKER_TAB_ORDER : OWNER_TAB_ORDER;
+}
 let _lastActiveTabView = null;
 
 function _activeBottomNavEl() {
@@ -9896,8 +9908,9 @@ function switchView(viewName, opts = {}) {
   // и лишняя анимация только замедлит восприятие вложенности.
   let _tabMotionClass = null;
   if (opts.isTabSwitch && !opts.fromBack) {
-    const fromIdx = TAB_ORDER.indexOf(_lastActiveTabView);
-    const toIdx = TAB_ORDER.indexOf(viewName);
+    const _tabOrder = _currentTabOrder();
+    const fromIdx = _tabOrder.indexOf(_lastActiveTabView);
+    const toIdx = _tabOrder.indexOf(viewName);
     if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
       _tabMotionClass = toIdx > fromIdx ? 'tab-enter-right' : 'tab-enter-left';
     }

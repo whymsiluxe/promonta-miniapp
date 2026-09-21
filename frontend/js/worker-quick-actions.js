@@ -11,21 +11,36 @@
 // Каждое действие вызывает уже существующий canonical flow -- не строит вторую
 // реализацию форм Потребности/Дефекта/Фото/Чата.
 
-// 21.09 (P0, owner review finding): _stagesCurrentObjectId (objects.js) is
-// set by openStagesView() but never cleared by closeStagesView() -- it stays
-// set to whatever object the worker last looked at, indefinitely. A worker
-// who opened OBJECT-A's stages, left, and later tapped a quick action from
-// Today with no active shift would get silently attributed to OBJECT-A
-// again, even though they're nowhere near that screen anymore. The real
-// signal for "is Object Detail actually the current screen" is the
-// stages-view DOM element's own 'open' class (same pattern objects.js itself
-// already uses elsewhere, see the stagesViewOpen check in loadObjects()),
-// not the stale variable's mere existence.
+// 21.09 (P0, owner review finding, round 2): _stagesCurrentObjectId (objects.js)
+// is set by openStagesView() but never cleared by closeStagesView() -- it
+// stays set to whatever object the worker last looked at, indefinitely.
+// Checking #stages-view's own 'open' class alone (round 1 fix) is NOT
+// sufficient either: #stages-view is nested INSIDE #view-objects, and
+// switchView('home') only toggles the top-level .view elements' 'active'
+// class -- it never touches #stages-view, so 'open' survives a tab switch
+// too. Scenario this still missed: worker opens OBJECT-A's stages -> taps
+// "Сегодня" in bottom-nav (view-objects becomes inactive, but #stages-view
+// still has .open) -> taps a Home quick action -> still silently attributed
+// to OBJECT-A. The real signal requires BOTH: #view-objects is the actual
+// active screen right now, AND #stages-view is open within it. Also checks
+// the owner-facing object-detail panel's _objDetailCurrentId as a second,
+// analogous path (same view, different in-view panel) for completeness even
+// though Quick Actions is worker-only today.
 function _workerActionCurrentObjectDetailId() {
+  const viewObjects = document.getElementById('view-objects');
+  if (!viewObjects || !viewObjects.classList.contains('active')) return null;
+
   const stagesView = document.getElementById('stages-view');
-  if (!stagesView || !stagesView.classList.contains('open')) return null;
-  if (typeof _stagesCurrentObjectId === 'undefined' || !_stagesCurrentObjectId) return null;
-  return _stagesCurrentObjectId;
+  if (stagesView && stagesView.classList.contains('open')
+    && typeof _stagesCurrentObjectId !== 'undefined' && _stagesCurrentObjectId) {
+    return _stagesCurrentObjectId;
+  }
+
+  if (typeof _objDetailCurrentId !== 'undefined' && _objDetailCurrentId) {
+    return _objDetailCurrentId;
+  }
+
+  return null;
 }
 
 async function resolveWorkerActionObject() {
