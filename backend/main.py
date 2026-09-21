@@ -8712,7 +8712,14 @@ def _build_finish_context(session: dict) -> dict:
         }
 
     snapshot = acceptance.get("accepted_context_snapshot") or {}
-    items_snapshot = dpl.get_accepted_snapshot(plan_id, worker_id)
+    # 21.09 (owner review finding, round 4): pass the EXACT acceptance already
+    # resolved above -- without acceptance_id, get_accepted_snapshot() picked
+    # the first (effectively oldest) acceptance for (plan_id, worker_id),
+    # which after an amendment (accept v1 -> A1, amend -> v2, accept v2 -> A2)
+    # could return v1's items while this response correctly reports
+    # plan.version=2 from A2 above -- a real content/version mismatch in what
+    # Finish shows and submits as plan-fact.
+    items_snapshot = dpl.get_accepted_snapshot(plan_id, worker_id, acceptance_id=acceptance.get("id"))
     return {
         "session_id": session_id,
         "object_id": session.get("object_id") or "",

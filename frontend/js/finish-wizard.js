@@ -221,7 +221,14 @@ function _fwWriteCachedFinishContext(sessionId, data) {
 // pass it through, or a defensive call site).
 async function _prefetchFinishContextAfterStart(sessionId, startResponse) {
   if (!sessionId) return;
-  if (startResponse && Object.prototype.hasOwnProperty.call(startResponse, 'finish_context')) {
+  // 21.09 (owner review finding, round 4): checking mere field PRESENCE
+  // (hasOwnProperty) is not enough -- checkin_start()'s own best-effort
+  // try/except around _build_finish_context() can legitimately send back
+  // `finish_context: null` if that call raised server-side. hasOwnProperty
+  // would still be true for a null value, so this used to return early
+  // without ever falling back to a live GET, silently leaving no cache at
+  // all instead of at least attempting the round-2 fallback path.
+  if (startResponse?.finish_context != null) {
     const embedded = startResponse.finish_context;
     if (embedded?.has_plan) _fwWriteCachedFinishContext(sessionId, embedded);
     return;

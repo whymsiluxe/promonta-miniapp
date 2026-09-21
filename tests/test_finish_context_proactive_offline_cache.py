@@ -61,15 +61,24 @@ def _fn(src: str, signature: str) -> str:
 def test_prefetch_function_prefers_embedded_finish_context_over_a_live_fetch():
     src = _source(FINISH_WIZARD_JS)
     body = _fn(src, "async function _prefetchFinishContextAfterStart(sessionId, startResponse)")
-    assert "Object.prototype.hasOwnProperty.call(startResponse, 'finish_context')" in body
+    # 21.09 (owner review finding, round 4): must check the field is non-null,
+    # not merely PRESENT -- checkin_start()'s own try/except around
+    # _build_finish_context() can legitimately send back
+    # `finish_context: null`, and hasOwnProperty() would still be true for a
+    # null value, wrongly skipping the live-GET fallback below.
+    assert "Object.prototype.hasOwnProperty.call(startResponse" not in body, (
+        "must check startResponse?.finish_context != null, not "
+        "hasOwnProperty -- the field can be present but null"
+    )
+    assert "startResponse?.finish_context != null" in body
     assert "startResponse.finish_context" in body
     assert "if (embedded?.has_plan) _fwWriteCachedFinishContext(sessionId, embedded);" in body
-    # Fallback path for when the embedded field isn't present.
+    # Fallback path for when the embedded field is absent OR null.
     assert "`/api/checkin/${sessionId}/finish-context`" in body
     assert "if (data?.has_plan) _fwWriteCachedFinishContext(sessionId, data);" in body
     assert "catch (e)" in body
 
-    embedded_idx = body.index("Object.prototype.hasOwnProperty.call")
+    embedded_idx = body.index("startResponse?.finish_context != null")
     fallback_idx = body.index("await api(`/api/checkin/${sessionId}/finish-context`)")
     assert embedded_idx < fallback_idx, "embedded response must be checked BEFORE falling back to a live fetch"
 

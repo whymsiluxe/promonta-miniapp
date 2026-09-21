@@ -30,6 +30,9 @@ class NodeRuntimeRegressionTests(unittest.TestCase):
     def test_worker_shift_state_dead_letter_offline_precedence(self):
         self._run_node_script("node-worker-shift-state-dead-letter-offline.js")
 
+    def test_finish_context_prefetch_null_fallback(self):
+        self._run_node_script("node-finish-context-prefetch-null-fallback.js")
+
 
 if __name__ == '__main__':
     unittest.main()

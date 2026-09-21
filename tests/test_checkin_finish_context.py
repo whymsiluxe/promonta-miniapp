@@ -98,6 +98,45 @@ class CheckinFinishContextTests(unittest.TestCase):
         self.assertEqual(len(result['plan']['items']), 1)
         self.assertEqual(result['plan']['items'][0]['id'], 'item-1')
 
+    def test_finish_context_uses_the_sessions_exact_acceptance_after_reaccept(self):
+        # 21.09 (owner review finding, round 4, real data-integrity bug): each
+        # accept_plan() call after an amendment creates a NEW acceptance record
+        # for the same (plan_id, worker_id) pair -- accept v1 -> Acceptance A1,
+        # owner amends -> plan v2, worker accepts v2 -> Acceptance A2. Both A1
+        # and A2 now exist. dpl.get_accepted_snapshot() without an explicit
+        # acceptance_id picked the FIRST matching acceptance (effectively A1,
+        # the oldest) regardless of which one the session actually references --
+        # a session started against A2/v2 got v1's items while this response
+        # correctly reported plan.version=2 from A2's own plan_version field, a
+        # real version/content mismatch in what Finish shows and submits as
+        # plan-fact. And since this gets embedded in checkin_start()'s response
+        # and cached offline immediately, the wrong items were durably cached
+        # too, not just transiently wrong.
+        plan = dpl.create_plan(
+            object_id='OBJ-1', stage_key='stage-1', date_str='2026-09-21',
+            assigned_worker_ids=['42'], items=[_item(1)], created_by='owner',
+        )
+        dpl.publish_plan(plan['id'], 'owner')
+        acceptance_v1 = dpl.accept_plan(plan['id'], 1, '42')
+
+        dpl.update_plan_items(plan['id'], [_item(1), _item(2), _item(3)], 'sheets_edit', 'Amendment', 'owner')
+        plan_v2 = dpl.get_plan(plan['id'])
+        acceptance_v2 = dpl.accept_plan(plan['id'], plan_v2['version'], '42')
+        self.assertNotEqual(acceptance_v1['id'], acceptance_v2['id'])
+
+        session = {
+            'id': 'sess-reaccept', 'user_id': '42', 'object_id': 'OBJ-1',
+            'daily_plan_id': plan['id'], 'daily_plan_version': str(plan_v2['version']),
+            'daily_plan_acceptance_id': acceptance_v2['id'],
+        }
+        with patch.object(backend, '_load_checkin_meta', return_value=[session]):
+            result = backend.checkin_finish_context('sess-reaccept', user=WORKER, role='worker')
+
+        self.assertTrue(result['has_plan'])
+        self.assertEqual(result['plan']['version'], plan_v2['version'])
+        self.assertEqual(len(result['plan']['items']), 3, "must be v2's 3 items, not v1's 1 item")
+        self.assertEqual({i['id'] for i in result['plan']['items']}, {'item-1', 'item-2', 'item-3'})
+
     def test_session_not_found_404(self):
         with patch.object(backend, '_load_checkin_meta', return_value=[]):
             with self.assertRaises(HTTPException) as ctx:

@@ -833,15 +833,37 @@ def get_today_plan_for_worker(worker_id: str, date_str: str) -> dict | None:
     return candidates[0] if candidates else None
 
 
-def get_accepted_snapshot(plan_id: str, worker_id: str) -> list:
-    """Возвращает items из версии, которую принял работник. Если нет принятия — текущие items."""
+def get_accepted_snapshot(plan_id: str, worker_id: str, acceptance_id: str | None = None) -> list:
+    """Возвращает items из версии, которую принял работник. Если нет принятия — текущие items.
+
+    21.09 (owner review finding, round 4, real data-integrity bug): a worker
+    can have MULTIPLE acceptances for the same (plan_id, worker_id) pair --
+    each accept_plan() call after an amendment creates a NEW acceptance
+    record (accept v1 -> Acceptance A1, owner amends -> plan v2, worker
+    accepts v2 -> Acceptance A2, both A1 and A2 exist). Without acceptance_id,
+    this picked the FIRST matching acceptance found by dict iteration order
+    (effectively the oldest, A1) regardless of which one a caller actually
+    means -- a session started against A2/v2 could get v1's items while
+    correctly reporting plan_version=2, a real version/content mismatch in
+    what Finish shows and submits as plan-fact.
+
+    Pass the specific acceptance_id when the caller already knows exactly
+    which acceptance it means (e.g. a checkin session's own
+    daily_plan_acceptance_id) -- callers with no specific acceptance in mind
+    (e.g. "what does this worker currently see for today's live plan") may
+    omit it and get the old best-effort first-match behavior, unchanged."""
     store = _load_store()
     plan = store["daily_plans"].get(plan_id, {})
-    acceptance = next(
-        (a for a in store["acceptances"].values()
-         if a["daily_plan_id"] == plan_id and str(a["worker_id"]) == str(worker_id)),
-        None,
-    )
+    if acceptance_id:
+        acceptance = store["acceptances"].get(acceptance_id)
+        if acceptance and (acceptance["daily_plan_id"] != plan_id or str(acceptance["worker_id"]) != str(worker_id)):
+            acceptance = None
+    else:
+        acceptance = next(
+            (a for a in store["acceptances"].values()
+             if a["daily_plan_id"] == plan_id and str(a["worker_id"]) == str(worker_id)),
+            None,
+        )
     if not acceptance:
         return plan.get("items", [])
     snap_hash = acceptance["accepted_snapshot_hash"]
