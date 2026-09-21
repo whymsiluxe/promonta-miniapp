@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-09-21 (Shift hardening Этап 0.5 — pre-Worker-UX-V2 gate)
+
+Tests: targeted (`test_checkin_pause_authority.py` + `test_attachment_retention_cleanup.py`,
+11 passed); full suite passed (`911 passed, 1 skipped`, 1 pre-existing
+unrelated failure — routes-count assertion off by one, not touched here).
+
+### Frontend
+- Fixed a real desync gap in the active-shift live duration timer
+  (`checkin.js`): it seeds once from the server and free-ran client-side with
+  no resync. Added a `visibilitychange` handler that forces
+  `refreshCheckinButtons()` when the tab/app regains focus while the timer is
+  running, so a pause toggled elsewhere (owner action, another device) is
+  reflected without needing to leave and reopen the screen.
+
+### Backend / audit findings (documented, not silently patched)
+- Sheets formula-injection sanitization (`_sheets_formula_safe`) and the
+  legacy-abwesenheit-id migration (`_migrate_abwesenheit_legacy_ids`) were
+  already implemented and correct — verified, no change needed.
+- Voice/audio files (`transcribe_audio/`, `chat_attachments/`) are stored
+  permanently by deliberate product decision, not as temp files — confirmed
+  against `docs/plan-phases/02-product-flows-worker.md:37`. The real gap:
+  `cleanup_old_attachments.py`'s `DIRS` list covers
+  `chat_attachments/critical_alert_photos/checkin_photos` but not
+  `transcribe_audio/`, while `docs/DATA_RETENTION_POLICY.md` claims a 90-day
+  retention for voice too. Not fixed here — flagged for an explicit decision,
+  pinned by a guard test so it can't silently drift either direction.
+
+### Tests
+- Added `tests/test_checkin_pause_authority.py` — pause/resume timestamp
+  toggle contract (server-authoritative), plus permission/state guards.
+- Added `tests/test_attachment_retention_cleanup.py` — age-based cleanup
+  behavior, error resilience, and a guard test documenting the
+  `transcribe_audio/` retention gap above.
+
 ## 2026-09-17 (Document gallery P2 slice)
 
 Tests: focused document gallery/object UI contracts passed (`17 passed`); full
