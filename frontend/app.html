@@ -5566,11 +5566,16 @@ body.view-objects-active .radio-mini-player {
 .wqa-label { font-size: 0.78rem; font-weight: 600; color: var(--text-main); text-align: center; }
 
 /* ── Check-in FAB — плавающий, отдельно от bottom-nav (21.07 IA), worker-only.
-   Позиция низ-справа, не конфликтует с будущим Radio FAB (низ-слева, batch 13). ── */
+   Позиция низ-справа, не конфликтует с будущим Radio FAB (низ-слева, batch 13).
+   18.09 (audit finding): 96px magic offset заменён на реально измеренную
+   --app-bottom-nav-height (JS: _applyBottomNavHeight()), тот же паттерн что уже
+   применён к .objects-fab ниже -- фиксированное число не следит за реальной
+   высотой nav-бара, которая может меняться (safe-area, платформа, будущие
+   правки самого nav). */
 .nav-item-start {
   position: fixed;
   right: max(20px, env(safe-area-inset-right));
-  bottom: calc(max(14px, env(safe-area-inset-bottom)) + 96px);
+  bottom: calc(var(--app-bottom-nav-height, 70px) + max(10px, env(safe-area-inset-bottom)) + 20px);
   z-index: 60;
   transition: bottom 200ms ease, transform 160ms ease;
 }
@@ -10050,8 +10055,9 @@ function applyRoleNav() {
 }
 
 // 28.07 (Phase 04 remainder, item 1): реально измеренная высота bottom-nav вместо
-// захардкоженного числа -- читают RadioMiniPlayer (уже был на fallback 70px) и новый
-// Objects FAB (см. .objects-fab), оба позиционируются через --app-bottom-nav-height.
+// захардкоженного числа -- читают RadioMiniPlayer (уже был на fallback 70px) и
+// Objects FAB (см. .objects-fab). 18.09 (audit finding): .nav-item-start (Check-in
+// FAB) тоже переведён на --app-bottom-nav-height, был на захардкоженном 96px.
 function _applyBottomNavHeight() {
   const navs = document.querySelectorAll('.bottom-nav');
   let h = 0;
