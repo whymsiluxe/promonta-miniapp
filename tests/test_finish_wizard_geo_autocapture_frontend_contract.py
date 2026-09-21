@@ -27,8 +27,10 @@ def test_geo_is_no_longer_a_standalone_step_in_the_sequence():
     body = src[start:end]
 
     assert "'geo'" not in body
-    assert "['photo', 'summary', 'plan-fact', 'extra', 'needs', 'tomorrow-prep', 'review']" in body
-    assert "['photo', 'summary', 'extra', 'needs', 'review']" in body
+    # Этап 8 remainder (same session, later commit): summary+plan-fact and
+    # extra+needs+tomorrow-prep were also merged, so both branches converge
+    # on the same 4-screen sequence regardless of whether a DailyPlan exists.
+    assert "['photo', 'summary', 'extra', 'review']" in body
 
 
 def test_no_dangling_step5_render_or_wire_functions_remain():

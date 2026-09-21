@@ -1,7 +1,10 @@
 // Finish-shift wizard (B3, 27.07). Отдельный файл от checkin.js -- не смешиваем с
 // существующим checkin-preview-modal (тот остаётся для start-shift, более простой flow).
-// Round 3 (07.09): динамическая последовательность шагов -- без плана 6 шагов,
-// с планом 8 шагов (добавляется plan-fact + tomorrow-prep).
+// 21.09 (Worker UX V2, Этап 8): 4 экрана всегда (Фото -> Что сделано/план-факт ->
+// Проблемы и завтра -> Сводка), было 6/8 в зависимости от наличия DailyPlan.
+// Геолокация больше не отдельный экран -- собирается в фоне (AUTO-CAPTURE PRINCIPLE),
+// статус показан в Сводке. Каждый под-блок (план-факт/потребности/дефекты/завтра)
+// сохранил свою исходную разметку/id/валидацию, объединены только контейнеры экранов.
 let _fwVoiceNoteFileId = ''; // 28.07: owner request -- голосовое "Что сделано" сохраняется как аудио, не только текстом
 // Voice-ввод на шагах 2-4 через /api/transcribe (см. B4). AI/voice текст всегда editable,
 // ничего не отправляется без явного подтверждения юзера (owner requirement).
@@ -65,9 +68,9 @@ function _fwStepSequence() {
   if (_fwContextState === 'loading') return ['context-loading'];
   if (_fwContextState === 'error') return ['context-error'];
   if (_fwDailyPlanItems.length > 0) {
-    return ['photo', 'summary', 'plan-fact', 'extra', 'needs', 'tomorrow-prep', 'review'];
+    return ['photo', 'summary', 'extra', 'review']; // tomorrow-prep контент — внутри 'extra', только если есть DailyPlan (см. _fwRenderStep3)
   }
-  return ['photo', 'summary', 'extra', 'needs', 'review'];
+  return ['photo', 'summary', 'extra', 'review'];
 }
 
 function _fwCurrentKey() { return _fwStepSequence()[_fwStep - 1]; }
@@ -259,10 +262,7 @@ function _fwRenderStep() {
     'context-error': 'Контекст смены',
     'photo': 'Фото результата',
     'summary': 'Что сделано',
-    'plan-fact': 'Выполнение плана',
-    'extra': 'Доп. работы',
-    'needs': 'Потребности и проблемы',
-    'tomorrow-prep': 'Готовность на завтра',
+    'extra': 'Проблемы и завтра',
     'review': 'Сводка',
   };
   const key = _fwCurrentKey();
@@ -271,11 +271,8 @@ function _fwRenderStep() {
   if (key === 'context-loading') body.innerHTML = _fwRenderContextLoading();
   else if (key === 'context-error') body.innerHTML = _fwRenderContextError();
   else if (key === 'photo') body.innerHTML = _fwRenderStep1();
-  else if (key === 'summary') body.innerHTML = _fwRenderStep2();
-  else if (key === 'plan-fact') body.innerHTML = _fwRenderStepPlanFact();
+  else if (key === 'summary') body.innerHTML = _fwRenderStepSummaryPlanFact();
   else if (key === 'extra') body.innerHTML = _fwRenderStep3();
-  else if (key === 'needs') body.innerHTML = _fwRenderStep4();
-  else if (key === 'tomorrow-prep') body.innerHTML = _fwRenderStepTomorrowPrep();
   else if (key === 'review') body.innerHTML = _fwRenderStep6();
 
   _fwWireStep();
@@ -372,61 +369,14 @@ function _fwWireStep1() {
   });
 }
 
-// ---------- Step 2: Что сделано (voice) ----------
-function _fwRenderStep2() {
-  const canContinue = !!_fwWorkSummary.trim();
-  return `
-    <div class="fw-hint">Опиши, что сделано за смену. Можно надиктовать голосом и поправить текст.</div>
-    <textarea id="fw-work-summary" class="mangel-textarea" rows="4" placeholder="Например: оштукатурили стену в комнате 2, установили 3 окна">${esc(_fwWorkSummary)}</textarea>
-    ${_fwVoiceButtonHtml('fw-voice-summary')}
-    <div class="fw-field-error" id="fw-summary-error" style="display:none;">Заполни короткий отчёт по смене</div>
-    <div class="fw-nav-row">
-      <button class="fw-back-btn" id="fw-back-2" type="button">← Назад</button>
-      <button class="submit-btn fw-next-btn" id="fw-next-2" type="button" ${canContinue ? '' : 'disabled'}>Далее</button>
-    </div>
-  `;
-}
-
-function _fwWireStep2() {
-  const textarea = document.getElementById('fw-work-summary');
-  const nextBtn = document.getElementById('fw-next-2');
-  const errorEl = document.getElementById('fw-summary-error');
-  const syncSummary = () => {
-    _fwWorkSummary = textarea.value;
-    const ok = !!_fwWorkSummary.trim();
-    if (nextBtn) nextBtn.disabled = !ok;
-    if (errorEl && ok) errorEl.style.display = 'none';
-  };
-  textarea?.addEventListener('input', syncSummary);
-  _fwWireVoiceButton('fw-voice-summary', (text, fileId) => {
-    textarea.value = (textarea.value ? textarea.value + ' ' : '') + text;
-    syncSummary();
-    if (fileId) _fwVoiceNoteFileId = fileId;
-  });
-  document.getElementById('fw-back-2')?.addEventListener('click', () => _fwNavBack());
-  document.getElementById('fw-next-2')?.addEventListener('click', () => {
-    _fwWorkSummary = textarea.value.trim();
-    if (!_fwWorkSummary) {
-      if (errorEl) errorEl.style.display = 'block';
-      showToast('Заполни, что сделано за смену', 'error');
-      textarea.focus();
-      return;
-    }
-    _fwNavNext();
-  });
-}
-
-// ---------- Step plan-fact: Выполнение плана (Round 3) ----------
-function _fwRenderStepPlanFact() {
-  if (!_fwDailyPlanItems.length) {
-    return `<div class="fw-hint">Плановых пунктов нет.</div>
-      <div class="fw-nav-row">
-        <button class="fw-back-btn" id="fw-back-pf" type="button">← Назад</button>
-        <button class="submit-btn fw-next-btn" id="fw-next-pf" type="button">Далее</button>
-      </div>`;
-  }
-
-  const itemsHtml = _fwDailyPlanItems.map((item, idx) => {
+// ---------- Step "summary": Что сделано + план-факт (Worker UX V2, Этап 8) ----------
+// 21.09: раньше два отдельных экрана ("Что сделано" -> "Выполнение плана"),
+// объединены в один скролл-экран с общей кнопкой "Далее" — цель плана 3-4
+// экрана вместо 6-8. Каждый под-блок сохранил свою исходную разметку/id
+// (fw-work-summary/fw-status-btn/... не переименованы), меняется только то,
+// что они теперь рендерятся и валидируются вместе, одной кнопкой.
+function _fwRenderStepSummaryPlanFact() {
+  const planItemsHtml = _fwDailyPlanItems.length ? _fwDailyPlanItems.map((item, idx) => {
     const result = _fwItemResults.find(r => r.item_id === item.id) || {};
     const status = result.status || '';
     const btns = ['done', 'partial', 'not_done', 'blocked'].map(s =>
@@ -446,20 +396,43 @@ function _fwRenderStepPlanFact() {
             rows="1" placeholder="Комментарий" style="margin-top:0.25rem;">${esc(result.comment || '')}</textarea>
         ` : ''}
       </div>`;
-  }).join('');
+  }).join('') : '';
+
+  const canContinue = !!_fwWorkSummary.trim();
 
   return `
-    <div class="fw-hint">Отметь, что удалось сделать по плану.</div>
-    <div class="fw-plan-items">${itemsHtml}</div>
+    <div class="fw-hint">Опиши, что сделано за смену. Можно надиктовать голосом и поправить текст.</div>
+    <textarea id="fw-work-summary" class="mangel-textarea" rows="4" placeholder="Например: оштукатурили стену в комнате 2, установили 3 окна">${esc(_fwWorkSummary)}</textarea>
+    ${_fwVoiceButtonHtml('fw-voice-summary')}
+    <div class="fw-field-error" id="fw-summary-error" style="display:none;">Заполни короткий отчёт по смене</div>
+    ${_fwDailyPlanItems.length ? `
+      <div class="fw-hint" style="margin-top:1rem;">Отметь, что удалось сделать по плану.</div>
+      <div class="fw-plan-items">${planItemsHtml}</div>
+    ` : ''}
     <div class="fw-nav-row">
-      <button class="fw-back-btn" id="fw-back-pf" type="button">← Назад</button>
-      <button class="submit-btn fw-next-btn" id="fw-next-pf" type="button">Далее</button>
+      <button class="fw-back-btn" id="fw-back-summary" type="button">← Назад</button>
+      <button class="submit-btn fw-next-btn" id="fw-next-summary" type="button" ${canContinue ? '' : 'disabled'}>Далее</button>
     </div>
   `;
 }
 
-function _fwWireStepPlanFact() {
-  document.getElementById('fw-back-pf')?.addEventListener('click', () => _fwNavBack());
+function _fwWireStepSummaryPlanFact() {
+  const textarea = document.getElementById('fw-work-summary');
+  const nextBtn = document.getElementById('fw-next-summary');
+  const errorEl = document.getElementById('fw-summary-error');
+  const syncSummary = () => {
+    _fwWorkSummary = textarea.value;
+    const ok = !!_fwWorkSummary.trim();
+    if (nextBtn) nextBtn.disabled = !ok;
+    if (errorEl && ok) errorEl.style.display = 'none';
+  };
+  textarea?.addEventListener('input', syncSummary);
+  _fwWireVoiceButton('fw-voice-summary', (text, fileId) => {
+    textarea.value = (textarea.value ? textarea.value + ' ' : '') + text;
+    syncSummary();
+    if (fileId) _fwVoiceNoteFileId = fileId;
+  });
+  document.getElementById('fw-back-summary')?.addEventListener('click', () => _fwNavBack());
 
   document.querySelectorAll('.fw-status-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -472,6 +445,7 @@ function _fwWireStepPlanFact() {
         _fwItemResults.push(result);
       }
       result.status = status;
+      _fwWorkSummary = textarea.value; // сохранить перед re-render (перерисовка теряет незакоммиченный ввод иначе)
       _fwRenderStep();
     });
   });
@@ -490,39 +464,73 @@ function _fwWireStepPlanFact() {
     });
   });
 
-  document.getElementById('fw-next-pf')?.addEventListener('click', () => {
-    // Snapshot current input values before re-render
-    document.querySelectorAll('.fw-qty-input').forEach(inp => {
-      const result = _fwItemResults.find(r => r.item_id === inp.dataset.item);
-      if (result && inp.value !== '') result.actual_quantity = parseFloat(inp.value);
-    });
-    document.querySelectorAll('.fw-comment-input').forEach(ta => {
-      const result = _fwItemResults.find(r => r.item_id === ta.dataset.item);
-      if (result) result.comment = ta.value.trim();
-    });
-    const missing = _fwDailyPlanItems.filter(item => {
-      const result = _fwItemResults.find(r => r.item_id === item.id);
-      return !result?.status;
-    });
-    if (missing.length) {
-      showToast('Отметь выполнение каждого пункта плана', 'error');
+  document.getElementById('fw-next-summary')?.addEventListener('click', () => {
+    _fwWorkSummary = textarea.value.trim();
+    if (!_fwWorkSummary) {
+      if (errorEl) errorEl.style.display = 'block';
+      showToast('Заполни, что сделано за смену', 'error');
+      textarea.focus();
       return;
     }
+
+    if (_fwDailyPlanItems.length) {
+      // Snapshot current input values before re-render/navigation
+      document.querySelectorAll('.fw-qty-input').forEach(inp => {
+        const result = _fwItemResults.find(r => r.item_id === inp.dataset.item);
+        if (result && inp.value !== '') result.actual_quantity = parseFloat(inp.value);
+      });
+      document.querySelectorAll('.fw-comment-input').forEach(ta => {
+        const result = _fwItemResults.find(r => r.item_id === ta.dataset.item);
+        if (result) result.comment = ta.value.trim();
+      });
+      const missing = _fwDailyPlanItems.filter(item => {
+        const result = _fwItemResults.find(r => r.item_id === item.id);
+        return !result?.status;
+      });
+      if (missing.length) {
+        showToast('Отметь выполнение каждого пункта плана', 'error');
+        return;
+      }
+    }
+
     _fwNavNext();
   });
 }
 
-// ---------- Step 3: Доп. работы (structured list) ----------
+// ---------- Step "extra": Проблемы и завтра (Worker UX V2, Этап 8) ----------
+// 21.09: раньше три отдельных экрана (Доп. работы -> Потребности/Дефекты ->
+// Готовность на завтра), объединены в один скролл-экран с общей кнопкой
+// "Далее" — все три под-блока были и остаются полностью опциональными
+// (ни один не блокировал "Далее" раньше), поэтому объединённая кнопка не
+// добавляет новую валидацию, только один снапшот вместо трёх последовательных.
 function _fwRenderStep3() {
-  const itemsHtml = _fwExtraWorks.map((w, i) => `
+  const extraItemsHtml = _fwExtraWorks.map((w, i) => `
     <div class="fw-list-item" data-idx="${i}">
       <div class="fw-list-item-desc">${esc(w.description)}</div>
       <div class="fw-list-item-meta">${w.zone ? esc(w.zone) + ' · ' : ''}${w.time_estimate ? esc(w.time_estimate) : ''}${w.needs_approval ? ' · нужно согласование' : ''}</div>
       <button class="fw-list-item-remove" data-idx="${i}" type="button">✕</button>
     </div>`).join('');
+
+  const catButtons = FW_NEED_CATEGORIES.map(c =>
+    `<button class="fw-cat-btn" data-cat="${c.key}" type="button">${esc(c.label)}</button>`).join('');
+  const needsHtml = _fwNeeds.map((n, i) => `
+    <div class="fw-list-item" data-idx="${i}">
+      <div class="fw-list-item-desc">${esc(FW_NEED_CATEGORIES.find(c => c.key === n.category)?.label || n.category)}: ${esc(n.description)}</div>
+      <button class="fw-need-remove" data-idx="${i}" type="button">✕</button>
+    </div>`).join('');
+  const defectsHtml = _fwDefects.map((d, i) => `
+    <div class="fw-list-item" data-idx="${i}">
+      <div class="fw-list-item-desc">⚠️ ${esc(d.description)}</div>
+      <button class="fw-defect-remove" data-idx="${i}" type="button">✕</button>
+    </div>`).join('');
+
+  const issuesBtns = _FW_TOMORROW_ISSUES.map(issue =>
+    `<button class="fw-issue-btn${_fwTomorrowIssues.includes(issue.key) ? ' fw-issue-btn--active' : ''}" data-issue="${issue.key}" type="button">${esc(issue.label)}</button>`
+  ).join('');
+
   return `
     <div class="fw-hint">Были ли доп. работы вне плана?</div>
-    <div class="fw-list">${itemsHtml || '<div class="fw-empty">Пока не добавлено</div>'}</div>
+    <div class="fw-list">${extraItemsHtml || '<div class="fw-empty">Пока не добавлено</div>'}</div>
     <div id="fw-extra-work-form" style="display:${_fwExtraDraftOpen ? 'block' : 'none'};">
       <textarea id="fw-extra-desc" class="mangel-textarea" rows="2" placeholder="Описание работы"></textarea>
       ${_fwVoiceButtonHtml('fw-voice-extra')}
@@ -532,6 +540,32 @@ function _fwRenderStep3() {
       <button class="submit-btn" id="fw-extra-save" type="button" style="margin-top:0.5rem;">Добавить пункт</button>
     </div>
     <button class="fw-add-photo-btn" id="fw-add-extra-btn" type="button">+ Добавить работу</button>
+
+    <div class="fw-hint" style="margin-top:1rem;">Что мешало работе или что нужно?</div>
+    <div class="fw-cat-row">${catButtons}</div>
+    <div id="fw-need-form" style="display:none;">
+      <textarea id="fw-need-desc" class="mangel-textarea" rows="2" placeholder="Опиши, что нужно"></textarea>
+      ${_fwVoiceButtonHtml('fw-voice-need')}
+      <button class="submit-btn" id="fw-need-save" type="button" style="margin-top:0.5rem;">Добавить</button>
+    </div>
+    <div class="fw-list">${needsHtml}</div>
+
+    <div class="fw-hint" style="margin-top:0.75rem;">Дефекты, которые заметил:</div>
+    <div id="fw-defect-form" style="display:none;">
+      <textarea id="fw-defect-desc" class="mangel-textarea" rows="2" placeholder="Опиши дефект"></textarea>
+      ${_fwVoiceButtonHtml('fw-voice-defect')}
+      <button class="submit-btn" id="fw-defect-save" type="button" style="margin-top:0.5rem;">Добавить дефект</button>
+    </div>
+    <div class="fw-list">${defectsHtml}</div>
+    <button class="fw-add-photo-btn" id="fw-add-defect-btn" type="button">+ Сообщить о дефекте</button>
+
+    ${_fwDailyPlanItems.length ? `
+      <div class="fw-hint" style="margin-top:1rem;">Отметь проблемы с готовностью на завтра (если есть).</div>
+      <div class="fw-issue-btns">${issuesBtns}</div>
+      <textarea id="fw-tomorrow-comment" class="mangel-textarea" rows="2"
+        placeholder="Комментарий (опционально)" style="margin-top:0.5rem;">${esc(_fwTomorrowComment)}</textarea>
+    ` : ''}
+
     <div class="fw-nav-row">
       <button class="fw-back-btn" id="fw-back-3" type="button">← Назад</button>
       <button class="submit-btn fw-next-btn" id="fw-next-3" type="button">Далее</button>
@@ -539,7 +573,10 @@ function _fwRenderStep3() {
   `;
 }
 
+let _fwPendingNeedCategory = null;
+
 function _fwWireStep3() {
+  // -- Доп. работы --
   document.getElementById('fw-add-extra-btn')?.addEventListener('click', () => {
     _fwExtraDraftOpen = true;
     document.getElementById('fw-extra-work-form').style.display = 'block';
@@ -571,54 +608,8 @@ function _fwWireStep3() {
       _fwRenderStep();
     });
   });
-  document.getElementById('fw-back-3')?.addEventListener('click', () => _fwNavBack());
-  document.getElementById('fw-next-3')?.addEventListener('click', () => {
-    saveExtraDraft();
-    _fwNavNext();
-  });
-}
 
-// ---------- Step 4: Потребности/проблемы (structured, categorized) ----------
-function _fwRenderStep4() {
-  const catButtons = FW_NEED_CATEGORIES.map(c =>
-    `<button class="fw-cat-btn" data-cat="${c.key}" type="button">${esc(c.label)}</button>`).join('');
-  const needsHtml = _fwNeeds.map((n, i) => `
-    <div class="fw-list-item" data-idx="${i}">
-      <div class="fw-list-item-desc">${esc(FW_NEED_CATEGORIES.find(c => c.key === n.category)?.label || n.category)}: ${esc(n.description)}</div>
-      <button class="fw-need-remove" data-idx="${i}" type="button">✕</button>
-    </div>`).join('');
-  const defectsHtml = _fwDefects.map((d, i) => `
-    <div class="fw-list-item" data-idx="${i}">
-      <div class="fw-list-item-desc">⚠️ ${esc(d.description)}</div>
-      <button class="fw-defect-remove" data-idx="${i}" type="button">✕</button>
-    </div>`).join('');
-  return `
-    <div class="fw-hint">Что мешало работе или что нужно?</div>
-    <div class="fw-cat-row">${catButtons}</div>
-    <div id="fw-need-form" style="display:none;">
-      <textarea id="fw-need-desc" class="mangel-textarea" rows="2" placeholder="Опиши, что нужно"></textarea>
-      ${_fwVoiceButtonHtml('fw-voice-need')}
-      <button class="submit-btn" id="fw-need-save" type="button" style="margin-top:0.5rem;">Добавить</button>
-    </div>
-    <div class="fw-list">${needsHtml}</div>
-    <div class="fw-hint" style="margin-top:0.75rem;">Дефекты, которые заметил:</div>
-    <div id="fw-defect-form" style="display:none;">
-      <textarea id="fw-defect-desc" class="mangel-textarea" rows="2" placeholder="Опиши дефект"></textarea>
-      ${_fwVoiceButtonHtml('fw-voice-defect')}
-      <button class="submit-btn" id="fw-defect-save" type="button" style="margin-top:0.5rem;">Добавить дефект</button>
-    </div>
-    <div class="fw-list">${defectsHtml}</div>
-    <button class="fw-add-photo-btn" id="fw-add-defect-btn" type="button">+ Сообщить о дефекте</button>
-    <div class="fw-nav-row">
-      <button class="fw-back-btn" id="fw-back-4" type="button">← Назад</button>
-      <button class="submit-btn fw-next-btn" id="fw-next-4" type="button">Далее</button>
-    </div>
-  `;
-}
-
-let _fwPendingNeedCategory = null;
-
-function _fwWireStep4() {
+  // -- Потребности --
   document.querySelectorAll('.fw-cat-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       _fwPendingNeedCategory = btn.dataset.cat;
@@ -641,6 +632,7 @@ function _fwWireStep4() {
     btn.addEventListener('click', () => { _fwNeeds.splice(Number(btn.dataset.idx), 1); _fwRenderStep(); });
   });
 
+  // -- Дефекты --
   document.getElementById('fw-add-defect-btn')?.addEventListener('click', () => {
     document.getElementById('fw-defect-form').style.display = 'block';
   });
@@ -658,40 +650,7 @@ function _fwWireStep4() {
     btn.addEventListener('click', () => { _fwDefects.splice(Number(btn.dataset.idx), 1); _fwRenderStep(); });
   });
 
-  document.getElementById('fw-back-4')?.addEventListener('click', () => _fwNavBack());
-  document.getElementById('fw-next-4')?.addEventListener('click', () => {
-    const needText = document.getElementById('fw-need-desc')?.value.trim() || '';
-    if (needText && _fwPendingNeedCategory) {
-      _fwNeeds.push({ category: _fwPendingNeedCategory, description: needText });
-      _fwPendingNeedCategory = null;
-    }
-    const defectText = document.getElementById('fw-defect-desc')?.value.trim() || '';
-    if (defectText) _fwDefects.push({ description: defectText });
-    _fwNavNext();
-  });
-}
-
-// ---------- Step tomorrow-prep: Готовность на завтра (Round 3) ----------
-function _fwRenderStepTomorrowPrep() {
-  const issuesBtns = _FW_TOMORROW_ISSUES.map(issue =>
-    `<button class="fw-issue-btn${_fwTomorrowIssues.includes(issue.key) ? ' fw-issue-btn--active' : ''}" data-issue="${issue.key}" type="button">${esc(issue.label)}</button>`
-  ).join('');
-
-  return `
-    <div class="fw-hint">Отметь проблемы с готовностью на завтра (если есть).</div>
-    <div class="fw-issue-btns">${issuesBtns}</div>
-    <textarea id="fw-tomorrow-comment" class="mangel-textarea" rows="2"
-      placeholder="Комментарий (опционально)" style="margin-top:0.5rem;">${esc(_fwTomorrowComment)}</textarea>
-    <div class="fw-nav-row">
-      <button class="fw-back-btn" id="fw-back-tp" type="button">← Назад</button>
-      <button class="submit-btn fw-next-btn" id="fw-next-tp" type="button">Далее</button>
-    </div>
-  `;
-}
-
-function _fwWireStepTomorrowPrep() {
-  document.getElementById('fw-back-tp')?.addEventListener('click', () => _fwNavBack());
-
+  // -- Готовность на завтра --
   document.querySelectorAll('.fw-issue-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const key = btn.dataset.issue;
@@ -701,14 +660,24 @@ function _fwWireStepTomorrowPrep() {
       btn.classList.toggle('fw-issue-btn--active');
     });
   });
-
   document.getElementById('fw-tomorrow-comment')?.addEventListener('input', e => {
     _fwTomorrowComment = e.target.value.trim();
   });
 
-  document.getElementById('fw-next-tp')?.addEventListener('click', () => {
-    const ta = document.getElementById('fw-tomorrow-comment');
-    if (ta) _fwTomorrowComment = ta.value.trim();
+  document.getElementById('fw-back-3')?.addEventListener('click', () => _fwNavBack());
+  document.getElementById('fw-next-3')?.addEventListener('click', () => {
+    saveExtraDraft();
+
+    const needText = document.getElementById('fw-need-desc')?.value.trim() || '';
+    if (needText && _fwPendingNeedCategory) {
+      _fwNeeds.push({ category: _fwPendingNeedCategory, description: needText });
+      _fwPendingNeedCategory = null;
+    }
+    const defectText = document.getElementById('fw-defect-desc')?.value.trim() || '';
+    if (defectText) _fwDefects.push({ description: defectText });
+
+    const tomorrowTa = document.getElementById('fw-tomorrow-comment');
+    if (tomorrowTa) _fwTomorrowComment = tomorrowTa.value.trim();
     // Auto-create a Need for each selected issue (best-effort dedup by description)
     _fwTomorrowIssues.forEach(issueKey => {
       const issueLabel = _FW_TOMORROW_ISSUES.find(i => i.key === issueKey)?.label || issueKey;
@@ -718,6 +687,7 @@ function _fwWireStepTomorrowPrep() {
         _fwNeeds.push({ category: 'other', description: desc });
       }
     });
+
     _fwNavNext();
   });
 }
@@ -1072,11 +1042,8 @@ function _fwWireStep() {
   const key = _fwCurrentKey();
   if (key === 'context-error') _fwWireContextError();
   else if (key === 'photo') _fwWireStep1();
-  else if (key === 'summary') _fwWireStep2();
-  else if (key === 'plan-fact') _fwWireStepPlanFact();
+  else if (key === 'summary') _fwWireStepSummaryPlanFact();
   else if (key === 'extra') _fwWireStep3();
-  else if (key === 'needs') _fwWireStep4();
-  else if (key === 'tomorrow-prep') _fwWireStepTomorrowPrep();
   else if (key === 'review') _fwWireStep6();
 }
 

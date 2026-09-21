@@ -18,7 +18,7 @@ def _source(path: Path) -> str:
 def test_photo_step_does_not_skip_required_summary_step():
     src = _source(FINISH_WIZARD)
     start = src.index("function _fwWireStep1()")
-    end = src.index("// ---------- Step 2:", start)
+    end = src.index('// ---------- Step "summary":', start)
     step1 = src[start:end]
 
     assert step1.count("_fwNavNext();") == 1
