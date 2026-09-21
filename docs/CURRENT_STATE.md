@@ -42,7 +42,7 @@ backend (`backend/main.py`) + flat JSON file storage under
 
 ## Scale, as of 2026-09-21 (on `fix-shift-start`, not `main`)
 
-- Tests: **943 passed, 1 skipped, 1 pre-existing unrelated failure**
+- Tests: **950 passed, 1 skipped, 1 pre-existing unrelated failure**
   (`test_assignment_lifecycle.py::ProductionPackageImportTests::
   test_production_layout_resolves_module_identities_correctly` — hardcodes
   an expected route count of 185, actual is 186; predates this session,
@@ -136,14 +136,16 @@ Following `UNIFIED_STEP_BY_STEP_PLAN_v1.1.md`. Status per stage:
   coverage on ~3000 lines of interlinked code. See
   `docs/OBJECT_DETAIL_V2.md` for the exact target section->zone mapping
   and a risk-ordered migration plan for whoever picks this up next.
-- **Этап 8 (Finish Wizard simplification)**: **partial**. Removed the
+- **Этап 8 (Finish Wizard simplification)**: **done**. Removed the
   standalone blocking "Геолокация" step (AUTO-CAPTURE PRINCIPLE — capture
   now starts in the background on wizard open, status folds into the
-  existing Сводка/review screen with inline retry). Wizard is down from
-  6/8 steps to 5/7. Summary+plan-fact and extra+needs+tomorrow-prep merges
-  (toward the plan's 3-4 screen target) were deliberately NOT done in this
-  session — real risk to the still-live idempotency/outbox/offline submit
-  path in the same file, left as a smaller separate follow-up.
+  existing Сводка/review screen with inline retry). Merged summary+plan-fact
+  into one screen and extra-works+needs/defects+tomorrow-prep into another
+  ("Проблемы и завтра"), each sub-block keeping its original markup/
+  validation, only the screen containers and single next-button handler
+  merged. Wizard is now exactly 4 screens (Фото/Что сделано-план-факт/
+  Проблемы и завтра/Сводка) regardless of whether a DailyPlan exists —
+  matches the plan's 3-4 screen target, down from 6/8.
 - **Этап 9 (object timeline direction)**: docs only, as the plan specifies.
   See `docs/OBJECT_TIMELINE_DIRECTION.md` — documents the 8 existing
   `_append_object_history` event kinds and a real gap found (checkin

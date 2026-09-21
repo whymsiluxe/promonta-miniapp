@@ -26,15 +26,6 @@ the full original list for comparison.
   Работа -> Обзор -> Чат) are in `docs/OBJECT_DETAIL_V2.md`. Two decisions
   need to be made explicitly before starting: `#stages-view`'s legacy status,
   and which owner-only "Обзор" content (if any) becomes worker-visible.
-- **Finish Wizard screen merges (Worker UX V2 Этап 8, remainder).** Geo
-  auto-capture was merged into the review screen already (2026-09-21,
-  `ff87cd6`), bringing the wizard from 6/8 steps to 5/7. The plan's 3-4
-  screen target still needs summary+plan-fact merged into one screen, and
-  extra-works+needs/defects+tomorrow-prep merged into another
-  ("Проблемы и завтра"). Left separate on purpose — each merge means
-  reconciling independent validation/nav-row markup and wire handlers, a
-  real risk to the still-live idempotency/outbox/offline submit path this
-  same file (`finish-wizard.js`) owns.
 - **Swipe-to-reply in chat.** Reply currently only works via long-press →
   menu → "↩ Ответить" (`grep swipe frontend/js/chat.js` empty). Quick win if
   picked up, not blocking anything.
