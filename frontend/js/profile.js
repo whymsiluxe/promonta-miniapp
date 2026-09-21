@@ -998,13 +998,22 @@ async function _loadWorkerCardTab(tab) {
     if (stats) {
       await _fillProductivityTab(stats, card);
     } else {
-      // identity not yet loaded — wait for it then fill
+      // identity not yet loaded — wait for it then fill.
+      // 20.09 (merged from upstream c23894d): раньше этот интервал не имел ни
+      // таймаута, ни отмены при закрытии карточки. closeWorkerCard() ставит
+      // _workerCardEl = null, после чего условие внутри НИКОГДА не станет
+      // истинным -- clearInterval недостижим, таймер тикает 5 раз в секунду до
+      // конца жизни мини-аппа, и каждое повторное открытие карточки добавляет
+      // ещё один. Сосед ниже (wait() внутри _loadWcProfileTab, строка ~1194)
+      // уже делает это правильно -- с 3-секундным предохранителем.
       const wait = setInterval(async () => {
-        if (_workerCardEl?._wcStats) {
+        if (!_workerCardEl) { clearInterval(wait); return; } // карточку закрыли
+        if (_workerCardEl._wcStats) {
           clearInterval(wait);
           await _fillProductivityTab(_workerCardEl._wcStats, _workerCardEl._wcCard);
         }
       }, 200);
+      setTimeout(() => clearInterval(wait), 3000);
     }
   } else if (tab === 'calendar') {
     _loadWcCalendarTab();

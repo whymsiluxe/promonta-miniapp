@@ -1868,6 +1868,12 @@ function closeChatThread() {
   _chatThreadLoadSeq += 1;
   _setChatThreadLoading(false);
   _stopVoiceRecording(false);
+  // 20.09 (P0, merged from upstream c23894d): _stopVoiceRecording(false) уже
+  // останавливает микрофон/треки, но не сбрасывает _voiceRecordingThreadKey/
+  // _voiceRecordingThread -- без этого повторная запись в ДРУГОМ треде после
+  // возврата всё ещё ссылалась на уже закрытый тред, и голосовое уходило не туда.
+  _voiceRecordingThreadKey = null;
+  _voiceRecordingThread = null;
 
   document.getElementById('chat-thread-detail-view').style.display = 'none';
   document.getElementById('chat-thread-list-view').style.display = 'flex';
