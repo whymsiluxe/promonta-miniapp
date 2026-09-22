@@ -35,3 +35,15 @@ def test_object_info_uses_compact_rows_instead_of_duplicate_section_tabs():
     assert ">Работы<" not in info_src
     assert ">Потребности<" not in info_src
     assert "#view-objects .metrics" in html
+
+
+def test_objects_cards_reserve_space_under_the_fab_and_bottom_nav():
+    # 22.09 (iPhone screenshot audit): #objects-cards (.cards, no dedicated
+    # override) had no bottom-padding reserve at all -- a real device showed
+    # the last object card's budget data visually covered by the FAB/bottom
+    # nav. Same measured-height pattern as .objects-fab's own position.
+    html = APP_HTML.read_text(encoding="utf-8")
+    start = html.index("#objects-list-view .cards {")
+    block = html[start:html.index("}", start) + 1]
+    assert "var(--app-bottom-nav-height, 70px)" in block
+    assert "env(safe-area-inset-bottom)" in block
