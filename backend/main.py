@@ -4451,7 +4451,14 @@ def add_news_comment(post_id: str, body: NewsCommentBody, user: dict = Depends(g
 
 @app.get("/api/feed/news/{post_id}/comments")
 def get_news_comments(post_id: str, user: dict = Depends(get_current_user)):
-    return {"comments": _load_news_comments().get(post_id, [])}
+    # 22.09 (iPhone screenshot audit, Item I): comments stored `name` at write
+    # time (add_news_comment) was never re-resolved on read -- a worker who
+    # changed/set their profile name later kept showing the old/raw one in
+    # every past comment. Same read-side resolver as feed/chat/abwesenheit.
+    comments = _load_news_comments().get(post_id, [])
+    for c in comments:
+        c['name'] = _resolve_current_display_name(c.get('user_id'), c.get('name'))
+    return {"comments": comments}
 
 
 @app.delete("/api/feed/news/{post_id}/comments/{comment_id}")
@@ -4830,7 +4837,13 @@ def get_feed_photo_comments(photo_id: str, user: dict = Depends(get_current_user
     entry = next((p for p in items if p['id'] == photo_id), None)
     if not entry:
         raise HTTPException(404, "Фото не найдено")
-    return {"comments": entry.get('comments', [])}
+    # 22.09 (iPhone screenshot audit, Item I): same read-side resolve as
+    # get_news_comments -- stored `name` at write time must not outlive a
+    # later profile-name correction.
+    comments = entry.get('comments', [])
+    for c in comments:
+        c['name'] = _resolve_current_display_name(c.get('user_id'), c.get('name'))
+    return {"comments": comments}
 
 
 @app.delete("/api/feed/photos/{photo_id}/comments/{comment_id}")

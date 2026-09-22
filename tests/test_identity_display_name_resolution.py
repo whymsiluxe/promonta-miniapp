@@ -168,5 +168,26 @@ class FeedPhotoNameResolutionTests(unittest.TestCase):
         self.assertEqual(result['photos'][0]['name'], 'Лох')
 
 
+class FeedCommentNameResolutionTests(unittest.TestCase):
+    """22.09 (Item I): comments stored `name` at write time was never
+    re-resolved on read -- a worker's later profile-name correction never
+    reached their PAST comments on news posts or feed photos."""
+
+    def test_news_comment_with_legacy_id_as_name_resolves_on_read(self):
+        with patch.object(backend, '_load_news_comments', return_value={
+            'post-1': [{'id': 'c1', 'user_id': WORKER_ID, 'name': WORKER_ID, 'text': 'hi', 'ts': 1000}],
+        }), patch.object(backend, '_load_worker_profiles', return_value={WORKER_ID: {'name': 'Марат'}}):
+            result = backend.get_news_comments('post-1', user=OWNER)
+        self.assertEqual(result['comments'][0]['name'], 'Марат')
+
+    def test_feed_photo_comment_with_legacy_id_as_name_resolves_on_read(self):
+        with patch.object(backend, '_load_photo_meta', return_value=[{
+            'id': 'p1', 'user_id': WORKER_ID,
+            'comments': [{'id': 'c1', 'user_id': WORKER_ID, 'name': WORKER_ID, 'text': 'hi', 'at': '2026-01-01T00:00:00'}],
+        }]), patch.object(backend, '_load_worker_profiles', return_value={WORKER_ID: {'name': 'Марат'}}):
+            result = backend.get_feed_photo_comments('p1', user=OWNER)
+        self.assertEqual(result['comments'][0]['name'], 'Марат')
+
+
 if __name__ == '__main__':
     unittest.main()

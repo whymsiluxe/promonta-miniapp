@@ -1248,8 +1248,8 @@ header h1 {
   margin-left: auto;
 }
 .bottom-sheet-close-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
-/* .form-submit-bar по умолчанию position:fixed для полноэкранных форм (bottom: 7.5rem
-   "над нижним меню") -- внутри ограниченного/скроллящегося bottom sheet это оторвало бы
+/* .form-submit-bar по умолчанию position:fixed для полноэкранных форм (измеренная высота
+   nav "над нижним меню") -- внутри ограниченного/скроллящегося bottom sheet это оторвало бы
    кнопку от контента и приклеило к реальному viewport вместо панели. Возвращаем в normal flow. */
 .bottom-sheet-panel .form-submit-bar {
   position: static;
@@ -1977,7 +1977,11 @@ header h1 {
 
 .form-submit-bar {
   position: fixed;
-  bottom: 7.5rem; /* над нижним меню */
+  /* 22.09 (iPhone screenshot audit, Item H): hardcoded 7.5rem magic-number
+     guess for "above the bottom nav" -- same class of bug as
+     --bottom-nav-safe-pad (see test_bottom_nav_safe_pad_dead_variable.py).
+     Uses the actually-measured nav height instead. */
+  bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 8px);
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
@@ -5434,9 +5438,13 @@ body.chat-reply-active .chat-messages::after {
   border-color: var(--ios-accent, var(--accent));
   color: white;
 }
-.news-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.45rem; }
-.news-cat { font-size: 0.7rem; font-weight: 700; padding: 0.18rem 0.55rem; border-radius: 999px; letter-spacing: 0.04em; }
-.news-src { font-size: 0.75rem; color: var(--text-light); }
+.news-card-top { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; margin-bottom: 0.45rem; }
+/* 22.09 (iPhone screenshot audit, Item I): neither span had any width/overflow
+   guard -- a long scraped category or source name could push this flex row
+   wider than .news-card (which has no overflow:hidden of its own), risking
+   page-level horizontal scroll at narrow (390px) widths. */
+.news-cat { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; font-weight: 700; padding: 0.18rem 0.55rem; border-radius: 999px; letter-spacing: 0.04em; }
+.news-src { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; color: var(--text-light); }
 .news-title { font-weight: 800; font-size: 1.2rem; line-height: 1.32; }
 .news-summary { font-size: 0.95rem; color: var(--text-light); margin-top: 0.35rem; line-height: 1.5; white-space: pre-line; }
 /* Раунд 4: абзацы новости + кнопка "Читать полностью"/"Свернуть" */
@@ -9347,7 +9355,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--app
       </div>
       <div class="form-field">
         <label>Адрес</label>
-        <input type="text" id="new-obj-adresse" placeholder="Straße, PLZ Ort" autocomplete="off" autocorrect="off" spellcheck="false">
+        <input type="text" id="new-obj-adresse" placeholder="напр. Bahnhofstraße 12, 09111 Chemnitz" autocomplete="off" autocorrect="off" spellcheck="false">
       </div>
       <div class="form-field">
         <label>Бюджет €</label>

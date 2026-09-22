@@ -140,6 +140,23 @@ def test_news_category_filters_are_rendered_from_feed_categories():
     assert "_newsCategoryFilter === 'all' || _newsCategoryLabel(x.n) === _newsCategoryFilter" in feed_src
 
 
+def test_news_card_top_contains_long_category_or_source_names():
+    # 22.09 (iPhone screenshot audit, Item I): .news-cat/.news-src had no
+    # width/overflow guard -- a long scraped category or source name could
+    # push the flex row wider than .news-card (no overflow:hidden of its
+    # own), risking page-level horizontal scroll at 390px.
+    html = _source(APP_HTML)
+    cat_start = html.index(".news-cat {")
+    cat_block = html[cat_start:html.index("}", cat_start) + 1]
+    assert "min-width: 0" in cat_block
+    assert "text-overflow: ellipsis" in cat_block
+
+    src_start = html.index(".news-src {")
+    src_block = html[src_start:html.index("}", src_start) + 1]
+    assert "min-width: 0" in src_block
+    assert "text-overflow: ellipsis" in src_block
+
+
 def test_feed_view_resets_scroll_on_open_and_after_render():
     feed_src = _source(FEED_JS)
 
