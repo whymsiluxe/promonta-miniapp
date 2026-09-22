@@ -58,3 +58,14 @@ def test_profile_css_bridges_to_ios_settings_language():
     assert "var(--ios-separator" in html
     assert "min-height: var(--ios-touch-target, 44px)" in html
     assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in html
+
+
+def test_profile_app_version_does_not_duplicate_sha_and_version():
+    # 22.09 (iPhone screenshot audit): this repo has no separate "version"
+    # concept from the deploy commit -- h.version from /api/health IS already
+    # the short SHA, so rendering both used to always show a visibly
+    # duplicated "c28ff97 · c28ff97" on a real device. Only show a second
+    # value when h.version is genuinely DIFFERENT from the commit already shown.
+    js = _source(PROFILE_JS)
+    assert "const versionDiffersFromCommit = h.version && h.version !== 'unknown' && h.version !== h.commit && h.version !== commit;" in js
+    assert "[commit, versionDiffersFromCommit ? h.version : '']" in js

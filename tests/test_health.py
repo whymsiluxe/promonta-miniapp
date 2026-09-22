@@ -144,9 +144,13 @@ class DiagnosticsEndpointTests(unittest.TestCase):
         self.assertIn(result['backend'], ('ok', 'degraded'),
                       "backend check must return 'ok' or 'degraded'")
 
-    def test_diagnostics_overall_is_ok_or_degraded(self):
+    def test_diagnostics_overall_is_ok_warning_or_error(self):
+        # 22.09 (iPhone screenshot audit): overall is now a 3-state severity
+        # model (ok/warning/error), not the old binary ok/degraded -- see
+        # test_diagnostics_severity_model.py for the full behavioral coverage
+        # of when each state applies.
         result = backend.diagnostics(_=None)
-        self.assertIn(result['overall'], ('ok', 'degraded'))
+        self.assertIn(result['overall'], ('ok', 'warning', 'error'))
 
     def test_diagnostics_build_sha_is_string(self):
         result = backend.diagnostics(_=None)

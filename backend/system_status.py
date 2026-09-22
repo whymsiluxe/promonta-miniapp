@@ -144,10 +144,47 @@ def diagnostics_response(
     result["build_sha"] = version_info["commit"]
     result["build_version"] = version_info["version"]
 
-    overall = "ok" if all(
-        v in ("ok", "configured", "not_configured")
-        for k, v in result.items()
-        if k in ("backend", "sheets", "chat")
-    ) else "degraded"
-    result["overall"] = overall
+    # 22.09 (iPhone screenshot audit): `overall` used to ONLY look at
+    # backend/sheets/chat, silently ignoring dailyplan_sync/drive_contracts/
+    # finish_outbox entirely -- a real device showed a green "✅ Все системы
+    # работают" headline directly above three yellow warning rows for exactly
+    # those ignored fields, visibly contradicting itself. Explicit severity
+    # model instead of an ad-hoc field allowlist:
+    #   REQUIRED_OK: backend/sheets/chat must be "ok" (or sheets "stale",
+    #     which is a real degradation, not a fresh problem) -- any other
+    #     value here is a genuine core failure -> overall "error".
+    #   OPTIONAL: dailyplan_sync/drive_contracts are integrations that are
+    #     legitimately "not_configured" in normal operation -- that state
+    #     does NOT drag the core status down, but it IS surfaced as an
+    #     explicit warning rather than silently blended into a plain "ok".
+    #   finish_outbox: "red" (a dead-letter outbox record exists) is a real
+    #     operational problem, not an optional-integration absence -> warning.
+    REQUIRED_OK_VALUES = {"backend": {"ok"}, "sheets": {"ok", "stale"}, "chat": {"ok"}}
+    required_failed = [k for k, ok_values in REQUIRED_OK_VALUES.items() if result.get(k) not in ok_values]
+
+    OPTIONAL_NOT_CONFIGURED_IS_FINE = {"dailyplan_sync": {"not_configured"}, "drive_contracts": {"not_configured"}}
+    optional_warnings = [
+        k for k, fine_values in OPTIONAL_NOT_CONFIGURED_IS_FINE.items()
+        if result.get(k) not in ("ok", "configured") and result.get(k) not in fine_values
+    ]
+    if result.get("finish_outbox") == "red":
+        optional_warnings.append("finish_outbox")
+    # dailyplan_sync/drive_contracts being "not_configured" is expected/fine,
+    # but still worth a visible (non-blocking) heads-up rather than looking
+    # identical to a fully-configured "ok" -- distinct from optional_warnings
+    # above, which are genuine unexpected states.
+    optional_not_configured = [
+        k for k, fine_values in OPTIONAL_NOT_CONFIGURED_IS_FINE.items()
+        if result.get(k) in fine_values
+    ]
+
+    if required_failed:
+        result["overall"] = "error"
+    elif optional_warnings or optional_not_configured:
+        result["overall"] = "warning"
+    else:
+        result["overall"] = "ok"
+    result["overall_required_failed"] = required_failed
+    result["overall_warnings"] = optional_warnings
+    result["overall_not_configured"] = optional_not_configured
     return result
