@@ -64,9 +64,30 @@ explicit owner approval").
   **not independently reproduced** rows (New Object empty date-input, Worker
   Start stale-build re-check).
 
-## Not deployed
+## Deployment status (updated 2026-09-22, post-merge)
 
-Per the original instruction, none of this is on production. Everything above
-lives on `screenshot-audit-2026-09-22`, 6 commits ahead of the `main` branch
-tip it was cut from (`8b01f23`). Awaiting explicit owner go-ahead to merge and
-deploy.
+- **Merged**: PR #4, `screenshot-audit-2026-09-22` → `main` (merge commit
+  `63b9daee6441e77e7b4367f93d176bd7bd0fa1ff`).
+- **GitHub CI**: green — 1071 passed, 1 skipped, 0 failed.
+- **Production target SHA**: `63b9daee6441e77e7b4367f93d176bd7bd0fa1ff`, per
+  `scripts/deploy.sh`'s own SHA-verification step on the VPS (step 14/14).
+  This was confirmed by the deploy script's own output in this session, not
+  by an independent external request — if you need to verify externally,
+  `GET https://app.promonta.fun/api/health` should report this commit.
+- **Manual iPhone Telegram verification**: **still pending.** This is the
+  actual next gate, not another code audit. Recommended pass, in order:
+  Profile → Diagnostics → Worker Card → Calendar → Chat → Objects → start a
+  shift on an object with one stage (picker should NOT appear) → start on an
+  object with 2+ stages (picker SHOULD appear) → trigger/ACK a Critical Alert
+  → re-open the app (popup must not return) → scroll a long list to the very
+  bottom. Specifically confirm on-device: an alert shows exactly once; the
+  "tomorrow" date is correct near midnight; Chat/Calendar no longer show a
+  raw Telegram ID; the 32px avatar looks right; Worker Card no longer sits
+  under the Dynamic Island; the bottom nav doesn't cover anything; the old
+  "Дом Мюллер → still asked to pick between 2 objects" screenshot no longer
+  reproduces.
+- **Object Detail V2 is not finished.** PR #4 only added the duplicate-DOM
+  guard (`test_stage_dom_ids_are_never_duplicated_across_panels`). The actual
+  canonical cutover (stages → work), porting the still-missing timer/pause/
+  manual-time panels, and retiring the legacy `#stages-view` are a separate,
+  later step — see `docs/OBJECT_DETAIL_V2_IMPLEMENTATION_PLAN.md`.
