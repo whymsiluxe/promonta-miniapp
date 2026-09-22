@@ -14,6 +14,21 @@ def _source(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _fn(src: str, signature: str) -> str:
+    start = src.index(signature)
+    depth = 0
+    i = src.index("{", start + len(signature))
+    j = i
+    while True:
+        if src[j] == "{":
+            depth += 1
+        elif src[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return src[start:j + 1]
+        j += 1
+
+
 def test_checkin_local_session_cache_handles_corrupt_json():
     src = _source(CHECKIN_JS)
 
@@ -76,6 +91,20 @@ def test_stage_picker_reregister_guard_avoids_duplicate_overlay_entries():
 
     assert "const isFirstRender = !existing;" in fab
     assert "if (isFirstRender && typeof NavigationManager !== 'undefined') {" in fab
+
+
+def test_stage_picker_auto_selects_when_exactly_one_unambiguous_stage():
+    # 22.09 (owner request, iPhone screenshot audit): "Worker UX V2 doesn't ask
+    # what context already knows" -- a single existing stage is unambiguous,
+    # so _openStagePickerThenStart() must start the shift with it directly
+    # instead of showing "Какой этап сегодня?". The picker modal is still
+    # shown for 0 stages (need to offer add/skip) and 2+ (real ambiguity).
+    fab = _source(WORKER_CHECKIN_FAB_JS)
+    body = _fn(fab, "async function _openStagePickerThenStart(objectId)")
+    assert "if (stages.length === 1) {" in body
+    assert "_startWorkerCheckin(objectId, stages[0]['Название этапа'] || null);" in body
+    assert "return;" in body
+    assert "_renderStagePickerModal(objectId, stages);" in body
 
 
 def test_home_idle_shift_cta_uses_shared_start_flow():

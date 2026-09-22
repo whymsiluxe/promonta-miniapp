@@ -32,7 +32,12 @@ body {
   max-width: 480px;
   width: 100%;
   margin: 0 auto;
-  padding-bottom: var(--bottom-nav-safe-pad); /* Раунд 5 §1: единый отступ под плавающим nav (был 7.5rem) */
+  /* 22.09 (iPhone screenshot audit): --bottom-nav-safe-pad is never SET anywhere
+     (no setProperty, no CSS declaration) -- this rule had NO fallback, so it
+     silently resolved to 0 padding on every device, letting content sit behind
+     the floating nav. Switched to the real measured variable used everywhere
+     else (--app-bottom-nav-height, JS: _applyBottomNavHeight()). */
+  padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 16px);
   overflow-x: hidden; /* страховка на уровне body (недостаточна одна, см. html выше) */
 }
 
@@ -1281,11 +1286,14 @@ header h1 {
   padding-top: 0.85rem;
 }
 
-#stages-view { display: none; padding-bottom: var(--bottom-nav-safe-pad); }
+/* 22.09 (iPhone screenshot audit): --bottom-nav-safe-pad was never set anywhere
+   (see body{} comment above) -- both rules below had 0 real bottom padding,
+   letting scrolled content sit behind the floating nav on long screens. */
+#stages-view { display: none; padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 16px); }
 #stages-view.open { display: block; }
 
 /* ── Детали объекта (24.07, 6-таб экран) ── */
-#view-object-detail { padding-bottom: var(--bottom-nav-safe-pad); min-height: 100vh; background: var(--bg-app); }
+#view-object-detail { padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 16px); min-height: 100vh; background: var(--bg-app); }
 /* 29.07 v5: было overflow-x:auto + flex-shrink:0 фиксированной ширины -- на узких
    экранах (360px) три таба с "План работ" не помещались и вылезали за правую границу
    контейнера (owner screenshot). Табов всегда ровно 3 и они не скроллятся -- grid
@@ -6778,7 +6786,7 @@ body {
 }
 #working-objects-slot,
 #working-objects-plan-slot {
-  padding-bottom: calc(var(--bottom-nav-safe-pad, var(--app-bottom-nav-height, 70px)) + 16px);
+  padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 16px);
 }
 #view-working-objects .wo-summary-bar {
   display: grid;
@@ -7202,7 +7210,7 @@ body {
   display: block;
 }
 #view-tasks #tasks-tab-content {
-  padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+  padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 0.5rem);
 }
 #view-tasks #tasks-form {
   margin: 0.75rem 0.75rem 0.8rem;
@@ -7703,7 +7711,11 @@ body {
   padding: 0.85rem;
 }
 #view-abwesenheit .abw-request-card:last-child {
-  margin-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+  /* 22.09 (iPhone screenshot audit): --bottom-nav-safe-pad is dead (never set) --
+     this fell back to a flat 7.5rem guess. Real device showed the calendar's
+     last request card/action row sitting almost behind the floating nav.
+     Switched to the actually-measured nav height. */
+  margin-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 0.5rem);
 }
 #view-abwesenheit .abw-request-avatar {
   background: color-mix(in srgb, var(--ios-accent, var(--accent)) 14%, var(--ios-surface));
@@ -8071,7 +8083,7 @@ body {
 }
 #view-tools .cards {
   gap: 0.65rem;
-  padding: 0 0.75rem calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+  padding: 0 0.75rem calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 0.5rem);
 }
 #view-tools .card.tool-card {
   overflow: hidden;
@@ -8137,7 +8149,7 @@ body {
   background: var(--ios-page-bg, var(--bg-app));
 }
 #profile-content {
-  padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+  padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 0.5rem);
 }
 #view-profile .profile-header-card {
   margin: 0.75rem 0.75rem 0.65rem;
@@ -8813,8 +8825,8 @@ body {
 }
 
 /* Extra bottom padding for views when bar is visible */
-body.today-plan-bar-visible .view { padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 42px); }
-body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 42px); }
+body.today-plan-bar-visible .view { padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 42px); }
+body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 42px); }
 </style>
 </head>
 <body>

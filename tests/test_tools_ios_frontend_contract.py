@@ -58,7 +58,10 @@ def test_tools_css_bridges_to_premium_ios_list_language():
     assert "text-overflow: ellipsis;" in html
     assert "var(--ios-grouped-surface" in html
     assert "var(--ios-surface" in html
-    assert "var(--bottom-nav-safe-pad" in html
+    # 22.09 (iPhone screenshot audit): --bottom-nav-safe-pad was NEVER set
+    # anywhere in the codebase -- it silently fell back to a flat guess (or,
+    # where no fallback existed, to 0). Real measured height now used instead.
+    assert "var(--app-bottom-nav-height" in html
 
 
 def test_tools_init_handlers_are_wired_once_and_keep_pressed_state():

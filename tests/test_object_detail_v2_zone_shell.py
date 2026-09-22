@@ -110,3 +110,34 @@ def test_zone_routing_function_exists_but_is_not_wired_into_the_tab_click_handle
 
     init_tab_body = _fn(src, "function _initObjDetailTab(tab)")
     assert "_renderObjectDetailZone(" not in init_tab_body
+
+
+def test_stage_dom_ids_are_never_duplicated_across_panels():
+    # 22.09 (owner correction): deleting the legacy #stages-view will NOT by
+    # itself resolve the #obj-detail-panel-stages vs #obj-detail-panel-work
+    # conflict -- renderObjectStagesTab() hardcodes 'obj-detail-panel-stages'
+    # (object-info.js) as its ONE mount point. Before Работа is ever activated,
+    # Stage/Work must share that single canonical mount -- never render the
+    # same #obj-stages-roadmap/#obj-stages-tab-add-trigger markup into two
+    # different panels at once. This guard locks that invariant in structurally:
+    # each stage-related id appears in exactly one place in the static markup,
+    # and the renderer targets exactly one hardcoded panel id.
+    html = _source(APP_HTML)
+    for stage_id in ('obj-detail-panel-stages',):
+        assert html.count(f'id="{stage_id}"') == 1, (
+            f"#{stage_id} must exist exactly once until a canonical-mount "
+            "decision retargets renderObjectStagesTab()"
+        )
+
+    object_info_js = (ROOT / "frontend" / "js" / "object-info.js").read_text(encoding="utf-8")
+    body = _fn(object_info_js, "async function renderObjectStagesTab(objectId)")
+    assert body.count("getElementById('obj-detail-panel-stages')") == 1, (
+        "renderObjectStagesTab must mount into exactly one panel id -- "
+        "parameterizing it to accept a target panel is a deliberate future "
+        "step (see docs/OBJECT_DETAIL_V2_IMPLEMENTATION_PLAN.md), not done yet"
+    )
+    # obj-detail-panel-work stays an inert, unused container (step 1) -- it
+    # must NOT also be a getElementById target anywhere yet, which would mean
+    # two live mounts for the same stage markup.
+    assert "getElementById('obj-detail-panel-work')" not in object_info_js
+    assert "getElementById('obj-detail-panel-work')" not in _source(OBJECTS_JS)
