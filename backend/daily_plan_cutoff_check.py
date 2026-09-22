@@ -147,12 +147,17 @@ def main(mode: str = 'morning') -> int:
     ]
     log.info("[%s] Workers without a plan for %s: %s", mode, target_date, names)
 
+    # 22.09 (screenshot audit): ref_id=target_date so _create_critical_alert()'s
+    # dedup key (kind, target_user_id, ref_id) treats each business date as its
+    # own alert -- without this, EVERY day's plan_overdue/plan_publish_reminder
+    # for this owner would dedupe against each other forever after the first one.
     backend._create_critical_alert(
         target_user_id=owner_id,
         kind=alert_kind,
         title=f"План на {target_date} {title_verb} для {len(names)} "
               f"{'работника' if len(names) == 1 else 'работников'}",
         subtitle=', '.join(names)[:200],
+        ref_id=target_date,
     )
 
     _save_state({**state, state_key: target_date})

@@ -8957,25 +8957,53 @@ def _save_critical_alerts(items: list):
 
 def _create_critical_alert(target_user_id: str, kind: str, title: str, ref_id: str = '',
                             subtitle: str = '', deadline_at: int | None = None) -> dict:
-    """Создаёт persisted критический алерт + пуш + авто-чат-тред (владельцы + назначенный worker)."""
-    alert = {
-        "id": uuid.uuid4().hex,
-        "target_user_id": str(target_user_id),
-        "kind": kind,
-        "title": title,
-        "subtitle": subtitle,
-        "ref_id": ref_id,
-        "created_at": int(time.time()),
-        "deadline_at": deadline_at,
-        "acknowledged_at": None,
-        "comment": None,
-        "resolution": None,  # 'yes' | 'no' — ответ на "вопрос решён?"
-        "resolution_note": None,
-        "resolution_photos": [],
-    }
-    items = _load_critical_alerts()
-    items.append(alert)
-    _save_critical_alerts(items)
+    """Создаёт persisted критический алерт + пуш + авто-чат-тред (владельцы + назначенный worker).
+
+    22.09 (iPhone screenshot audit, item found live): this used to unconditionally
+    append a new alert with a fresh UUID on every call -- callers that can fire
+    more than once for the same underlying event (daily_plan_cutoff_check.py's
+    idempotency guard only covers ONE call site; anything else calling this
+    directly for the same semantic situation had no protection at all) could
+    create duplicate UNRESOLVED alerts, which then queue up back-to-back in the
+    frontend's critical-alert popup -- confirmed live on a real device. Dedup
+    key: (kind, target_user_id, ref_id) -- if an alert with that exact triple is
+    still unacknowledged, return it instead of creating a new one. Two semantically
+    different alerts of the same kind for the same user are still allowed to
+    coexist as long as ref_id differs (e.g. two different plan_overdue alerts for
+    two different business dates, if ref_id carries the date)."""
+    def _mutate(items):
+        existing = next(
+            (a for a in items
+             if a['target_user_id'] == str(target_user_id) and a['kind'] == kind
+             and a.get('ref_id', '') == ref_id and not a.get('acknowledged_at')),
+            None,
+        )
+        if existing:
+            return existing, False
+        alert = {
+            "id": uuid.uuid4().hex,
+            "target_user_id": str(target_user_id),
+            "kind": kind,
+            "title": title,
+            "subtitle": subtitle,
+            "ref_id": ref_id,
+            "created_at": int(time.time()),
+            "deadline_at": deadline_at,
+            "acknowledged_at": None,
+            "comment": None,
+            "resolution": None,  # 'yes' | 'no' — ответ на "вопрос решён?"
+            "resolution_note": None,
+            "resolution_photos": [],
+        }
+        items.append(alert)
+        return alert, True
+
+    alert, was_created = update_json_transaction(CRITICAL_ALERTS_FILE, [], _mutate)
+    if not was_created:
+        # Returned an already-existing alert (dedup hit, not a fresh create) --
+        # the chat thread/push notification for it already happened the first
+        # time; sending them again here would itself create a duplicate.
+        return alert
 
     roles = _load_roles()
     owner_ids = [uid for uid, r in roles.items() if r == 'owner']

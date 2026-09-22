@@ -33,6 +33,9 @@ class NodeRuntimeRegressionTests(unittest.TestCase):
     def test_finish_context_prefetch_null_fallback(self):
         self._run_node_script("node-finish-context-prefetch-null-fallback.js")
 
+    def test_critical_alerts_dedup(self):
+        self._run_node_script("node-critical-alerts-dedup.js")
+
 
 if __name__ == '__main__':
     unittest.main()

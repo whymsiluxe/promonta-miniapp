@@ -3576,15 +3576,18 @@ body.chat-composer-focused .ai-input-bar {
 }
 
 .chat-msg-avatar {
+  /* 22.09 (iPhone screenshot audit): 20px was confirmed too small to read on
+     a real device -- bumped to 32px, matching the scale Feed already uses
+     (34px) for the same kind of small inline avatar. Font bumped to match. */
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 0.6rem;
+  font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
 }

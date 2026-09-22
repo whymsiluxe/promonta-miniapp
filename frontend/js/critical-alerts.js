@@ -13,18 +13,51 @@ function initCriticalAlertsPolling() {
   _criticalAlertPollTimer = setInterval(_pollCriticalAlerts, CRITICAL_ALERT_POLL_MS);
 }
 
+// 22.09 (iPhone screenshot audit, item found live): the queue used to be
+// WHOLESALE REPLACED on every 15s poll (`_criticalAlertQueue = data.alerts`),
+// which could show/queue the same alert twice across polls with no id-based
+// dedup, and _closeCriticalAlertModal() removed by ARRAY POSITION
+// (`queue.shift()`), not by the id of the alert actually being closed -- if a
+// poll replaced the array while a modal was open, shift() could remove the
+// wrong entry entirely. A real device confirmed stacked, near-identical
+// critical-alert popups from this. Fixed: merge polled alerts into the
+// existing queue by id (dedup, don't replace), and close/advance by id.
+let _criticalAlertShownIds = new Set(); // alerts already shown this session -- never re-show after being displayed once, even if a stale poll response still lists it
+let _criticalAlertAckedIds = new Set(); // optimistic local ack state -- a poll response that hasn't caught up yet must not resurrect one we already acked
+let _criticalAlertCurrentId = null; // id of the alert currently on screen, if any
+
 async function _pollCriticalAlerts() {
   try {
     const data = await api('/api/critical-alerts/pending');
-    _criticalAlertQueue = data.alerts || [];
+    const fresh = (data.alerts || []).filter(a => !_criticalAlertAckedIds.has(a.id));
+
+    const existingIds = new Set(_criticalAlertQueue.map(a => a.id));
+    for (const alert of fresh) {
+      if (!existingIds.has(alert.id)) _criticalAlertQueue.push(alert);
+    }
+    // Reconcile: drop anything from the local queue the server no longer
+    // considers pending (acked from another device, resolved, etc.) --
+    // except the one currently on screen, which finishes its own close flow.
+    const freshIds = new Set(fresh.map(a => a.id));
+    const openId = _criticalAlertModalOpen ? _criticalAlertCurrentId : null;
+    _criticalAlertQueue = _criticalAlertQueue.filter(a => freshIds.has(a.id) || a.id === openId);
+
     if (_criticalAlertQueue.length && !_criticalAlertModalOpen) {
-      _showCriticalAlertModal(_criticalAlertQueue[0]);
+      _showNextCriticalAlert();
     }
   } catch (e) {}
 }
 
+function _showNextCriticalAlert() {
+  const next = _criticalAlertQueue.find(a => !_criticalAlertShownIds.has(a.id));
+  if (!next) return;
+  _showCriticalAlertModal(next);
+}
+
 function _showCriticalAlertModal(alert) {
   _criticalAlertModalOpen = true;
+  _criticalAlertCurrentId = alert.id;
+  _criticalAlertShownIds.add(alert.id);
   const now = Math.floor(Date.now() / 1000);
   const isResolutionPrompt = alert.deadline_at && now >= alert.deadline_at && !alert.resolution;
 
@@ -78,7 +111,10 @@ async function _ackCriticalAlert(alertId) {
     showToast('Ошибка: ' + e.message, 'error');
     return;
   }
-  _closeCriticalAlertModal();
+  // Optimistic local ack -- an in-flight/already-queued poll response that
+  // hasn't caught up to this ack yet must not resurrect this alert.
+  _criticalAlertAckedIds.add(alertId);
+  _closeCriticalAlertModal(alertId);
 }
 
 function _showCriticalAlertResolveNoForm(alertId) {
@@ -129,16 +165,23 @@ async function _submitCriticalAlertResolution(alertId, resolution, note, files) 
     showToast('Ошибка: ' + e.message, 'error');
     return;
   }
-  _closeCriticalAlertModal();
+  _criticalAlertAckedIds.add(alertId);
+  _closeCriticalAlertModal(alertId);
 }
 
-function _closeCriticalAlertModal() {
+// 22.09 (iPhone screenshot audit): removes by ID, not array position -- see
+// the comment on _pollCriticalAlerts() for why position-based shift() was
+// unsafe (a poll could replace/reorder the queue while a modal was open).
+function _closeCriticalAlertModal(closedAlertId) {
   const modal = document.getElementById('critical-alert-modal');
   if (modal) modal.remove();
   _criticalAlertModalOpen = false;
-  _criticalAlertQueue.shift();
+  _criticalAlertCurrentId = null;
+  if (closedAlertId != null) {
+    _criticalAlertQueue = _criticalAlertQueue.filter(a => a.id !== closedAlertId);
+  }
   if (_criticalAlertQueue.length) {
-    setTimeout(() => _showCriticalAlertModal(_criticalAlertQueue[0]), 300);
+    setTimeout(() => _showNextCriticalAlert(), 300);
   }
 }
 
