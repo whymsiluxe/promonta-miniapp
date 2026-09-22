@@ -1126,6 +1126,35 @@ def _is_meaningful_name(raw: str | None, user_id: str) -> bool:
     return True
 
 
+def _resolve_current_display_name(user_id, stored_name: str | None = None) -> str:
+    """22.09 (iPhone screenshot audit, P0/P1): canonical READ-SIDE display-name
+    resolver -- always returns the CURRENT profile name for user_id, never a
+    name frozen at write time.
+
+    Real bug this closes: chat messages (post_chat_message) and other records
+    stamp `name` at CREATE time from `user.get('first_name', str(user['id']))`
+    -- if Telegram's first_name was empty/missing at that moment, the record
+    permanently stores the raw numeric user_id as its "name" field. Every
+    later read of that record (Chat history, Feed author, Calendar/Abwesenheit
+    entries) then displayed the raw ID forever, even after the user's profile
+    later got a real name -- confirmed live on a real device across Chat,
+    Feed, and Calendar. A frontend-only mask (e.g. hiding numeric-looking
+    names) would still show nothing meaningful and wouldn't fix legacy
+    records with name==user_id stored server-side.
+
+    Always looks up the CURRENT worker_profiles entry for user_id and uses it
+    when meaningful (_is_meaningful_name, same bar the onboarding gate uses)
+    -- ignores `stored_name` entirely when the profile has a real name,
+    because a since-set real name must win over whatever was frozen at
+    write time. `stored_name` is only a last-resort fallback (kept for the
+    rare legitimate case of an ex-user with no profile record at all)."""
+    uid_str = str(user_id)
+    profile_name = _load_worker_profiles().get(uid_str, {}).get('name')
+    if _is_meaningful_name(profile_name, uid_str):
+        return _sanitize_display_name(profile_name, uid_str)
+    return _sanitize_display_name(stored_name, uid_str)
+
+
 def _validate_birthday(raw: str) -> str:
     """Раунд 6 §3.1: валидирует дату рождения. Формат YYYY-MM-DD, реальная дата,
     не в будущем (Europe/Berlin). Возвращает нормализованную ISO-строку либо HTTP 400."""
@@ -4422,7 +4451,14 @@ def add_news_comment(post_id: str, body: NewsCommentBody, user: dict = Depends(g
 
 @app.get("/api/feed/news/{post_id}/comments")
 def get_news_comments(post_id: str, user: dict = Depends(get_current_user)):
-    return {"comments": _load_news_comments().get(post_id, [])}
+    # 22.09 (iPhone screenshot audit, Item I): comments stored `name` at write
+    # time (add_news_comment) was never re-resolved on read -- a worker who
+    # changed/set their profile name later kept showing the old/raw one in
+    # every past comment. Same read-side resolver as feed/chat/abwesenheit.
+    comments = _load_news_comments().get(post_id, [])
+    for c in comments:
+        c['name'] = _resolve_current_display_name(c.get('user_id'), c.get('name'))
+    return {"comments": comments}
 
 
 @app.delete("/api/feed/news/{post_id}/comments/{comment_id}")
@@ -4654,6 +4690,12 @@ def list_feed_photos(user: dict = Depends(get_current_user)):
         p['liked_by_me'] = uid in photo_reactions
         p['saved_by_me'] = _is_feed_saved(saved, uid, 'photo', p.get('id'))
         p['comment_count'] = len(p.pop('comments', []))
+        # 22.09 (iPhone screenshot audit): read-side resolve, see
+        # _resolve_current_display_name()'s docstring -- posts stamp `name`
+        # at write time (checkin start/finish, upload) and can freeze a raw
+        # user_id into it if the profile had no real name yet at that moment.
+        if p.get('user_id'):
+            p['name'] = _resolve_current_display_name(p['user_id'], p.get('name'))
         # 24.07: мультифото — старые записи (до этой правки) хранили один 'file',
         # новые хранят 'files' (список). Нормализуем на чтение, не трогаем сами
         # старые JSON-записи на диске (не нужно, чтение уже покрывает оба случая).
@@ -4795,7 +4837,13 @@ def get_feed_photo_comments(photo_id: str, user: dict = Depends(get_current_user
     entry = next((p for p in items if p['id'] == photo_id), None)
     if not entry:
         raise HTTPException(404, "Фото не найдено")
-    return {"comments": entry.get('comments', [])}
+    # 22.09 (iPhone screenshot audit, Item I): same read-side resolve as
+    # get_news_comments -- stored `name` at write time must not outlive a
+    # later profile-name correction.
+    comments = entry.get('comments', [])
+    for c in comments:
+        c['name'] = _resolve_current_display_name(c.get('user_id'), c.get('name'))
+    return {"comments": comments}
 
 
 @app.delete("/api/feed/photos/{photo_id}/comments/{comment_id}")
@@ -5385,6 +5433,13 @@ def get_chat_messages(with_: str = '', thread_key: str = '', user: dict = Depend
     my_id = str(user['id'])
     for m in messages:
         m['reactions'] = _reactions_summary_for_message(reactions, m['id'], my_id)
+        # 22.09 (iPhone screenshot audit): resolve the CURRENT profile name
+        # read-side, not whatever was frozen in the message at send time --
+        # see _resolve_current_display_name()'s docstring for why the stored
+        # `name` field can be permanently wrong (raw user_id) otherwise.
+        # "system" (critical-alert auto-messages) is not a real user account.
+        if m.get('user_id') != 'system':
+            m['name'] = _resolve_current_display_name(m.get('user_id'), m.get('name'))
 
     # 28.07: owner request -- статус прочтения в личном чате (DM). Собеседник уже
     # отмечает прочтение через существующий POST /api/chat/read (reads.json), просто
@@ -8957,25 +9012,53 @@ def _save_critical_alerts(items: list):
 
 def _create_critical_alert(target_user_id: str, kind: str, title: str, ref_id: str = '',
                             subtitle: str = '', deadline_at: int | None = None) -> dict:
-    """Создаёт persisted критический алерт + пуш + авто-чат-тред (владельцы + назначенный worker)."""
-    alert = {
-        "id": uuid.uuid4().hex,
-        "target_user_id": str(target_user_id),
-        "kind": kind,
-        "title": title,
-        "subtitle": subtitle,
-        "ref_id": ref_id,
-        "created_at": int(time.time()),
-        "deadline_at": deadline_at,
-        "acknowledged_at": None,
-        "comment": None,
-        "resolution": None,  # 'yes' | 'no' — ответ на "вопрос решён?"
-        "resolution_note": None,
-        "resolution_photos": [],
-    }
-    items = _load_critical_alerts()
-    items.append(alert)
-    _save_critical_alerts(items)
+    """Создаёт persisted критический алерт + пуш + авто-чат-тред (владельцы + назначенный worker).
+
+    22.09 (iPhone screenshot audit, item found live): this used to unconditionally
+    append a new alert with a fresh UUID on every call -- callers that can fire
+    more than once for the same underlying event (daily_plan_cutoff_check.py's
+    idempotency guard only covers ONE call site; anything else calling this
+    directly for the same semantic situation had no protection at all) could
+    create duplicate UNRESOLVED alerts, which then queue up back-to-back in the
+    frontend's critical-alert popup -- confirmed live on a real device. Dedup
+    key: (kind, target_user_id, ref_id) -- if an alert with that exact triple is
+    still unacknowledged, return it instead of creating a new one. Two semantically
+    different alerts of the same kind for the same user are still allowed to
+    coexist as long as ref_id differs (e.g. two different plan_overdue alerts for
+    two different business dates, if ref_id carries the date)."""
+    def _mutate(items):
+        existing = next(
+            (a for a in items
+             if a['target_user_id'] == str(target_user_id) and a['kind'] == kind
+             and a.get('ref_id', '') == ref_id and not a.get('acknowledged_at')),
+            None,
+        )
+        if existing:
+            return existing, False
+        alert = {
+            "id": uuid.uuid4().hex,
+            "target_user_id": str(target_user_id),
+            "kind": kind,
+            "title": title,
+            "subtitle": subtitle,
+            "ref_id": ref_id,
+            "created_at": int(time.time()),
+            "deadline_at": deadline_at,
+            "acknowledged_at": None,
+            "comment": None,
+            "resolution": None,  # 'yes' | 'no' — ответ на "вопрос решён?"
+            "resolution_note": None,
+            "resolution_photos": [],
+        }
+        items.append(alert)
+        return alert, True
+
+    alert, was_created = update_json_transaction(CRITICAL_ALERTS_FILE, [], _mutate)
+    if not was_created:
+        # Returned an already-existing alert (dedup hit, not a fresh create) --
+        # the chat thread/push notification for it already happened the first
+        # time; sending them again here would itself create a duplicate.
+        return alert
 
     roles = _load_roles()
     owner_ids = [uid for uid, r in roles.items() if r == 'owner']
@@ -9428,6 +9511,10 @@ def list_my_abwesenheit(user: dict = Depends(get_current_user)):
     items = [i for i in _load_abwesenheit() if i['user_id'] == str(user['id'])]
     for e in items:
         e.setdefault('status', 'pending')
+        # 22.09 (iPhone screenshot audit): read-side resolve, see
+        # _resolve_current_display_name()'s docstring -- create_abwesenheit
+        # stamps `name` at write time and can freeze a raw user_id into it.
+        e['name'] = _resolve_current_display_name(e.get('user_id'), e.get('name'))
     return {"entries": items}
 
 
@@ -9452,6 +9539,10 @@ def list_all_abwesenheit(user: dict = Depends(get_current_user), role: str = Dep
     result = []
     for e in entries:
         e.setdefault('status', 'pending')
+        # 22.09 (iPhone screenshot audit): read-side resolve BEFORE the
+        # public-fields filter below, so the corrected name survives it --
+        # see _resolve_current_display_name()'s docstring.
+        e['name'] = _resolve_current_display_name(e.get('user_id'), e.get('name'))
         if role == 'owner' or e.get('user_id') == my_id:
             result.append(e)
         else:

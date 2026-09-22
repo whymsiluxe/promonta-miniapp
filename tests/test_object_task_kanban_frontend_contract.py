@@ -66,3 +66,16 @@ def test_object_task_kanban_styles_are_present():
         ".obj-task-kanban-chat",
     ):
         assert selector in html
+
+
+def test_kanban_columns_scroll_horizontally_inside_their_own_container():
+    # 22.09 (iPhone screenshot audit, Item G): a real 390px-wide device showed
+    # the object task board pushing the whole page wider than the viewport.
+    # The board must never overflow at the PAGE level -- only its own
+    # .obj-task-kanban-columns strip may scroll horizontally (columns use
+    # relative minmax() widths, not a fixed px wider than the viewport).
+    html = _source(APP_HTML)
+    start = html.index(".obj-task-kanban-columns {")
+    block = html[start:html.index("}", start) + 1]
+    assert "overflow-x: auto" in block
+    assert "grid-auto-columns: minmax(218px, 82%)" in block

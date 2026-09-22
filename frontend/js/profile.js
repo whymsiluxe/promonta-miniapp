@@ -167,9 +167,16 @@ async function _loadOwnerSelfProfile() {
   // health-эндпоинтов не добавляем, ТЗ 2.2).
   try {
     const h = await api('/api/health');
-    const ver = h.version && h.version !== 'unknown' ? h.version : '';
+    // 22.09 (iPhone screenshot audit): this repo has no separate "version"
+    // concept from the deploy commit -- h.version IS already the short SHA
+    // (see backend/system_status.py::read_app_version), so `ver` and
+    // `commit` used to always be the SAME value, rendering as a visibly
+    // duplicated "c28ff97 · c28ff97" on a real device. Show the commit once;
+    // only append a second value if h.version is genuinely a DIFFERENT
+    // string from it.
     const commit = h.commit ? String(h.commit).slice(0, 7) : '';
-    const label = [ver, commit].filter(Boolean).join(' · ') || '—';
+    const versionDiffersFromCommit = h.version && h.version !== 'unknown' && h.version !== h.commit && h.version !== commit;
+    const label = [commit, versionDiffersFromCommit ? h.version : ''].filter(Boolean).join(' · ') || '—';
     const vEl = document.getElementById('profile-app-version');
     if (vEl) vEl.textContent = label;
   } catch (e) {}

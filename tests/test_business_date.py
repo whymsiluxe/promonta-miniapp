@@ -145,6 +145,66 @@ class DashboardTodayBoundaryTests(unittest.TestCase):
         self.assertEqual(days[-2]['hours'], 2.0)
 
 
+class EveningCutoffCheckTomorrowDateTests(unittest.TestCase):
+    """22.09 iPhone screenshot audit, item A (P0): screenshot showed an owner
+    alert reading 'План на 2026-09-22 ещё не опубликован на завтра' while
+    viewed at 2026-09-22 23:30 Europe/Berlin -- at that moment 'завтра' must
+    be 2026-09-23, not the same day. This pins the EXACT reported moment
+    (not just an arbitrary midnight-edge instant like the rest of this file)
+    and proves business_today()+1 day is correct there, isolating whether
+    the screenshot was a live bug or an old, already-correctly-dated alert
+    still sitting unread the next day (see docs/IPHONE_SCREENSHOT_AUDIT_*.md
+    for the conclusion -- this test is the evidence, not the verdict)."""
+
+    REPORTED_MOMENT = datetime(2026, 9, 22, 23, 30, 0, tzinfo=ZoneInfo('Europe/Berlin'))
+
+    def test_business_today_at_reported_moment_is_the_22nd_not_the_23rd(self):
+        with patch.object(backend, 'business_now', return_value=self.REPORTED_MOMENT):
+            self.assertEqual(backend.business_today_str(), '2026-09-22')
+
+    def test_tomorrow_computed_at_reported_moment_is_the_23rd(self):
+        from datetime import timedelta
+        with patch.object(backend, 'business_now', return_value=self.REPORTED_MOMENT):
+            tomorrow = (backend.business_today() + timedelta(days=1)).strftime('%Y-%m-%d')
+        self.assertEqual(tomorrow, '2026-09-23')
+
+    def test_evening_cutoff_check_alert_dates_correctly_if_run_at_reported_moment(self):
+        # If daily_plan_cutoff_check.py's evening mode were literally executed
+        # AT 23:30 (not its actual 18:00 systemd schedule), the alert it
+        # creates must say 2026-09-23, never 2026-09-22 -- proving the
+        # date-computation logic itself has no off-by-one, regardless of
+        # what time the check actually runs.
+        import importlib.util
+        import tempfile
+        tmp = tempfile.mkdtemp(prefix='cutoff-evening-moment-')
+        os.environ['MINIAPP_DATA_ROOT'] = tmp
+        backend.ROLES_FILE = os.path.join(tmp, 'roles.json')
+        backend.OBJECT_ASSIGNMENTS_FILE = os.path.join(tmp, 'object_assignments.json')
+        backend.WORKER_PROFILES_FILE = os.path.join(tmp, 'worker_profiles.json')
+        backend.CRITICAL_ALERTS_FILE = os.path.join(tmp, 'critical_alerts.json')
+        backend._save_roles({'1': 'owner', '555': 'worker'})
+        assignments = {'OBJ-1': [{
+            'id': 'a-555', 'user_id': '555', 'status': 'accepted',
+            'date_from': '2026-09-22', 'date_to': '2026-09-23',
+        }]}
+        backend._save_assignments(assignments)
+
+        script_path = os.path.join(os.path.dirname(__file__), '..', 'backend', 'daily_plan_cutoff_check.py')
+        spec = importlib.util.spec_from_file_location('daily_plan_cutoff_check_moment', script_path)
+        script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(script)
+        script.STATE_FILE = os.path.join(tmp, 'daily_plan_cutoff_state.json')
+
+        with patch.object(backend, 'business_now', return_value=self.REPORTED_MOMENT):
+            rc = script.main('evening')
+        self.assertEqual(rc, 0)
+
+        alerts = backend._load_critical_alerts()
+        self.assertEqual(len(alerts), 1)
+        self.assertIn('2026-09-23', alerts[0]['title'])
+        self.assertNotIn('2026-09-22', alerts[0]['title'])
+
+
 class AbwesenheitBusinessDateBoundaryTests(unittest.TestCase):
     """20.09: стор пишется через реальный временный файл, а не patch.object на
     _load/_save -- мутации ушли под update_json_transaction(), которая читает файл

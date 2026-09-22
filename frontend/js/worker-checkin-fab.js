@@ -287,9 +287,14 @@ async function _openStagePickerThenStart(objectId) {
     stages = data.stages || [];
   } catch (e) { /* тихо -- отсутствие этапов не должно блокировать старт смены */ }
 
-  // 28.07: owner request -- picker показывается ВСЕГДА (не только если уже есть этапы),
-  // чтобы можно было добавить первый этап на объекте с чистого листа тоже, не только
-  // выбрать существующий.
+  // 22.09 (iPhone screenshot audit, owner request): "Worker UX V2 doesn't ask
+  // what context already knows" -- ровно один этап на объекте однозначен, спрашивать
+  // не о чем, старт смены сразу с этим этапом. Picker остаётся для 0 этапов (нужно
+  // предложить добавить первый, 28.07 owner request) и для 2+ (реальный выбор).
+  if (stages.length === 1) {
+    _startWorkerCheckin(objectId, stages[0]['Название этапа'] || null);
+    return;
+  }
   _renderStagePickerModal(objectId, stages);
 }
 

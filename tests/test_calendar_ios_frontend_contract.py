@@ -61,7 +61,11 @@ def test_calendar_period_filters_and_cards_bridge_to_ios_language():
     assert "letter-spacing: 0" in html
     assert "var(--ios-surface" in html
     assert "var(--ios-grouped-surface" in html
-    assert "var(--bottom-nav-safe-pad" in html
+    # 22.09 (iPhone screenshot audit): --bottom-nav-safe-pad was NEVER set
+    # anywhere in the codebase -- a real device showed the calendar's bottom
+    # nav almost overlapping the last request card's action row. Real
+    # measured height now used instead (see .abw-request-card:last-child).
+    assert "var(--app-bottom-nav-height" in html
 
 
 def test_calendar_reason_select_removes_emoji_labels():

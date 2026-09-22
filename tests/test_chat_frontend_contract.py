@@ -136,3 +136,16 @@ def test_chat_hub_lists_accessible_empty_entity_threads_for_workers():
     assert "const key = `mangel:${ticket.id}`;" in js
     assert "const key = `task:${task.id}`;" in js
     assert "Object.values(threadsByKey).forEach(thread => {" in js
+
+
+def test_chat_msg_avatar_is_readable_size_on_real_devices():
+    # 22.09 (iPhone screenshot audit): 20px confirmed too small to read on a
+    # real device -- bumped to 32px, matching the scale Feed already uses
+    # (34px) for the same kind of small inline avatar.
+    html = _source(APP_HTML)
+    start = html.index(".chat-msg-avatar {")
+    block = html[start:html.index("}", start) + 1]
+    assert "width: 32px;" in block
+    assert "height: 32px;" in block
+    assert "width: 20px;" not in block
+    assert "height: 20px;" not in block

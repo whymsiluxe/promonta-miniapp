@@ -61,7 +61,9 @@ def test_needs_css_bridges_to_ios_summary_filters_and_list_rows():
     assert "letter-spacing: 0;" in html
     assert "var(--ios-surface" in html
     assert "var(--ios-grouped-surface" in html
-    assert "var(--bottom-nav-safe-pad" in html
+    # 22.09 (iPhone screenshot audit): --bottom-nav-safe-pad was NEVER set
+    # anywhere in the codebase -- real measured height now used instead.
+    assert "var(--app-bottom-nav-height" in html
     assert "grid-column: 3;" in html
     assert "justify-self: end;" in html
     assert "inset: auto;" in html

@@ -32,7 +32,12 @@ body {
   max-width: 480px;
   width: 100%;
   margin: 0 auto;
-  padding-bottom: var(--bottom-nav-safe-pad); /* Раунд 5 §1: единый отступ под плавающим nav (был 7.5rem) */
+  /* 22.09 (iPhone screenshot audit): --bottom-nav-safe-pad is never SET anywhere
+     (no setProperty, no CSS declaration) -- this rule had NO fallback, so it
+     silently resolved to 0 padding on every device, letting content sit behind
+     the floating nav. Switched to the real measured variable used everywhere
+     else (--app-bottom-nav-height, JS: _applyBottomNavHeight()). */
+  padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 16px);
   overflow-x: hidden; /* страховка на уровне body (недостаточна одна, см. html выше) */
 }
 
@@ -1243,8 +1248,8 @@ header h1 {
   margin-left: auto;
 }
 .bottom-sheet-close-btn:active { background: color-mix(in srgb, var(--text-main) 10%, transparent); }
-/* .form-submit-bar по умолчанию position:fixed для полноэкранных форм (bottom: 7.5rem
-   "над нижним меню") -- внутри ограниченного/скроллящегося bottom sheet это оторвало бы
+/* .form-submit-bar по умолчанию position:fixed для полноэкранных форм (измеренная высота
+   nav "над нижним меню") -- внутри ограниченного/скроллящегося bottom sheet это оторвало бы
    кнопку от контента и приклеило к реальному viewport вместо панели. Возвращаем в normal flow. */
 .bottom-sheet-panel .form-submit-bar {
   position: static;
@@ -1281,11 +1286,14 @@ header h1 {
   padding-top: 0.85rem;
 }
 
-#stages-view { display: none; padding-bottom: var(--bottom-nav-safe-pad); }
+/* 22.09 (iPhone screenshot audit): --bottom-nav-safe-pad was never set anywhere
+   (see body{} comment above) -- both rules below had 0 real bottom padding,
+   letting scrolled content sit behind the floating nav on long screens. */
+#stages-view { display: none; padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 16px); }
 #stages-view.open { display: block; }
 
 /* ── Детали объекта (24.07, 6-таб экран) ── */
-#view-object-detail { padding-bottom: var(--bottom-nav-safe-pad); min-height: 100vh; background: var(--bg-app); }
+#view-object-detail { padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 16px); min-height: 100vh; background: var(--bg-app); }
 /* 29.07 v5: было overflow-x:auto + flex-shrink:0 фиксированной ширины -- на узких
    экранах (360px) три таба с "План работ" не помещались и вылезали за правую границу
    контейнера (owner screenshot). Табов всегда ровно 3 и они не скроллятся -- grid
@@ -1969,7 +1977,11 @@ header h1 {
 
 .form-submit-bar {
   position: fixed;
-  bottom: 7.5rem; /* над нижним меню */
+  /* 22.09 (iPhone screenshot audit, Item H): hardcoded 7.5rem magic-number
+     guess for "above the bottom nav" -- same class of bug as
+     --bottom-nav-safe-pad (see test_bottom_nav_safe_pad_dead_variable.py).
+     Uses the actually-measured nav height instead. */
+  bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 8px);
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
@@ -3068,6 +3080,12 @@ body.tg-native-back [onclick="NavigationManager.back()"] { display: none; }
    .chat-back-btn разметкой. */
 body.tg-native-back #obj-detail-back,
 body.tg-native-back #chat-thread-back-btn { display: none; }
+/* 22.09 (iPhone screenshot audit): #wc-back (Worker Card overlay) is the same
+   class of duplicate as the two above -- registered with NavigationManager
+   (profile.js's registerOverlay(closeWorkerCard)), so Telegram's native
+   BackButton already closes it; a real device showed both back controls at
+   once, directly under the Dynamic Island. */
+body.tg-native-back #wc-back { display: none; }
 
 /* ── NavigationHeader (25.07, Phase 0.5) -- 3D ivory back-кнопка по спеку плана ──
    .nav-back-btn расширяет .chat-back-btn (JS добавляет класс + chevron SVG, не заменяет) --
@@ -3576,15 +3594,18 @@ body.chat-composer-focused .ai-input-bar {
 }
 
 .chat-msg-avatar {
+  /* 22.09 (iPhone screenshot audit): 20px was confirmed too small to read on
+     a real device -- bumped to 32px, matching the scale Feed already uses
+     (34px) for the same kind of small inline avatar. Font bumped to match. */
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 0.6rem;
+  font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
 }
@@ -5149,6 +5170,7 @@ body.chat-reply-active .chat-messages::after {
 .diag-overall { font-size: 1rem; font-weight: 600; text-align: center; padding: 0.75rem; border-radius: var(--radius-md); margin-bottom: 0.75rem; }
 .diag-overall-ok { background: rgba(34,197,94,.12); color: #15803d; }
 .diag-overall-warn { background: rgba(234,179,8,.12); color: #a16207; }
+.diag-overall-error { background: rgba(239,68,68,.12); color: #b91c1c; }
 .diag-table { background: var(--bg-card-raised); border-radius: var(--radius-md); overflow: hidden; }
 .diag-row { display: grid; grid-template-columns: 1.6rem 1fr auto; align-items: center; gap: 0.4rem; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--border-color); }
 .diag-row:last-child { border-bottom: none; }
@@ -5158,7 +5180,12 @@ body.chat-reply-active .chat-messages::after {
 /* Раунд1: Worker Card — отдельный полноэкранный overlay (НЕ подмена профиля Owner) */
 .worker-card-overlay { position: fixed; inset: 0; z-index: 5200; background: var(--bg-app); display: flex; flex-direction: column; overflow: hidden; }
 .worker-card-panel { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 20px); }
-.worker-card-header { position: sticky; top: 0; z-index: 2; background: var(--bg-app); padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border-color); }
+/* 22.09 (iPhone screenshot audit): had no --tg-safe-top padding at all, unlike
+   every other sticky/fixed header in this app (see the same calc() pattern on
+   .obj-detail-panel-chat's header, checkin-preview-inner, etc.) -- a real
+   device showed this header's own "Сотрудник" title sitting underneath the
+   Dynamic Island/native Telegram controls. */
+.worker-card-header { position: sticky; top: 0; z-index: 2; background: var(--bg-app); padding: calc(0.6rem + var(--tg-safe-top, env(safe-area-inset-top, 0px))) 0.75rem 0.6rem; border-bottom: 1px solid var(--border-color); }
 .worker-card-back { display: inline-flex; align-items: center; gap: 0.3rem; background: none; border: none; color: var(--accent); font-size: 0.95rem; font-weight: 600; cursor: pointer; padding: 0.3rem 0.2rem; }
 .worker-card-identity { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0.6rem 1rem 0.4rem; }
 .worker-card-avatar-wrap { width: 80px; height: 80px; border-radius: 50%; overflow: hidden; background: var(--bg-card-raised); display: flex; align-items: center; justify-content: center; }
@@ -5180,7 +5207,15 @@ body.chat-reply-active .chat-messages::after {
 .worker-card-body { padding: 0 0.75rem; }
 #wc-period-pills { padding: 0.5rem 1rem 0.25rem; }
 /* Round 4: Worker Card 4-tab system */
-.wc-tabs { display: flex; border-bottom: 1px solid var(--border-color); background: var(--bg-app); position: sticky; top: 48px; z-index: 1; }
+/* 22.09 (iPhone screenshot audit): top:48px was a hardcoded guess at
+   .worker-card-header's rendered height -- once that header got real
+   --tg-safe-top padding (see .worker-card-header above), the header is
+   TALLER on notch/Dynamic-Island devices and this fixed offset put the tabs
+   bar either overlapping the header or leaving a gap, depending on device.
+   Expressed as the same base height (~48px, the back-button row's own
+   line-height+padding) plus the identical --tg-safe-top term the header
+   itself now adds, so the two stay in sync on every device. */
+.wc-tabs { display: flex; border-bottom: 1px solid var(--border-color); background: var(--bg-app); position: sticky; top: calc(48px + var(--tg-safe-top, env(safe-area-inset-top, 0px))); z-index: 1; }
 .wc-tab { flex: 1; padding: 0.6rem 0.2rem; font-size: 0.75rem; font-weight: 600; border: none; background: none; color: var(--text-light); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
 .wc-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .wc-tab-panel { min-height: 200px; }
@@ -5403,9 +5438,13 @@ body.chat-reply-active .chat-messages::after {
   border-color: var(--ios-accent, var(--accent));
   color: white;
 }
-.news-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.45rem; }
-.news-cat { font-size: 0.7rem; font-weight: 700; padding: 0.18rem 0.55rem; border-radius: 999px; letter-spacing: 0.04em; }
-.news-src { font-size: 0.75rem; color: var(--text-light); }
+.news-card-top { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; margin-bottom: 0.45rem; }
+/* 22.09 (iPhone screenshot audit, Item I): neither span had any width/overflow
+   guard -- a long scraped category or source name could push this flex row
+   wider than .news-card (which has no overflow:hidden of its own), risking
+   page-level horizontal scroll at narrow (390px) widths. */
+.news-cat { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; font-weight: 700; padding: 0.18rem 0.55rem; border-radius: 999px; letter-spacing: 0.04em; }
+.news-src { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; color: var(--text-light); }
 .news-title { font-weight: 800; font-size: 1.2rem; line-height: 1.32; }
 .news-summary { font-size: 0.95rem; color: var(--text-light); margin-top: 0.35rem; line-height: 1.5; white-space: pre-line; }
 /* Раунд 4: абзацы новости + кнопка "Читать полностью"/"Свернуть" */
@@ -6755,7 +6794,7 @@ body {
 }
 #working-objects-slot,
 #working-objects-plan-slot {
-  padding-bottom: calc(var(--bottom-nav-safe-pad, var(--app-bottom-nav-height, 70px)) + 16px);
+  padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 16px);
 }
 #view-working-objects .wo-summary-bar {
   display: grid;
@@ -7179,7 +7218,7 @@ body {
   display: block;
 }
 #view-tasks #tasks-tab-content {
-  padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+  padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 0.5rem);
 }
 #view-tasks #tasks-form {
   margin: 0.75rem 0.75rem 0.8rem;
@@ -7400,6 +7439,15 @@ body {
 #objects-list-view header {
   background: var(--ios-page-bg, var(--bg-app));
   border-bottom: none;
+}
+/* 22.09 (iPhone screenshot audit): #objects-cards (.cards, no dedicated
+   override) had no bottom-padding reserve at all, unlike #view-tools .cards/
+   #working-objects-slot below -- a real device showed the last object
+   card's budget data visually covered by the FAB/bottom-nav. Same measured-
+   height pattern as .objects-fab's own position (--app-bottom-nav-height,
+   JS: _applyBottomNavHeight()), not a magic number. */
+#objects-list-view .cards {
+  padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 84px);
 }
 /* 17.09: same unification for Сегодня (Home) and Лента (Feed) -- both are
    bottom-nav top-level tabs, same tier as Объекты/Профиль/Чат-список, and
@@ -7671,7 +7719,11 @@ body {
   padding: 0.85rem;
 }
 #view-abwesenheit .abw-request-card:last-child {
-  margin-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+  /* 22.09 (iPhone screenshot audit): --bottom-nav-safe-pad is dead (never set) --
+     this fell back to a flat 7.5rem guess. Real device showed the calendar's
+     last request card/action row sitting almost behind the floating nav.
+     Switched to the actually-measured nav height. */
+  margin-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 0.5rem);
 }
 #view-abwesenheit .abw-request-avatar {
   background: color-mix(in srgb, var(--ios-accent, var(--accent)) 14%, var(--ios-surface));
@@ -8039,7 +8091,7 @@ body {
 }
 #view-tools .cards {
   gap: 0.65rem;
-  padding: 0 0.75rem calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+  padding: 0 0.75rem calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 0.5rem);
 }
 #view-tools .card.tool-card {
   overflow: hidden;
@@ -8105,7 +8157,7 @@ body {
   background: var(--ios-page-bg, var(--bg-app));
 }
 #profile-content {
-  padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 0.5rem);
+  padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 0.5rem);
 }
 #view-profile .profile-header-card {
   margin: 0.75rem 0.75rem 0.65rem;
@@ -8781,8 +8833,8 @@ body {
 }
 
 /* Extra bottom padding for views when bar is visible */
-body.today-plan-bar-visible .view { padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 42px); }
-body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bottom-nav-safe-pad, 7.5rem) + 42px); }
+body.today-plan-bar-visible .view { padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 42px); }
+body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--app-bottom-nav-height, 70px) + env(safe-area-inset-bottom) + 42px); }
 </style>
 </head>
 <body>
@@ -9303,7 +9355,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--bot
       </div>
       <div class="form-field">
         <label>Адрес</label>
-        <input type="text" id="new-obj-adresse" placeholder="Straße, PLZ Ort" autocomplete="off" autocorrect="off" spellcheck="false">
+        <input type="text" id="new-obj-adresse" placeholder="напр. Bahnhofstraße 12, 09111 Chemnitz" autocomplete="off" autocorrect="off" spellcheck="false">
       </div>
       <div class="form-field">
         <label>Бюджет €</label>

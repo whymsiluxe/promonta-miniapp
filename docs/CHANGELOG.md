@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-09-22 (iPhone screenshot audit, branch `screenshot-audit-2026-09-22`)
+
+20 real-device screenshots audited item-by-item (A-I per owner's letter).
+Full writeup with per-screenshot verdicts (FIXED / ALREADY FIXED ON MAIN /
+NOT A BUG / STILL OPEN): `docs/IPHONE_SCREENSHOT_AUDIT_2026-09-22.md`.
+Tests: 1071 passed, 1 skipped, 0 failed (baseline 1056). **Not deployed** —
+awaiting explicit owner approval, branch is 6 commits ahead of `main`.
+
+Real bugs fixed:
+- Critical alerts duplicated (no backend idempotency, frontend queue
+  wholesale-replaced every poll) — backend dedup key
+  `kind+target_user_id+ref_id`, frontend merge-by-id + ACK-by-id.
+- Raw Telegram user_id displayed instead of a name in Chat/Feed/Calendar and
+  (found in a follow-up pass) News/photo comments — canonical read-side
+  `_resolve_current_display_name()` resolver applied at every read path.
+- Diagnostics: duplicated SHA, un-localized raw tokens, green headline
+  contradicting yellow warning rows — 3-state severity model
+  (ok/warning/error), localization map, SHA/version shown only when they
+  actually differ.
+- Worker Card header/title rendered under the Dynamic Island, duplicate
+  back arrow next to Telegram's native one, sticky tabs misaligned after
+  scroll — safe-area padding + native-back dedup + shared offset term.
+- `--bottom-nav-safe-pad` referenced by 11 CSS rules but never actually SET
+  anywhere — silently fell back to a flat guess or 0 padding, letting
+  content sit behind the floating nav on Calendar/Tasks/Tools/Profile/
+  Object Detail. Migrated to the actually-measured `--app-bottom-nav-height`.
+- `.objects-fab`'s own position was already correct, but `#objects-cards`
+  had zero bottom-padding reserve — last card's data sat under the FAB.
+- `.news-cat`/`.news-src` had no overflow guard — a long scraped name could
+  overflow `.news-card` and cause page-level horizontal scroll.
+- New Object address placeholder was literal untranslated field-label text
+  ("Straße, PLZ Ort") instead of an example value.
+
+Verified NOT reproducible on current main (screenshots predated this
+session's earlier deploy, `c28ff97`): Object Detail sticky-header safe-area,
+Kanban horizontal overflow, News category-chip overflow, raw-ID in
+Calendar/Chat (both already fixed by an earlier commit this session).
+
+Owner-requested UX change (not a bug): stage picker
+("Какой этап сегодня?") now auto-selects and starts the shift immediately
+when exactly one stage exists on the object — only prompts for 0 or 2+
+choices.
+
+Architecture guard (not a screenshot finding): added a regression test
+locking in that `renderObjectStagesTab()` has exactly one DOM mount
+(`#obj-detail-panel-stages`), so a future Object Detail V2 step can't
+accidentally duplicate stage markup into `#obj-detail-panel-work` before a
+real canonical-mount decision is made.
+
 ## 2026-09-21 (Worker UX V2 — Этапы 4-9, branch `fix-shift-start`)
 
 Tests: 943 passed, 1 skipped, 1 pre-existing unrelated failure (stale route
