@@ -1,8 +1,16 @@
 # Current State
 
-**Last updated**: 2026-09-21 (Worker UX V2 session, branch `fix-shift-start`,
-NOT merged to `main` yet — see new section below). Prior baseline was
-2026-09-18. This is the single place to check first — if
+**Last updated**: 2026-09-22 (iPhone screenshot audit session). `fix-shift-start`
+(the section below) has since been **merged to `main` as PR #1** (`c28ff97`)
+and deployed to production. Two more merges landed after it: PR #2
+(Object Detail V2 plan doc fix, `b8e9404`) and PR #3 (Object Detail V2 step 1
+internal zone shell, `8b01f23`). Current work lives on branch
+`screenshot-audit-2026-09-22` (6 commits ahead of `main`'s `8b01f23`) — **not
+merged, not deployed**, awaiting explicit owner approval. Full writeup:
+`docs/IPHONE_SCREENSHOT_AUDIT_2026-09-22.md`. Tests on that branch:
+1071 passed, 1 skipped, 0 failed.
+
+Prior baseline was 2026-09-18. This is the single place to check first — if
 it contradicts anything elsewhere in `docs/`, this file wins for "what's
 true right now." Everything else in `docs/` with a date in its filename
 (`*_09sep2026.md`, `*_11sep2026.md`, `*_13sep2026.md`, `HANDOFF*.md`,
@@ -13,7 +21,11 @@ true right now." Everything else in `docs/` with a date in its filename
 finished (or abandoned) work round** — kept for git-blame-style context, not
 maintained, not a source of truth. Their content was read in full and folded
 into this file and `BACKLOG.md`/`OPEN_QUESTIONS.md` on 2026-09-18; each now
-carries a one-line `SUPERSEDED` pointer at the top.
+carries a one-line `SUPERSEDED` pointer at the top. The "Repo / branch /
+deploy" and "Scale" sections immediately below describe the `fix-shift-start`
+session as it was on 2026-09-21, before the merges above — kept for
+git-blame context, superseded by this paragraph for current branch/deploy
+status.
 
 ## Repo / branch / deploy
 

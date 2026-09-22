@@ -61,6 +61,21 @@ Swipe-between-tabs gesture (`js/swipe-nav.js`) explicitly excludes chat category
 
 - A chat/AI-tab scroll bug was worked on across 3 different architecture attempts, ended on an approach ("variant B") that was **not confirmed working by the user** as of the last note on it. Treat as open until someone explicitly verifies it in the live app.
 
+## 2026-09-22 iPhone screenshot audit (branch `screenshot-audit-2026-09-22`, not deployed)
+
+Full detail: `docs/IPHONE_SCREENSHOT_AUDIT_2026-09-22.md`. Real-device findings
+fixed: Worker Card header/back-button/tabs ignored `--tg-safe-top`; a dead CSS
+variable (`--bottom-nav-safe-pad`, never actually set) left `body`,
+`#stages-view`, `#view-object-detail`, Calendar, Tasks, Tools, Profile, and
+the New Object submit bar with wrong or zero bottom-nav clearance on real
+devices; Objects list had no padding reserve under its own FAB; News
+category/source text could overflow its card at narrow widths; New Object's
+address field showed literal untranslated placeholder text
+("Straße, PLZ Ort") instead of an example value. Several other screenshot
+items (Object Detail sticky header, Kanban overflow, News category-chip
+overflow) were verified NOT reproducible on current main — the screenshots
+predated an earlier fix in the same session.
+
 ## Accessibility / localization
 
 - Russian is the primary UI language (owner and current workers are Russian-speaking). German and Ukrainian localization: NOT_IMPLEMENTED — no i18n system found, strings are hardcoded Russian throughout the JS modules.
