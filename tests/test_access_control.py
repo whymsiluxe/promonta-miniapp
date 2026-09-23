@@ -184,13 +184,25 @@ class CrossWorkerAuthorizationTests(unittest.TestCase):
             self.assertEqual(ctx.exception.status_code, 403)
 
     def test_worker_cannot_ack_another_workers_critical_alert(self):
-        from unittest.mock import patch
+        import tempfile
         alert = {'id': 'a1', 'target_user_id': '222'}
         body = backend.CriticalAlertAckBody(comment='')
-        with patch.object(backend, '_load_critical_alerts', return_value=[alert]):
-            with self.assertRaises(HTTPException) as ctx:
-                backend.ack_critical_alert(alert_id='a1', body=body, user={'id': 111})
-            self.assertEqual(ctx.exception.status_code, 403)
+        # 23.09: ack_critical_alert() now reads via update_json_transaction()
+        # (real file I/O under a lock, to close a read-modify-write race --
+        # see test_critical_alert_ack_race.py), not the module-level
+        # _load_critical_alerts() -- patching that no longer intercepts the
+        # read this endpoint actually does. Seed a real temp store instead,
+        # same pattern as test_critical_alert_dedup.py.
+        with tempfile.TemporaryDirectory() as tmp:
+            orig_file = backend.CRITICAL_ALERTS_FILE
+            backend.CRITICAL_ALERTS_FILE = os.path.join(tmp, 'critical_alerts.json')
+            try:
+                backend._save_critical_alerts([alert])
+                with self.assertRaises(HTTPException) as ctx:
+                    backend.ack_critical_alert(alert_id='a1', body=body, user={'id': 111})
+                self.assertEqual(ctx.exception.status_code, 403)
+            finally:
+                backend.CRITICAL_ALERTS_FILE = orig_file
 
     def test_worker_cannot_view_another_workers_checkin_photo(self):
         from unittest.mock import patch
