@@ -92,6 +92,19 @@ class PauseToggleTests(unittest.TestCase):
                 backend.checkin_pause('S1', user=WORKER, role='worker')
         self.assertEqual(ctx.exception.status_code, 400)
 
+    def test_manual_entry_cannot_be_paused(self):
+        # F01 (owner review commit db584ac, CHANGES REQUIRED): manual entries have
+        # no finish_at, so the old finish_at-only check let a manual entry be
+        # "paused" by its known session id -- it's not a photo shift at all.
+        session = _session(finish_at=None)
+        session['manual_entry'] = True
+        with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
+             patch.object(backend, '_save_checkin_meta') as save_mock:
+            with self.assertRaises(HTTPException) as ctx:
+                backend.checkin_pause('S1', user=WORKER, role='worker')
+        self.assertEqual(ctx.exception.status_code, 400)
+        save_mock.assert_not_called()
+
     def test_unknown_session_404(self):
         with patch.object(backend, '_load_checkin_meta', return_value=[]), \
              patch.object(backend, '_save_checkin_meta'):

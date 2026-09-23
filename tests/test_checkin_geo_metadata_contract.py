@@ -17,8 +17,12 @@ def test_checkin_start_accepts_and_persists_geo_metadata():
 
     assert "accuracy: str = Form('')" in body
     assert "geo_timestamp: str = Form('')" in body
+    assert "occurred_at: str = Form('')" in body
     assert "accuracy_clean = accuracy.strip()[:50] if isinstance(accuracy, str) else ''" in body
     assert "geo_timestamp_clean = geo_timestamp.strip()[:50] if isinstance(geo_timestamp, str) else ''" in body
+    assert "start_event_at = _parse_checkin_occurred_at(occurred_at_clean, 'occurred_at', start_received_at)" in body
+    assert '"start_at": start_event_at' in body
+    assert '"start_received_at": start_received_at' in body
     assert '"start_accuracy": accuracy_clean or None' in body
     assert '"start_geo_timestamp": geo_timestamp_clean or None' in body
 
@@ -31,7 +35,11 @@ def test_checkin_finish_accepts_and_persists_geo_metadata():
 
     assert "accuracy: str = Form('')" in body
     assert "geo_timestamp: str = Form('')" in body
+    assert "occurred_at: str = Form('')" in body
     assert "accuracy_clean = accuracy.strip()[:50] if isinstance(accuracy, str) else ''" in body
     assert "geo_timestamp_clean = geo_timestamp.strip()[:50] if isinstance(geo_timestamp, str) else ''" in body
+    assert "finish_event_at = _parse_checkin_occurred_at(occurred_at_clean, 'occurred_at', finish_received_at)" in body
+    assert "session['finish_at'] = finish_event_at" in body
+    assert "session['finish_received_at'] = finish_received_at" in body
     assert "session['finish_accuracy'] = accuracy_clean or None" in body
     assert "session['finish_geo_timestamp'] = geo_timestamp_clean or None" in body

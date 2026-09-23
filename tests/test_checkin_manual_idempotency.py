@@ -4,6 +4,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
@@ -54,26 +55,51 @@ class CheckinManualAndIdempotencyTests(unittest.TestCase):
     def _object_rows(self):
         return [['ID объекта', 'Объект'], ['OBJ-1', 'Дом Мюллер']]
 
-    def test_manual_time_does_not_block_next_photo_shift_start(self):
-        with patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
-             patch.object(backend, '_write_zeiterfassung_row'):
-            manual = backend.checkin_manual(_manual_body(), user=WORKER, role='worker', idempotency_key='manual-1')
-
+    def test_start_uses_client_occurred_at_not_delivery_time(self):
+        tz = backend.business_now().tzinfo
+        event_ts = int(datetime(2026, 9, 22, 8, 15, tzinfo=tz).timestamp())
+        delivery_ts = event_ts + 3 * 3600
         save_photos = AsyncMock(return_value=['OBJ-1/2026-09-22/start.jpg'])
-        with patch.object(backend, '_today_berlin_str', return_value='2026-09-22'), \
+
+        with patch.object(backend.time, 'time', return_value=delivery_ts), \
              patch.object(backend, '_save_checkin_photos', new=save_photos), \
              patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
              patch.object(backend, '_upsert_checkin_feed_post'):
             started = asyncio.run(backend.checkin_start(
                 object_id='OBJ-1', lat='52.5', lon='13.4', accuracy='', geo_timestamp='',
-                stage_name='', files=[MagicMock()], daily_plan_id='', daily_plan_version='',
-                daily_plan_acceptance_id='', user=WORKER, role='worker', idempotency_key='start-1',
+                occurred_at=str(event_ts * 1000), stage_name='', files=[MagicMock()],
+                daily_plan_id='', daily_plan_version='', daily_plan_acceptance_id='',
+                user=WORKER, role='worker', idempotency_key='start-offline-time',
+            ))
+
+        self.assertEqual(started['start_at'], event_ts)
+        self.assertEqual(started['start_received_at'], delivery_ts)
+        self.assertEqual(started['date'], '2026-09-22')
+        self.assertEqual(started['start_occurred_at_source'], 'client')
+
+    def test_manual_time_does_not_block_next_photo_shift_start(self):
+        with patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
+             patch.object(backend, '_write_zeiterfassung_row'):
+            manual = backend.checkin_manual(_manual_body(), user=WORKER, role='worker', idempotency_key='manual-1')
+
+        event_ts = int(datetime(2026, 9, 22, 8, 0, tzinfo=backend.business_now().tzinfo).timestamp())
+        save_photos = AsyncMock(return_value=['OBJ-1/2026-09-22/start.jpg'])
+        with patch.object(backend.time, 'time', return_value=event_ts + 60), \
+             patch.object(backend, '_save_checkin_photos', new=save_photos), \
+             patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
+             patch.object(backend, '_upsert_checkin_feed_post'):
+            started = asyncio.run(backend.checkin_start(
+                object_id='OBJ-1', lat='52.5', lon='13.4', accuracy='', geo_timestamp='',
+                occurred_at=str(event_ts * 1000), stage_name='', files=[MagicMock()],
+                daily_plan_id='', daily_plan_version='', daily_plan_acceptance_id='',
+                user=WORKER, role='worker', idempotency_key='start-1',
             ))
             backend._idempotency_cache.clear()
             replayed = asyncio.run(backend.checkin_start(
                 object_id='OBJ-1', lat='52.5', lon='13.4', accuracy='', geo_timestamp='',
-                stage_name='', files=[MagicMock()], daily_plan_id='', daily_plan_version='',
-                daily_plan_acceptance_id='', user=WORKER, role='worker', idempotency_key='start-1',
+                occurred_at=str(event_ts * 1000), stage_name='', files=[MagicMock()],
+                daily_plan_id='', daily_plan_version='', daily_plan_acceptance_id='',
+                user=WORKER, role='worker', idempotency_key='start-1',
             ))
 
         items = backend._load_checkin_meta()
@@ -112,6 +138,126 @@ class CheckinManualAndIdempotencyTests(unittest.TestCase):
         self.assertEqual(first['id'], second['id'])
         self.assertEqual(len(backend._load_checkin_meta()), 1)
         write_row.assert_called_once()
+
+    def test_manual_time_survives_crash_between_business_write_and_idempotency_save(self):
+        # F03 (owner review commit db584ac, CHANGES REQUIRED): simulate the exact
+        # crash window the owner described -- business fact written to
+        # checkin_meta.json, but the process dies BEFORE _idempotency_save() runs
+        # (so the durable checkin_idempotency.json entry is stuck at state=pending
+        # forever, and after _IDEMPOTENCY_TTL a bare retry would previously create
+        # a SECOND manual entry). We force this by making _idempotency_save raise,
+        # which reproduces "process died right there" for the purposes of this test.
+        with patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
+             patch.object(backend, '_write_zeiterfassung_row'), \
+             patch.object(backend, '_idempotency_save', side_effect=RuntimeError('simulated crash')):
+            with self.assertRaises(RuntimeError):
+                backend.checkin_manual(_manual_body(), user=WORKER, role='worker', idempotency_key='manual-crash')
+
+        # "Restart": in-memory cache lost, durable idempotency entry still 'pending'.
+        backend._idempotency_cache.clear()
+        items_after_crash = backend._load_checkin_meta()
+        self.assertEqual(len(items_after_crash), 1, "business fact must have survived the simulated crash")
+        crashed_entry_id = items_after_crash[0]['id']
+
+        with patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
+             patch.object(backend, '_write_zeiterfassung_row') as write_row:
+            replayed = backend.checkin_manual(_manual_body(), user=WORKER, role='worker', idempotency_key='manual-crash')
+
+        # Same derived entity id -- the retry lands on the SAME business fact,
+        # not a second one, and the durable idempotency store is now healed to 'done'.
+        self.assertEqual(replayed['id'], crashed_entry_id)
+        self.assertEqual(len(backend._load_checkin_meta()), 1, "crash-recovered retry must not duplicate the manual entry")
+        write_row.assert_not_called()
+
+    def test_manual_time_art_whitelist_rejects_unknown_type(self):
+        with patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()):
+            with self.assertRaises(HTTPException) as ctx:
+                backend.checkin_manual(_manual_body(art='Urlaub'), user=WORKER, role='worker', idempotency_key='')
+            self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_manual_time_art_whitelist_accepts_fahrzeit(self):
+        with patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
+             patch.object(backend, '_write_zeiterfassung_row'):
+            entry = backend.checkin_manual(_manual_body(art='Fahrzeit'), user=WORKER, role='worker', idempotency_key='')
+        self.assertEqual(entry['art'], 'Fahrzeit')
+
+    def test_manual_time_rejects_overlap_with_existing_manual_entry(self):
+        with patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
+             patch.object(backend, '_write_zeiterfassung_row'):
+            backend.checkin_manual(_manual_body(start_time='08:00', end_time='16:00'), user=WORKER, role='worker', idempotency_key='')
+            with self.assertRaises(HTTPException) as ctx:
+                backend.checkin_manual(_manual_body(start_time='15:00', end_time='18:00'), user=WORKER, role='worker', idempotency_key='')
+            self.assertEqual(ctx.exception.status_code, 409)
+
+    def test_manual_time_allows_adjacent_non_overlapping_entry(self):
+        with patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
+             patch.object(backend, '_write_zeiterfassung_row'):
+            backend.checkin_manual(_manual_body(start_time='08:00', end_time='12:00'), user=WORKER, role='worker', idempotency_key='')
+            second = backend.checkin_manual(_manual_body(start_time='12:00', end_time='16:00'), user=WORKER, role='worker', idempotency_key='')
+        self.assertEqual(second['start_time'], '12:00')
+
+    def test_start_survives_crash_between_business_write_and_idempotency_save(self):
+        # F03: same crash-window scenario as manual entry, but for checkin_start --
+        # the open session gets written to checkin_meta.json, then the process dies
+        # before _idempotency_save() runs. A retry with the same key must land on
+        # the SAME session (deterministic entity id), not open a second one.
+        event_ts = int(datetime(2026, 9, 22, 8, 0, tzinfo=backend.business_now().tzinfo).timestamp())
+        first_received_at = event_ts + 60
+        save_photos = AsyncMock(return_value=['OBJ-1/2026-09-22/start.jpg'])
+        with patch.object(backend.time, 'time', return_value=first_received_at), \
+             patch.object(backend, '_save_checkin_photos', new=save_photos), \
+             patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
+             patch.object(backend, '_upsert_checkin_feed_post'), \
+             patch.object(backend, '_idempotency_save', side_effect=RuntimeError('simulated crash')):
+            with self.assertRaises(RuntimeError):
+                asyncio.run(backend.checkin_start(
+                    object_id='OBJ-1', lat='52.5', lon='13.4', accuracy='', geo_timestamp='',
+                    occurred_at=str(event_ts * 1000), stage_name='', files=[MagicMock()],
+                    daily_plan_id='', daily_plan_version='', daily_plan_acceptance_id='',
+                    user=WORKER, role='worker', idempotency_key='start-crash',
+                ))
+
+        backend._idempotency_cache.clear()
+        items_after_crash = backend._load_checkin_meta()
+        self.assertEqual(len(items_after_crash), 1, "open session must have survived the simulated crash")
+        crashed_session_id = items_after_crash[0]['id']
+
+        # A retry that arrives well past _IDEMPOTENCY_STALE_PENDING_SECONDS (a
+        # realistic gap for a client noticing a failed request and retrying) must
+        # not be blocked by the crashed claim's still-'pending' state -- it's
+        # treated as abandoned and the retry proceeds to the same deterministic id.
+        future = first_received_at + backend._IDEMPOTENCY_STALE_PENDING_SECONDS + 5
+        save_photos_retry = AsyncMock(return_value=['OBJ-1/2026-09-22/start-retry.jpg'])
+        with patch.object(backend.time, 'time', return_value=future), \
+             patch.object(backend, '_save_checkin_photos', new=save_photos_retry), \
+             patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
+             patch.object(backend, '_upsert_checkin_feed_post'), \
+             patch.object(backend, '_cleanup_checkin_photo_files') as mock_cleanup, \
+             patch.object(backend, '_write_zeiterfassung_row'):
+            replayed = asyncio.run(backend.checkin_start(
+                object_id='OBJ-1', lat='52.5', lon='13.4', accuracy='', geo_timestamp='',
+                occurred_at=str(event_ts * 1000), stage_name='', files=[MagicMock()],
+                daily_plan_id='', daily_plan_version='', daily_plan_acceptance_id='',
+                user=WORKER, role='worker', idempotency_key='start-crash',
+            ))
+
+        self.assertEqual(replayed['id'], crashed_session_id)
+        self.assertEqual(len(backend._load_checkin_meta()), 1, "crash-recovered retry must not open a second session")
+        # Retry's own newly-saved photos are discarded (cleaned up) -- the reused
+        # session keeps its original start_photos from the crashed first attempt.
+        mock_cleanup.assert_called_once_with(['OBJ-1/2026-09-22/start-retry.jpg'])
+
+    def test_manual_time_rejects_overlap_with_active_photo_checkin(self):
+        photo_session = {
+            'id': 'photo-1', 'object_id': 'OBJ-1', 'date': '2026-09-22', 'user_id': '10',
+            'start_at': int(__import__('datetime').datetime(2026, 9, 22, 8, 0, tzinfo=backend.business_now().tzinfo).timestamp()),
+            'finish_at': int(__import__('datetime').datetime(2026, 9, 22, 16, 0, tzinfo=backend.business_now().tzinfo).timestamp()),
+        }
+        backend._save_checkin_meta([photo_session])
+        with patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()):
+            with self.assertRaises(HTTPException) as ctx:
+                backend.checkin_manual(_manual_body(start_time='15:00', end_time='18:00'), user=WORKER, role='worker', idempotency_key='')
+            self.assertEqual(ctx.exception.status_code, 409)
 
     def test_idempotency_is_scoped_by_actor_endpoint_entity_and_payload(self):
         scope_worker = backend._idempotency_scope('checkin_start', WORKER['id'], 'OBJ-1', {'object_id': 'OBJ-1'})
