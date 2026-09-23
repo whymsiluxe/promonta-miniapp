@@ -99,6 +99,13 @@ def test_dead_letter_records_do_not_block_the_resolver_forever():
     assert "dead_letter" in src
 
 
+def test_pause_button_sends_explicit_target_action_not_toggle():
+    body = _fn(_source(CHECKIN_JS), "async function _toggleCheckinPause(")
+    assert "const targetAction = btn?.dataset?.paused === '1' ? 'resume' : 'pause';" in body
+    assert "pause?action=${encodeURIComponent(targetAction)}" in body
+    assert "api(`/api/checkin/${session.id}/pause`, { method: 'POST' })" not in body
+
+
 def test_generation_counter_prevents_stale_pending_check_from_racing_a_newer_call():
     # 24.07 pre-existing pattern (this branch): refreshCheckinButtons can be
     # called twice in quick succession for the same object -- the generation

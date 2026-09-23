@@ -40,40 +40,83 @@ def _session(session_id='S1', user_id=10, pause_started_at=None, pause_accumulat
     }
 
 
-class PauseToggleTests(unittest.TestCase):
+class PauseActionTests(unittest.TestCase):
     def test_first_tap_starts_pause_with_server_timestamp(self):
         session = _session()
         items = [session]
         with patch.object(backend, '_load_checkin_meta', return_value=items), \
              patch.object(backend, '_save_checkin_meta') as save_mock, \
              patch.object(backend.time, 'time', return_value=2000):
-            result = backend.checkin_pause('S1', user=WORKER, role='worker')
+            result = backend.checkin_pause('S1', action='pause', user=WORKER, role='worker')
 
         self.assertTrue(result['paused'])
+        self.assertTrue(result['changed'])
         self.assertEqual(session['pause_started_at'], 2000)
         self.assertEqual(session['pause_accumulated_seconds'], 0)
         save_mock.assert_called_once()
 
-    def test_second_tap_folds_elapsed_into_accumulated_and_clears_started_at(self):
+    def test_resume_action_folds_elapsed_into_accumulated_and_clears_started_at(self):
         # pause начата на t=2000, resume на t=2090 -> 90 секунд в accumulated
         session = _session(pause_started_at=2000, pause_accumulated_seconds=30)
         items = [session]
         with patch.object(backend, '_load_checkin_meta', return_value=items), \
              patch.object(backend, '_save_checkin_meta'), \
              patch.object(backend.time, 'time', return_value=2090):
-            result = backend.checkin_pause('S1', user=WORKER, role='worker')
+            result = backend.checkin_pause('S1', action='resume', user=WORKER, role='worker')
 
         self.assertFalse(result['paused'])
+        self.assertTrue(result['changed'])
         self.assertIsNone(session['pause_started_at'])
         self.assertEqual(session['pause_accumulated_seconds'], 120)  # 30 + 90
         self.assertEqual(result['pause_accumulated_seconds'], 120)
         self.assertEqual(result['pause_accumulated_minutes'], 2)
 
+    def test_repeated_pause_action_keeps_original_started_at(self):
+        session = _session()
+        items = [session]
+        with patch.object(backend, '_load_checkin_meta', return_value=items), \
+             patch.object(backend, '_save_checkin_meta') as save_mock, \
+             patch.object(backend.time, 'time', return_value=2000):
+            first = backend.checkin_pause('S1', action='pause', user=WORKER, role='worker')
+        self.assertTrue(first['changed'])
+        self.assertEqual(session['pause_started_at'], 2000)
+
+        save_mock.reset_mock()
+        with patch.object(backend, '_load_checkin_meta', return_value=items), \
+             patch.object(backend, '_save_checkin_meta') as save_again, \
+             patch.object(backend.time, 'time', return_value=2050):
+            second = backend.checkin_pause('S1', action='pause', user=WORKER, role='worker')
+
+        self.assertTrue(second['paused'])
+        self.assertFalse(second['changed'])
+        self.assertEqual(session['pause_started_at'], 2000)
+        save_again.assert_not_called()
+
+    def test_repeated_resume_action_does_not_double_count_pause(self):
+        session = _session(pause_started_at=2000, pause_accumulated_seconds=30)
+        items = [session]
+        with patch.object(backend, '_load_checkin_meta', return_value=items), \
+             patch.object(backend, '_save_checkin_meta'), \
+             patch.object(backend.time, 'time', return_value=2090):
+            first = backend.checkin_pause('S1', action='resume', user=WORKER, role='worker')
+        self.assertTrue(first['changed'])
+        self.assertEqual(session['pause_accumulated_seconds'], 120)
+
+        with patch.object(backend, '_load_checkin_meta', return_value=items), \
+             patch.object(backend, '_save_checkin_meta') as save_again, \
+             patch.object(backend.time, 'time', return_value=2200):
+            second = backend.checkin_pause('S1', action='resume', user=WORKER, role='worker')
+
+        self.assertFalse(second['paused'])
+        self.assertFalse(second['changed'])
+        self.assertEqual(session['pause_accumulated_seconds'], 120)
+        save_again.assert_not_called()
+
     def test_owner_can_toggle_worker_session(self):
         session = _session(user_id=10)
         with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
              patch.object(backend, '_save_checkin_meta'):
-            result = backend.checkin_pause('S1', user=OWNER, role='owner')
+            result = backend.checkin_pause('S1', action='pause', user=OWNER, role='owner')
         self.assertTrue(result['paused'])
 
     def test_worker_cannot_toggle_another_workers_session(self):
@@ -81,7 +124,7 @@ class PauseToggleTests(unittest.TestCase):
         with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
              patch.object(backend, '_save_checkin_meta'):
             with self.assertRaises(HTTPException) as ctx:
-                backend.checkin_pause('S1', user=OTHER_WORKER, role='worker')
+                backend.checkin_pause('S1', action='pause', user=OTHER_WORKER, role='worker')
         self.assertEqual(ctx.exception.status_code, 403)
 
     def test_finished_session_cannot_be_paused(self):
@@ -89,7 +132,7 @@ class PauseToggleTests(unittest.TestCase):
         with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
              patch.object(backend, '_save_checkin_meta'):
             with self.assertRaises(HTTPException) as ctx:
-                backend.checkin_pause('S1', user=WORKER, role='worker')
+                backend.checkin_pause('S1', action='pause', user=WORKER, role='worker')
         self.assertEqual(ctx.exception.status_code, 400)
 
     def test_manual_entry_cannot_be_paused(self):
@@ -101,7 +144,23 @@ class PauseToggleTests(unittest.TestCase):
         with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
              patch.object(backend, '_save_checkin_meta') as save_mock:
             with self.assertRaises(HTTPException) as ctx:
+                backend.checkin_pause('S1', action='pause', user=WORKER, role='worker')
+        self.assertEqual(ctx.exception.status_code, 400)
+        save_mock.assert_not_called()
+
+    def test_missing_or_unknown_action_rejected_before_mutation(self):
+        session = _session()
+        with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
+             patch.object(backend, '_save_checkin_meta') as save_mock:
+            with self.assertRaises(HTTPException) as ctx:
                 backend.checkin_pause('S1', user=WORKER, role='worker')
+        self.assertEqual(ctx.exception.status_code, 400)
+        save_mock.assert_not_called()
+
+        with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
+             patch.object(backend, '_save_checkin_meta') as save_mock:
+            with self.assertRaises(HTTPException) as ctx:
+                backend.checkin_pause('S1', action='toggle', user=WORKER, role='worker')
         self.assertEqual(ctx.exception.status_code, 400)
         save_mock.assert_not_called()
 
@@ -109,7 +168,7 @@ class PauseToggleTests(unittest.TestCase):
         with patch.object(backend, '_load_checkin_meta', return_value=[]), \
              patch.object(backend, '_save_checkin_meta'):
             with self.assertRaises(HTTPException) as ctx:
-                backend.checkin_pause('missing', user=WORKER, role='worker')
+                backend.checkin_pause('missing', action='pause', user=WORKER, role='worker')
         self.assertEqual(ctx.exception.status_code, 404)
 
 

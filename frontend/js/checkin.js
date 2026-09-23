@@ -301,9 +301,10 @@ async function _toggleCheckinPause() {
   const session = _getActiveCheckinSession(_stagesCurrentObjectId);
   if (!session) return;
   const btn = document.getElementById('checkin-pause-toggle-btn');
+  const targetAction = btn?.dataset?.paused === '1' ? 'resume' : 'pause';
   btn.disabled = true;
   try {
-    const result = await api(`/api/checkin/${session.id}/pause`, { method: 'POST' });
+    await api(`/api/checkin/${session.id}/pause?action=${encodeURIComponent(targetAction)}`, { method: 'POST' });
     hapticImpact('light');
     await refreshCheckinButtons();
   } catch (e) {

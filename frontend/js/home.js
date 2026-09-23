@@ -1299,7 +1299,7 @@ function _renderWorkerDailyPlanCard() {
 // уже существующие источники (/api/alerts, /api/tasks, /api/mangel/counts) и ведёт
 // в уже существующий canonical экран того же типа. Ранжирование: critical > important
 // > needs > defects, самая приоритетная строка показывается первой.
-const WORKER_OPEN_TASK_STATUSES = new Set(['открыто', 'в работе', 'заказано']);
+const WORKER_OPEN_TASK_STATUSES = new Set(['открыто', 'в работе', 'заказано', 'принято']);
 
 async function _loadWorkerProblemsCard() {
   const card = document.getElementById('worker-problems-card');
@@ -1307,6 +1307,7 @@ async function _loadWorkerProblemsCard() {
   card.innerHTML = '<div class="wp-loading">Загрузка...</div>';
 
   const rows = [];
+  const sourceErrors = [];
   try {
     const alertsData = await api('/api/alerts');
     const alerts = alertsData.alerts || [];
@@ -1314,14 +1315,18 @@ async function _loadWorkerProblemsCard() {
       rows.push({ rank: 0, icon: '🔴', title: a.title, subtitle: a.subtitle, action: () => _openWorkerAlerts('red') }));
     alerts.filter(a => a.type === 'yellow').forEach(a =>
       rows.push({ rank: 1, icon: '🟠', title: a.title, subtitle: a.subtitle, action: () => _openWorkerAlerts('yellow') }));
-  } catch (e) {}
+  } catch (e) {
+    sourceErrors.push({ source: 'alerts', message: e?.message || 'alerts unavailable' });
+  }
 
   try {
     const tasksData = await api('/api/tasks');
-    const openTasks = (tasksData.tasks || []).filter(t => WORKER_OPEN_TASK_STATUSES.has(t.status));
+    const openTasks = (tasksData.tasks || []).filter(t => WORKER_OPEN_TASK_STATUSES.has(String(t.status || '').trim().toLowerCase()));
     openTasks.forEach(t =>
       rows.push({ rank: 2, icon: '🟡', title: t.title, subtitle: 'Потребность', action: () => switchView('tasks') }));
-  } catch (e) {}
+  } catch (e) {
+    sourceErrors.push({ source: 'tasks', message: e?.message || 'tasks unavailable' });
+  }
 
   try {
     const counts = await api('/api/mangel/counts');
@@ -1329,7 +1334,24 @@ async function _loadWorkerProblemsCard() {
     if (openDefects > 0) {
       rows.push({ rank: 3, icon: '🟡', title: `${openDefects} ${openDefects === 1 ? 'дефект' : 'дефекта'}`, subtitle: 'Требуют внимания', action: () => switchView('mangel') });
     }
-  } catch (e) {}
+  } catch (e) {
+    sourceErrors.push({ source: 'defects', message: e?.message || 'defects unavailable' });
+  }
+
+  if (!rows.length && sourceErrors.length) {
+    card.innerHTML = `
+      <div class="wp-empty wp-error-state">
+        <div class="wp-empty-title">Не удалось проверить проблемы</div>
+        <div class="wp-empty-sub">Данные временно не обновились</div>
+        <button class="wp-retry-btn" id="worker-problems-retry" type="button">Повторить</button>
+      </div>`;
+    card.onclick = null;
+    card.querySelector('#worker-problems-retry')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      _loadWorkerProblemsCard();
+    });
+    return;
+  }
 
   if (!rows.length) {
     card.innerHTML = `
@@ -1355,6 +1377,7 @@ async function _loadWorkerProblemsCard() {
       </div>
     </div>
     ${rest > 0 ? `<div class="wp-more">ещё ${rest} ${rest === 1 ? 'проблема' : 'проблемы'}</div>` : ''}
+    ${sourceErrors.length ? '<div class="wp-sync-warning">Часть данных не обновилась</div>' : ''}
   `;
   card.onclick = top.action;
 }

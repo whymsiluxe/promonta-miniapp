@@ -11,7 +11,8 @@ Source-assertion contract tests (same style as the rest of this repo's
   logic) and opens the existing canonical overlay via _openPlanCard().
 - The unified Problems card aggregates existing sources (/api/alerts,
   /api/tasks, /api/mangel/counts) with no new store, ranks
-  critical > important > needs > defects, and has an explicit empty state.
+  critical > important > needs > defects, has an explicit empty state, and
+  never turns an API error into "Проблем нет".
 - The persistent DailyPlan bar is suppressed specifically on Home (where the
   compact card already shows the same status) and restored on other tabs,
   via _syncTodayPlanBarForView() called from switchView() -- not a competing
@@ -88,6 +89,10 @@ def test_problems_card_aggregates_existing_sources_ranked_and_has_empty_state():
     assert "rank: 3" in body  # defects lowest priority among problems
     assert "rows.sort((a, b) => a.rank - b.rank);" in body
     assert "Проблем нет" in body
+    assert "const sourceErrors = []" in body
+    assert "catch (e) {}" not in body
+    assert "if (!rows.length && sourceErrors.length)" in body
+    assert "Не удалось проверить проблемы" in body
 
 
 def test_problems_card_deep_links_to_canonical_existing_views_no_new_screen():
@@ -111,7 +116,8 @@ def test_open_defects_use_open_status_codes_not_resolved_ones():
 
 def test_open_tasks_use_open_status_set_matching_backend_task_statuses():
     src = _source(HOME_JS)
-    assert "const WORKER_OPEN_TASK_STATUSES = new Set(['открыто', 'в работе', 'заказано']);" in src
+    assert "const WORKER_OPEN_TASK_STATUSES = new Set(['открыто', 'в работе', 'заказано', 'принято']);" in src
+    assert "String(t.status || '').trim().toLowerCase()" in src
 
 
 def test_persistent_bar_hidden_on_home_synced_via_switch_view_not_css_override():

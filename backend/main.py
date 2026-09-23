@@ -8536,11 +8536,16 @@ async def checkin_start(
 
 
 @app.post("/api/checkin/{session_id}/pause")
-def checkin_pause(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    """Тоггл паузы во время активной смены (24.07) — тап 'Пауза' фиксирует момент
-    начала, повторный тап 'Продолжить' добавляет прошедшее время в накопленную паузу.
+def checkin_pause(session_id: str, action: str = Query(''), user: dict = Depends(get_current_user), role: str = Depends(get_role)):
+    """Целевое управление паузой во время активной смены.
+
+    F08: это больше не toggle. Клиент обязан прислать action=pause|resume, чтобы
+    повтор того же запроса из-за retry/double delivery не перевернул состояние назад.
     Клиент подставляет накопленные минуты как default в анкету при Финише, юзер может
     доправить вручную если нужно."""
+    action_clean = str(action or '').strip().lower()
+    if action_clean not in {'pause', 'resume'}:
+        raise HTTPException(400, "action должен быть pause или resume")
     with _checkin_lock:
         items = _load_checkin_meta()
         session = next((i for i in items if i.get('id') == session_id), None)
@@ -8554,19 +8559,27 @@ def checkin_pause(session_id: str, user: dict = Depends(get_current_user), role:
             raise HTTPException(400, "Смена уже завершена")
 
         now = int(time.time())
-        if session.get('pause_started_at'):
+        changed = False
+        if action_clean == 'resume' and session.get('pause_started_at'):
             # Продолжить — закрываем текущий отрезок паузы, добавляем в накопленное
             elapsed = max(0, now - session['pause_started_at'])
             session['pause_accumulated_seconds'] = session.get('pause_accumulated_seconds', 0) + elapsed
             session['pause_started_at'] = None
             paused = False
-        else:
+            changed = True
+        elif action_clean == 'pause' and not session.get('pause_started_at'):
             # Пауза — фиксируем момент начала
             session['pause_started_at'] = now
             paused = True
-        _save_checkin_meta(items)
+            changed = True
+        else:
+            paused = bool(session.get('pause_started_at'))
+        if changed:
+            _save_checkin_meta(items)
 
     return {
+        "action": action_clean,
+        "changed": changed,
         "paused": paused,
         "pause_accumulated_seconds": session['pause_accumulated_seconds'],
         "pause_accumulated_minutes": round(session['pause_accumulated_seconds'] / 60),
