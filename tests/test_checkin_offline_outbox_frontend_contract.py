@@ -30,12 +30,15 @@ def test_start_checkin_queues_files_geo_fields_and_idempotency_key():
 
     assert "const CHECKIN_OUTBOX_KIND_START = 'checkin-start';" in src
     assert "function _checkinStartOutboxId(idempotencyKey)" in src
-    assert "async function _queueCheckinStartOutbox(files, extraFields, idempotencyKey)" in src
+    assert "async function _queueCheckinStartOutbox(files, extraFields, idempotencyKey, occurredAtOverride)" in src
+    assert "let _checkinOccurredAt = null;" in src
     assert "files: Array.from(files)" in src
     assert "extraFields: { ...(extraFields || {}) }" in src
     assert "geo," in src
+    assert "occurredAt," in src
     assert "idempotencyKey," in src
-    assert "await _queueCheckinStartOutbox(_checkinPreviewFiles, startFieldsOrNull, _checkinIdempotencyKey)" in src
+    assert "await _queueCheckinStartOutbox(_checkinPreviewFiles, startFieldsOrNull, _checkinIdempotencyKey, startOccurredAt)" in src
+    assert "record.occurredAt" in src
     assert "Старт сохранён в офлайн-очередь" in src
 
 
@@ -57,6 +60,8 @@ def test_finish_wizard_queues_finish_payload_and_files():
     assert "const CHECKIN_OUTBOX_KIND_FINISH = 'checkin-finish';" in src
     assert "function _fwFinishOutboxId(idempotencyKey)" in src
     assert "function _fwBuildFinishOutboxRecord()" in src
+    assert "let _fwOccurredAt = '';" in src
+    assert "occurred_at: occurredAt" in src
     assert "files: Array.from(_fwPhotos)" in src
     assert "fields.daily_plan_report = JSON.stringify" in src
     assert "idempotencyKey: _fwIdempotencyKey" in src

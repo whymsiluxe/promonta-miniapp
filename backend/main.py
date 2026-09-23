@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import uuid
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, quote
 
@@ -159,6 +160,7 @@ try:
         CHAT_FILE,
         ANGEBOT_OUT_DIR,
         CHECKIN_PHOTO_BASE,
+        CHECKIN_IDEMPOTENCY_FILE,
         ACTIVITY_ALERTS_FILE,
         WORK_CALENDAR_FILE,
         WORKER_PROFILES_FILE,
@@ -211,6 +213,7 @@ except ImportError:
         CHAT_FILE,
         ANGEBOT_OUT_DIR,
         CHECKIN_PHOTO_BASE,
+        CHECKIN_IDEMPOTENCY_FILE,
         ACTIVITY_ALERTS_FILE,
         WORK_CALENDAR_FILE,
         WORKER_PROFILES_FILE,
@@ -274,6 +277,7 @@ try:
         TRANSCRIBE_MAX_BYTES,
         CHAT_RETENTION_SECONDS,
         _IDEMPOTENCY_TTL,
+        _IDEMPOTENCY_STALE_PENDING_SECONDS,
         CHAT_MAX,
         AI_RATE_LIMIT,
     )
@@ -297,6 +301,7 @@ except ImportError:
         TRANSCRIBE_MAX_BYTES,
         CHAT_RETENTION_SECONDS,
         _IDEMPOTENCY_TTL,
+        _IDEMPOTENCY_STALE_PENDING_SECONDS,
         CHAT_MAX,
         AI_RATE_LIMIT,
     )
@@ -465,10 +470,12 @@ async def _corrupt_json_handler(request, exc: CorruptJsonError):
 
 # moved to core/paths.py -- AUDIT_FILE
 AUDIT_LOCK = __import__('threading').Lock()
+_auth_audit_context: ContextVar[dict | None] = ContextVar('promonta_auth_audit_context', default=None)
 
 
 @app.middleware("http")
 async def audit_log_middleware(request, call_next):
+    audit_context_token = _auth_audit_context.set(None)
     # 28.07 (real bug found by external audit, ТЗ п.25): было await request.body() для
     # ЛЮБОГО POST/PATCH/DELETE, включая multipart file upload (photo/voice/document) --
     # тело файла дублировалось в памяти дважды (readable once, buffered here + re-injected
@@ -484,35 +491,35 @@ async def audit_log_middleware(request, call_next):
             return {"type": "http.request", "body": body_bytes}
         request._receive = receive
 
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
 
-    # 30.07 (Release-аудит Этап 6): раньше логировались только успешные мутации
-    # (status < 400) -- отклонения (400/403/404/413 на upload, 401 на auth) не
-    # попадали в audit.log вообще, только в разрозненные print() в отдельных
-    # местах кода. Теперь пишем обе категории отдельными полями -- rejection не
-    # включает тело запроса/файла (тот же принцип, что и раньше: НЕ initData,
-    # НЕ BOT_TOKEN, НЕ содержимое сообщений/GPS, только method/path/status/user_id).
-    if request.method in ("POST", "PATCH", "DELETE"):
-        user_id = None
-        try:
-            init_data = request.headers.get("x-telegram-init-data", "")
-            parsed = dict(parse_qsl(init_data))
-            user_id = json.loads(parsed.get("user", "{}")).get("id")
-        except Exception:
-            pass
-        entry = {
-            "ts": int(time.time()),
-            "user_id": user_id,
-            "method": request.method,
-            "path": request.url.path,
-            "status": response.status_code,
-            "rejected": response.status_code >= 400,
-        }
-        with AUDIT_LOCK:
-            with open(AUDIT_FILE, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        # 30.07 (Release-аудит Этап 6): раньше логировались только успешные мутации
+        # (status < 400) -- отклонения (400/403/404/413 на upload, 401 на auth) не
+        # попадали в audit.log вообще, только в разрозненные print() в отдельных
+        # местах кода. Теперь пишем обе категории отдельными полями -- rejection не
+        # включает тело запроса/файла (тот же принцип, что и раньше: НЕ initData,
+        # НЕ BOT_TOKEN, НЕ содержимое сообщений/GPS, только method/path/status/user_id).
+        if request.method in ("POST", "PATCH", "DELETE"):
+            # F06: audit actor must be the already-authenticated identity. Re-parsing
+            # X-Telegram-Init-Data here let bearer-only requests lose the actor and let
+            # an extra spoofed header write a different user_id to audit.log.
+            auth_ctx = _auth_audit_context.get() or {}
+            entry = {
+                "ts": int(time.time()),
+                "user_id": auth_ctx.get('user_id'),
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "rejected": response.status_code >= 400,
+            }
+            with AUDIT_LOCK:
+                with open(AUDIT_FILE, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    return response
+        return response
+    finally:
+        _auth_audit_context.reset(audit_context_token)
 
 
 def _secret_key() -> bytes:
@@ -700,12 +707,15 @@ def get_current_user(
     X-Telegram-Init-Data остаётся как fallback для обратной совместимости со старыми
     клиентами/вкладками, которые ещё не обновились на новый auth-путь -- временно,
     убрать после того, как весь трафик перейдёт на токены (см. PROJECT_STATE.md)."""
+    auth_source = ''
     if authorization and authorization.lower().startswith('bearer '):
         token = authorization[7:].strip()
         user_id = verify_session_token(token)
         user = {'id': int(user_id)} if user_id.lstrip('-').isdigit() else {'id': user_id}
+        auth_source = 'bearer'
     elif x_telegram_init_data:
         user = validate_init_data(x_telegram_init_data)
+        auth_source = 'telegram_init_data'
     else:
         raise HTTPException(401, "Нет initData и нет session token")
 
@@ -719,6 +729,11 @@ def get_current_user(
         if x_telegram_init_data and not (authorization and authorization.lower().startswith('bearer ')):
             _notify_owner_new_user(user, roles)
         raise HTTPException(403, "Доступ не предоставлен. Обратитесь к владельцу.")
+    _auth_audit_context.set({
+        'user_id': str(user['id']),
+        'role': roles.get(str(user['id']), 'worker'),
+        'source': auth_source,
+    })
     _last_seen[str(user['id'])] = time.time()
     return user
 
@@ -1269,7 +1284,7 @@ def get_user_card(target_id: str, user: dict = Depends(get_current_user), role: 
         # 03.08, этот пропустили.
         today = business_today_str()
         sessions = [s for s in _load_checkin_meta() if str(s.get('user_id')) == target_id and s.get('date') == today]
-        open_session = next((s for s in sessions if s.get('finish_at') is None), None)
+        open_session = next((s for s in sessions if _is_active_photo_checkin_session(s)), None)
         rows = _cached_get_used_range('Объекты')
         object_names = {}
         if rows:
@@ -1454,6 +1469,10 @@ def _photo_pause_seconds(s: dict) -> int:
 
 def _photo_pause_minutes(s: dict) -> int:
     return round(_photo_pause_seconds(s) / 60)
+
+
+def _is_active_photo_checkin_session(s: dict) -> bool:
+    return bool(s) and not s.get('manual_entry') and s.get('finish_at') is None
 
 
 def _hours_from_session(s: dict) -> float:
@@ -1777,8 +1796,7 @@ def get_dashboard_team_hours(date_from: str = '', date_to: str = '',
         hours_week = round(sum(_session_hours_live(s) for s in in_range), 1)
         today_sess = [s for s in w_sessions if s.get('date', '') == today_iso] if today_in_range else []
         hours_today = round(sum(_session_hours_live(s) for s in today_sess), 1)
-        open_s = next((s for s in today_sess
-                       if s.get('finish_at') is None and not s.get('manual_entry')), None)
+        open_s = next((s for s in today_sess if _is_active_photo_checkin_session(s)), None)
         is_working_now = open_s is not None
         cur_oid = str(open_s.get('object_id', '')) if open_s else ''
         workers.append({
@@ -2874,7 +2892,7 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
             "object_name": object_names.get(s['object_id'], s['object_id']),
             "start_at": s.get('start_at'),
         }
-        if s.get('finish_at') is None:
+        if _is_active_photo_checkin_session(s):
             working_now.append(entry)
         else:
             entry['finish_at'] = s.get('finish_at')
@@ -2947,7 +2965,7 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
     # 30.07 v2: "Работают сейчас" тоже несёт stage_name (если известен из checkin) --
     # аудит просит этот контекст для группы 1 наравне с 2/3.
     for e in working_now:
-        s = next((s for s in today_sessions if str(s.get('user_id')) == e['user_id'] and s.get('finish_at') is None), None)
+        s = next((s for s in today_sessions if str(s.get('user_id')) == e['user_id'] and _is_active_photo_checkin_session(s)), None)
         e['stage_name'] = (s or {}).get('stage_name') or ''
 
     # 30.07 v3 (спек: "Часы команды" на экране Команда) -- сумма часов за СЕГОДНЯ по
@@ -3103,7 +3121,7 @@ def get_team_plan(date: str = '', user: dict = Depends(get_current_user), _: Non
             # физически быть не может.
             if is_today and status == 'accepted':
                 uid_sessions = sessions_by_uid.get(uid, [])
-                active = next((s for s in uid_sessions if s.get('object_id') == oid and s.get('finish_at') is None), None)
+                active = next((s for s in uid_sessions if s.get('object_id') == oid and _is_active_photo_checkin_session(s)), None)
                 finished = next((s for s in uid_sessions if s.get('object_id') == oid and s.get('finish_at') is not None), None)
                 if active:
                     entry['shift_state'] = 'active'
@@ -7801,36 +7819,211 @@ def get_mangel_comments(ticket_id: str, user: dict = Depends(get_current_user), 
 # moved to core/limits.py -- CHECKIN_MAX_BYTES
 _checkin_lock = __import__('threading').Lock()
 
-# 10.40: idempotency-key для checkin start/finish — при плохой связи на объекте
-# worker может не увидеть ответ и повторить запрос; без этого второй запрос либо
-# создаёт дубль сессии, либо возвращает пугающую 409/400 ошибку на успешное действие.
-# Кэш в памяти (не переживает restart) — приемлемо, ключ живёт секунды/минуты, не дни.
-_idempotency_cache = {}  # key -> (timestamp, response_dict)
+# 10.40: idempotency-key для checkin start/finish/manual — при плохой связи на
+# объекте worker может не увидеть ответ и повторить запрос; без этого второй запрос
+# либо создаёт дубль, либо возвращает пугающую 409/400 ошибку на успешное действие.
+# 23.09: durable + scoped guard. Один raw Idempotency-Key больше не является
+# глобальным ключом на все роли/endpoints/payloads: он проверяется по actor + kind,
+# а entity/payload_hash обязаны совпасть. Store переживает restart в пределах TTL.
+_idempotency_cache = {}  # identity_hash -> entry_dict
+_idempotency_lock = __import__('threading').Lock()
 # moved to core/limits.py -- _IDEMPOTENCY_TTL
 
 
-def _idempotency_get(key: str):
+def _idempotency_payload_hash(payload: dict | None) -> str:
+    raw = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True, separators=(',', ':'), default=str)
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def _idempotency_scope(kind: str, actor_id: str | int, entity_id: str = '', payload: dict | None = None) -> dict:
+    return {
+        "kind": str(kind),
+        "actor_id": str(actor_id),
+        "entity_id": str(entity_id or ''),
+        "payload_hash": _idempotency_payload_hash(payload),
+    }
+
+
+def _idempotency_identity(key: str, scope: dict | None = None) -> str:
+    scope = scope or {"kind": "legacy", "actor_id": "", "entity_id": "", "payload_hash": ""}
+    raw = json.dumps({
+        "key": str(key),
+        "kind": str(scope.get('kind') or ''),
+        "actor_id": str(scope.get('actor_id') or ''),
+    }, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def _idempotent_entity_id(key: str, scope: dict | None) -> str:
+    """F03 (owner review commit db584ac, CHANGES REQUIRED): the business entity's id used
+    to be uuid4() -- random on every attempt, including a retried one. That meant the
+    crash window (business fact written -> process dies -> _idempotency_save() never
+    runs -> durable idempotency entry stays 'pending' forever until TTL prune -> retry
+    after prune creates a SECOND business fact) had no way to self-heal: nothing tied a
+    retried attempt back to what an earlier attempt may have already written.
+
+    Deriving the id from the same (key, scope) identity used by the idempotency store
+    makes a retried attempt with the SAME Idempotency-Key + payload land on the exact
+    same entity id every time. Callers check-before-insert on this id so a
+    crash-recovered retry finds its own prior write instead of duplicating it --
+    closing the crash window without needing a real transactional store across two
+    separate JSON files."""
+    if not key:
+        return uuid.uuid4().hex
+    return _idempotency_identity(key, scope)[:32]
+
+
+def _idempotency_entry_matches(entry: dict, scope: dict | None) -> bool:
+    if scope is None:
+        return True
+    return (
+        str(entry.get('kind') or '') == str(scope.get('kind') or '')
+        and str(entry.get('actor_id') or '') == str(scope.get('actor_id') or '')
+        and str(entry.get('entity_id') or '') == str(scope.get('entity_id') or '')
+        and str(entry.get('payload_hash') or '') == str(scope.get('payload_hash') or '')
+    )
+
+
+def _idempotency_assert_same_request(entry: dict, scope: dict | None) -> None:
+    if not _idempotency_entry_matches(entry, scope):
+        raise HTTPException(409, "Idempotency-Key уже использован для другого запроса")
+
+
+def _idempotency_prune(store: dict, now: float) -> None:
+    stale = [
+        k for k, v in store.items()
+        if now - float(v.get('updated_at') or v.get('created_at') or 0) > _IDEMPOTENCY_TTL
+    ]
+    for k in stale:
+        store.pop(k, None)
+        _idempotency_cache.pop(k, None)
+
+
+def _idempotency_get(key: str, scope: dict | None = None):
     if not key:
         return None
-    entry = _idempotency_cache.get(key)
-    if not entry:
-        return None
-    ts, response = entry
-    if time.time() - ts > _IDEMPOTENCY_TTL:
-        _idempotency_cache.pop(key, None)
-        return None
-    return response
+    identity = _idempotency_identity(key, scope)
+    now = time.time()
+    cached = _idempotency_cache.get(identity)
+    if cached and now - float(cached.get('updated_at') or cached.get('created_at') or 0) <= _IDEMPOTENCY_TTL:
+        _idempotency_assert_same_request(cached, scope)
+        if cached.get('state') == 'done':
+            return copy.deepcopy(cached.get('response'))
+        raise HTTPException(409, "Запрос уже выполняется, повторите чуть позже")
+
+    result = {"found": False, "response": None, "pending": False}
+
+    def mutator(store: dict):
+        _idempotency_prune(store, now)
+        entry = store.get(identity)
+        if not entry:
+            return
+        _idempotency_assert_same_request(entry, scope)
+        _idempotency_cache[identity] = copy.deepcopy(entry)
+        result["found"] = True
+        if entry.get('state') == 'done':
+            result["response"] = copy.deepcopy(entry.get('response'))
+        else:
+            result["pending"] = True
+
+    update_json_transaction(CHECKIN_IDEMPOTENCY_FILE, {}, mutator)
+    if result["pending"]:
+        raise HTTPException(409, "Запрос уже выполняется, повторите чуть позже")
+    return result["response"] if result["found"] else None
 
 
-def _idempotency_save(key: str, response: dict):
+def _idempotency_claim(key: str, scope: dict | None = None):
+    if not key:
+        return None
+    identity = _idempotency_identity(key, scope)
+    now = time.time()
+    result = {"response": None, "pending": False}
+
+    def mutator(store: dict):
+        _idempotency_prune(store, now)
+        entry = store.get(identity)
+        if entry:
+            _idempotency_assert_same_request(entry, scope)
+            if entry.get('state') == 'done':
+                _idempotency_cache[identity] = copy.deepcopy(entry)
+                result["response"] = copy.deepcopy(entry.get('response'))
+                return
+            # F03 (owner review commit db584ac, CHANGES REQUIRED): a 'pending'
+            # claim older than _IDEMPOTENCY_STALE_PENDING_SECONDS is treated as an
+            # abandoned/crashed attempt, not a real in-flight request -- refresh it
+            # to a fresh pending claim (same identity) and let the caller proceed.
+            # It lands on the same deterministic entity id
+            # (_idempotent_entity_id) as the crashed attempt, so it either finds
+            # that attempt's business fact already written (self-heals) or
+            # legitimately creates it (nothing was actually written before the
+            # crash) -- either way this stops blocking on a dead claim for the
+            # full 10-minute TTL.
+            age = now - float(entry.get('updated_at') or entry.get('created_at') or 0)
+            if age <= _IDEMPOTENCY_STALE_PENDING_SECONDS:
+                _idempotency_cache[identity] = copy.deepcopy(entry)
+                result["pending"] = True
+                return
+        entry = {
+            "state": "pending",
+            "kind": str((scope or {}).get('kind') or 'legacy'),
+            "actor_id": str((scope or {}).get('actor_id') or ''),
+            "entity_id": str((scope or {}).get('entity_id') or ''),
+            "payload_hash": str((scope or {}).get('payload_hash') or ''),
+            "created_at": now,
+            "updated_at": now,
+        }
+        store[identity] = entry
+        _idempotency_cache[identity] = copy.deepcopy(entry)
+
+    with _idempotency_lock:
+        update_json_transaction(CHECKIN_IDEMPOTENCY_FILE, {}, mutator)
+    if result["pending"]:
+        raise HTTPException(409, "Запрос уже выполняется, повторите чуть позже")
+    return result["response"]
+
+
+def _idempotency_save(key: str, response: dict, scope: dict | None = None):
     if not key:
         return
+    identity = _idempotency_identity(key, scope)
     now = time.time()
-    _idempotency_cache[key] = (now, response)
-    # чистка старых ключей — кэш не должен расти бесконечно на активном сервере
-    stale = [k for k, (ts, _) in _idempotency_cache.items() if now - ts > _IDEMPOTENCY_TTL]
-    for k in stale:
-        _idempotency_cache.pop(k, None)
+    entry = {
+        "state": "done",
+        "kind": str((scope or {}).get('kind') or 'legacy'),
+        "actor_id": str((scope or {}).get('actor_id') or ''),
+        "entity_id": str((scope or {}).get('entity_id') or ''),
+        "payload_hash": str((scope or {}).get('payload_hash') or ''),
+        "response": copy.deepcopy(response),
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    def mutator(store: dict):
+        _idempotency_prune(store, now)
+        existing = store.get(identity)
+        if existing:
+            _idempotency_assert_same_request(existing, scope)
+            entry["created_at"] = existing.get('created_at') or now
+        store[identity] = entry
+
+    with _idempotency_lock:
+        update_json_transaction(CHECKIN_IDEMPOTENCY_FILE, {}, mutator)
+    _idempotency_cache[identity] = copy.deepcopy(entry)
+
+
+def _idempotency_release(key: str, scope: dict | None = None) -> None:
+    if not key:
+        return
+    identity = _idempotency_identity(key, scope)
+
+    def mutator(store: dict):
+        entry = store.get(identity)
+        if entry and _idempotency_entry_matches(entry, scope) and entry.get('state') != 'done':
+            store.pop(identity, None)
+
+    with _idempotency_lock:
+        update_json_transaction(CHECKIN_IDEMPOTENCY_FILE, {}, mutator)
+    _idempotency_cache.pop(identity, None)
 
 os.makedirs(CHECKIN_PHOTO_BASE, exist_ok=True)
 
@@ -8036,6 +8229,13 @@ async def _save_checkin_photos(files: list, object_id: str, date_str: str) -> li
     return saved
 
 
+def _checkin_file_count(files) -> int:
+    try:
+        return len(files or [])
+    except TypeError:
+        return 0
+
+
 def _cleanup_checkin_photo_files(relative_paths: list) -> None:
     """03.08: удаляет файлы, сохранённые _save_checkin_photos() ТЕКУЩЕГО неуспешного
     запроса (когда итоговое количество валидных фото < 2) -- не оставляет orphan-файлы
@@ -8092,6 +8292,40 @@ def _get_active_assignment_for_checkin(user_id: str, object_id: str, today: str)
     raise HTTPException(403, "У вас нет принятого назначения на этот объект")
 
 
+CHECKIN_EVENT_MAX_AGE_SECONDS = 7 * 24 * 3600
+CHECKIN_EVENT_FUTURE_SKEW_SECONDS = 5 * 60
+
+
+def _parse_checkin_occurred_at(raw: str, field_name: str, received_at: int) -> int:
+    """Client action time for offline-safe checkin events.
+
+    geo_timestamp is GPS metadata, not the business event timestamp. Start/Finish
+    use occurred_at when the client supplies it, and persist received_at separately
+    so delayed outbox sync does not turn into fake work hours.
+    """
+    value = str(raw or '').strip()
+    if not value:
+        return received_at
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise HTTPException(400, f"{field_name}: некорректное время события")
+    if parsed > 10_000_000_000:
+        parsed = parsed / 1000
+    occurred_at = int(parsed)
+    if occurred_at <= 0:
+        raise HTTPException(400, f"{field_name}: некорректное время события")
+    if occurred_at > received_at + CHECKIN_EVENT_FUTURE_SKEW_SECONDS:
+        raise HTTPException(400, f"{field_name}: время события не может быть в будущем")
+    if occurred_at < received_at - CHECKIN_EVENT_MAX_AGE_SECONDS:
+        raise HTTPException(400, f"{field_name}: время события слишком старое")
+    return occurred_at
+
+
+def _checkin_business_date_from_timestamp(ts: int) -> str:
+    return datetime.fromtimestamp(ts, business_now().tzinfo).strftime('%Y-%m-%d')
+
+
 @app.post("/api/checkin/start")
 async def checkin_start(
     object_id: str = Form(''),
@@ -8099,6 +8333,7 @@ async def checkin_start(
     lon: str = Form(''),
     accuracy: str = Form(''),
     geo_timestamp: str = Form(''),
+    occurred_at: str = Form(''),
     stage_name: str = Form(''),
     files: list[UploadFile] = File(default=[]),
     daily_plan_id: str = Form(''),
@@ -8108,21 +8343,21 @@ async def checkin_start(
     role: str = Depends(get_role),
     idempotency_key: str = Header(default='', alias='Idempotency-Key'),
 ):
-    cached = _idempotency_get(idempotency_key)
-    if cached is not None:
-        return cached
-
     if not object_id.strip():
         raise HTTPException(400, "object_id обязателен")
     if not lat.strip() or not lon.strip():
         raise HTTPException(400, "Включи геолокацию, чтобы начать смену")
     accuracy_clean = accuracy.strip()[:50] if isinstance(accuracy, str) else ''
     geo_timestamp_clean = geo_timestamp.strip()[:50] if isinstance(geo_timestamp, str) else ''
+    occurred_at_clean = occurred_at.strip()[:50] if isinstance(occurred_at, str) else ''
+    start_received_at = int(time.time())
+    start_event_at = _parse_checkin_occurred_at(occurred_at_clean, 'occurred_at', start_received_at)
     # 03.08: Europe/Berlin, не UTC сервера -- проверка периода назначения
     # (_get_active_assignment_for_checkin ниже) должна сверяться с той же датой, что
     # реально "сегодня" по местному времени, иначе вечером/ночью Berlin worker мог бы
     # получить доступ на день раньше/позже реального начала/конца периода.
-    date_str = _today_berlin_str()
+    # F04: для offline-синхронизации дата берётся от времени события, а не доставки.
+    date_str = _checkin_business_date_from_timestamp(start_event_at)
 
     # 30.07 (аудит п.5): единая проверка ДО сохранения фото/создания сессии -- нельзя
     # сначала записать файлы, а потом вернуть 403. Owner не назначается вообще
@@ -8173,13 +8408,32 @@ async def checkin_start(
         _dp_session_plan_version = str(_acc.get("plan_version") or _snapshot.get("plan_version") or _dp_at_start.get("version") or '')
         _dp_session_acceptance_id = _dp_acc_clean
 
+    idempotency_scope = _idempotency_scope('checkin_start', user['id'], object_id.strip(), {
+        "object_id": object_id.strip(),
+        "lat": lat.strip(),
+        "lon": lon.strip(),
+        "accuracy": accuracy_clean,
+        "geo_timestamp": geo_timestamp_clean,
+        "occurred_at": occurred_at_clean,
+        "stage_name": (stage_name.strip()[:200] if isinstance(stage_name, str) else ''),
+        "daily_plan_id": _dp_session_plan_id or '',
+        "daily_plan_version": _dp_session_plan_version or '',
+        "daily_plan_acceptance_id": _dp_session_acceptance_id or '',
+        "file_count": _checkin_file_count(files),
+    })
+    cached = _idempotency_claim(idempotency_key, idempotency_scope)
+    if cached is not None:
+        return cached
+    entity_id = _idempotent_entity_id(idempotency_key, idempotency_scope)
+
     with _checkin_lock:
         # 10.29 (Fable-аудит): раньше можно было создать сколько угодно параллельных
         # "стартов" смены — часы потом считались некорректно.
         existing = _load_checkin_meta()
         open_session = next((i for i in existing
-                              if str(i.get('user_id')) == str(user['id']) and i.get('finish_at') is None), None)
-        if open_session:
+                              if str(i.get('user_id')) == str(user['id']) and _is_active_photo_checkin_session(i)), None)
+        if open_session and open_session.get('id') != entity_id:
+            _idempotency_release(idempotency_key, idempotency_scope)
             raise HTTPException(409, f"У вас уже есть незавершённая смена на объекте {open_session['object_id']} — сначала завершите её")
 
     photo_paths = await _save_checkin_photos(files, object_id.strip()[:100], date_str)
@@ -8193,15 +8447,18 @@ async def checkin_start(
     # that did save from this failed attempt so they don't become orphans.
     if len(photo_paths) < 1:
         _cleanup_checkin_photo_files(photo_paths)
+        _idempotency_release(idempotency_key, idempotency_scope)
         raise HTTPException(400, "Для начала смены нужно минимум одно корректное фото")
 
     entry = {
-        "id": uuid.uuid4().hex,
+        "id": entity_id,
         "object_id": object_id.strip()[:100],
         "assignment_id": assignment_id,
         "date": date_str,
         "user_id": user['id'],
-        "start_at": int(time.time()),
+        "start_at": start_event_at,
+        "start_received_at": start_received_at,
+        "start_occurred_at_source": 'client' if occurred_at_clean else 'server',
         "start_photos": photo_paths,
         "start_lat": lat,
         "start_lon": lon,
@@ -8224,16 +8481,26 @@ async def checkin_start(
     }
     with _checkin_lock:
         items = _load_checkin_meta()
-        # Повторная проверка внутри финального лока — на случай гонки между двумя
-        # параллельными checkin_start запросами (TOCTOU между первой проверкой и этой записью).
-        open_session = next((i for i in items
-                              if str(i.get('user_id')) == str(user['id']) and i.get('finish_at') is None), None)
-        if open_session:
-            raise HTTPException(409, f"У вас уже есть незавершённая смена на объекте {open_session['object_id']} — сначала завершите её")
-        items.append(entry)
-        _save_checkin_meta(items)
+        # F03: crash-recovered retry -- same Idempotency-Key derives the same entity_id,
+        # so if an earlier attempt already wrote this exact session (and then died before
+        # _idempotency_save() ran), reuse it instead of creating a second open session.
+        existing_entry = next((i for i in items if i.get('id') == entity_id), None)
+        if existing_entry is not None:
+            _cleanup_checkin_photo_files(photo_paths)
+            entry = existing_entry
+        else:
+            # Повторная проверка внутри финального лока — на случай гонки между двумя
+            # параллельными checkin_start запросами (TOCTOU между первой проверкой и этой записью).
+            open_session = next((i for i in items
+                                  if str(i.get('user_id')) == str(user['id']) and _is_active_photo_checkin_session(i)), None)
+            if open_session:
+                _cleanup_checkin_photo_files(photo_paths)
+                _idempotency_release(idempotency_key, idempotency_scope)
+                raise HTTPException(409, f"У вас уже есть незавершённая смена на объекте {open_session['object_id']} — сначала завершите её")
+            items.append(entry)
+            _save_checkin_meta(items)
 
-    if photo_paths:
+    if existing_entry is None and photo_paths:
         try:
             profiles = _load_worker_profiles()
             worker_name = _sanitize_display_name(profiles.get(str(user['id']), {}).get('name'), str(user['id']))
@@ -8264,7 +8531,7 @@ async def checkin_start(
         print(f'WARNING: checkin-start finish-context prefetch failed: {e}')
         response['finish_context'] = None
 
-    _idempotency_save(idempotency_key, response)
+    _idempotency_save(idempotency_key, response, idempotency_scope)
     return response
 
 
@@ -8281,6 +8548,8 @@ def checkin_pause(session_id: str, user: dict = Depends(get_current_user), role:
             raise HTTPException(404, "Сессия check-in не найдена")
         if role != 'owner' and str(session.get('user_id')) != str(user['id']):
             raise HTTPException(403, "Нельзя управлять чужой сменой")
+        if session.get('manual_entry'):
+            raise HTTPException(400, "Ручная запись времени не поддерживает паузу")
         if session.get('finish_at') is not None:
             raise HTTPException(400, "Смена уже завершена")
 
@@ -8311,6 +8580,7 @@ async def checkin_finish(
     lon: str = Form(''),
     accuracy: str = Form(''),
     geo_timestamp: str = Form(''),
+    occurred_at: str = Form(''),
     done_summary: str = Form(''),
     extra_work: str = Form(''),
     extra_works: str = Form(''),
@@ -8334,10 +8604,6 @@ async def checkin_finish(
     не создаются автоматически -- это только сохраняет данные в сессию, реальное
     создание тикетов делает отдельный подтверждающий вызов с фронтенда после
     показа сводки юзеру (см. wizard Step 6)."""
-    cached = _idempotency_get(idempotency_key)
-    if cached is not None:
-        return cached
-
     def _parse_json_list(raw: str, field_name: str) -> list:
         if not raw.strip():
             return []
@@ -8359,6 +8625,9 @@ async def checkin_finish(
         raise HTTPException(400, "Заполни короткий отчёт: что сделано за смену")
     accuracy_clean = accuracy.strip()[:50] if isinstance(accuracy, str) else ''
     geo_timestamp_clean = geo_timestamp.strip()[:50] if isinstance(geo_timestamp, str) else ''
+    occurred_at_clean = occurred_at.strip()[:50] if isinstance(occurred_at, str) else ''
+    finish_received_at = int(time.time())
+    finish_event_at = _parse_checkin_occurred_at(occurred_at_clean, 'occurred_at', finish_received_at)
 
     with _checkin_lock:
         items = _load_checkin_meta()
@@ -8367,11 +8636,52 @@ async def checkin_finish(
             raise HTTPException(404, "Сессия check-in не найдена")
         if role != 'owner' and str(session.get('user_id')) != str(user['id']):
             raise HTTPException(403, "Нельзя завершить чужую смену")
-        if session['finish_at'] is not None:
-            raise HTTPException(400, "Смена уже завершена")
+        if session.get('manual_entry'):
+            raise HTTPException(400, "Ручная запись времени не завершается как фото-смена")
+        if session.get('start_at') and finish_event_at < int(session.get('start_at')):
+            raise HTTPException(400, "Время завершения не может быть раньше старта смены")
         object_id, date_str = session['object_id'], session['date']
+        idempotency_scope = _idempotency_scope('checkin_finish', user['id'], session_id, {
+            "session_id": session_id,
+            "object_id": object_id,
+            "lat": lat.strip(),
+            "lon": lon.strip(),
+            "accuracy": accuracy_clean,
+            "geo_timestamp": geo_timestamp_clean,
+            "occurred_at": occurred_at_clean,
+            "done_summary": done_summary.strip()[:1000],
+            "extra_work": extra_work.strip()[:1000],
+            "extra_works": extra_works_list,
+            "needs": needs_list,
+            "defects": defects_list,
+            "next_day_needs": next_day_needs.strip()[:1000],
+            "voice_note_file_id": os.path.basename(voice_note_file_id.strip()) if voice_note_file_id.strip() else '',
+            "daily_plan_report": daily_plan_report.strip(),
+            "file_count": _checkin_file_count(files),
+        })
+        cached = _idempotency_claim(idempotency_key, idempotency_scope)
+        if cached is not None:
+            return cached
+        if session['finish_at'] is not None:
+            # F03 (owner review commit db584ac, CHANGES REQUIRED): crash window --
+            # the earlier attempt's business write (finish_at + session fields,
+            # committed a few lines below in the second _checkin_lock block) can
+            # succeed while the process dies before _idempotency_save() runs. A
+            # bare retry with the SAME Idempotency-Key then found no cached
+            # response above (claim/entry pruned or never written) and landed
+            # here, where the old code unconditionally raised "already finished"
+            # instead of returning the original success. Since this session
+            # matches the idempotency scope's own session_id, replaying it IS the
+            # original result -- self-heal the durable store instead of erasing
+            # the caller's ability to see what actually happened.
+            if idempotency_key:
+                _idempotency_save(idempotency_key, session, idempotency_scope)
+                return session
+            _idempotency_release(idempotency_key, idempotency_scope)
+            raise HTTPException(400, "Смена уже завершена")
 
-    if len(files) < 2:
+    if _checkin_file_count(files) < 2:
+        _idempotency_release(idempotency_key, idempotency_scope)
         raise HTTPException(400, "Прикрепите минимум 2 фото выполненной работы")
 
     # Сохранение фото (I/O, await) — вне лока, как и в checkin_start. Раньше await стоял
@@ -8388,16 +8698,33 @@ async def checkin_finish(
     photo_paths = await _save_checkin_photos(files, object_id, date_str)
     if len(photo_paths) < 2:
         _cleanup_checkin_photo_files(photo_paths)
+        _idempotency_release(idempotency_key, idempotency_scope)
         raise HTTPException(400, "Для завершения смены необходимо минимум 2 корректных фото")
 
     with _checkin_lock:
         items = _load_checkin_meta()
         session = next((i for i in items if i.get('id') == session_id), None)
         if not session:
+            _cleanup_checkin_photo_files(photo_paths)
+            _idempotency_release(idempotency_key, idempotency_scope)
             raise HTTPException(404, "Сессия check-in не найдена")
         if session['finish_at'] is not None:
+            _cleanup_checkin_photo_files(photo_paths)
+            # F03: same self-heal as the earlier check above -- a concurrent/retried
+            # attempt that lost this race already got its own finish committed by
+            # the other one; replay that result instead of erasing it.
+            if idempotency_key:
+                _idempotency_save(idempotency_key, session, idempotency_scope)
+                return session
+            _idempotency_release(idempotency_key, idempotency_scope)
             raise HTTPException(400, "Смена уже завершена")
-        session['finish_at'] = int(time.time())
+        if session.get('start_at') and finish_event_at < int(session.get('start_at')):
+            _cleanup_checkin_photo_files(photo_paths)
+            _idempotency_release(idempotency_key, idempotency_scope)
+            raise HTTPException(400, "Время завершения не может быть раньше старта смены")
+        session['finish_at'] = finish_event_at
+        session['finish_received_at'] = finish_received_at
+        session['finish_occurred_at_source'] = 'client' if occurred_at_clean else 'server'
         session['finish_photos'] = photo_paths
         session['finish_lat'] = lat
         session['finish_lon'] = lon
@@ -8423,7 +8750,7 @@ async def checkin_finish(
         # "Продолжить") — закрываем её здесь же, не оставляем pause_started_at висеть
         # в завершённой сессии.
         if session.get('pause_started_at'):
-            elapsed = max(0, int(time.time()) - session['pause_started_at'])
+            elapsed = max(0, finish_event_at - session['pause_started_at'])
             session['pause_accumulated_seconds'] = session.get('pause_accumulated_seconds', 0) + elapsed
             session['pause_started_at'] = None
         # 20.09 (P0, found by audit, hardened further during merge): the client
@@ -8596,7 +8923,7 @@ async def checkin_finish(
                         f"📋 На завтра нужно ({object_id}): {next_day_needs.strip()[:300]}")
                 except Exception:
                     pass
-    _idempotency_save(idempotency_key, session)
+    _idempotency_save(idempotency_key, session, idempotency_scope)
     return session
 
 
@@ -8907,6 +9234,137 @@ def get_checkin_photo(session_id: str, which: str, index: int, user: dict = Depe
 
 
 # ---------- Zeiterfassung (ручной ввод времени, референс "Neue Zeit") — Фаза 4a ----------
+def _parse_manual_date(value: str) -> str:
+    date_str = (value or '').strip()
+    try:
+        datetime.strptime(date_str, '%Y-%m-%d')
+    except Exception:
+        raise HTTPException(400, "date должен быть в формате YYYY-MM-DD")
+    if date_str > business_today_str():
+        raise HTTPException(400, "Нельзя внести время за будущую дату")
+    return date_str
+
+
+def _parse_manual_hhmm(value: str, field_name: str) -> int:
+    raw = (value or '').strip()
+    if not re.fullmatch(r'\d{2}:\d{2}', raw):
+        raise HTTPException(400, f"{field_name} должен быть в формате HH:MM")
+    hours, minutes = map(int, raw.split(':'))
+    if hours > 23 or minutes > 59:
+        raise HTTPException(400, f"{field_name} должен быть реальным временем HH:MM")
+    return hours * 60 + minutes
+
+
+def _object_id_exists(object_id: str) -> bool:
+    oid = (object_id or '').strip()
+    if not oid:
+        return False
+    try:
+        rows = _cached_get_used_range('Объекты')
+        if rows:
+            header, data = rows[0], rows[1:]
+            try:
+                id_idx = header.index('ID объекта')
+            except ValueError:
+                id_idx = 0
+            for row in data:
+                if id_idx < len(row) and str(row[id_idx]).strip() == oid:
+                    return True
+    except Exception as e:
+        print(f'WARNING: object existence check failed for manual time {oid}: {e}')
+    return oid in _load_assignments()
+
+
+# F02 (owner review commit db584ac): единственные два типа ручной записи времени,
+# реально предлагаемые фронтендом (app.html:9016-9017, object-work-shift-panel.js:163-164).
+# Krankheit/Urlaub -- отдельный Abwesenheit-флоу, не эта форма.
+MANUAL_TIME_ART_WHITELIST = {'Arbeitszeit', 'Fahrzeit'}
+
+
+def _manual_interval_overlaps(a_start: int, a_end: int, b_start: int, b_end: int) -> bool:
+    return a_start < b_end and b_start < a_end
+
+
+def _assert_no_manual_time_overlap(target_user_id: str, date_str: str, start_minutes: int, end_minutes: int,
+                                    exclude_id: str | None = None) -> None:
+    """F02: та же дата+работник не может иметь два пересекающихся интервала времени --
+    ни ручная-vs-ручная, ни ручная-vs-фото check-in (photo-сессия того же дня с известным
+    finish_at также считается интервалом; ещё активная (finish_at is None) не пересекает
+    по времени, т.к. её конец неизвестен -- не блокируем на этом основании)."""
+    for item in _load_checkin_meta():
+        if str(item.get('user_id')) != str(target_user_id) or item.get('date') != date_str:
+            continue
+        if exclude_id and item.get('id') == exclude_id:
+            continue
+        if item.get('manual_entry'):
+            try:
+                h1, m1 = map(int, item['start_time'].split(':'))
+                h2, m2 = map(int, item['end_time'].split(':'))
+            except Exception:
+                continue
+            other_start, other_end = h1 * 60 + m1, h2 * 60 + m2
+        elif item.get('start_at') and item.get('finish_at'):
+            tz = business_now().tzinfo
+            other_start_dt = datetime.fromtimestamp(item['start_at'], tz)
+            other_end_dt = datetime.fromtimestamp(item['finish_at'], tz)
+            other_start = other_start_dt.hour * 60 + other_start_dt.minute
+            other_end = other_end_dt.hour * 60 + other_end_dt.minute
+            if other_end <= other_start:
+                continue  # смена перевалила через полночь -- вне объёма этой проверки
+        else:
+            continue
+        if _manual_interval_overlaps(start_minutes, end_minutes, other_start, other_end):
+            raise HTTPException(409, "Указанный интервал пересекается с уже существующей записью времени за эту дату")
+
+
+def _validate_manual_time_body(body: 'ZeiterfassungBody', user: dict, role: str) -> dict:
+    object_id = body.object_id.strip()[:100]
+    if not object_id:
+        raise HTTPException(400, "object_id обязателен")
+    if not _object_id_exists(object_id):
+        raise HTTPException(404, "Объект не найден")
+
+    date_str = _parse_manual_date(body.date)
+    start_minutes = _parse_manual_hhmm(body.start_time, 'start_time')
+    end_minutes = _parse_manual_hhmm(body.end_time, 'end_time')
+    if end_minutes <= start_minutes:
+        raise HTTPException(400, "end_time должен быть позже start_time")
+    pause_minutes = int(body.pause_minutes or 0)
+    if pause_minutes < 0:
+        raise HTTPException(400, "pause_minutes не может быть отрицательным")
+    duration_minutes = end_minutes - start_minutes
+    if pause_minutes >= duration_minutes:
+        raise HTTPException(400, "pause_minutes должен быть меньше длительности смены")
+
+    art = (body.art or 'Arbeitszeit').strip()[:50] or 'Arbeitszeit'
+    if art not in MANUAL_TIME_ART_WHITELIST:
+        raise HTTPException(400, f"art должен быть одним из: {', '.join(sorted(MANUAL_TIME_ART_WHITELIST))}")
+
+    target_user_id = str(body.mitarbeiter_user_id).strip() if (role == 'owner' and body.mitarbeiter_user_id) else str(user['id'])
+    if not re.fullmatch(r'\d+', target_user_id):
+        raise HTTPException(400, "mitarbeiter_user_id должен быть числовым Telegram ID")
+    roles = _load_roles()
+    if target_user_id not in roles:
+        raise HTTPException(404, "Работник не найден")
+    if role != 'owner' and target_user_id != str(user['id']):
+        raise HTTPException(403, "Нельзя внести время за другого работника")
+    if roles.get(target_user_id) != 'owner' and not has_active_object_access(target_user_id, object_id, today=date_str):
+        raise HTTPException(403, "У работника нет принятого назначения на этот объект в указанную дату")
+
+    start_time = (body.start_time or '').strip()
+    end_time = (body.end_time or '').strip()
+    return {
+        "object_id": object_id,
+        "target_user_id": target_user_id,
+        "date": date_str,
+        "start_time": start_time,
+        "end_time": end_time,
+        "pause_minutes": pause_minutes,
+        "art": art,
+        "description": body.description.strip()[:500],
+    }
+
+
 class ZeiterfassungBody(BaseModel):
     object_id: str
     art: str = "Arbeitszeit"
@@ -8921,26 +9379,56 @@ class ZeiterfassungBody(BaseModel):
 @app.post("/api/checkin/manual")
 def checkin_manual(body: ZeiterfassungBody, user: dict = Depends(get_current_user), role: str = Depends(get_role),
                     idempotency_key: str = Header(default='', alias='Idempotency-Key')):
-    target_user_id = body.mitarbeiter_user_id if (role == 'owner' and body.mitarbeiter_user_id) else str(user['id'])
+    clean = _validate_manual_time_body(body, user, role)
+    target_user_id = clean["target_user_id"]
+    idempotency_scope = _idempotency_scope(
+        'checkin_manual', user['id'], f"{target_user_id}:{clean['object_id']}:{clean['date']}", clean,
+    )
+    cached = _idempotency_claim(idempotency_key, idempotency_scope)
+    if cached is not None:
+        return cached
+
+    entity_id = _idempotent_entity_id(idempotency_key, idempotency_scope)
+    # F02/F03: overlap is checked here (not inside _validate_manual_time_body) and
+    # excludes entity_id -- a crash-recovered retry with the SAME Idempotency-Key
+    # must not be rejected as "overlapping" against the very entry it's replaying.
+    _assert_no_manual_time_overlap(
+        target_user_id, clean['date'],
+        _parse_manual_hhmm(clean['start_time'], 'start_time'), _parse_manual_hhmm(clean['end_time'], 'end_time'),
+        exclude_id=entity_id,
+    )
     entry = {
-        "id": uuid.uuid4().hex,
-        "object_id": body.object_id.strip()[:100],
-        "date": body.date,
+        "id": entity_id,
+        "object_id": clean["object_id"],
+        "date": clean["date"],
         "user_id": target_user_id,
-        "art": body.art,
-        "start_time": body.start_time,
-        "end_time": body.end_time,
-        "pause_minutes": body.pause_minutes,
-        "description": body.description.strip()[:500],
+        "art": clean["art"],
+        "start_time": clean["start_time"],
+        "end_time": clean["end_time"],
+        "pause_minutes": clean["pause_minutes"],
+        "description": clean["description"],
         "manual_entry": True,
         "created_at": int(time.time()),
     }
-    with _checkin_lock:
-        items = _load_checkin_meta()
-        items.append(entry)
-        _save_checkin_meta(items)
-    _write_zeiterfassung_row(entry, entry['object_id'], target_user_id)
-    _idempotency_save(idempotency_key, entry)
+    try:
+        with _checkin_lock:
+            items = _load_checkin_meta()
+            existing_entry = next((i for i in items if i.get('id') == entity_id), None)
+            if existing_entry is not None:
+                # F03: crash-recovered retry -- an earlier attempt with the SAME
+                # Idempotency-Key already wrote this exact business fact (same
+                # derived id) but died before _idempotency_save() ran. Don't
+                # duplicate it -- resolve the response from what's already there.
+                entry = existing_entry
+            else:
+                items.append(entry)
+                _save_checkin_meta(items)
+        if existing_entry is None:
+            _write_zeiterfassung_row(entry, entry['object_id'], target_user_id)
+        _idempotency_save(idempotency_key, entry, idempotency_scope)
+    except Exception:
+        _idempotency_release(idempotency_key, idempotency_scope)
+        raise
     return entry
 
 
@@ -9938,7 +10426,7 @@ def daily_plan_owner_today(
     # session silently overwrite the other in this dict.
     active_sessions = {
         (str(s["user_id"]), str(s.get("object_id", ""))): s for s in checkin_items
-        if s.get("date") == today and s.get("finish_at") is None
+        if s.get("date") == today and _is_active_photo_checkin_session(s)
     }
     finished_sessions = {
         (str(s["user_id"]), str(s.get("object_id", ""))): s for s in checkin_items
@@ -10540,6 +11028,7 @@ CRITICAL_JSON_PATHS.update({
     ROLES_FILE,
     OBJECT_ASSIGNMENTS_FILE,
     CHECKIN_META_FILE,
+    CHECKIN_IDEMPOTENCY_FILE,
     CHAT_FILE,
     CHAT_ARCHIVE_FILE,
     ABWESENHEIT_FILE,

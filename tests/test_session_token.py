@@ -180,6 +180,24 @@ class BackwardCompatInitDataTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 401)
 
 
+class AuditIdentityStateTests(unittest.TestCase):
+    def test_bearer_auth_writes_verified_actor_to_audit_context(self):
+        token = backend.create_session_token('111')
+        spoofed_init_data = _build_init_data(user_id=999)
+
+        with patch.object(backend, '_load_roles', return_value={'111': 'worker', '999': 'owner'}):
+            user = backend.get_current_user(
+                authorization=f'Bearer {token}',
+                x_telegram_init_data=spoofed_init_data,
+            )
+
+        self.assertEqual(user['id'], 111)
+        audit_context = backend._auth_audit_context.get()
+        self.assertEqual(audit_context['user_id'], '111')
+        self.assertEqual(audit_context['role'], 'worker')
+        self.assertEqual(audit_context['source'], 'bearer')
+
+
 class SessionTokenNoSecretsInPayloadTests(unittest.TestCase):
     def test_bot_token_not_leaked_in_token(self):
         token = backend.create_session_token('111')

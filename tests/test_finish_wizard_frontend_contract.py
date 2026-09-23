@@ -71,17 +71,39 @@ def test_checkin_start_sends_geo_accuracy_metadata():
 
     assert "accuracy: coords.accuracy == null ? '' : String(Math.round(coords.accuracy))" in src
     assert "timestamp: pos.timestamp ? String(Math.round(pos.timestamp)) : String(Date.now())" in src
+    assert "function _checkinEventTimestamp()" in src
     assert "formData.append('accuracy', geo.accuracy)" in src
     assert "formData.append('geo_timestamp', geo.timestamp)" in src
+    assert "formData.append('occurred_at', occurredAt || _checkinEventTimestamp())" in src
 
 
 def test_finish_wizard_sends_geo_accuracy_metadata():
     src = _source(FINISH_WIZARD)
 
     assert "let _fwFinishGeo = null; // {lat, lon, accuracy, timestamp}" in src
+    assert "let _fwOccurredAt = '';" in src
+    assert "_fwOccurredAt = _fwOccurredAt || String(Date.now());" in src
+    assert "occurred_at: occurredAt" in src
     assert "if (_fwFinishGeo.accuracy) fields.accuracy = _fwFinishGeo.accuracy;" in src
     assert "if (_fwFinishGeo.timestamp) fields.geo_timestamp = _fwFinishGeo.timestamp;" in src
     assert "Object.entries(record.fields || {}).forEach(([key, value]) => formData.append(key, value || ''))" in src
+
+
+def test_finish_post_tickets_must_succeed_before_outbox_delete():
+    src = _source(FINISH_WIZARD)
+    start = src.index("async function _fwCreatePostFinishTickets")
+    end = src.index("// 18.09 (audit finding):", start)
+    helper = src[start:end]
+    send_start = src.index("async function _fwSendFinishOutboxRecord")
+    send_end = src.index("async function _fwQueueFinishOutbox", send_start)
+    sender = src[send_start:send_end]
+
+    assert "const failures = []" in helper
+    assert "catch (e) { console.warn('need creation failed'" not in helper
+    assert "if (!res.ok)" in helper
+    assert "throw err;" in helper
+    assert "Не удалось создать записи после финиша" in helper
+    assert sender.index("await _fwCreatePostFinishTickets") < sender.index("if (fromOutbox) await promontaOutboxDelete")
 
 
 def test_finish_wizard_loads_frozen_finish_context_before_plan_fact():

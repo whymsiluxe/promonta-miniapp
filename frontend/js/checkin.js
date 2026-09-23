@@ -353,23 +353,32 @@ async function runCheckinAnalysis() {
   }
 }
 
-function _appendCheckinGeo(formData, geo) {
+function _checkinEventTimestamp() {
+  return String(Date.now());
+}
+
+function _appendCheckinGeo(formData, geo, occurredAt) {
   formData.append('lat', geo.lat);
   formData.append('lon', geo.lon);
   if (geo.accuracy) formData.append('accuracy', geo.accuracy);
   if (geo.timestamp) formData.append('geo_timestamp', geo.timestamp);
+  formData.append('occurred_at', occurredAt || _checkinEventTimestamp());
 }
 
-async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey, geoOverride) {
+async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey, geoOverride, occurredAtOverride) {
   const geo = geoOverride || await _getGeolocation();
   if (!geo.lat || !geo.lon) {
     throw new Error('Включи геолокацию, чтобы начать/завершить смену');
   }
+  const occurredAt = occurredAtOverride || extraFields?.occurred_at || _checkinEventTimestamp();
   const formData = new FormData();
   formData.append('object_id', _stagesCurrentObjectId);
-  _appendCheckinGeo(formData, geo);
+  _appendCheckinGeo(formData, geo, occurredAt);
   if (extraFields) {
-    Object.entries(extraFields).forEach(([k, v]) => formData.append(k, v || ''));
+    Object.entries(extraFields).forEach(([k, v]) => {
+      if (k === 'occurred_at') return;
+      formData.append(k, v || '');
+    });
   }
   for (const f of files) formData.append('files', f);
 
@@ -411,9 +420,10 @@ function _isTransientCheckinUploadError(err) {
   return !navigator.onLine || err?.name === 'TypeError' || err?.name === 'TimeoutError' || /Failed to fetch|NetworkError/i.test(msg);
 }
 
-async function _queueCheckinStartOutbox(files, extraFields, idempotencyKey) {
+async function _queueCheckinStartOutbox(files, extraFields, idempotencyKey, occurredAtOverride) {
   const geo = await _getGeolocation();
   if (!geo.lat || !geo.lon) throw new Error('Включи геолокацию, чтобы сохранить старт в очередь');
+  const occurredAt = occurredAtOverride || _checkinEventTimestamp();
   return promontaOutboxPut({
     id: _checkinStartOutboxId(idempotencyKey),
     kind: CHECKIN_OUTBOX_KIND_START,
@@ -422,6 +432,7 @@ async function _queueCheckinStartOutbox(files, extraFields, idempotencyKey) {
     files: Array.from(files),
     extraFields: { ...(extraFields || {}) },
     geo,
+    occurredAt,
     idempotencyKey,
   });
 }
@@ -436,7 +447,8 @@ async function _sendCheckinStartOutboxRecord(record) {
       record.files || [],
       record.extraFields || null,
       record.idempotencyKey,
-      record.geo
+      record.geo,
+      record.occurredAt
     );
     await promontaOutboxDelete(record.id);
     _setActiveCheckinSession(record.objectId, { id: session.id, finished: false });
@@ -489,6 +501,7 @@ async function _retryCheckinOutbox() {
 // на каждом + кнопкой "Добавить фото"), реальный upload — только по "Подтвердить".
 let _checkinPreviewFiles = [];
 let _checkinIdempotencyKey = null;
+let _checkinOccurredAt = null;
 let _checkinPreviewPhotoUrls = new WeakMap();
 const CHECKIN_OUTBOX_KIND_START = 'checkin-start';
 let _checkinOutboxRetrying = false;
@@ -550,6 +563,7 @@ function _closeCheckinPreviewModalInternal() {
   _checkinPreviewFiles = [];
   _checkinPendingAction = null;
   _checkinIdempotencyKey = null;
+  _checkinOccurredAt = null;
   _checkinPreviewOverlayUnregister = null;
 }
 
@@ -620,12 +634,14 @@ async function _confirmCheckinPreview() {
   confirmBtn.textContent = 'Отправка…';
   _setCheckinSyncStatus('Отправка…');
   if (!_checkinIdempotencyKey) _checkinIdempotencyKey = crypto.randomUUID();
+  if (!_checkinOccurredAt) _checkinOccurredAt = _checkinEventTimestamp();
+  const startOccurredAt = _checkinOccurredAt;
   const startFields = _buildCheckinStartFields();
   const startFieldsOrNull = Object.keys(startFields).length ? startFields : null;
 
   if (!navigator.onLine) {
     try {
-      await _queueCheckinStartOutbox(_checkinPreviewFiles, startFieldsOrNull, _checkinIdempotencyKey);
+      await _queueCheckinStartOutbox(_checkinPreviewFiles, startFieldsOrNull, _checkinIdempotencyKey, startOccurredAt);
       window._dailyPlanCheckinFields = null;
       _checkinSelectedStageName = null;
       _setCheckinSyncStatus('Нет связи — старт сохранён в очередь и отправится автоматически', false);
@@ -642,7 +658,7 @@ async function _confirmCheckinPreview() {
 
   try {
     const session = await _uploadCheckinPhotos('/api/checkin/start', _checkinPreviewFiles,
-      startFieldsOrNull, _checkinIdempotencyKey);
+      startFieldsOrNull, _checkinIdempotencyKey, null, startOccurredAt);
     window._dailyPlanCheckinFields = null;
     _setActiveCheckinSession(_stagesCurrentObjectId, { id: session.id, finished: false });
     _checkinSelectedStageName = null;
@@ -659,7 +675,7 @@ async function _confirmCheckinPreview() {
     let queueErrorMessage = '';
     if (!isGeoError && _isTransientCheckinUploadError(e)) {
       try {
-        await _queueCheckinStartOutbox(_checkinPreviewFiles, startFieldsOrNull, _checkinIdempotencyKey);
+        await _queueCheckinStartOutbox(_checkinPreviewFiles, startFieldsOrNull, _checkinIdempotencyKey, startOccurredAt);
         window._dailyPlanCheckinFields = null;
         _checkinSelectedStageName = null;
         _setCheckinSyncStatus('Связь сорвалась — старт сохранён в очередь', false);

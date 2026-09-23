@@ -68,6 +68,7 @@ TASKS_FILE = os.path.join(DATA_ROOT, 'tasks.json')
 MANGEL_PHOTO_DIR = os.path.join(DATA_ROOT, 'feed_photos')  # переиспользуем feed_photos/
 CHECKIN_PHOTO_BASE = os.path.join(DATA_ROOT, 'checkin_photos')
 CHECKIN_META_FILE = os.path.join(DATA_ROOT, 'checkin_meta.json')
+CHECKIN_IDEMPOTENCY_FILE = os.path.join(DATA_ROOT, 'checkin_idempotency.json')
 CRITICAL_ALERTS_FILE = os.path.join(DATA_ROOT, 'critical_alerts.json')
 CRITICAL_ALERT_PHOTO_DIR = os.path.join(DATA_ROOT, 'critical_alert_photos')
 ABWESENHEIT_FILE = os.path.join(DATA_ROOT, 'abwesenheit.json')

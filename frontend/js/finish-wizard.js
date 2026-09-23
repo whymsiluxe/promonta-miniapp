@@ -30,6 +30,7 @@ let _fwFinishContext = null;
 // генерировался заново на КАЖДЫЙ вызов _fwSubmitFinish(), так что retry после сетевой
 // ошибки/таймаута слал НОВЫЙ ключ и backend не мог распознать повтор того же запроса.
 let _fwIdempotencyKey = null;
+let _fwOccurredAt = '';
 const CHECKIN_OUTBOX_KIND_FINISH = 'checkin-finish';
 let _finishOutboxRetrying = false;
 
@@ -121,6 +122,7 @@ async function openFinishShiftWizard(sessionId, objectId) {
   _fwNeeds = [];
   _fwDefects = [];
   _fwIdempotencyKey = null;
+  _fwOccurredAt = '';
   _fwVoiceNoteFileId = '';
   // 28.07: owner report -- было захардкожено 30 минут независимо от реальной паузы.
   const activeSession = typeof _getActiveCheckinSession === 'function' ? _getActiveCheckinSession(objectId) : null;
@@ -779,9 +781,12 @@ function _fwFinishOutboxId(idempotencyKey) {
 
 function _fwBuildFinishOutboxRecord() {
   _fwIdempotencyKey = _fwIdempotencyKey || crypto.randomUUID();
+  _fwOccurredAt = _fwOccurredAt || String(Date.now());
+  const occurredAt = _fwOccurredAt;
   const fields = {
     lat: _fwFinishGeo.lat,
     lon: _fwFinishGeo.lon,
+    occurred_at: occurredAt,
     done_summary: _fwWorkSummary,
     extra_works: JSON.stringify(_fwExtraWorks),
     needs: JSON.stringify(_fwNeeds),
@@ -809,6 +814,7 @@ function _fwBuildFinishOutboxRecord() {
     files: Array.from(_fwPhotos),
     needs: _fwNeeds,
     defects: _fwDefects,
+    occurredAt,
     idempotencyKey: _fwIdempotencyKey,
   };
 }
@@ -821,25 +827,43 @@ function _fwAppendFinishRecordFormData(record) {
 }
 
 async function _fwCreatePostFinishTickets(objectId, needs, defects) {
+  const failures = [];
   for (const need of needs || []) {
     try {
       await api('/api/tasks', {
         method: 'POST',
         body: JSON.stringify({ title: need.description, object_id: objectId }),
       });
-    } catch (e) { console.warn('need creation failed', e); }
+    } catch (e) {
+      failures.push({ kind: 'Потребность', message: e?.message || 'ошибка', status: e?.status });
+    }
   }
   for (const defect of defects || []) {
     try {
       const fd = new FormData();
       fd.append('object_id', objectId);
       fd.append('description', defect.description);
-      await fetch(`${API_BASE}/api/mangel`, {
+      const res = await fetch(`${API_BASE}/api/mangel`, {
         method: 'POST',
         headers: { ..._authHeaders() },
         body: fd,
       });
-    } catch (e) { console.warn('defect creation failed', e); }
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => ({}))).detail;
+        const err = new Error(detail || `HTTP ${res.status}`);
+        err.status = res.status;
+        throw err;
+      }
+    } catch (e) {
+      failures.push({ kind: 'Дефект', message: e?.message || 'ошибка', status: e?.status });
+    }
+  }
+  if (failures.length) {
+    const msg = failures.map(f => `${f.kind}: ${f.message}`).join('; ');
+    const err = new Error(`Не удалось создать записи после финиша: ${msg}`);
+    const transient = failures.some(f => promontaOutboxIsTransientError({ status: f.status, message: f.message }));
+    err.status = transient ? 503 : (failures[0].status || 500);
+    throw err;
   }
 }
 

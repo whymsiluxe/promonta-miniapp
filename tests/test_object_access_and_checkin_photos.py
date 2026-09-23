@@ -129,6 +129,39 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['pause_minutes'], 45)
         self.assertAlmostEqual(backend._hours_from_session(result), 7.25)
 
+    async def test_finish_uses_client_occurred_at_not_delivery_time(self):
+        session = self._session()
+        session.update({
+            'start_at': 1000,
+            'pause_accumulated_seconds': 0,
+            'pause_started_at': 2500,
+        })
+        delivery_ts = 10_000
+        finish_event_ts = 4_000
+        with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
+             patch.object(backend, '_save_checkin_meta'), \
+             patch.object(backend, '_save_checkin_photos', return_value=['OBJ-1/2026-08-15/a.jpg', 'OBJ-1/2026-08-15/b.jpg']), \
+             patch.object(backend, '_write_zeiterfassung_row'), \
+             patch.object(backend, '_append_object_history_best_effort'), \
+             patch.object(backend, '_upsert_checkin_feed_post'), \
+             patch.object(backend, '_load_worker_profiles', return_value={}), \
+             patch.object(backend, '_cached_get_used_range', return_value=None), \
+             patch.object(backend, '_idempotency_save'), \
+             patch.object(backend.time, 'time', return_value=delivery_ts):
+            fake_file = unittest.mock.MagicMock()
+            result = await backend.checkin_finish(
+                session_id='s1', lat='52.5', lon='13.4', accuracy='', geo_timestamp='',
+                occurred_at=str(finish_event_ts), done_summary='Работы выполнены',
+                extra_work='', extra_works='', needs='', defects='', next_day_needs='',
+                pause_minutes=0, voice_note_file_id='', daily_plan_report='',
+                files=[fake_file, fake_file], user=WORKER_A, role='worker', idempotency_key='',
+            )
+
+        self.assertEqual(result['finish_at'], finish_event_ts)
+        self.assertEqual(result['finish_received_at'], delivery_ts)
+        self.assertEqual(result['finish_occurred_at_source'], 'client')
+        self.assertEqual(result['pause_accumulated_seconds'], 1500)
+
     async def test_two_valid_photos_finish_succeeds(self):
         session = self._session()
         with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
@@ -244,6 +277,51 @@ class CheckinFinishPhotoValidationTests(unittest.IsolatedAsyncioTestCase):
                 )
         mock_save.assert_not_called()
         self.assertEqual(session, original_session)
+
+    async def test_manual_entry_cannot_be_finished_as_photo_shift(self):
+        # F01 (owner review commit db584ac, CHANGES REQUIRED): manual entries have
+        # no finish_at, so a known manual session_id could previously be pushed
+        # through checkin_finish (photo-shift completion) since the only guard was
+        # finish_at is not None -- which is true for a manual entry too (None).
+        session = self._session()
+        session['manual_entry'] = True
+        with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
+             patch.object(backend, '_save_checkin_meta') as mock_save, \
+             patch.object(backend, '_idempotency_get', return_value=None):
+            fake_file = unittest.mock.MagicMock()
+            with self.assertRaises(HTTPException) as ctx:
+                await backend.checkin_finish(
+                    session_id='s1', lat='52.5', lon='13.4', done_summary='Работы выполнены',
+                    extra_work='', extra_works='', needs='', defects='', next_day_needs='',
+                    pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
+                    user=WORKER_A, role='worker', idempotency_key='',
+                )
+        self.assertEqual(ctx.exception.status_code, 400)
+        mock_save.assert_not_called()
+
+    async def test_finish_replays_result_after_crash_before_idempotency_save(self):
+        # F03 (owner review commit db584ac, CHANGES REQUIRED): simulate the exact
+        # crash window -- finish_at + session fields already committed to
+        # checkin_meta.json by an earlier attempt, but _idempotency_save() never
+        # ran (process died). Previously a retry with the SAME Idempotency-Key
+        # would find session['finish_at'] is not None and unconditionally raise
+        # "already finished", discarding the caller's ability to see the real
+        # result. It must now replay the already-finished session instead.
+        session = self._session()
+        session.update({'finish_at': 5000, 'start_at': 1000, 'done_summary': 'Готово', 'pause_accumulated_seconds': 0})
+        with patch.object(backend, '_load_checkin_meta', return_value=[session]), \
+             patch.object(backend, '_idempotency_claim', return_value=None), \
+             patch.object(backend, '_idempotency_save') as mock_idem_save:
+            fake_file = unittest.mock.MagicMock()
+            result = await backend.checkin_finish(
+                session_id='s1', lat='52.5', lon='13.4', done_summary='Готово',
+                extra_work='', extra_works='', needs='', defects='', next_day_needs='',
+                pause_minutes=0, voice_note_file_id='', daily_plan_report='', files=[fake_file, fake_file],
+                user=WORKER_A, role='worker', idempotency_key='finish-crash-key',
+            )
+        self.assertEqual(result['id'], 's1')
+        self.assertEqual(result['finish_at'], 5000)
+        mock_idem_save.assert_called_once()
 
 
 class CleanupCheckinPhotoFilesTests(unittest.TestCase):
