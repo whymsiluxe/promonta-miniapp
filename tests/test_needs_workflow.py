@@ -8,6 +8,7 @@ Run:
 """
 import os
 import sys
+import tempfile
 import time
 import unittest
 from unittest.mock import patch
@@ -21,13 +22,24 @@ OWNER = {'id': 1, 'first_name': 'Boss'}
 
 
 class NeedsWorkflowTests(unittest.TestCase):
+    # 23.09 (owner P0 fix): update_task_status() now goes through
+    # update_json_transaction(TASKS_FILE, ...), which does its own real file
+    # I/O -- patching _load_tasks/_save_tasks no longer intercepts anything
+    # this endpoint actually reads/writes. Seed a real temp store instead,
+    # same pattern used for critical_alerts.json elsewhere this session.
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix='tasks-needs-workflow-')
+        self._orig_tasks_file = backend.TASKS_FILE
+        backend.TASKS_FILE = os.path.join(self._tmp, 'tasks.json')
+
+    def tearDown(self):
+        backend.TASKS_FILE = self._orig_tasks_file
+
     def _run(self, tasks, task_id, status):
-        saved = {}
-        with patch.object(backend, '_load_tasks', return_value=tasks), \
-             patch.object(backend, '_save_tasks', side_effect=lambda x: saved.update(items=x)), \
-             patch.object(backend, '_load_repo_objekte_lib', side_effect=RuntimeError('no sheets')):
+        backend._save_tasks(tasks)
+        with patch.object(backend, '_load_repo_objekte_lib', side_effect=RuntimeError('no sheets')):
             result = backend.update_task_status(task_id, backend.TaskStatusBody(status=status), user=OWNER, _=None)
-        return result, saved.get('items')
+        return result, backend._load_tasks()
 
     def test_worker_gets_403(self):
         with self.assertRaises(HTTPException) as ctx:
@@ -56,21 +68,20 @@ class NeedsWorkflowTests(unittest.TestCase):
     def test_archive_only_on_first_close(self):
         # уже закрытая → повторный PATCH 'закрыто' не должен снова архивировать (Sheets не трогается)
         tasks = [{'id': 'T1', 'status': 'закрыто', 'created_at': 1, 'closed_at': 5}]
+        backend._save_tasks(tasks)
         called = {'n': 0}
 
         def _sheets():
             called['n'] += 1
             raise RuntimeError('boom')
-        with patch.object(backend, '_load_tasks', return_value=tasks), \
-             patch.object(backend, '_save_tasks'), \
-             patch.object(backend, '_load_repo_objekte_lib', side_effect=_sheets):
+        with patch.object(backend, '_load_repo_objekte_lib', side_effect=_sheets):
             backend.update_task_status('T1', backend.TaskStatusBody(status='закрыто'), user=OWNER, _=None)
         self.assertEqual(called['n'], 0)
 
     def test_unknown_task_404(self):
-        with patch.object(backend, '_load_tasks', return_value=[]):
-            with self.assertRaises(HTTPException) as ctx:
-                backend.update_task_status('nope', backend.TaskStatusBody(status='в работе'), user=OWNER, _=None)
+        backend._save_tasks([])
+        with self.assertRaises(HTTPException) as ctx:
+            backend.update_task_status('nope', backend.TaskStatusBody(status='в работе'), user=OWNER, _=None)
         self.assertEqual(ctx.exception.status_code, 404)
 
     def test_overdue_open_task_is_owner_alert(self):

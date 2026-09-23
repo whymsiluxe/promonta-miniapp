@@ -10,6 +10,7 @@ Run:
 """
 import os
 import sys
+import tempfile
 import unittest
 from datetime import date, timedelta
 from unittest.mock import patch
@@ -90,14 +91,24 @@ class ListTasksAccessTests(unittest.TestCase):
 
 
 class CreateTaskAccessTests(unittest.TestCase):
+    def setUp(self):
+        # 23.09 (owner P0 fix): create_task() now goes through
+        # update_json_transaction(TASKS_FILE, ...), which does its own real
+        # file I/O -- patching _load_tasks/_save_tasks no longer intercepts
+        # anything this endpoint actually reads/writes.
+        self._tmp = tempfile.mkdtemp(prefix='tasks-access-control-')
+        self._orig_tasks_file = backend.TASKS_FILE
+        backend.TASKS_FILE = os.path.join(self._tmp, 'tasks.json')
+
+    def tearDown(self):
+        backend.TASKS_FILE = self._orig_tasks_file
+
     def test_active_worker_creates_task(self):
         assignments = {'OBJ-1': [_assignment(10)]}
         body = backend.TaskCreateBody(title='Нужен цемент', object_id='OBJ-1')
         with patch.object(backend, '_load_assignments', return_value=assignments), \
              patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker'}), \
              patch.object(backend, '_get_worker_profile', return_value={'name': 'Ivan'}), \
-             patch.object(backend, '_load_tasks', return_value=[]), \
-             patch.object(backend, '_save_tasks'), \
              patch.object(backend, 'send_telegram_message'):
             task = backend.create_task(body, user=WORKER_A, role='worker')
         self.assertEqual(task['object_id'], 'OBJ-1')
