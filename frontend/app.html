@@ -8940,13 +8940,30 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--app
     <div id="obj-detail-panel-chat" class="obj-detail-panel"></div>
     <div id="obj-detail-panel-info" class="obj-detail-panel" style="display:none;"></div>
     <div id="obj-detail-panel-stages" class="obj-detail-panel" style="display:none;"></div>
+    <!-- 22.09 (Object Detail V2 step 2, safety revert): a same-session attempt to
+         rename this LIVE panel's id to end in "-work" broke production -- both
+         openObjectDetail() and _objDetailTabClick() build the DOM id as
+         `obj-detail-panel-${tab}` where tab is the STRING 'stages' (the routing key
+         above, data-obj-tab="stages", was never going to change) -- so after that
+         rename, switching to "План работ" called getElementById('obj-detail-panel-
+         stages'), got null, and threw on .style.display. Reverted: this id stays
+         "-stages", exactly as before. The canonical-mount decision from
+         DECISIONS.md is NOT resolved by an id-only rename done in isolation --
+         a real cutover needs the tab key, panel id, routing, renderer target, and
+         every caller changed together in one atomic step, not one file at a time.
+         #obj-detail-panel-work below stays a separate, inert V2-shell container --
+         never a fallback/OR target for this live panel, never the other way
+         around. Exactly one of each id exists; renderObjectStagesTab() targets
+         only this one. -->
     <!-- Object Detail V2 (Этап 7, step 1): internal zone containers for the future
          Обзор/Работа/Медиа/Чат tab bar -- NOT wired into #obj-detail-tabs yet, not
          production-visible. Kept alongside the legacy chat/info/stages panels above
          (untouched) until Работа is a functional superset of #stages-view and
          Обзор/Медиа have real content -- see docs/OBJECT_DETAIL_V2_IMPLEMENTATION_PLAN.md.
-         'work' reuses the existing stages renderer (renderObjectStagesTab) directly;
-         its own container here stays empty/unused until the visible tab bar switches. -->
+         'work' is NOT wired to any renderer yet (see object-work-shift-panel.js's own
+         top-of-file comment) -- its container here stays empty/unused until a real,
+         atomic cutover commit changes tab key + panel id + routing + renderer +
+         callers together. -->
     <div id="obj-detail-panel-overview" class="obj-detail-panel" style="display:none;"></div>
     <div id="obj-detail-panel-work" class="obj-detail-panel" style="display:none;"></div>
     <div id="obj-detail-panel-media" class="obj-detail-panel" style="display:none;"></div>
