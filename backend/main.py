@@ -9049,6 +9049,54 @@ def _save_critical_alerts(items: list):
     _atomic_write_json(CRITICAL_ALERTS_FILE, items)
 
 
+def _is_legacy_bare_uid_birthday_ref(alert: dict) -> bool:
+    """23.09 (owner review): identifies the OLD, pre-fix birthday alert shape --
+    kind='birthday' with ref_id set to the bare worker uid (digits only), from
+    before ref_id=idem (birthday:<uid>:<year>:3days / :today) existed. New
+    birthday alerts always have an 'idem'-shaped ref_id (contains ':') and
+    must never be touched by this legacy-only logic. Deliberately narrow: only
+    kind='birthday' with a non-empty, purely-numeric ref_id qualifies -- any
+    other kind, or a blank ref_id, or a ref_id that already looks like the new
+    idem shape, is left alone."""
+    if alert.get('kind') != 'birthday':
+        return False
+    ref_id = alert.get('ref_id') or ''
+    return bool(ref_id) and ref_id.isdigit()
+
+
+def _supersede_legacy_siblings(items: list, canonical: dict) -> int:
+    """23.09 (owner review): when a legacy bare-uid birthday alert is
+    acknowledged, every OTHER unresolved alert sharing the exact same legacy
+    semantic key (kind, target_user_id, ref_id) is superseded in the SAME
+    transaction -- acknowledged_at set, superseded_by recorded, nothing
+    deleted. This is the live-request equivalent of
+    cleanup_legacy_critical_alert_duplicates.py's one-off migration: that
+    script handles the 196 records that already existed; this handles any
+    legacy sibling a poll still manages to surface between deploy and the
+    migration actually running (or if the migration is deliberately not run
+    immediately). Scoped to _is_legacy_bare_uid_birthday_ref() ONLY -- new
+    alerts (idem-shaped ref_id, any other kind, blank ref_id) are never
+    touched by this, matching _create_critical_alert()'s own dedup scoping."""
+    if not _is_legacy_bare_uid_birthday_ref(canonical):
+        return 0
+    now = canonical.get('acknowledged_at') or int(time.time())
+    superseded = 0
+    for a in items:
+        if a['id'] == canonical['id']:
+            continue
+        if a.get('acknowledged_at'):
+            continue
+        if not _is_legacy_bare_uid_birthday_ref(a):
+            continue
+        if a['kind'] != canonical['kind'] or a['target_user_id'] != canonical['target_user_id'] \
+                or a.get('ref_id') != canonical.get('ref_id'):
+            continue
+        a['acknowledged_at'] = now
+        a['superseded_by'] = canonical['id']
+        superseded += 1
+    return superseded
+
+
 def _create_critical_alert(target_user_id: str, kind: str, title: str, ref_id: str = '',
                             subtitle: str = '', deadline_at: int | None = None) -> dict:
     """Создаёт persisted критический алерт + пуш + авто-чат-тред (владельцы + назначенный worker).
@@ -9064,11 +9112,20 @@ def _create_critical_alert(target_user_id: str, kind: str, title: str, ref_id: s
     still unacknowledged, return it instead of creating a new one. Two semantically
     different alerts of the same kind for the same user are still allowed to
     coexist as long as ref_id differs (e.g. two different plan_overdue alerts for
-    two different business dates, if ref_id carries the date)."""
+    two different business dates, if ref_id carries the date).
+
+    23.09 (owner review, before the legacy-birthday-cleanup rollout): a BLANK
+    ref_id ('' -- the default for any caller that doesn't pass one, e.g. a
+    manually-created owner alert with no natural reference id) must NEVER
+    dedupe against another blank-ref_id alert -- two genuinely unrelated manual
+    alerts of the same kind for the same user would otherwise silently collapse
+    into one. Dedup only applies when ref_id is non-empty; every call with a
+    blank ref_id always creates a fresh alert, exactly like before this
+    function had any dedup at all."""
     def _mutate(items):
         existing = next(
             (a for a in items
-             if a['target_user_id'] == str(target_user_id) and a['kind'] == kind
+             if ref_id and a['target_user_id'] == str(target_user_id) and a['kind'] == kind
              and a.get('ref_id', '') == ref_id and not a.get('acknowledged_at')),
             None,
         )
@@ -9135,15 +9192,30 @@ class CriticalAlertAckBody(BaseModel):
 
 @app.post("/api/critical-alerts/{alert_id}/ack")
 def ack_critical_alert(alert_id: str, body: CriticalAlertAckBody, user: dict = Depends(get_current_user)):
-    items = _load_critical_alerts()
-    alert = next((a for a in items if a['id'] == alert_id), None)
-    if not alert:
-        raise HTTPException(404, "Алерт не найден")
-    if alert['target_user_id'] != str(user['id']):
-        raise HTTPException(403, "Не ваш алерт")
-    alert['acknowledged_at'] = int(time.time())
-    alert['comment'] = body.comment.strip()[:500] or None
-    _save_critical_alerts(items)
+    # 23.09 (owner review): was a plain _load_critical_alerts() -> mutate ->
+    # _save_critical_alerts() -- the read-modify-write race storage.py's own
+    # _atomic_write_json docstring warns against (lock only covers the write,
+    # not the read). A concurrent _create_critical_alert() append (already
+    # correctly using update_json_transaction) landing between this read and
+    # this write could be silently discarded, or this ack itself could be
+    # lost, leaving the alert looking unacknowledged on the next poll.
+    #
+    # Also supersedes every other unresolved LEGACY sibling sharing this
+    # alert's semantic key (kind, target_user_id, ref_id) in the same
+    # transaction -- see _supersede_legacy_siblings()'s docstring for why this
+    # is scoped to legacy birthday records specifically, not a general rule.
+    def _mutate(items):
+        alert = next((a for a in items if a['id'] == alert_id), None)
+        if not alert:
+            raise HTTPException(404, "Алерт не найден")
+        if alert['target_user_id'] != str(user['id']):
+            raise HTTPException(403, "Не ваш алерт")
+        alert['acknowledged_at'] = int(time.time())
+        alert['comment'] = body.comment.strip()[:500] or None
+        _supersede_legacy_siblings(items, alert)
+        return alert
+
+    alert = update_json_transaction(CRITICAL_ALERTS_FILE, [], _mutate)
 
     if alert['comment']:
         roles = _load_roles()
@@ -9169,23 +9241,24 @@ def resolve_critical_alert(alert_id: str, resolution: str = Form(...), note: str
                             user: dict = Depends(get_current_user)):
     if resolution not in ('yes', 'no'):
         raise HTTPException(400, "resolution должен быть yes или no")
-    items = _load_critical_alerts()
-    alert = next((a for a in items if a['id'] == alert_id), None)
-    if not alert:
+    # Read-only lookup for the 404/403 checks -- NOT the final write path, see
+    # the update_json_transaction call below for why (same race class as
+    # ack_critical_alert, 23.09 owner review).
+    existing = next((a for a in _load_critical_alerts() if a['id'] == alert_id), None)
+    if not existing:
         raise HTTPException(404, "Алерт не найден")
-    if alert['target_user_id'] != str(user['id']):
+    if existing['target_user_id'] != str(user['id']):
         raise HTTPException(403, "Не ваш алерт")
-
-    alert['resolution'] = resolution
-    alert['resolution_note'] = note.strip()[:500] or None
 
     saved_photos = []
     if resolution == 'yes' and files:
         # 30.07 (Release-аудит P1-8): basename на write-стороне для согласованности
         # с read-стороной (GET .../photo/{filename} уже санитирует). alert_id уже
-        # проверен по _load_critical_alerts()+ownership выше, практическая
-        # эксплуатируемость низкая (id -- server-generated uuid), но раз паттерн
-        # есть на чтении -- должен быть и на записи.
+        # проверен выше, практическая эксплуатируемость низкая (id -- server-
+        # generated uuid), но раз паттерн есть на чтении -- должен быть и на записи.
+        # File I/O deliberately stays OUTSIDE the JSON transaction lock below --
+        # it doesn't touch critical_alerts.json and must not hold that lock for
+        # the duration of a photo upload.
         alert_dir = os.path.join(CRITICAL_ALERT_PHOTO_DIR, os.path.basename(alert_id))
         os.makedirs(alert_dir, exist_ok=True)
         for f in files:
@@ -9200,8 +9273,19 @@ def resolve_critical_alert(alert_id: str, resolution: str = Form(...), note: str
             with open(os.path.join(alert_dir, fname), 'wb') as out:
                 out.write(data)
             saved_photos.append(fname)
-    alert['resolution_photos'] = saved_photos
-    _save_critical_alerts(items)
+
+    def _mutate(items):
+        alert = next((a for a in items if a['id'] == alert_id), None)
+        if not alert:
+            raise HTTPException(404, "Алерт не найден")
+        if alert['target_user_id'] != str(user['id']):
+            raise HTTPException(403, "Не ваш алерт")
+        alert['resolution'] = resolution
+        alert['resolution_note'] = note.strip()[:500] or None
+        alert['resolution_photos'] = saved_photos
+        return alert
+
+    alert = update_json_transaction(CRITICAL_ALERTS_FILE, [], _mutate)
 
     roles = _load_roles()
     owner_ids = [uid for uid, r in roles.items() if r == 'owner']
@@ -9247,10 +9331,32 @@ def get_critical_alert_photo(alert_id: str, filename: str, user: dict = Depends(
 
 @app.get("/api/critical-alerts/pending")
 def list_pending_critical_alerts(user: dict = Depends(get_current_user)):
-    """Polling endpoint для глобального попапа — только непрочитанные алерты текущего юзера."""
+    """Polling endpoint для глобального попапа — только непрочитанные алерты текущего юзера.
+
+    23.09 (owner review): defensively collapses legacy bare-uid birthday
+    siblings (see _is_legacy_bare_uid_birthday_ref()) down to ONE canonical
+    record before returning -- in case cleanup_legacy_critical_alert_
+    duplicates.py's migration hasn't run yet, or a stale poll response still
+    surfaces a sibling _supersede_legacy_siblings() hasn't caught yet. This
+    is read-side only (never writes) -- the actual persistent fix is the
+    migration script + the write-side supersede in ack_critical_alert().
+    Non-legacy alerts (new idem-shaped birthday ref_id, every other kind)
+    pass through completely unfiltered."""
     items = [a for a in _load_critical_alerts()
              if a['target_user_id'] == str(user['id']) and not a.get('acknowledged_at')]
-    return {"alerts": items}
+
+    legacy_by_key: dict[tuple, dict] = {}
+    result = []
+    for a in items:
+        if not _is_legacy_bare_uid_birthday_ref(a):
+            result.append(a)
+            continue
+        key = (a['kind'], a['target_user_id'], a.get('ref_id'))
+        current = legacy_by_key.get(key)
+        if current is None or a.get('created_at', 0) > current.get('created_at', 0):
+            legacy_by_key[key] = a
+    result.extend(legacy_by_key.values())
+    return {"alerts": result}
 
 
 class CriticalAlertCreateBody(BaseModel):

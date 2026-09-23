@@ -1,16 +1,16 @@
-"""22.09 hotfix — tests for backend/cleanup_legacy_critical_alert_duplicates.py,
+"""22.09/23.09 hotfix — tests for backend/cleanup_legacy_critical_alert_duplicates.py,
 the one-off migration that resolves the 196 legacy duplicate `birthday`
-critical-alert records found in production. Grouping key: kind +
-target_user_id + ref_id -- the SAME key _create_critical_alert() already uses
-for its own live dedup (see that function's docstring), not a title/date-text
-heuristic (owner explicitly rejected that as fragile -- whitespace/emoji/
-locale drift could silently break it).
+critical-alert records found in production.
 
-Non-destructive: nothing is ever deleted. One canonical PENDING record is
-kept per duplicate group (the most recent by created_at); every other
-unacknowledged record in the group is marked acknowledged_at + superseded_by
-in place, so it stops showing in the pending-alerts popup but its full
-history (title, timestamps, id) survives untouched.
+23.09 (owner review, second pass): the script's grouping must be scoped
+EXCLUSIVELY to the legacy bare-uid birthday shape --
+kind == 'birthday' AND ref_id non-empty AND ref_id is the bare numeric worker
+uid (matches backend/main.py's own _is_legacy_bare_uid_birthday_ref(), used
+by the live ACK-time supersede logic). A blank ref_id, a non-birthday kind,
+or a new idem-shaped birthday ref_id (birthday:<uid>:<year>:3days / :today)
+must NEVER be grouped or touched, regardless of what key they might
+otherwise appear to share. Only records that pass that filter are grouped by
+kind + target_user_id + ref_id -- no title/subtitle/date heuristic.
 """
 import os
 import sys
@@ -29,7 +29,7 @@ def _alert(id_, kind='birthday', uid='1', ref_id='555', title='t', subtitle='',
     }
 
 
-def test_keeps_the_most_recent_record_as_canonical_and_supersedes_the_rest():
+def test_three_legacy_birthday_siblings_same_target_ref_leaves_one_pending():
     alerts = [
         _alert('a1', created_at=100),
         _alert('a2', created_at=300),
@@ -40,49 +40,80 @@ def test_keeps_the_most_recent_record_as_canonical_and_supersedes_the_rest():
     by_id = {a['id']: a for a in migrated}
     assert by_id['a2']['acknowledged_at'] is None
     assert 'superseded_by' not in by_id['a2']
-
     assert by_id['a1']['acknowledged_at'] is not None
     assert by_id['a1']['superseded_by'] == 'a2'
     assert by_id['a3']['acknowledged_at'] is not None
     assert by_id['a3']['superseded_by'] == 'a2'
-
-    # Nothing removed -- all 3 ids still present.
-    assert {a['id'] for a in migrated} == {'a1', 'a2', 'a3'}
 
     assert report['total_records'] == 3
     assert report['superseded'] == 2
     assert report['groups_affected'] == 1
 
 
-def test_grouping_key_is_kind_target_user_id_ref_id_not_title():
-    # This is the exact legacy shape: two DIFFERENT titles ("3 days before" /
-    # "the day of") sharing the same ref_id=uid -- by design, per the owner's
-    # explicit correction, these DO fall into one group under this key. The
-    # migration doesn't try to reconstruct which was which; it just keeps one
-    # canonical pending record.
+def test_different_worker_ref_id_stays_a_separate_group():
     alerts = [
-        _alert('a1', ref_id='555', title='Через 3 дня день рождения у Иван', created_at=100),
-        _alert('a2', ref_id='555', title='Сегодня день рождения у Иван', created_at=200),
+        _alert('a1', uid='1', ref_id='555', created_at=100),
+        _alert('a2', uid='1', ref_id='555', created_at=200),
+        _alert('a3', uid='1', ref_id='666', created_at=150),
     ]
     migrated, report = cleanup.migrate(alerts)
-    assert report['groups_affected'] == 1
     by_id = {a['id']: a for a in migrated}
-    assert by_id['a2']['acknowledged_at'] is None  # most recent kept pending
-    assert by_id['a1']['superseded_by'] == 'a2'
+    assert by_id['a3']['acknowledged_at'] is None
+    assert 'superseded_by' not in by_id['a3']
+    assert report['groups_affected'] == 1
 
 
-def test_title_or_subtitle_differences_do_not_create_separate_groups():
-    # Explicitly the opposite of a title-heuristic grouping key.
+def test_two_manual_non_birthday_alerts_same_target_blank_ref_id_are_both_untouched():
     alerts = [
-        _alert('a1', title='completely different text A', created_at=100),
-        _alert('a2', title='completely different text B', created_at=200),
+        _alert('a1', kind='manual', ref_id='', created_at=100),
+        _alert('a2', kind='manual', ref_id='', created_at=200),
     ]
     migrated, report = cleanup.migrate(alerts)
-    assert report['groups_affected'] == 1
-    assert report['superseded'] == 1
+    assert all(a['acknowledged_at'] is None for a in migrated)
+    assert all('superseded_by' not in a for a in migrated)
+    assert report['superseded'] == 0
+    assert report['groups_affected'] == 0
 
 
-def test_already_acknowledged_records_are_never_touched():
+def test_two_birthday_alerts_with_blank_ref_id_are_both_untouched():
+    # Not the legacy shape -- ref_id must be non-empty AND numeric.
+    alerts = [
+        _alert('a1', kind='birthday', ref_id='', created_at=100),
+        _alert('a2', kind='birthday', ref_id='', created_at=200),
+    ]
+    migrated, report = cleanup.migrate(alerts)
+    assert all(a['acknowledged_at'] is None for a in migrated)
+    assert report['superseded'] == 0
+    assert report['groups_affected'] == 0
+
+
+def test_two_non_birthday_alerts_with_same_numeric_ref_id_are_both_untouched():
+    # A numeric-looking ref_id on a non-birthday kind must never be treated
+    # as the legacy shape -- kind == 'birthday' is a hard requirement.
+    alerts = [
+        _alert('a1', kind='plan_overdue', ref_id='555', created_at=100),
+        _alert('a2', kind='plan_overdue', ref_id='555', created_at=200),
+    ]
+    migrated, report = cleanup.migrate(alerts)
+    assert all(a['acknowledged_at'] is None for a in migrated)
+    assert report['superseded'] == 0
+    assert report['groups_affected'] == 0
+
+
+def test_new_idem_shaped_birthday_ref_ids_are_untouched():
+    idem_a = 'birthday:555:2027:3days'
+    idem_b = 'birthday:555:2027:today'
+    alerts = [
+        _alert('a1', kind='birthday', ref_id=idem_a, created_at=100),
+        _alert('a2', kind='birthday', ref_id=idem_b, created_at=200),
+    ]
+    migrated, report = cleanup.migrate(alerts)
+    assert all(a['acknowledged_at'] is None for a in migrated)
+    assert report['superseded'] == 0
+    assert report['groups_affected'] == 0
+
+
+def test_acknowledged_records_are_never_removed_even_if_duplicated():
     alerts = [
         _alert('a1', created_at=100, acknowledged_at=999),
         _alert('a2', created_at=200, acknowledged_at=999),
@@ -98,12 +129,11 @@ def test_already_acknowledged_records_are_never_touched():
     assert by_id['a2'] == original_a2
     assert 'superseded_by' not in by_id['a1']
     assert 'superseded_by' not in by_id['a2']
-    # The lone unacked record has no unacked sibling -- not touched either.
     assert by_id['a3']['acknowledged_at'] is None
     assert report['superseded'] == 0
 
 
-def test_singleton_unacknowledged_records_are_never_touched():
+def test_singleton_unacknowledged_legacy_records_are_never_touched():
     alerts = [_alert('a1'), _alert('a2', ref_id='different')]
     migrated, report = cleanup.migrate(alerts)
     assert all(a['acknowledged_at'] is None for a in migrated)
@@ -111,18 +141,16 @@ def test_singleton_unacknowledged_records_are_never_touched():
     assert report['groups_affected'] == 0
 
 
-def test_different_target_users_are_never_merged():
-    alerts = [_alert('a1', uid='111'), _alert('a2', uid='222')]
-    migrated, report = cleanup.migrate(alerts)
-    assert all(a['acknowledged_at'] is None for a in migrated)
-    assert report['superseded'] == 0
-
-
-def test_no_record_is_ever_removed_from_the_list():
-    alerts = [_alert('a1', created_at=100), _alert('a2', created_at=200), _alert('a3', ref_id='other')]
+def test_no_record_is_ever_physically_removed_from_the_list():
+    alerts = [
+        _alert('a1', created_at=100), _alert('a2', created_at=200),
+        _alert('a3', kind='manual', ref_id='', created_at=150),
+        _alert('a4', kind='birthday', ref_id='birthday:9:2027:today', created_at=175),
+    ]
     migrated, report = cleanup.migrate(alerts)
     assert len(migrated) == len(alerts)
-    assert report['total_records'] == 3
+    assert {a['id'] for a in migrated} == {'a1', 'a2', 'a3', 'a4'}
+    assert report['total_records'] == 4
 
 
 def test_dry_run_does_not_write_the_file(tmp_path, monkeypatch, capsys):
@@ -176,3 +204,13 @@ def test_apply_with_nothing_to_migrate_does_not_write_a_backup(tmp_path, monkeyp
 
     assert not list(tmp_path.glob('*.backup-*'))
     assert json.loads(alerts_file.read_text(encoding='utf-8')) == alerts
+
+
+def test_is_legacy_bare_uid_birthday_ref_matches_main_pys_semantics():
+    # Direct unit coverage of the predicate itself, mirroring
+    # backend/main.py's _is_legacy_bare_uid_birthday_ref() test expectations.
+    assert cleanup._is_legacy_bare_uid_birthday_ref(_alert('x', kind='birthday', ref_id='555')) is True
+    assert cleanup._is_legacy_bare_uid_birthday_ref(_alert('x', kind='birthday', ref_id='')) is False
+    assert cleanup._is_legacy_bare_uid_birthday_ref(_alert('x', kind='birthday', ref_id='birthday:5:2027:today')) is False
+    assert cleanup._is_legacy_bare_uid_birthday_ref(_alert('x', kind='manual', ref_id='555')) is False
+    assert cleanup._is_legacy_bare_uid_birthday_ref(_alert('x', kind='plan_overdue', ref_id='555')) is False

@@ -11,23 +11,33 @@ duplicate unacknowledged `kind=birthday, ref_id=<uid>` records, created within
 one ~19-hour window, almost certainly from concurrent GET /api/feed/birthdays
 calls racing _check_upcoming_birthdays()'s own un-locked read-modify-write.
 
-Grouping key: kind + target_user_id + ref_id (matches the SAME key
-_create_critical_alert() already uses for its own live dedup going forward --
-see that function's docstring). For birthday specifically, ref_id is the
-worker's uid (a real, meaningful identifier on its own -- NOT title/subtitle
-text). Owner explicitly rejected a title/date-text heuristic here: it's
-fragile (whitespace/emoji/locale drift silently breaks it) where the
-kind+uid+ref_id key is not, and it's the one key this codebase already
-trusts everywhere else for the exact same purpose.
+23.09 (owner review, second pass): the first version of this script grouped
+ANY unresolved alert by the generic (kind, target_user_id, ref_id) key. That
+is too broad for a one-off migration script -- it could also collapse alerts
+that were never part of this bug (a blank ref_id, a non-birthday kind that
+happens to share a numeric-looking ref_id, or the NEW idem-shaped birthday
+ref_id from the ref_id=idem fix). This script now filters to the exact
+legacy shape FIRST -- kind == 'birthday' AND ref_id non-empty AND ref_id is
+the bare numeric worker uid (matches backend/main.py's own
+_is_legacy_bare_uid_birthday_ref(), which the live ACK-time supersede logic
+already uses) -- and only groups records that pass that filter. Anything
+else (blank ref_id, non-birthday, new idem-shaped birthday ref_id) is left
+completely untouched, regardless of how many records share its key.
+
+Within the (already legacy-filtered) records, the grouping key is
+kind + target_user_id + ref_id -- no title/subtitle/date heuristic, per the
+owner's original instruction: those are fragile (whitespace/emoji/locale
+drift), while the semantic key is not, and it's the one this codebase
+already trusts everywhere else for the same purpose.
 
 This means the "3 days before" and "the day of" birthday alerts for ONE
 worker DO share one group under this key -- that's a known, accepted
 consequence of the legacy data shape (ref_id=uid was the same for both event
-types before this same commit's ref_id=idem fix). The migration doesn't try
-to reconstruct which stale record was which event; it keeps one canonical
-PENDING alert per group (the most recent one -- closest to reflecting "the
-current, real occurrence" for that worker) and supersedes every other
-UNACKNOWLEDGED record in the group.
+types before the ref_id=idem fix). The migration doesn't try to reconstruct
+which stale record was which event; it keeps one canonical PENDING alert per
+group (the most recent one -- closest to reflecting "the current, real
+occurrence" for that worker) and supersedes every other UNACKNOWLEDGED
+record in the group.
 
 Non-destructive: nothing is deleted. Every superseded record keeps its
 original id, title, timestamps -- it is marked `acknowledged_at` (so it stops
@@ -36,6 +46,17 @@ and gets a `superseded_by: <canonical_id>` field recording which record
 replaced it, for anyone auditing history later. Already-acknowledged records
 are never touched regardless of grouping (an owner may have legitimately
 acked one occurrence; that's real history, not noise).
+
+Rollout note (cross-process safety, not fixed by this script alone): the
+running backend's own writes to this same file go through
+update_json_transaction(), which uses an in-process threading.Lock -- it does
+NOT coordinate with a separate `python3 cleanup_legacy_...py --apply`
+process. Running --apply while the backend service is live could race a
+concurrent ack/create and lose one side's write. Do NOT do a larger
+cross-process file-locking refactor to fix this generically -- for this
+one-off migration, the safe rollout is operational: stop the
+promonta-miniapp service, run --apply, inspect the result, restart the
+service. Do not run --apply against a live backend.
 
 Usage:
     python3 cleanup_legacy_critical_alert_duplicates.py [--apply]
@@ -56,16 +77,37 @@ DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
 CRITICAL_ALERTS_FILE = os.path.join(DATA_ROOT, 'critical_alerts.json')
 
 
+def _is_legacy_bare_uid_birthday_ref(alert: dict) -> bool:
+    """Mirrors backend/main.py's _is_legacy_bare_uid_birthday_ref() exactly --
+    kept as a separate copy (not an import) since this script must remain
+    runnable standalone without importing the whole FastAPI app module.
+    kind='birthday' with ref_id set to the bare worker uid (digits only),
+    from before ref_id=idem (birthday:<uid>:<year>:3days / :today) existed.
+    New birthday alerts always have an idem-shaped ref_id (contains ':') and
+    must never be touched by this legacy-only logic. Any other kind, a blank
+    ref_id, or an already-idem-shaped ref_id is left alone."""
+    if alert.get('kind') != 'birthday':
+        return False
+    ref_id = alert.get('ref_id') or ''
+    return bool(ref_id) and ref_id.isdigit()
+
+
 def _group_key(alert: dict) -> tuple:
     return (alert.get('kind', ''), alert.get('target_user_id', ''), alert.get('ref_id', ''))
 
 
 def find_legacy_duplicate_groups(alerts: list) -> dict:
     """Returns {group_key: [alert, ...]} for every group of 2+ UNACKNOWLEDGED
-    alerts sharing (kind, target_user_id, ref_id)."""
+    alerts matching the legacy bare-uid birthday shape AND sharing
+    (kind, target_user_id, ref_id). Every other record -- blank ref_id,
+    non-birthday kind, new idem-shaped birthday ref_id, already acknowledged
+    -- is excluded from grouping entirely, regardless of what it shares a
+    key with."""
     by_key = collections.defaultdict(list)
     for a in alerts:
         if a.get('acknowledged_at'):
+            continue
+        if not _is_legacy_bare_uid_birthday_ref(a):
             continue
         by_key[_group_key(a)].append(a)
     return {k: v for k, v in by_key.items() if len(v) > 1}
@@ -76,7 +118,8 @@ def migrate(alerts: list) -> tuple[list, dict]:
     (max created_at) per duplicate group as the canonical pending alert;
     every other unacknowledged record in the group is superseded in place
     (acknowledged_at set, superseded_by recorded) -- never removed.
-    Already-acknowledged records and non-duplicated records are untouched."""
+    Already-acknowledged records, non-duplicated records, and anything not
+    matching the legacy bare-uid birthday shape are untouched."""
     dupe_groups = find_legacy_duplicate_groups(alerts)
     now = int(time.time())
     superseded_count = 0

@@ -95,6 +95,22 @@ class CriticalAlertDedupTests(unittest.TestCase):
         alerts = self._stored()
         self.assertEqual(len(alerts), 2)
 
+    def test_blank_ref_id_never_dedupes_two_unrelated_manual_alerts(self):
+        # 23.09 (owner review): ref_id='' is the default for any caller that
+        # has no natural reference id (e.g. a manually-created owner alert).
+        # Two genuinely unrelated alerts sharing kind/target_user_id but both
+        # with blank ref_id must NOT collapse into one -- dedup only applies
+        # when ref_id is non-empty.
+        first = backend._create_critical_alert(
+            target_user_id=OWNER_ID, kind='manual', title='Проверить объект А',
+        )
+        second = backend._create_critical_alert(
+            target_user_id=OWNER_ID, kind='manual', title='Проверить объект Б',
+        )
+        self.assertNotEqual(first['id'], second['id'])
+        alerts = self._stored()
+        self.assertEqual(len(alerts), 2)
+
     def test_after_acknowledgement_a_new_alert_with_the_same_key_can_be_created(self):
         first = backend._create_critical_alert(
             target_user_id=OWNER_ID, kind='plan_overdue', title='t1', ref_id='2026-09-22',
