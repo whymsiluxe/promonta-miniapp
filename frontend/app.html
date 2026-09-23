@@ -1331,15 +1331,34 @@ header h1 {
    не timing: JS-измеренный top зависит от getBoundingClientRect() внешних табов в
    ТЕКУЩЕМ document flow -- ЛЮБАЯ рассинхронизация (scroll, layout thrash, разный порядок
    событий на разных WebView) даёт неверную высоту. Единственное место в проекте, которое
-   НАДЁЖНО работает -- root #view-chat.active / .photo-comments-modal: оба используют
-   inset:0 + var(--tg-vp-height), БЕЗ JS-измеренного top. Тот же паттерн здесь: embedded
-   чат становится full-viewport оверлеем СО СВОИМ header (название объекта + 3 таба
-   вкладки Object Detail), а не пытается встроиться под уже отрендеренные внешние табы. */
+   НАДЁЖНО работает -- root #view-chat.active: inset:0 + СТАБИЛЬНАЯ высота, без
+   JS-измеренного top. Тот же паттерн здесь: embedded чат становится full-viewport
+   оверлеем СО СВОИМ header (название объекта + 3 таба вкладки Object Detail), а не
+   пытается встроиться под уже отрендеренные внешние табы.
+   22.09 (hotfix, owner live-device finding): эта заметка сама была устаревшей -- ниже
+   долгое время стоял var(--tg-vp-height) (живая, keyboard-сжатая высота), а не
+   var(--tg-fullscreen-height) (стабильная, обновляется JS только когда клавиатуры
+   точно нет), который #view-chat.active реально использует с v9 (см. комментарий на
+   #view-chat.active{height:...} чуть ниже по файлу). Расхождение давало двойную
+   компенсацию клавиатуры именно здесь -- см. комментарий на самом height-правиле. */
 #obj-detail-panel-chat.obj-chat-active {
   position: fixed;
   inset: 0;
   width: 100%;
-  height: var(--tg-vp-height, 100dvh);
+  /* 22.09 (owner live-device finding, hotfix): was var(--tg-vp-height, 100dvh) --
+     --tg-vp-height is the LIVE visualViewport height, which shrinks the instant
+     the keyboard opens. Root #view-chat.active already solved this exact problem
+     (see its own height rule's comment, v5-v9 history): the fullscreen CONTAINER
+     must NEVER change height on keyboard open/close -- only --tg-fullscreen-height
+     (updated only when the keyboard is confirmed closed) -- keyboard movement is
+     handled EXCLUSIVELY by --chat-keyboard-inset translating .chat-composer-stack.
+     Using --tg-vp-height here double-compensated the keyboard: the container
+     itself shrank AND the composer was translated up by --chat-keyboard-inset,
+     so the composer flew almost to the top of the screen on focus and settled
+     mid-screen (not at the bottom) after the keyboard closed. Switched to the
+     same stable-height contract root chat already uses. */
+  height: var(--tg-fullscreen-height, 100dvh);
+  min-height: var(--tg-fullscreen-height, 100dvh);
   padding: 0;
   display: flex;
   flex-direction: column;

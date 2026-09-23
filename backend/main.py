@@ -4260,6 +4260,10 @@ def _load_birthday_alerts() -> list:
 
 
 def _save_birthday_alerts(items: list):
+    # 22.09: _check_upcoming_birthdays() itself no longer calls this directly
+    # (moved to update_json_transaction, see its own comment) -- kept as a
+    # plain write helper for tests/tooling that need to seed/reset the store
+    # directly (test_worker_calendar_birthday.py's setUp, for instance).
     _atomic_write_json(BIRTHDAY_ALERTS_FILE, items)
 
 
@@ -4269,48 +4273,83 @@ def _check_upcoming_birthdays():
     birthday:<uid>:<year>:3days / birthday:<uid>:<year>:today (проверка по
     Europe/Berlin), чтобы один и тот же alert не создавался повторно при каждом
     заходе. Ленивая проверка при GET /api/feed/birthdays (миниапп открывают каждый
-    день) — не отдельный systemd timer."""
+    день) — не отдельный systemd timer.
+
+    22.09 hotfix (owner live-device finding, 196 legacy duplicate critical-alert
+    records found in production): this used to be _load_birthday_alerts() (read
+    OUTSIDE any lock) -> mutate `alerts` in Python memory -> _save_birthday_alerts()
+    (lock only covers the write) -- the same read-modify-write race already fixed
+    elsewhere this session (ack_critical_alert/resolve_critical_alert). Because
+    this function is a LAZY check that runs on every GET /api/feed/birthdays
+    (every app open, from every device/tab, no single cron), concurrent calls
+    could all read the same "not yet in `already`" state before any of them
+    wrote -- each one then passed its own `idem not in already` check and called
+    _create_critical_alert(). That inner call's OWN dedup is now correctly keyed
+    (see the ref_id=idem fix below) and would still prevent a duplicate CRITICAL
+    ALERT record even under this race, but the birthday_alerts.json idempotency
+    file itself could still race and grow spurious duplicate entries. Moved the
+    whole read-modify-write under one update_json_transaction lock so concurrent
+    calls serialize instead of racing."""
     profiles = _load_worker_profiles()
     today = business_today()
     d3 = today + timedelta(days=3)
-    alerts = _load_birthday_alerts()
-    already = {a.get('idem') for a in alerts if a.get('idem')}
     owner_id = next((o for o, r in _load_roles().items() if r == 'owner'), None)
 
-    def _emit(uid, name, occ_date, kind, idem, title):
-        alerts.append({
-            'user_id': uid, 'name': name, 'year': occ_date.year, 'kind': kind,
-            'idem': idem, 'date': occ_date.strftime('%Y-%m-%d'), 'created_at': int(time.time()),
-        })
+    # _create_critical_alert() does its own file I/O (its own
+    # update_json_transaction on CRITICAL_ALERTS_FILE, a DIFFERENT file) --
+    # deliberately called OUTSIDE the mutator below, never nested inside
+    # another update_json_transaction call (would deadlock on the same
+    # non-reentrant lock if it were the same file, and is simply wrong
+    # layering even though it's a different file/lock here).
+    to_create = []  # [(target_user_id, title, ref_id)]
+
+    def _mutate(alerts):
+        already = {a.get('idem') for a in alerts if a.get('idem')}
+
+        def _emit(uid, name, occ_date, kind, idem, title):
+            alerts.append({
+                'user_id': uid, 'name': name, 'year': occ_date.year, 'kind': kind,
+                'idem': idem, 'date': occ_date.strftime('%Y-%m-%d'), 'created_at': int(time.time()),
+            })
+            to_create.append((owner_id or uid, title, idem))
+
+        for uid, profile in profiles.items():
+            bday = profile.get('birthday')
+            if not bday:
+                continue
+            try:
+                bd = datetime.strptime(bday, '%Y-%m-%d').date()
+            except ValueError:
+                continue
+            name = _sanitize_display_name(profile.get('name'), uid)
+
+            # За 3 дня
+            if (bd.month, bd.day) == (d3.month, d3.day):
+                idem = f'birthday:{uid}:{d3.year}:3days'
+                if idem not in already:
+                    _emit(uid, name, d3, '3days', idem,
+                          f'🎂 Через 3 дня день рождения у {name}. Не забудьте подготовить подарок и поздравление.')
+
+            # В день рождения
+            if (bd.month, bd.day) == (today.month, today.day):
+                idem = f'birthday:{uid}:{today.year}:today'
+                if idem not in already:
+                    _emit(uid, name, today, 'today', idem, f'🎂 Сегодня день рождения у {name}')
+
+    update_json_transaction(BIRTHDAY_ALERTS_FILE, [], _mutate)
+
+    for target_user_id, title, idem in to_create:
         try:
-            _create_critical_alert(target_user_id=owner_id or uid, kind='birthday', title=title, ref_id=uid)
+            # 22.09 hotfix (owner live-device finding): ref_id was `uid` -- the
+            # SAME value for both the "3 days before" and "the day of" alert for
+            # one worker, so _create_critical_alert()'s dedup key
+            # (kind, target_user_id, ref_id) could not tell the two genuinely
+            # different events apart and would collapse one into the other.
+            # `idem` (already unique per event type AND year --
+            # birthday:<uid>:<year>:3days / :today) is the correct dedup key.
+            _create_critical_alert(target_user_id=target_user_id, kind='birthday', title=title, ref_id=idem)
         except Exception:
             pass
-
-    for uid, profile in profiles.items():
-        bday = profile.get('birthday')
-        if not bday:
-            continue
-        try:
-            bd = datetime.strptime(bday, '%Y-%m-%d').date()
-        except ValueError:
-            continue
-        name = _sanitize_display_name(profile.get('name'), uid)
-
-        # За 3 дня
-        if (bd.month, bd.day) == (d3.month, d3.day):
-            idem = f'birthday:{uid}:{d3.year}:3days'
-            if idem not in already:
-                _emit(uid, name, d3, '3days', idem,
-                      f'🎂 Через 3 дня день рождения у {name}. Не забудьте подготовить подарок и поздравление.')
-
-        # В день рождения
-        if (bd.month, bd.day) == (today.month, today.day):
-            idem = f'birthday:{uid}:{today.year}:today'
-            if idem not in already:
-                _emit(uid, name, today, 'today', idem, f'🎂 Сегодня день рождения у {name}')
-
-    _save_birthday_alerts(alerts)
 
 
 @app.get("/api/feed/birthdays")
