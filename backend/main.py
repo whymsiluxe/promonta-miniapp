@@ -159,6 +159,7 @@ try:
         CHAT_FILE,
         ANGEBOT_OUT_DIR,
         CHECKIN_PHOTO_BASE,
+        CHECKIN_IDEMPOTENCY_FILE,
         ACTIVITY_ALERTS_FILE,
         WORK_CALENDAR_FILE,
         WORKER_PROFILES_FILE,
@@ -211,6 +212,7 @@ except ImportError:
         CHAT_FILE,
         ANGEBOT_OUT_DIR,
         CHECKIN_PHOTO_BASE,
+        CHECKIN_IDEMPOTENCY_FILE,
         ACTIVITY_ALERTS_FILE,
         WORK_CALENDAR_FILE,
         WORKER_PROFILES_FILE,
@@ -1269,7 +1271,7 @@ def get_user_card(target_id: str, user: dict = Depends(get_current_user), role: 
         # 03.08, этот пропустили.
         today = business_today_str()
         sessions = [s for s in _load_checkin_meta() if str(s.get('user_id')) == target_id and s.get('date') == today]
-        open_session = next((s for s in sessions if s.get('finish_at') is None), None)
+        open_session = next((s for s in sessions if _is_active_photo_checkin_session(s)), None)
         rows = _cached_get_used_range('Объекты')
         object_names = {}
         if rows:
@@ -1454,6 +1456,10 @@ def _photo_pause_seconds(s: dict) -> int:
 
 def _photo_pause_minutes(s: dict) -> int:
     return round(_photo_pause_seconds(s) / 60)
+
+
+def _is_active_photo_checkin_session(s: dict) -> bool:
+    return bool(s) and not s.get('manual_entry') and s.get('finish_at') is None
 
 
 def _hours_from_session(s: dict) -> float:
@@ -1777,8 +1783,7 @@ def get_dashboard_team_hours(date_from: str = '', date_to: str = '',
         hours_week = round(sum(_session_hours_live(s) for s in in_range), 1)
         today_sess = [s for s in w_sessions if s.get('date', '') == today_iso] if today_in_range else []
         hours_today = round(sum(_session_hours_live(s) for s in today_sess), 1)
-        open_s = next((s for s in today_sess
-                       if s.get('finish_at') is None and not s.get('manual_entry')), None)
+        open_s = next((s for s in today_sess if _is_active_photo_checkin_session(s)), None)
         is_working_now = open_s is not None
         cur_oid = str(open_s.get('object_id', '')) if open_s else ''
         workers.append({
@@ -2874,7 +2879,7 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
             "object_name": object_names.get(s['object_id'], s['object_id']),
             "start_at": s.get('start_at'),
         }
-        if s.get('finish_at') is None:
+        if _is_active_photo_checkin_session(s):
             working_now.append(entry)
         else:
             entry['finish_at'] = s.get('finish_at')
@@ -2947,7 +2952,7 @@ def get_dashboard_shifts_today(user: dict = Depends(get_current_user), _: None =
     # 30.07 v2: "Работают сейчас" тоже несёт stage_name (если известен из checkin) --
     # аудит просит этот контекст для группы 1 наравне с 2/3.
     for e in working_now:
-        s = next((s for s in today_sessions if str(s.get('user_id')) == e['user_id'] and s.get('finish_at') is None), None)
+        s = next((s for s in today_sessions if str(s.get('user_id')) == e['user_id'] and _is_active_photo_checkin_session(s)), None)
         e['stage_name'] = (s or {}).get('stage_name') or ''
 
     # 30.07 v3 (спек: "Часы команды" на экране Команда) -- сумма часов за СЕГОДНЯ по
@@ -3103,7 +3108,7 @@ def get_team_plan(date: str = '', user: dict = Depends(get_current_user), _: Non
             # физически быть не может.
             if is_today and status == 'accepted':
                 uid_sessions = sessions_by_uid.get(uid, [])
-                active = next((s for s in uid_sessions if s.get('object_id') == oid and s.get('finish_at') is None), None)
+                active = next((s for s in uid_sessions if s.get('object_id') == oid and _is_active_photo_checkin_session(s)), None)
                 finished = next((s for s in uid_sessions if s.get('object_id') == oid and s.get('finish_at') is not None), None)
                 if active:
                     entry['shift_state'] = 'active'
@@ -7801,36 +7806,179 @@ def get_mangel_comments(ticket_id: str, user: dict = Depends(get_current_user), 
 # moved to core/limits.py -- CHECKIN_MAX_BYTES
 _checkin_lock = __import__('threading').Lock()
 
-# 10.40: idempotency-key для checkin start/finish — при плохой связи на объекте
-# worker может не увидеть ответ и повторить запрос; без этого второй запрос либо
-# создаёт дубль сессии, либо возвращает пугающую 409/400 ошибку на успешное действие.
-# Кэш в памяти (не переживает restart) — приемлемо, ключ живёт секунды/минуты, не дни.
-_idempotency_cache = {}  # key -> (timestamp, response_dict)
+# 10.40: idempotency-key для checkin start/finish/manual — при плохой связи на
+# объекте worker может не увидеть ответ и повторить запрос; без этого второй запрос
+# либо создаёт дубль, либо возвращает пугающую 409/400 ошибку на успешное действие.
+# 23.09: durable + scoped guard. Один raw Idempotency-Key больше не является
+# глобальным ключом на все роли/endpoints/payloads: он проверяется по actor + kind,
+# а entity/payload_hash обязаны совпасть. Store переживает restart в пределах TTL.
+_idempotency_cache = {}  # identity_hash -> entry_dict
+_idempotency_lock = __import__('threading').Lock()
 # moved to core/limits.py -- _IDEMPOTENCY_TTL
 
 
-def _idempotency_get(key: str):
+def _idempotency_payload_hash(payload: dict | None) -> str:
+    raw = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True, separators=(',', ':'), default=str)
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def _idempotency_scope(kind: str, actor_id: str | int, entity_id: str = '', payload: dict | None = None) -> dict:
+    return {
+        "kind": str(kind),
+        "actor_id": str(actor_id),
+        "entity_id": str(entity_id or ''),
+        "payload_hash": _idempotency_payload_hash(payload),
+    }
+
+
+def _idempotency_identity(key: str, scope: dict | None = None) -> str:
+    scope = scope or {"kind": "legacy", "actor_id": "", "entity_id": "", "payload_hash": ""}
+    raw = json.dumps({
+        "key": str(key),
+        "kind": str(scope.get('kind') or ''),
+        "actor_id": str(scope.get('actor_id') or ''),
+    }, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def _idempotency_entry_matches(entry: dict, scope: dict | None) -> bool:
+    if scope is None:
+        return True
+    return (
+        str(entry.get('kind') or '') == str(scope.get('kind') or '')
+        and str(entry.get('actor_id') or '') == str(scope.get('actor_id') or '')
+        and str(entry.get('entity_id') or '') == str(scope.get('entity_id') or '')
+        and str(entry.get('payload_hash') or '') == str(scope.get('payload_hash') or '')
+    )
+
+
+def _idempotency_assert_same_request(entry: dict, scope: dict | None) -> None:
+    if not _idempotency_entry_matches(entry, scope):
+        raise HTTPException(409, "Idempotency-Key уже использован для другого запроса")
+
+
+def _idempotency_prune(store: dict, now: float) -> None:
+    stale = [
+        k for k, v in store.items()
+        if now - float(v.get('updated_at') or v.get('created_at') or 0) > _IDEMPOTENCY_TTL
+    ]
+    for k in stale:
+        store.pop(k, None)
+        _idempotency_cache.pop(k, None)
+
+
+def _idempotency_get(key: str, scope: dict | None = None):
     if not key:
         return None
-    entry = _idempotency_cache.get(key)
-    if not entry:
-        return None
-    ts, response = entry
-    if time.time() - ts > _IDEMPOTENCY_TTL:
-        _idempotency_cache.pop(key, None)
-        return None
-    return response
+    identity = _idempotency_identity(key, scope)
+    now = time.time()
+    cached = _idempotency_cache.get(identity)
+    if cached and now - float(cached.get('updated_at') or cached.get('created_at') or 0) <= _IDEMPOTENCY_TTL:
+        _idempotency_assert_same_request(cached, scope)
+        if cached.get('state') == 'done':
+            return copy.deepcopy(cached.get('response'))
+        raise HTTPException(409, "Запрос уже выполняется, повторите чуть позже")
+
+    result = {"found": False, "response": None, "pending": False}
+
+    def mutator(store: dict):
+        _idempotency_prune(store, now)
+        entry = store.get(identity)
+        if not entry:
+            return
+        _idempotency_assert_same_request(entry, scope)
+        _idempotency_cache[identity] = copy.deepcopy(entry)
+        result["found"] = True
+        if entry.get('state') == 'done':
+            result["response"] = copy.deepcopy(entry.get('response'))
+        else:
+            result["pending"] = True
+
+    update_json_transaction(CHECKIN_IDEMPOTENCY_FILE, {}, mutator)
+    if result["pending"]:
+        raise HTTPException(409, "Запрос уже выполняется, повторите чуть позже")
+    return result["response"] if result["found"] else None
 
 
-def _idempotency_save(key: str, response: dict):
+def _idempotency_claim(key: str, scope: dict | None = None):
+    if not key:
+        return None
+    identity = _idempotency_identity(key, scope)
+    now = time.time()
+    result = {"response": None, "pending": False}
+
+    def mutator(store: dict):
+        _idempotency_prune(store, now)
+        entry = store.get(identity)
+        if entry:
+            _idempotency_assert_same_request(entry, scope)
+            _idempotency_cache[identity] = copy.deepcopy(entry)
+            if entry.get('state') == 'done':
+                result["response"] = copy.deepcopy(entry.get('response'))
+            else:
+                result["pending"] = True
+            return
+        entry = {
+            "state": "pending",
+            "kind": str((scope or {}).get('kind') or 'legacy'),
+            "actor_id": str((scope or {}).get('actor_id') or ''),
+            "entity_id": str((scope or {}).get('entity_id') or ''),
+            "payload_hash": str((scope or {}).get('payload_hash') or ''),
+            "created_at": now,
+            "updated_at": now,
+        }
+        store[identity] = entry
+        _idempotency_cache[identity] = copy.deepcopy(entry)
+
+    with _idempotency_lock:
+        update_json_transaction(CHECKIN_IDEMPOTENCY_FILE, {}, mutator)
+    if result["pending"]:
+        raise HTTPException(409, "Запрос уже выполняется, повторите чуть позже")
+    return result["response"]
+
+
+def _idempotency_save(key: str, response: dict, scope: dict | None = None):
     if not key:
         return
+    identity = _idempotency_identity(key, scope)
     now = time.time()
-    _idempotency_cache[key] = (now, response)
-    # чистка старых ключей — кэш не должен расти бесконечно на активном сервере
-    stale = [k for k, (ts, _) in _idempotency_cache.items() if now - ts > _IDEMPOTENCY_TTL]
-    for k in stale:
-        _idempotency_cache.pop(k, None)
+    entry = {
+        "state": "done",
+        "kind": str((scope or {}).get('kind') or 'legacy'),
+        "actor_id": str((scope or {}).get('actor_id') or ''),
+        "entity_id": str((scope or {}).get('entity_id') or ''),
+        "payload_hash": str((scope or {}).get('payload_hash') or ''),
+        "response": copy.deepcopy(response),
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    def mutator(store: dict):
+        _idempotency_prune(store, now)
+        existing = store.get(identity)
+        if existing:
+            _idempotency_assert_same_request(existing, scope)
+            entry["created_at"] = existing.get('created_at') or now
+        store[identity] = entry
+
+    with _idempotency_lock:
+        update_json_transaction(CHECKIN_IDEMPOTENCY_FILE, {}, mutator)
+    _idempotency_cache[identity] = copy.deepcopy(entry)
+
+
+def _idempotency_release(key: str, scope: dict | None = None) -> None:
+    if not key:
+        return
+    identity = _idempotency_identity(key, scope)
+
+    def mutator(store: dict):
+        entry = store.get(identity)
+        if entry and _idempotency_entry_matches(entry, scope) and entry.get('state') != 'done':
+            store.pop(identity, None)
+
+    with _idempotency_lock:
+        update_json_transaction(CHECKIN_IDEMPOTENCY_FILE, {}, mutator)
+    _idempotency_cache.pop(identity, None)
 
 os.makedirs(CHECKIN_PHOTO_BASE, exist_ok=True)
 
@@ -8108,10 +8256,6 @@ async def checkin_start(
     role: str = Depends(get_role),
     idempotency_key: str = Header(default='', alias='Idempotency-Key'),
 ):
-    cached = _idempotency_get(idempotency_key)
-    if cached is not None:
-        return cached
-
     if not object_id.strip():
         raise HTTPException(400, "object_id обязателен")
     if not lat.strip() or not lon.strip():
@@ -8173,13 +8317,29 @@ async def checkin_start(
         _dp_session_plan_version = str(_acc.get("plan_version") or _snapshot.get("plan_version") or _dp_at_start.get("version") or '')
         _dp_session_acceptance_id = _dp_acc_clean
 
+    idempotency_scope = _idempotency_scope('checkin_start', user['id'], object_id.strip(), {
+        "object_id": object_id.strip(),
+        "lat": lat.strip(),
+        "lon": lon.strip(),
+        "accuracy": accuracy_clean,
+        "geo_timestamp": geo_timestamp_clean,
+        "stage_name": (stage_name.strip()[:200] if isinstance(stage_name, str) else ''),
+        "daily_plan_id": _dp_session_plan_id or '',
+        "daily_plan_version": _dp_session_plan_version or '',
+        "daily_plan_acceptance_id": _dp_session_acceptance_id or '',
+    })
+    cached = _idempotency_claim(idempotency_key, idempotency_scope)
+    if cached is not None:
+        return cached
+
     with _checkin_lock:
         # 10.29 (Fable-аудит): раньше можно было создать сколько угодно параллельных
         # "стартов" смены — часы потом считались некорректно.
         existing = _load_checkin_meta()
         open_session = next((i for i in existing
-                              if str(i.get('user_id')) == str(user['id']) and i.get('finish_at') is None), None)
+                              if str(i.get('user_id')) == str(user['id']) and _is_active_photo_checkin_session(i)), None)
         if open_session:
+            _idempotency_release(idempotency_key, idempotency_scope)
             raise HTTPException(409, f"У вас уже есть незавершённая смена на объекте {open_session['object_id']} — сначала завершите её")
 
     photo_paths = await _save_checkin_photos(files, object_id.strip()[:100], date_str)
@@ -8193,6 +8353,7 @@ async def checkin_start(
     # that did save from this failed attempt so they don't become orphans.
     if len(photo_paths) < 1:
         _cleanup_checkin_photo_files(photo_paths)
+        _idempotency_release(idempotency_key, idempotency_scope)
         raise HTTPException(400, "Для начала смены нужно минимум одно корректное фото")
 
     entry = {
@@ -8227,8 +8388,10 @@ async def checkin_start(
         # Повторная проверка внутри финального лока — на случай гонки между двумя
         # параллельными checkin_start запросами (TOCTOU между первой проверкой и этой записью).
         open_session = next((i for i in items
-                              if str(i.get('user_id')) == str(user['id']) and i.get('finish_at') is None), None)
+                              if str(i.get('user_id')) == str(user['id']) and _is_active_photo_checkin_session(i)), None)
         if open_session:
+            _cleanup_checkin_photo_files(photo_paths)
+            _idempotency_release(idempotency_key, idempotency_scope)
             raise HTTPException(409, f"У вас уже есть незавершённая смена на объекте {open_session['object_id']} — сначала завершите её")
         items.append(entry)
         _save_checkin_meta(items)
@@ -8264,7 +8427,7 @@ async def checkin_start(
         print(f'WARNING: checkin-start finish-context prefetch failed: {e}')
         response['finish_context'] = None
 
-    _idempotency_save(idempotency_key, response)
+    _idempotency_save(idempotency_key, response, idempotency_scope)
     return response
 
 
@@ -8334,10 +8497,6 @@ async def checkin_finish(
     не создаются автоматически -- это только сохраняет данные в сессию, реальное
     создание тикетов делает отдельный подтверждающий вызов с фронтенда после
     показа сводки юзеру (см. wizard Step 6)."""
-    cached = _idempotency_get(idempotency_key)
-    if cached is not None:
-        return cached
-
     def _parse_json_list(raw: str, field_name: str) -> list:
         if not raw.strip():
             return []
@@ -8367,11 +8526,33 @@ async def checkin_finish(
             raise HTTPException(404, "Сессия check-in не найдена")
         if role != 'owner' and str(session.get('user_id')) != str(user['id']):
             raise HTTPException(403, "Нельзя завершить чужую смену")
-        if session['finish_at'] is not None:
-            raise HTTPException(400, "Смена уже завершена")
         object_id, date_str = session['object_id'], session['date']
+        idempotency_scope = _idempotency_scope('checkin_finish', user['id'], session_id, {
+            "session_id": session_id,
+            "object_id": object_id,
+            "lat": lat.strip(),
+            "lon": lon.strip(),
+            "accuracy": accuracy_clean,
+            "geo_timestamp": geo_timestamp_clean,
+            "done_summary": done_summary.strip()[:1000],
+            "extra_work": extra_work.strip()[:1000],
+            "extra_works": extra_works_list,
+            "needs": needs_list,
+            "defects": defects_list,
+            "next_day_needs": next_day_needs.strip()[:1000],
+            "voice_note_file_id": os.path.basename(voice_note_file_id.strip()) if voice_note_file_id.strip() else '',
+            "daily_plan_report": daily_plan_report.strip(),
+            "file_count": len(files or []),
+        })
+        cached = _idempotency_claim(idempotency_key, idempotency_scope)
+        if cached is not None:
+            return cached
+        if session['finish_at'] is not None:
+            _idempotency_release(idempotency_key, idempotency_scope)
+            raise HTTPException(400, "Смена уже завершена")
 
     if len(files) < 2:
+        _idempotency_release(idempotency_key, idempotency_scope)
         raise HTTPException(400, "Прикрепите минимум 2 фото выполненной работы")
 
     # Сохранение фото (I/O, await) — вне лока, как и в checkin_start. Раньше await стоял
@@ -8388,14 +8569,19 @@ async def checkin_finish(
     photo_paths = await _save_checkin_photos(files, object_id, date_str)
     if len(photo_paths) < 2:
         _cleanup_checkin_photo_files(photo_paths)
+        _idempotency_release(idempotency_key, idempotency_scope)
         raise HTTPException(400, "Для завершения смены необходимо минимум 2 корректных фото")
 
     with _checkin_lock:
         items = _load_checkin_meta()
         session = next((i for i in items if i.get('id') == session_id), None)
         if not session:
+            _cleanup_checkin_photo_files(photo_paths)
+            _idempotency_release(idempotency_key, idempotency_scope)
             raise HTTPException(404, "Сессия check-in не найдена")
         if session['finish_at'] is not None:
+            _cleanup_checkin_photo_files(photo_paths)
+            _idempotency_release(idempotency_key, idempotency_scope)
             raise HTTPException(400, "Смена уже завершена")
         session['finish_at'] = int(time.time())
         session['finish_photos'] = photo_paths
@@ -8596,7 +8782,7 @@ async def checkin_finish(
                         f"📋 На завтра нужно ({object_id}): {next_day_needs.strip()[:300]}")
                 except Exception:
                     pass
-    _idempotency_save(idempotency_key, session)
+    _idempotency_save(idempotency_key, session, idempotency_scope)
     return session
 
 
@@ -8907,6 +9093,91 @@ def get_checkin_photo(session_id: str, which: str, index: int, user: dict = Depe
 
 
 # ---------- Zeiterfassung (ручной ввод времени, референс "Neue Zeit") — Фаза 4a ----------
+def _parse_manual_date(value: str) -> str:
+    date_str = (value or '').strip()
+    try:
+        datetime.strptime(date_str, '%Y-%m-%d')
+    except Exception:
+        raise HTTPException(400, "date должен быть в формате YYYY-MM-DD")
+    if date_str > business_today_str():
+        raise HTTPException(400, "Нельзя внести время за будущую дату")
+    return date_str
+
+
+def _parse_manual_hhmm(value: str, field_name: str) -> int:
+    raw = (value or '').strip()
+    if not re.fullmatch(r'\d{2}:\d{2}', raw):
+        raise HTTPException(400, f"{field_name} должен быть в формате HH:MM")
+    hours, minutes = map(int, raw.split(':'))
+    if hours > 23 or minutes > 59:
+        raise HTTPException(400, f"{field_name} должен быть реальным временем HH:MM")
+    return hours * 60 + minutes
+
+
+def _object_id_exists(object_id: str) -> bool:
+    oid = (object_id or '').strip()
+    if not oid:
+        return False
+    try:
+        rows = _cached_get_used_range('Объекты')
+        if rows:
+            header, data = rows[0], rows[1:]
+            try:
+                id_idx = header.index('ID объекта')
+            except ValueError:
+                id_idx = 0
+            for row in data:
+                if id_idx < len(row) and str(row[id_idx]).strip() == oid:
+                    return True
+    except Exception as e:
+        print(f'WARNING: object existence check failed for manual time {oid}: {e}')
+    return oid in _load_assignments()
+
+
+def _validate_manual_time_body(body: 'ZeiterfassungBody', user: dict, role: str) -> dict:
+    object_id = body.object_id.strip()[:100]
+    if not object_id:
+        raise HTTPException(400, "object_id обязателен")
+    if not _object_id_exists(object_id):
+        raise HTTPException(404, "Объект не найден")
+
+    date_str = _parse_manual_date(body.date)
+    start_minutes = _parse_manual_hhmm(body.start_time, 'start_time')
+    end_minutes = _parse_manual_hhmm(body.end_time, 'end_time')
+    if end_minutes <= start_minutes:
+        raise HTTPException(400, "end_time должен быть позже start_time")
+    pause_minutes = int(body.pause_minutes or 0)
+    if pause_minutes < 0:
+        raise HTTPException(400, "pause_minutes не может быть отрицательным")
+    duration_minutes = end_minutes - start_minutes
+    if pause_minutes >= duration_minutes:
+        raise HTTPException(400, "pause_minutes должен быть меньше длительности смены")
+
+    target_user_id = str(body.mitarbeiter_user_id).strip() if (role == 'owner' and body.mitarbeiter_user_id) else str(user['id'])
+    if not re.fullmatch(r'\d+', target_user_id):
+        raise HTTPException(400, "mitarbeiter_user_id должен быть числовым Telegram ID")
+    roles = _load_roles()
+    if target_user_id not in roles:
+        raise HTTPException(404, "Работник не найден")
+    if role != 'owner' and target_user_id != str(user['id']):
+        raise HTTPException(403, "Нельзя внести время за другого работника")
+    if roles.get(target_user_id) != 'owner' and not has_active_object_access(target_user_id, object_id, today=date_str):
+        raise HTTPException(403, "У работника нет принятого назначения на этот объект в указанную дату")
+
+    start_time = (body.start_time or '').strip()
+    end_time = (body.end_time or '').strip()
+    return {
+        "object_id": object_id,
+        "target_user_id": target_user_id,
+        "date": date_str,
+        "start_time": start_time,
+        "end_time": end_time,
+        "pause_minutes": pause_minutes,
+        "art": (body.art or 'Arbeitszeit').strip()[:50] or 'Arbeitszeit',
+        "description": body.description.strip()[:500],
+    }
+
+
 class ZeiterfassungBody(BaseModel):
     object_id: str
     art: str = "Arbeitszeit"
@@ -8921,26 +9192,38 @@ class ZeiterfassungBody(BaseModel):
 @app.post("/api/checkin/manual")
 def checkin_manual(body: ZeiterfassungBody, user: dict = Depends(get_current_user), role: str = Depends(get_role),
                     idempotency_key: str = Header(default='', alias='Idempotency-Key')):
-    target_user_id = body.mitarbeiter_user_id if (role == 'owner' and body.mitarbeiter_user_id) else str(user['id'])
+    clean = _validate_manual_time_body(body, user, role)
+    target_user_id = clean["target_user_id"]
+    idempotency_scope = _idempotency_scope(
+        'checkin_manual', user['id'], f"{target_user_id}:{clean['object_id']}:{clean['date']}", clean,
+    )
+    cached = _idempotency_claim(idempotency_key, idempotency_scope)
+    if cached is not None:
+        return cached
+
     entry = {
         "id": uuid.uuid4().hex,
-        "object_id": body.object_id.strip()[:100],
-        "date": body.date,
+        "object_id": clean["object_id"],
+        "date": clean["date"],
         "user_id": target_user_id,
-        "art": body.art,
-        "start_time": body.start_time,
-        "end_time": body.end_time,
-        "pause_minutes": body.pause_minutes,
-        "description": body.description.strip()[:500],
+        "art": clean["art"],
+        "start_time": clean["start_time"],
+        "end_time": clean["end_time"],
+        "pause_minutes": clean["pause_minutes"],
+        "description": clean["description"],
         "manual_entry": True,
         "created_at": int(time.time()),
     }
-    with _checkin_lock:
-        items = _load_checkin_meta()
-        items.append(entry)
-        _save_checkin_meta(items)
-    _write_zeiterfassung_row(entry, entry['object_id'], target_user_id)
-    _idempotency_save(idempotency_key, entry)
+    try:
+        with _checkin_lock:
+            items = _load_checkin_meta()
+            items.append(entry)
+            _save_checkin_meta(items)
+        _write_zeiterfassung_row(entry, entry['object_id'], target_user_id)
+        _idempotency_save(idempotency_key, entry, idempotency_scope)
+    except Exception:
+        _idempotency_release(idempotency_key, idempotency_scope)
+        raise
     return entry
 
 
@@ -9938,7 +10221,7 @@ def daily_plan_owner_today(
     # session silently overwrite the other in this dict.
     active_sessions = {
         (str(s["user_id"]), str(s.get("object_id", ""))): s for s in checkin_items
-        if s.get("date") == today and s.get("finish_at") is None
+        if s.get("date") == today and _is_active_photo_checkin_session(s)
     }
     finished_sessions = {
         (str(s["user_id"]), str(s.get("object_id", ""))): s for s in checkin_items
@@ -10540,6 +10823,7 @@ CRITICAL_JSON_PATHS.update({
     ROLES_FILE,
     OBJECT_ASSIGNMENTS_FILE,
     CHECKIN_META_FILE,
+    CHECKIN_IDEMPOTENCY_FILE,
     CHAT_FILE,
     CHAT_ARCHIVE_FILE,
     ABWESENHEIT_FILE,
