@@ -4289,11 +4289,20 @@ def _check_upcoming_birthdays():
     ALERT record even under this race, but the birthday_alerts.json idempotency
     file itself could still race and grow spurious duplicate entries. Moved the
     whole read-modify-write under one update_json_transaction lock so concurrent
-    calls serialize instead of racing."""
+    calls serialize instead of racing.
+
+    23.09 (owner finding, "призрак Ивана" -- a stale canonical alert surfaced
+    by the legacy-duplicate migration's post-apply check): only iterates
+    profiles whose CURRENT role in roles.json is 'worker'. A profile can
+    outlive its role (removed/former worker, or a uid that was never
+    onboarded past profile creation) -- this used to still generate birthday
+    alerts every year forever, since the loop only ever read
+    worker_profiles.json, never cross-checked roles.json."""
     profiles = _load_worker_profiles()
     today = business_today()
     d3 = today + timedelta(days=3)
-    owner_id = next((o for o, r in _load_roles().items() if r == 'owner'), None)
+    roles = _load_roles()
+    owner_id = next((o for o, r in roles.items() if r == 'owner'), None)
 
     # _create_critical_alert() does its own file I/O (its own
     # update_json_transaction on CRITICAL_ALERTS_FILE, a DIFFERENT file) --
@@ -4314,6 +4323,18 @@ def _check_upcoming_birthdays():
             to_create.append((owner_id or uid, title, idem))
 
         for uid, profile in profiles.items():
+            # 23.09 (owner finding): a profile can exist in worker_profiles.json
+            # for a uid that no longer has an active 'worker' role in
+            # roles.json (removed/former worker, or a uid that was never
+            # properly onboarded past profile creation) -- that used to still
+            # generate birthday alerts forever, since this loop only ever
+            # read the profile, not the role. Confirmed live: 196 legacy
+            # duplicate alerts all pointed at a uid with role=None in
+            # roles.json. Only a uid whose CURRENT role is 'worker' is
+            # eligible -- owner's own birthday (if profiled) and any
+            # departed/roleless uid are both excluded.
+            if roles.get(str(uid)) != 'worker':
+                continue
             bday = profile.get('birthday')
             if not bday:
                 continue
