@@ -104,7 +104,13 @@ class BirthdayAlertDedupTests(unittest.TestCase):
             'worker-3days': {'name': 'Анна', 'birthday': f'1990-{d3.month:02d}-{d3.day:02d}'},
             'worker-today': {'name': 'Борис', 'birthday': f'1990-{today.month:02d}-{today.day:02d}'},
         }
-        with patch.object(backend, '_load_worker_profiles', return_value=profiles):
+        # 23.09: _check_upcoming_birthdays() now requires roles[uid] == 'worker' --
+        # both ad-hoc uids here must be active workers for this test's own
+        # regression (distinct ref_ids) to actually exercise the code path.
+        with patch.object(backend, '_load_worker_profiles', return_value=profiles), \
+             patch.object(backend, '_load_roles', return_value={
+                 OWNER_ID: 'owner', 'worker-3days': 'worker', 'worker-today': 'worker',
+             }):
             backend._check_upcoming_birthdays()
         pending = self._pending_alerts()
         self.assertEqual(len(pending), 2)

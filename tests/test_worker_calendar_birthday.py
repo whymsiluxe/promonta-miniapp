@@ -142,6 +142,65 @@ class BirthdayAlertTests(unittest.TestCase):
         backend._check_upcoming_birthdays()
         self.assertEqual(backend._load_birthday_alerts(), [])
 
+    def test_profile_exists_but_uid_absent_from_roles_creates_no_alert(self):
+        # 23.09 (owner finding, "призрак Ивана"): a profile can outlive its
+        # role (removed/former worker) -- worker_profiles.json still has an
+        # entry, but roles.json has nothing for that uid. Must NOT generate
+        # a birthday alert.
+        backend._save_roles({'1': 'owner'})  # uid 100 deliberately absent
+        today = backend.business_today()
+        backend._save_worker_profiles({'100': {'name': 'Иван', 'birthday': f'1990-{today.month:02d}-{today.day:02d}'}})
+        backend._check_upcoming_birthdays()
+        self.assertEqual(backend._load_birthday_alerts(), [])
+
+    def test_owner_role_uid_creates_no_worker_birthday_alert(self):
+        # A uid whose CURRENT role is 'owner' (not 'worker') must also be
+        # excluded, even if a birthday-shaped profile exists for it.
+        backend._save_roles({'1': 'owner'})
+        today = backend.business_today()
+        backend._save_worker_profiles({'1': {'name': 'Boss', 'birthday': f'1980-{today.month:02d}-{today.day:02d}'}})
+        backend._check_upcoming_birthdays()
+        self.assertEqual(backend._load_birthday_alerts(), [])
+
+    def test_active_worker_birthday_today_still_creates_alert(self):
+        # Baseline: an active worker (role == 'worker') still gets the alert
+        # -- the new role check must not regress the happy path.
+        today = backend.business_today()
+        backend._save_worker_profiles({'100': {'name': 'Иван', 'birthday': f'1990-{today.month:02d}-{today.day:02d}'}})
+        backend._check_upcoming_birthdays()
+        keys = [a['idem'] for a in backend._load_birthday_alerts()]
+        self.assertIn(f'birthday:100:{today.year}:today', keys)
+
+    def test_active_worker_birthday_in_3_days_still_creates_alert(self):
+        d3 = backend.business_today() + timedelta(days=3)
+        backend._save_worker_profiles({'100': {'name': 'Иван', 'birthday': f'1990-{d3.month:02d}-{d3.day:02d}'}})
+        backend._check_upcoming_birthdays()
+        keys = [a['idem'] for a in backend._load_birthday_alerts()]
+        self.assertIn(f'birthday:100:{d3.year}:3days', keys)
+
+    def test_invalid_or_missing_birthday_unchanged_for_active_worker(self):
+        # Role filter must not affect the existing invalid/missing-birthday
+        # handling for an otherwise-eligible active worker.
+        backend._save_worker_profiles({
+            '100': {'name': 'Иван без ДР'},  # no 'birthday' key at all
+            '101': {'name': 'Плохая дата', 'birthday': 'not-a-date'},
+        })
+        backend._save_roles({'1': 'owner', '100': 'worker', '101': 'worker'})
+        backend._check_upcoming_birthdays()
+        self.assertEqual(backend._load_birthday_alerts(), [])
+
+    def test_mixed_active_and_inactive_workers_only_active_gets_an_alert(self):
+        today = backend.business_today()
+        backend._save_worker_profiles({
+            '100': {'name': 'Иван', 'birthday': f'1990-{today.month:02d}-{today.day:02d}'},
+            '999': {'name': 'Бывший', 'birthday': f'1985-{today.month:02d}-{today.day:02d}'},
+        })
+        backend._save_roles({'1': 'owner', '100': 'worker'})  # 999 has no role
+        backend._check_upcoming_birthdays()
+        alerts = backend._load_birthday_alerts()
+        uids = {a['user_id'] for a in alerts}
+        self.assertEqual(uids, {'100'})
+
 
 if __name__ == '__main__':
     unittest.main()
