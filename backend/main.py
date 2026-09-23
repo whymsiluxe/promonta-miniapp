@@ -9202,7 +9202,7 @@ def ack_critical_alert(alert_id: str, body: CriticalAlertAckBody, user: dict = D
     #
     # Also supersedes every other unresolved LEGACY sibling sharing this
     # alert's semantic key (kind, target_user_id, ref_id) in the same
-    # transaction -- see _legacy_semantic_siblings()'s docstring for why this
+    # transaction -- see _supersede_legacy_siblings()'s docstring for why this
     # is scoped to legacy birthday records specifically, not a general rule.
     def _mutate(items):
         alert = next((a for a in items if a['id'] == alert_id), None)
