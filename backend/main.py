@@ -7523,10 +7523,21 @@ def create_task(body: TaskCreateBody, user: dict = Depends(get_current_user), ro
         'due_at': due_at,
         'closed_at': None,
     }
-    with _lock_for(TASKS_FILE):
-        items = _load_tasks()
+    # 23.09 (owner P0, confirmed live on production): was
+    # `with _lock_for(TASKS_FILE): ... _save_tasks(items)` -- _save_tasks()
+    # calls _atomic_write_json(), which itself does
+    # `with _lock_for(TASKS_FILE):` on the SAME path. _lock_for() caches one
+    # plain threading.Lock per path (non-reentrant) -- the second acquire
+    # attempt, from the same thread, inside the first `with` block, hangs
+    # forever. Proven with a real subprocess call (no mocks): the very FIRST
+    # call to this endpoint deadlocks, unconditionally, no concurrency
+    # required. update_json_transaction() does the read+mutate+write under
+    # ONE lock acquisition -- the correct fix, same pattern already used for
+    # critical_alerts.json/roles.json/birthday_alerts.json this session.
+    def _mutate(items):
         items.append(task)
-        _save_tasks(items)
+        return task
+    update_json_transaction(TASKS_FILE, [], _mutate)
     if owner_id:
         try:
             urgent_prefix = "🔴 СРОЧНО! " if priority == 'срочно' else "📋 "
@@ -7541,18 +7552,28 @@ def update_task_status(task_id: str, body: TaskStatusBody, user: dict = Depends(
     if body.status not in TASK_STATUSES:
         raise HTTPException(400, "Недопустимый статус")
 
-    with _lock_for(TASKS_FILE):
-        items = _load_tasks()
+    # 23.09 (owner P0, same nested-lock deadlock as create_task above) --
+    # moved to update_json_transaction(). prev_status is captured via the
+    # outer-scope holder since the mutator's own return value (the task
+    # dict) already carries the NEW status by the time it's returned; the
+    # Sheets-archive logic below (outside the lock, does its own network
+    # I/O) still needs to know what the status was BEFORE this change.
+    prev_status_holder = {}
+
+    def _mutate(items):
         task = next((t for t in items if t['id'] == task_id), None)
         if not task:
             raise HTTPException(404, "Потребность не найдена")
-        prev_status = task.get('status')
+        prev_status_holder['value'] = task.get('status')
         task['status'] = body.status
         if body.status == 'закрыто':
             task['closed_at'] = int(time.time())
         else:
             task['closed_at'] = None
-        _save_tasks(items)
+        return task
+
+    task = update_json_transaction(TASKS_FILE, [], _mutate)
+    prev_status = prev_status_holder['value']
 
     # 04.08 (Раунд 3, задача 5.2): РАНЬШЕ закрытая потребность удалялась из JSON
     # (архив только в Sheets) -- из-за этого экран Потребности не мог показать
