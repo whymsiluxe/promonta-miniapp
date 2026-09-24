@@ -82,3 +82,30 @@ Conventional Commits: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `security
 - No database, no ORM, no migrations — flat JSON files by design, adequate at current scale. See `docs/DATABASE.md` for when this should be revisited.
 - No CI/CD, no automated tests yet — real gaps, tracked in `docs/TODO.md`, not to be silently worked around by fabricating fake passing results.
 - Material/warehouse inventory and vehicle logbook (Fahrtenbuch) features are explicitly out of scope per an owner decision — don't build them without being asked again.
+
+## Token / context discipline
+
+Mandatory for all coding work:
+
+- Search first (`rg`, `git grep`, AST); do not read large files broadly.
+- For files >500 lines, read only targeted ranges around exact symbols/call sites.
+- Never reread unchanged code; after edits inspect `git diff`, not the whole file again.
+- Work on one hypothesis at a time.
+- Max 2 failed implementation attempts for the same issue. After that STOP and report the blocker.
+- Do not keep experimenting until the session/context limit is exhausted.
+- Never weaken a regression test just to make an implementation pass.
+- Never add sleeps, grace windows, longer timeouts, or similar hacks to hide correctness bugs.
+- For crash recovery/idempotency/concurrency, use deterministic reconciliation/transactions, not timer-based workarounds.
+- Test order: single failing test -> related tests -> full suite once at the end.
+- Do not repeatedly run full pytest while debugging one failing case.
+- Do not broaden the task or refactor unrelated code.
+- Reuse existing helpers/storage/state machines instead of inventing duplicates.
+- Before coding: define acceptance criteria and expected changed files.
+- After coding: `git diff --check` and `git status --short`.
+- No merge/deploy/reset/force-push without explicit owner approval.
+
+Promonta:
+- `resolveWorkerShiftState()` stays the single frontend shift-state source.
+- Do not mix Object Detail V2/UI redesign into backend reliability fixes.
+- Use `update_json_transaction()` for JSON RMW where appropriate.
+- Production deploy only with explicit owner approval.

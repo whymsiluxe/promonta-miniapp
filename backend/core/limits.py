@@ -27,13 +27,3 @@ WORKER_AI_RATE_LIMIT = 15
 AI_UPLOAD_MAX_BYTES = 8 * 1024 * 1024  # 8 МБ
 CHECKIN_MAX_BYTES = 8 * 1024 * 1024
 _IDEMPOTENCY_TTL = 600  # 10 минут
-# F03 (owner review commit db584ac, CHANGES REQUIRED): a 'pending' idempotency claim
-# with no matching business fact yet is a real in-flight request -- give it a real
-# request's worth of time. Past this, a still-pending claim is far more likely a
-# crashed attempt (process died between claim and _idempotency_save) than a request
-# still genuinely running -- checkin photo uploads are the slowest path here and
-# normally complete in low single-digit seconds. Blocking retries on a dead claim
-# until the full 10-minute TTL is exactly the gap the owner flagged; this lets a
-# retry past a stale claim well before that, where it lands on the same
-# deterministic entity id (_idempotent_entity_id) instead of duplicating anything.
-_IDEMPOTENCY_STALE_PENDING_SECONDS = 30
