@@ -32,12 +32,12 @@ source "$REPO_DIR/scripts/manifest.sh"
 source "$REPO_DIR/scripts/runtime_manifest.sh"
 
 # Production paths -- НЕ угадано, сверено с реальным systemd unit
-# (/etc/systemd/system/promonta-miniapp.service, WorkingDirectory=/home/promonta/agent,
+# (/etc/systemd/system/grandmont-miniapp.service, WorkingDirectory=/home/promonta/agent,
 # ExecStart=uvicorn miniapp.main:app) и реальной раздачей frontend через Caddy
 # (/var/www/miniapp/) на момент написания этого скрипта.
 BACKEND_SERVING_DIR="/home/promonta/agent/miniapp"
 FRONTEND_SERVING_DIR="/var/www/miniapp"
-SERVICE_NAME="promonta-miniapp.service"
+SERVICE_NAME="grandmont-miniapp.service"
 HEALTH_URL="https://app.promonta.fun/api/health"
 HEALTH_READY_URL_LOCAL="http://127.0.0.1:8001/api/health/ready"
 
