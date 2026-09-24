@@ -14,6 +14,16 @@ the full original list for comparison.
 
 ## P1 — worth doing soon
 
+- **Rotate GitHub PAT leaked into chat 2026-09-25.** The fine-grained PAT
+  used for `promonta`'s `/home/promonta/.git-credentials` (push access to
+  this repo) was pasted directly into a Claude Code chat message by the
+  owner to unblock a deploy after the previous classic PAT started 403'ing.
+  *Why*: any token typed into a chat transcript should be treated as
+  potentially logged/retained and rotated once no longer urgently needed —
+  see `~/Projects/promonta/configs/ACCESS.md` "GitHub PAT" entry for the
+  token and full context. *Status*: TODO — revoke old token at
+  github.com/settings/tokens, issue a fresh one, update
+  `/home/promonta/.git-credentials`, update ACCESS.md.
 - **Object Detail V2 migration (Worker UX V2 Этап 7).** Reorganize worker
   object-detail from 3 tabs + 10+ stacked sections into `Обзор|Работа|
   Медиа|Чат`. NOT done as code in the 2026-09-21 session — a mapping audit
