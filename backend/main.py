@@ -277,7 +277,6 @@ try:
         TRANSCRIBE_MAX_BYTES,
         CHAT_RETENTION_SECONDS,
         _IDEMPOTENCY_TTL,
-        _IDEMPOTENCY_STALE_PENDING_SECONDS,
         CHAT_MAX,
         AI_RATE_LIMIT,
     )
@@ -301,7 +300,6 @@ except ImportError:
         TRANSCRIBE_MAX_BYTES,
         CHAT_RETENTION_SECONDS,
         _IDEMPOTENCY_TTL,
-        _IDEMPOTENCY_STALE_PENDING_SECONDS,
         CHAT_MAX,
         AI_RATE_LIMIT,
     )
@@ -7937,7 +7935,7 @@ def _idempotency_claim(key: str, scope: dict | None = None):
         return None
     identity = _idempotency_identity(key, scope)
     now = time.time()
-    result = {"response": None, "pending": False}
+    result = {"response": None}
 
     def mutator(store: dict):
         _idempotency_prune(store, now)
@@ -7948,28 +7946,28 @@ def _idempotency_claim(key: str, scope: dict | None = None):
                 _idempotency_cache[identity] = copy.deepcopy(entry)
                 result["response"] = copy.deepcopy(entry.get('response'))
                 return
-            # F03 (owner review commit db584ac, CHANGES REQUIRED): a 'pending'
-            # claim older than _IDEMPOTENCY_STALE_PENDING_SECONDS is treated as an
-            # abandoned/crashed attempt, not a real in-flight request -- refresh it
-            # to a fresh pending claim (same identity) and let the caller proceed.
-            # It lands on the same deterministic entity id
-            # (_idempotent_entity_id) as the crashed attempt, so it either finds
-            # that attempt's business fact already written (self-heals) or
-            # legitimately creates it (nothing was actually written before the
-            # crash) -- either way this stops blocking on a dead claim for the
-            # full 10-minute TTL.
-            age = now - float(entry.get('updated_at') or entry.get('created_at') or 0)
-            if age <= _IDEMPOTENCY_STALE_PENDING_SECONDS:
-                _idempotency_cache[identity] = copy.deepcopy(entry)
-                result["pending"] = True
-                return
+            # F03 (owner review commit db584ac, CHANGES REQUIRED -- corrected,
+            # timer-based "stale pending" heuristic removed per owner instruction:
+            # crash recovery must be deterministic, not time-based): a 'pending'
+            # entry with no 'done' response is indistinguishable, from here alone,
+            # between "still genuinely running" and "crashed before
+            # _idempotency_save()". Blocking on it (409) was the old behavior and
+            # is what caused the F03 crash window: a dead claim blocked every
+            # retry until the full 10-minute TTL pruned it. Real state comes from
+            # elsewhere. Attaching entity_id to a pending claim means the caller's
+            # own storage-level id (_idempotent_entity_id) resolves this
+            # deterministically: checkin_start/checkin_manual/checkin_finish each
+            # check-before-insert by that same id under _checkin_lock, so a
+            # crashed attempt's business fact (if any) is found and replayed, and
+            # concurrent double-submission is serialized by that same lock --
+            # neither needs a 409 here to be correct. Let the caller through.
         entry = {
             "state": "pending",
             "kind": str((scope or {}).get('kind') or 'legacy'),
             "actor_id": str((scope or {}).get('actor_id') or ''),
             "entity_id": str((scope or {}).get('entity_id') or ''),
             "payload_hash": str((scope or {}).get('payload_hash') or ''),
-            "created_at": now,
+            "created_at": (entry or {}).get('created_at', now),
             "updated_at": now,
         }
         store[identity] = entry
@@ -7977,8 +7975,6 @@ def _idempotency_claim(key: str, scope: dict | None = None):
 
     with _idempotency_lock:
         update_json_transaction(CHECKIN_IDEMPOTENCY_FILE, {}, mutator)
-    if result["pending"]:
-        raise HTTPException(409, "Запрос уже выполняется, повторите чуть позже")
     return result["response"]
 
 

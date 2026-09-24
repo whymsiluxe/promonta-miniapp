@@ -222,13 +222,13 @@ class CheckinManualAndIdempotencyTests(unittest.TestCase):
         self.assertEqual(len(items_after_crash), 1, "open session must have survived the simulated crash")
         crashed_session_id = items_after_crash[0]['id']
 
-        # A retry that arrives well past _IDEMPOTENCY_STALE_PENDING_SECONDS (a
-        # realistic gap for a client noticing a failed request and retrying) must
-        # not be blocked by the crashed claim's still-'pending' state -- it's
-        # treated as abandoned and the retry proceeds to the same deterministic id.
-        future = first_received_at + backend._IDEMPOTENCY_STALE_PENDING_SECONDS + 5
+        # A retry (even immediately after) must not be blocked by the crashed
+        # claim's still-'pending' state -- _idempotency_claim no longer 409s on
+        # pending (that was the F03 bug: it blocked every retry until the full
+        # 10-minute TTL). The retry proceeds to the same deterministic entity id
+        # and finds the crashed attempt's business fact already there.
         save_photos_retry = AsyncMock(return_value=['OBJ-1/2026-09-22/start-retry.jpg'])
-        with patch.object(backend.time, 'time', return_value=future), \
+        with patch.object(backend.time, 'time', return_value=first_received_at), \
              patch.object(backend, '_save_checkin_photos', new=save_photos_retry), \
              patch.object(backend, '_cached_get_used_range', return_value=self._object_rows()), \
              patch.object(backend, '_upsert_checkin_feed_post'), \
