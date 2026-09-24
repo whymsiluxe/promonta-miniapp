@@ -163,7 +163,10 @@ class DailyPlanCutoffCheckTests(unittest.TestCase):
         return (self.backend.business_today() + timedelta(days=1)).strftime('%Y-%m-%d')
 
     def test_evening_worker_with_no_tomorrow_plan_triggers_reminder(self):
-        self._assign('555')
+        # Undated (_assign) is exempt from the alert on non-working days (18.09
+        # is_working_day() integration) -- use the explicit today/tomorrow
+        # variant so this test doesn't flake depending on which weekday CI runs.
+        self._assign_explicit_today_and_tomorrow('555')
         rc = self.script.main('evening')
         self.assertEqual(rc, 0)
         alerts = self.backend._load_critical_alerts()
