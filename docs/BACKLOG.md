@@ -1,6 +1,8 @@
 # Backlog
 
-**Last updated**: 2026-09-21 (added 2 Worker UX V2 follow-ups, see P1).
+**Last updated**: 2026-09-25 (shipped chat swipe-to-reply; found calendar
+year-view+drag already built by an earlier session and removed the stale
+entry — see "Verified already done").
 Prior consolidation: 2026-09-18, from ~15 historical PLAN/HANDOFF/
 UNIFIED_AUTONOMOUS_MASTER_PLAN files after reading each one in full and
 verifying every candidate item against the real code (`git log`, `grep`),
@@ -36,15 +38,6 @@ the full original list for comparison.
   Работа -> Обзор -> Чат) are in `docs/OBJECT_DETAIL_V2.md`. Two decisions
   need to be made explicitly before starting: `#stages-view`'s legacy status,
   and which owner-only "Обзор" content (if any) becomes worker-visible.
-- **Swipe-to-reply in chat.** Reply currently only works via long-press →
-  menu → "↩ Ответить" (`grep swipe frontend/js/chat.js` empty). Quick win if
-  picked up, not blocking anything.
-- **Calendar year view + drag-to-move entries.** Week/month views exist
-  (commits `9442daa`, `c630131`). Year view and dragging live
-  absence/assignment data were deliberately left out of that round — commit
-  `9442daa`'s own message says drag/drop "needs its own design pass." Scope
-  it properly before building, not a quick add-on to the existing week/month
-  code.
 - **Worker Card "Календарь" tab vs "Открыть полный календарь" button —
   clarify, don't just remove one.** Verified 2026-09-18: this is NOT
   duplication, it's a preview-then-see-all pattern (the tab shows the
@@ -131,4 +124,9 @@ shared `fcntl`-based store locking across the API process and the
 `plan_sync.py` worker, bottom-nav order (Лента/Главная/Чат/Объекты/Профиль,
 Feed first — this was an open item in an old plan, confirmed done by
 reading `frontend/app.html` directly 2026-09-18), dashboard N+1 request
-dedup + feed lazy-load + owner diagnostics view (commit `abe3712`).
+dedup + feed lazy-load + owner diagnostics view (commit `abe3712`), calendar
+year view + drag-to-move absence/assignment entries (`_abwRenderYearView`,
+`_abwDragEntryId`/`_moveAbwesenheitEntry` in `abwesenheit.js` — built after
+the "needs its own design pass" note was written, confirmed present and
+wired 2026-09-25, this backlog entry was stale), chat swipe-to-reply
+(commit `0a5b8cb`, 2026-09-25).
