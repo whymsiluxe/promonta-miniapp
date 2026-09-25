@@ -114,7 +114,7 @@ class AssignmentConfirmationEscalationTests(unittest.TestCase):
              patch.object(backend, '_load_worker_profiles', return_value={'10': {'name': 'Иван', 'skills': ['tile']}}), \
              patch.object(backend, '_cached_get_used_range', return_value=OBJ_ROWS), \
              patch.object(backend, '_load_abwesenheit', return_value=[]), \
-             patch.object(permissions, '_load_roles', return_value={'10': 'worker'}):
+             patch.object(backend, '_load_roles', return_value={'10': 'worker'}):
             payload = backend.get_dashboard_shifts_today(user=OWNER, _=None)
 
         self.assertEqual(len(payload['awaiting_response']), 1)

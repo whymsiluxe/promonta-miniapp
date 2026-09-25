@@ -149,7 +149,7 @@ class BatchAssignmentTests(unittest.TestCase):
     def test_multiple_workers_get_distinct_assignment_ids(self):
         with patch.object(backend, '_load_abwesenheit', return_value=[]), \
              patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
-             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, 'update_json_transaction') as mock_txn:
             def fake_txn(path, default, mutator):
                 data = {}
@@ -172,7 +172,7 @@ class BatchAssignmentTests(unittest.TestCase):
         # backend-модель данных этого не меняла), не одну запись с двумя видами.
         with patch.object(backend, '_load_abwesenheit', return_value=[]), \
              patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
-             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, 'update_json_transaction') as mock_txn:
             def fake_txn(path, default, mutator):
                 data = {}
@@ -204,7 +204,7 @@ class BatchAssignmentTests(unittest.TestCase):
     def test_duplicate_user_ids_deduplicated(self):
         with patch.object(backend, '_load_abwesenheit', return_value=[]), \
              patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
-             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, 'update_json_transaction') as mock_txn:
             def fake_txn(path, default, mutator):
                 data = {}
@@ -223,7 +223,7 @@ class BatchAssignmentTests(unittest.TestCase):
                                 'status': 'accepted', 'date_from': '2026-08-05', 'date_to': '2026-08-16'}]}
         with patch.object(backend, '_load_abwesenheit', return_value=[]), \
              patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
-             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, 'update_json_transaction') as mock_txn:
             def fake_txn(path, default, mutator):
                 data = {k: list(v) for k, v in existing.items()}
@@ -244,7 +244,7 @@ class BatchAssignmentTests(unittest.TestCase):
                                 'status': 'accepted', 'date_from': '2026-08-05', 'date_to': '2026-08-16'}]}
         with patch.object(backend, '_load_abwesenheit', return_value=[]), \
              patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
-             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, 'update_json_transaction') as mock_txn:
             def fake_txn(path, default, mutator):
                 data = {k: list(v) for k, v in existing.items()}
@@ -295,7 +295,7 @@ class BatchAssignmentTests(unittest.TestCase):
 
     def test_unknown_user_id_rejected(self):
         with patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
-             patch.object(permissions, '_load_roles', return_value={}):
+             patch.object(backend, '_load_roles', return_value={}):
             body = backend.BatchAssignBody(user_ids=['999'], work_type_ids=['tile_work'], date_from='2026-08-05', date_to='2026-08-16')
             with self.assertRaises(HTTPException) as ctx:
                 backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
@@ -303,7 +303,7 @@ class BatchAssignmentTests(unittest.TestCase):
 
     def test_owner_user_id_rejected(self):
         with patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
-             patch.object(permissions, '_load_roles', return_value={'1': 'owner'}):
+             patch.object(backend, '_load_roles', return_value={'1': 'owner'}):
             body = backend.BatchAssignBody(user_ids=['1'], work_type_ids=['tile_work'], date_from='2026-08-05', date_to='2026-08-16')
             with self.assertRaises(HTTPException) as ctx:
                 backend.batch_assign('OBJ-1', body, user=OWNER, _=None)
@@ -348,7 +348,7 @@ class PreciseAssignmentUpdateDeleteTests(unittest.TestCase):
             {'id': 'a2', 'user_id': '20', 'status': 'accepted', 'task_note': 'unchanged'},
         ]}
         with patch.object(backend, 'update_json_transaction') as mock_txn, \
-             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
              patch.object(backend, '_load_abwesenheit', return_value=[]):
             def fake_txn(path, default, mutator):
@@ -368,7 +368,7 @@ class PreciseAssignmentUpdateDeleteTests(unittest.TestCase):
         existing = {'OBJ-1': [{'id': 'a1', 'user_id': '10', 'status': 'accepted', 'responded_at': 'sometime',
                                 'work_type_id': 'tile_work', 'date_from': '2026-08-05', 'date_to': '2026-08-16'}]}
         with patch.object(backend, 'update_json_transaction') as mock_txn, \
-             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
              patch.object(backend, '_load_abwesenheit', return_value=[]):
             def fake_txn(path, default, mutator):
@@ -390,7 +390,7 @@ class PreciseAssignmentUpdateDeleteTests(unittest.TestCase):
                                 'work_type_id': 'tile_work', 'date_from': '2026-08-05', 'date_to': '2026-08-16',
                                 'task_note': 'same'}]}
         with patch.object(backend, 'update_json_transaction') as mock_txn, \
-             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
              patch.object(backend, '_load_abwesenheit', return_value=[]):
             def fake_txn(path, default, mutator):
@@ -413,7 +413,7 @@ class PreciseAssignmentUpdateDeleteTests(unittest.TestCase):
         existing = {'OBJ-1': [{'id': 'a1', 'user_id': '10', 'status': 'accepted',
                                 'work_type_id': 'tile_work', 'date_from': '2026-08-05', 'date_to': '2026-08-16'}]}
         with patch.object(backend, 'update_json_transaction') as mock_txn, \
-             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
              patch.object(backend, '_load_abwesenheit', return_value=[]):
             def fake_txn(path, default, mutator):
@@ -562,7 +562,7 @@ class PreciseAssignmentUpdateDeleteTests(unittest.TestCase):
 
 class CandidatesPrivacyTests(unittest.TestCase):
     def test_candidates_response_has_no_absence_note_field(self):
-        with patch.object(permissions, '_load_roles', return_value={'10': 'worker'}), \
+        with patch.object(backend, '_load_roles', return_value={'10': 'worker'}), \
              patch.object(backend, '_load_worker_profiles', return_value={'10': {
                  'name': 'Ivan', 'skills_v2': [{'skill_id': 'tile_work', 'level': 'master', 'verified': True}],
              }}), \
@@ -773,7 +773,7 @@ class ProfileStatsSkillsV2Tests(unittest.TestCase):
         profile = {'name': 'Ivan', 'skills_v2': [{'skill_id': 'tile_work', 'level': 'master', 'verified': True}]}
         with patch.object(backend, '_load_checkin_meta', return_value=[]), \
              patch.object(backend, '_load_worker_profiles', return_value={'10': profile}), \
-             patch.object(permissions, '_load_roles', return_value={'10': 'worker'}), \
+             patch.object(backend, '_load_roles', return_value={'10': 'worker'}), \
              patch.object(backend, '_load_abwesenheit', return_value=[]):
             result = backend.profile_stats(user_id='10', period='week', user=OWNER, role='owner')
         self.assertIn('skills_v2', result)
@@ -785,7 +785,7 @@ class ProfileStatsSkillsV2Tests(unittest.TestCase):
         with patch.object(backend, '_load_checkin_meta', return_value=[]), \
              patch.object(backend, '_load_worker_profiles', return_value={'10': profile}), \
              patch.object(backend, '_save_worker_profiles'), \
-             patch.object(permissions, '_load_roles', return_value={'10': 'worker'}), \
+             patch.object(backend, '_load_roles', return_value={'10': 'worker'}), \
              patch.object(backend, '_load_abwesenheit', return_value=[]):
             result = backend.profile_stats(user_id='10', period='week', user=OWNER, role='owner')
         self.assertEqual(result['skills_v2'][0]['skill_id'], 'tile_work')

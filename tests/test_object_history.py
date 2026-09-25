@@ -71,7 +71,7 @@ class ObjectHistoryTests(unittest.TestCase):
     def test_assignment_creation_appends_worker_assigned_history(self):
         with self._profiles_patch(), \
              patch.object(backend, '_load_abwesenheit', return_value=[]), \
-             patch.object(permissions, '_load_roles', return_value={'10': 'worker'}):
+             patch.object(backend, '_load_roles', return_value={'10': 'worker'}):
             body = backend.AssignBody(
                 user_id='10', work_type_id='tile_work',
                 date_from='2026-09-15', date_to='2026-09-16',

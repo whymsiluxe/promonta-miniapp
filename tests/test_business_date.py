@@ -86,7 +86,7 @@ class ProfileStatsPeriodAggregateBoundaryTests(unittest.TestCase):
              patch.object(backend, '_load_abwesenheit', return_value=[]), \
              patch.object(backend, '_get_worker_profile', return_value={}), \
              patch.object(backend, '_get_worker_skills_v2', return_value=[]), \
-             patch.object(permissions, '_load_roles', return_value={'10': 'worker'}), \
+             patch.object(backend, '_load_roles', return_value={'10': 'worker'}), \
              patch.object(backend, '_hours_from_session', return_value=8.0):
             result = backend.profile_stats(user_id='', period='week', user=WORKER_A, role='worker')
         # Последний день недельного кольца ("сегодня") обязан быть Berlin-датой,
@@ -113,7 +113,7 @@ class DashboardTodayBoundaryTests(unittest.TestCase):
              patch.object(backend, '_cached_get_used_range', return_value=None), \
              patch.object(backend, '_load_worker_profiles', return_value={}), \
              patch.object(backend, '_load_assignments', return_value={}), \
-             patch.object(permissions, '_load_roles', return_value={'1': 'owner'}), \
+             patch.object(backend, '_load_roles', return_value={'1': 'owner'}), \
              patch.object(backend, '_load_checkin_meta', return_value=[]), \
              patch.object(backend, '_load_repo_objekte_lib', return_value=fake_objekte_lib):
             result = backend.get_team_plan(date='', user=OWNER, _=None)
@@ -134,7 +134,7 @@ class DashboardTodayBoundaryTests(unittest.TestCase):
              patch.object(backend, '_cached_get_used_range', return_value=None), \
              patch.object(backend, '_load_assignments', return_value={}), \
              patch.object(backend, '_load_abwesenheit', return_value=[]), \
-             patch.object(permissions, '_load_roles', return_value={'10': 'worker'}):
+             patch.object(backend, '_load_roles', return_value={'10': 'worker'}):
             result = backend.get_dashboard_shifts_today(user=OWNER, _=None)
 
         days = result['sparkline']['days']
@@ -247,7 +247,7 @@ class AbwesenheitBusinessDateBoundaryTests(unittest.TestCase):
         }])
 
         with patch.object(backend, 'business_now', return_value=MIDNIGHT_EDGE_BERLIN), \
-             patch.object(permissions, '_load_roles', return_value={'1': 'owner', '10': 'worker'}), \
+             patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker'}), \
              patch.object(backend, 'send_telegram_message'):
             backend._auto_close_expired_open_ended_abwesenheit()
 
