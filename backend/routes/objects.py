@@ -113,8 +113,8 @@ class ObjectsRouteDeps:
     object_info_entry: Callable
     ensure_object_info_entry: Callable
     require_server_script: Callable
-    create_object_script: str
-    create_object_folder_script: str
+    create_object_script: Callable
+    create_object_folder_script: Callable
 
 
 def create_objects_router(deps: ObjectsRouteDeps):
@@ -728,10 +728,12 @@ def create_objects_router(deps: ObjectsRouteDeps):
     @router.post("/api/objects")
     def create_object_endpoint(body: NewObjectBody, background_tasks: BackgroundTasks,
                                user: dict = Depends(deps.get_current_user), _: None = Depends(deps.require_owner)):
-        deps.require_server_script(deps.create_object_script, "Скрипт создания объекта")
-        deps.require_server_script(deps.create_object_folder_script, "Скрипт создания папки объекта")
+        create_object_script = deps.create_object_script()
+        create_object_folder_script = deps.create_object_folder_script()
+        deps.require_server_script(create_object_script, "Скрипт создания объекта")
+        deps.require_server_script(create_object_folder_script, "Скрипт создания папки объекта")
 
-        args = [sys.executable, deps.create_object_script, body.name, body.adresse, body.budget]
+        args = [sys.executable, create_object_script, body.name, body.adresse, body.budget]
         if body.start:
             args.append(f'--start={body.start}')
         if body.end:
@@ -749,7 +751,7 @@ def create_objects_router(deps: ObjectsRouteDeps):
         if object_id:
             background_tasks.add_task(
                 subprocess.run,
-                [sys.executable, deps.create_object_folder_script, object_id, body.name],
+                [sys.executable, create_object_folder_script, object_id, body.name],
                 capture_output=True, text=True, timeout=30
             )
 
