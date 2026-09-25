@@ -839,7 +839,7 @@ function openWorkerCard(uid, returnCtx) {
       <div class="wc-tabs" id="wc-tabs">
         <button class="wc-tab${_wcActiveTab === 'today' ? ' active' : ''}" data-wc-tab="today">Сегодня</button>
         <button class="wc-tab${_wcActiveTab === 'productivity' ? ' active' : ''}" data-wc-tab="productivity">Производит.</button>
-        <button class="wc-tab${_wcActiveTab === 'calendar' ? ' active' : ''}" data-wc-tab="calendar">Календарь</button>
+        <button class="wc-tab${_wcActiveTab === 'calendar' ? ' active' : ''}" data-wc-tab="calendar">Ближайшие</button>
         <button class="wc-tab${_wcActiveTab === 'profile' ? ' active' : ''}" data-wc-tab="profile">Профиль</button>
       </div>
       <div id="wc-panel-today" class="wc-tab-panel${_wcActiveTab !== 'today' ? ' wc-tab-panel-hidden' : ''}">
