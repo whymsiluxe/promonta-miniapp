@@ -11,11 +11,14 @@
 - `main.py` keeps the canonical roadmap singleton, JSON transactions, loaders,
   and critical-store registration, then wires the router through explicit
   `StagesRouteDeps` and re-exports legacy handler/model names.
+- After rebasing on Claude's router foundation, Objects and Stages use the
+  same canonical `app.include_router(...)` registration pattern as
+  `routes.auth`.
 
 ### Verification
 - Import smoke confirmed route count stayed at 186, duplicate routes stayed
   empty, and all stage/roadmap routes are owned by `routes.stages`.
-- Added `tests/test_stages_routes_extraction.py` to lock in flat route
+- Added `tests/test_stages_routes_extraction.py` to lock in canonical route
   registration, `routes.stages` ownership, no `import main`, canonical
   roadmap state ownership in `main.py`, and `/blocker-photo` staying in
   `main.py`.
@@ -37,7 +40,7 @@
   scripts keep working without importing `main.py` from the new route module.
 
 ### Verification
-- Added `tests/test_objects_routes_extraction.py` to lock in flat route
+- Added `tests/test_objects_routes_extraction.py` to lock in canonical route
   registration, `routes.objects` ownership, and the no-`import main` contract.
 - Targeted extraction suite: `140 passed`.
 - Not deployed.

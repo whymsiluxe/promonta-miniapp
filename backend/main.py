@@ -3108,10 +3108,9 @@ _objects_router, _objects_handlers = create_objects_router(ObjectsRouteDeps(
     create_object_script=lambda: CREATE_OBJECT_SCRIPT,
     create_object_folder_script=lambda: CREATE_OBJECT_FOLDER_SCRIPT,
 ))
-# FastAPI 0.139 keeps included routers as lazy _IncludedRouter records; this
-# legacy monolith and its tests expect a flat app.routes manifest. Register the
-# extracted routes as real APIRoute records until the whole app moves to routers.
-app.router.routes.extend(_objects_router.routes)
+# Canonical router registration: tests and manifests flatten _IncludedRouter
+# through tests.conftest.iter_app_routes()/equivalent production-package smoke.
+app.include_router(_objects_router)
 
 # Legacy direct-call compatibility: tests and operational scripts still import
 # handlers from main.py. Runtime routes are registered by backend.routes.objects.
@@ -5951,7 +5950,7 @@ _stages_router, _stages_handlers = create_stages_router(StagesRouteDeps(
     create_critical_alert=lambda *args, **kwargs: _create_critical_alert(*args, **kwargs),
     send_telegram_message=lambda *args, **kwargs: send_telegram_message(*args, **kwargs),
 ))
-app.router.routes.extend(_stages_router.routes)
+app.include_router(_stages_router)
 
 get_stages = _stages_handlers.get_stages
 create_stage = _stages_handlers.create_stage

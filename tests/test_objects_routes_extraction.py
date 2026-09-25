@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 import main as backend  # noqa: E402
+from conftest import iter_app_routes  # noqa: E402
 
 
 OBJECT_ROUTE_KEYS = {
@@ -30,17 +31,16 @@ OBJECT_ROUTE_KEYS = {
 
 
 def _route_rows():
-    for route in backend.app.routes:
+    for route in iter_app_routes(backend.app):
         for method in sorted(getattr(route, 'methods', []) or []):
             if method in {'GET', 'POST', 'PATCH', 'DELETE'}:
                 yield method, getattr(route, 'path', ''), route
 
 
-def test_objects_domain_routes_are_flat_and_owned_by_routes_module():
+def test_objects_domain_routes_are_registered_once_and_owned_by_routes_module():
     rows = list(_route_rows())
     keys = [(method, path) for method, path, _ in rows]
 
-    assert not [route for route in backend.app.routes if not hasattr(route, 'path')]
     for key in OBJECT_ROUTE_KEYS:
         assert keys.count(key) == 1, key
         route = next(route for method, path, route in rows if (method, path) == key)

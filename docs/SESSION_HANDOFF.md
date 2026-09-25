@@ -15,13 +15,14 @@ Implemented so far:
 - `main.py` keeps the canonical roadmap singleton, JSON transaction helpers,
   shared loaders, and critical JSON store registration; route module receives
   everything via `StagesRouteDeps`.
-- `main.py` registers flat `APIRoute` records and re-exports legacy
-  handler/model names for direct-call tests.
+- `main.py` registers the router through canonical `app.include_router(...)`
+  and re-exports legacy handler/model names for direct-call tests.
 
 Verification so far:
 - `python3 -m py_compile backend/main.py backend/routes/stages.py backend/routes/objects.py`.
 - Route manifest smoke: `186` HTTP routes, duplicate routes `[]`, all 21
-  stage/roadmap routes owned by `routes.stages`.
+  stage/roadmap routes owned by `routes.stages`, flattened through
+  `iter_app_routes()`.
 - Added `tests/test_stages_routes_extraction.py`.
 - Targeted extraction/stage/roadmap/object-access/history suite: `120 passed`.
 - Full suite: `1148 passed, 1 skipped`.
