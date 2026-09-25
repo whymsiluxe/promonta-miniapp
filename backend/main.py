@@ -3174,8 +3174,8 @@ _objects_router, _objects_handlers = create_objects_router(ObjectsRouteDeps(
     object_info_entry=lambda object_id: _object_info_entry(object_id),
     ensure_object_info_entry=lambda data, object_id: _ensure_object_info_entry(data, object_id),
     require_server_script=lambda script_path, label: _require_server_script(script_path, label),
-    create_object_script=CREATE_OBJECT_SCRIPT,
-    create_object_folder_script=CREATE_OBJECT_FOLDER_SCRIPT,
+    create_object_script=lambda: CREATE_OBJECT_SCRIPT,
+    create_object_folder_script=lambda: CREATE_OBJECT_FOLDER_SCRIPT,
 ))
 # FastAPI 0.139 keeps included routers as lazy _IncludedRouter records; this
 # legacy monolith and its tests expect a flat app.routes manifest. Register the
