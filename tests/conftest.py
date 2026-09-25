@@ -16,6 +16,28 @@ from pathlib import Path
 
 import pytest
 
+
+def iter_app_routes(app):
+    """Flatten app.routes, descending into FastAPI's _IncludedRouter wrapper.
+
+    FastAPI 0.139 changed include_router() to store included routes as a
+    single _IncludedRouter object in app.routes (route.original_router.routes
+    holds the real APIRoute list) instead of splicing them into a flat list
+    the way older FastAPI versions did. Anything iterating `app.routes`
+    looking for `.path` on every entry (route-registration assertions) needs
+    this to see routes registered via routes/auth.py's app.include_router()
+    call -- a plain `for route in app.routes` silently skips them (the
+    wrapper itself has no `.path`), which would make a route-existence test
+    pass or fail for the wrong reason instead of raising AttributeError.
+    """
+    for route in app.routes:
+        nested = getattr(route, 'original_router', None)
+        if nested is not None:
+            yield from iter_app_routes(nested)
+        else:
+            yield route
+
+
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = ROOT / "backend"
 if str(BACKEND_DIR) not in sys.path:

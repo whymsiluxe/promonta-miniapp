@@ -46,3 +46,8 @@ BACKEND_STANDALONE_SCRIPTS=(
 )
 # Shipped as a unit: rm -rf $DEST/core && cp -r $SRC/core $DEST/core
 BACKEND_CORE_DIR="core"
+# 25.09: first router extraction (routes/auth.py) -- main.py now does
+# `app.include_router(...)` from this package, so it must ship exactly like
+# core/ (same rm -rf + cp -r unit) or a deploy leaves main.py importing a
+# directory that doesn't exist on the serving path.
+BACKEND_ROUTES_DIR="routes"

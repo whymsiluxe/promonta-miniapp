@@ -20,12 +20,26 @@ class DailyPlanCutoffCheckTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        self._saved_env = dict(os.environ)
         os.environ['MINIAPP_DATA_ROOT'] = self.tmp
         os.environ.setdefault('BOT_TOKEN', 'test')
 
         import main as backend
         self.backend = backend
         self._orig_business_today = backend.business_today  # restored in tearDown
+        # 25.09 (test-pollution fix): these _FILE reassignments used to leak
+        # into every later test in the same pytest process (no teardown) --
+        # harmless while every reader lived in main.py's own namespace, but
+        # after routes/auth.py's extraction moved _load_worker_profiles to
+        # core.profiles (its own namespace, unaffected by this leak), a write
+        # via the leaked backend.WORKER_PROFILES_FILE and a read via
+        # core.profiles.WORKER_PROFILES_FILE silently diverged in later
+        # tests. Save so tearDown can restore them.
+        self._saved_attrs = {
+            name: getattr(backend, name)
+            for name in ('ROLES_FILE', 'OBJECT_ASSIGNMENTS_FILE', 'WORKER_PROFILES_FILE',
+                         'CRITICAL_ALERTS_FILE', 'CHAT_FILE')
+        }
         # Re-point every store this test touches at the isolated tmp dir --
         # main.py module-level _FILE constants were computed at first import
         # (possibly by an earlier test) and won't auto-follow env var changes.
@@ -64,6 +78,10 @@ class DailyPlanCutoffCheckTests(unittest.TestCase):
         # runs afterward, since unittest doesn't reload the module between
         # tests within one process.
         self.backend.business_today = self._orig_business_today
+        for name, value in self._saved_attrs.items():
+            setattr(self.backend, name, value)
+        os.environ.clear()
+        os.environ.update(self._saved_env)
 
     def _assign(self, worker_id: str, object_id: str = 'OBJ-1', date_from='', date_to=''):
         assignments = self.backend._load_assignments()

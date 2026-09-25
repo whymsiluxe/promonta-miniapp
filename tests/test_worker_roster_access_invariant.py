@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 import main as backend  # noqa: E402
 import core.permissions as permissions  # noqa: E402
+import routes.auth as auth_routes  # noqa: E402
 
 OWNER = {'id': 1, 'first_name': 'Boss'}
 
@@ -69,9 +70,9 @@ class WorkerRosterAccessInvariantTests(unittest.TestCase):
         roles = {'1': 'owner'}
         notified = {}  # Ivan never notified -- old code would hide him entirely
         profiles = {'99': {'name': 'Иван'}}
-        with patch.object(backend, '_load_roles', return_value=roles), \
-             patch.object(backend, '_load_notified_users', return_value=notified), \
-             patch.object(backend, '_load_worker_profiles', return_value=profiles):
+        with patch.object(auth_routes, '_load_roles', return_value=roles), \
+             patch.object(auth_routes, '_load_notified_users', return_value=notified), \
+             patch.object(auth_routes, '_load_worker_profiles', return_value=profiles):
             result = backend.list_roles(user=OWNER, _=None)
         pending_ids = [p['user_id'] for p in result['pending']]
         self.assertIn('99', pending_ids)
@@ -82,9 +83,9 @@ class WorkerRosterAccessInvariantTests(unittest.TestCase):
         roles = {'1': 'owner'}
         notified = {'50': True}
         profiles = {'50': {'name': 'Уведомлённый'}}
-        with patch.object(backend, '_load_roles', return_value=roles), \
-             patch.object(backend, '_load_notified_users', return_value=notified), \
-             patch.object(backend, '_load_worker_profiles', return_value=profiles):
+        with patch.object(auth_routes, '_load_roles', return_value=roles), \
+             patch.object(auth_routes, '_load_notified_users', return_value=notified), \
+             patch.object(auth_routes, '_load_worker_profiles', return_value=profiles):
             result = backend.list_roles(user=OWNER, _=None)
         pending = next(p for p in result['pending'] if p['user_id'] == '50')
         self.assertTrue(pending['was_notified'])
@@ -94,16 +95,16 @@ class WorkerRosterAccessInvariantTests(unittest.TestCase):
         # from pending and appear in roles on the next /api/roles read.
         roles = {'1': 'owner'}
         profiles = {'99': {'name': 'Иван'}}
-        with patch.object(backend, '_load_roles', return_value=roles), \
-             patch.object(backend, '_load_notified_users', return_value={}), \
-             patch.object(backend, '_load_worker_profiles', return_value=profiles):
+        with patch.object(auth_routes, '_load_roles', return_value=roles), \
+             patch.object(auth_routes, '_load_notified_users', return_value={}), \
+             patch.object(auth_routes, '_load_worker_profiles', return_value=profiles):
             before = backend.list_roles(user=OWNER, _=None)
         self.assertIn('99', [p['user_id'] for p in before['pending']])
 
         roles_after_grant = {'1': 'owner', '99': 'worker'}
-        with patch.object(backend, '_load_roles', return_value=roles_after_grant), \
-             patch.object(backend, '_load_notified_users', return_value={}), \
-             patch.object(backend, '_load_worker_profiles', return_value=profiles):
+        with patch.object(auth_routes, '_load_roles', return_value=roles_after_grant), \
+             patch.object(auth_routes, '_load_notified_users', return_value={}), \
+             patch.object(auth_routes, '_load_worker_profiles', return_value=profiles):
             after = backend.list_roles(user=OWNER, _=None)
         self.assertNotIn('99', [p['user_id'] for p in after['pending']])
         self.assertIn('99', [r['user_id'] for r in after['roles']])

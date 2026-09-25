@@ -614,10 +614,13 @@ class ProductionPackageImportTests(unittest.TestCase):
                 src = os.path.join(backend_dir, fname)
                 if fname.endswith('.py'):
                     shutil.copy(src, pkg_dir)
-                elif os.path.isdir(src) and fname == 'core':
+                elif os.path.isdir(src) and fname in ('core', 'routes'):
                     # Phase A: backend/core/ subpackage must travel with main.py
                     # for `import miniapp.main` to resolve its `from core.time
                     # import ...` -- flat *.py copy alone misses subdirectories.
+                    # 25.09: backend/routes/ (first router extraction) has the
+                    # exact same requirement -- main.py does
+                    # `app.include_router(...)` from routes.auth.
                     shutil.copytree(src, os.path.join(pkg_dir, fname))
             script = (
                 "import sys; sys.path.insert(0, '.'); import miniapp.main as m; "
@@ -662,20 +665,34 @@ class ProductionPackageImportTests(unittest.TestCase):
                 src = os.path.join(backend_dir, fname)
                 if fname.endswith('.py'):
                     shutil.copy(src, pkg_dir)
-                elif os.path.isdir(src) and fname == 'core':
+                elif os.path.isdir(src) and fname in ('core', 'routes'):
+                    # 25.09: routes/ (first router extraction) travels alongside
+                    # core/ for the same reason -- main.py does
+                    # app.include_router(...) from routes.auth.
                     shutil.copytree(src, os.path.join(pkg_dir, fname))
 
             self.assertTrue(os.path.isfile(os.path.join(pkg_dir, '__init__.py')),
                 "backend/__init__.py must exist and be copied -- miniapp must be "
                 "a real package, not an implicit namespace package")
 
+            # 25.09: FastAPI 0.139's include_router() wraps included routes in a
+            # single _IncludedRouter object in app.routes instead of splicing them
+            # in flat -- count via original_router.routes (iterative stack-based
+            # flatten, same shape as conftest.py's iter_app_routes) so the net
+            # route count stays stable across the routes/auth.py extraction
+            # instead of silently under-counting by 2 (3 routes -> 1 wrapper).
             script = (
-                "import sys, os; sys.path.insert(0, '.'); import miniapp.main as m; "
-                "print('ROUTES', len(m.app.routes)); "
-                "print('MINIAPP_FILE', miniapp.__file__ if False else __import__('miniapp').__file__); "
-                "print('MINIAPP_PATH', list(__import__('miniapp').__path__)); "
-                "print('BUSINESS_NOW_MODULE', m.business_now.__module__); "
-                "print('DPL_NAME', m.dpl.__name__)"
+                "import sys, os; sys.path.insert(0, '.'); import miniapp.main as m\n"
+                "stack = list(m.app.routes); flat = []\n"
+                "while stack:\n"
+                "    r = stack.pop()\n"
+                "    nr = getattr(r, 'original_router', None)\n"
+                "    stack.extend(nr.routes) if nr is not None else flat.append(r)\n"
+                "print('ROUTES', len(flat))\n"
+                "print('MINIAPP_FILE', __import__('miniapp').__file__)\n"
+                "print('MINIAPP_PATH', list(__import__('miniapp').__path__))\n"
+                "print('BUSINESS_NOW_MODULE', m.business_now.__module__)\n"
+                "print('DPL_NAME', m.dpl.__name__)\n"
             )
             env = dict(os.environ)
             env['BOT_TOKEN'] = 'test-dummy'

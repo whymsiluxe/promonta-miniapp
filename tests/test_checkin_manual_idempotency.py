@@ -35,6 +35,16 @@ def _manual_body(**overrides):
 class CheckinManualAndIdempotencyTests(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp(prefix='checkin-manual-idem-')
+        # 25.09 (test-pollution fix): these _FILE reassignments used to leak
+        # into every later test in the same pytest process -- tearDown below
+        # deleted the tmpdir itself but never restored these module attrs,
+        # so any later test reading backend.OBJECT_ASSIGNMENTS_FILE (etc.)
+        # without patching it itself would silently point at a deleted
+        # directory. Save so tearDown can restore them.
+        self._saved_attrs = {
+            name: getattr(backend, name)
+            for name in ('CHECKIN_META_FILE', 'CHECKIN_IDEMPOTENCY_FILE', 'ROLES_FILE', 'OBJECT_ASSIGNMENTS_FILE')
+        }
         backend.CHECKIN_META_FILE = os.path.join(self.tmpdir, 'checkin_meta.json')
         backend.CHECKIN_IDEMPOTENCY_FILE = os.path.join(self.tmpdir, 'checkin_idempotency.json')
         backend.ROLES_FILE = os.path.join(self.tmpdir, 'roles.json')
@@ -51,6 +61,8 @@ class CheckinManualAndIdempotencyTests(unittest.TestCase):
     def tearDown(self):
         backend._idempotency_cache.clear()
         shutil.rmtree(self.tmpdir, ignore_errors=True)
+        for name, value in self._saved_attrs.items():
+            setattr(backend, name, value)
 
     def _object_rows(self):
         return [['ID объекта', 'Объект'], ['OBJ-1', 'Дом Мюллер']]

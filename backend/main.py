@@ -426,6 +426,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# First router extraction (routes/auth.py -- GET/POST/DELETE /api/roles).
+# Registered here, right after app creation, same place a router would
+# normally go -- routes/auth.py imports only from core/*, never from this
+# module, so there is no ordering constraint forcing this include_router
+# call any later in the file.
+try:
+    from .routes.auth import router as _auth_router
+except ImportError:
+    from routes.auth import router as _auth_router  # noqa: E402
+app.include_router(_auth_router)
+
 
 @app.on_event("startup")
 async def _on_startup():
@@ -701,64 +712,16 @@ def require_object_access(object_id: str, user: dict = Depends(get_current_user)
         raise HTTPException(403, "Нет доступа к этому объекту")
 
 
-@app.get("/api/roles")
-def list_roles(user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    """10.29 (Fable-аудит): раньше добавление воркера требовало ручной SSH+правку JSON —
-    теперь owner может смотреть/менять whitelist прямо из приложения."""
-    roles = _load_roles()
-    notified = _load_notified_users()
-    profiles = _load_worker_profiles()
-    # 09.09: pending раньше строился ТОЛЬКО из notified_users - roles -- пользователь,
-    # который прошёл онбординг (появился в worker_profiles.json) но никогда не попадал
-    # в notified_users (например если процесс уведомления сбоил, или профиль создан
-    # каким-то другим путём), был невидим здесь целиком: не в roles (нет доступа), не
-    # в pending (не в notified) -- "призрак", которого Access-вкладка не показывала
-    # вообще, хотя /api/workers считал его активным работником (тот же баг, см.
-    # комментарий там). Теперь pending = любой профиль без активной роли, не
-    # пересечение с notified -- notified_users используется только чтобы ПОМЕТИТЬ
-    # (was_notified), не как обязательное условие попадания в список.
-    pending_ids = sorted(set(profiles.keys()) - set(roles.keys()))
-    return {
-        "roles": [{"user_id": uid, "role": r,
-                   "name": _sanitize_display_name(profiles.get(uid, {}).get('name'), uid)}
-                  for uid, r in roles.items()],
-        "pending": [{"user_id": uid,
-                     "name": _sanitize_display_name(profiles.get(uid, {}).get('name'), uid),
-                     "was_notified": uid in notified}
-                    for uid in pending_ids],
-    }
-
-
-@app.post("/api/roles")
-def set_role(body: RoleSetBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    if body.role not in ('owner', 'worker'):
-        raise HTTPException(400, "role должен быть owner или worker")
-    roles = _load_roles()
-    if body.role == 'worker' and roles.get(str(body.user_id)) == 'owner':
-        remaining_owners = sum(1 for r in roles.values() if r == 'owner') - 1
-        if remaining_owners < 1:
-            raise HTTPException(400, "Нельзя понизить последнего owner — фирма останется без владельца в приложении")
-    roles[str(body.user_id)] = body.role
-    _save_roles(roles)
-    try:
-        send_telegram_message(int(body.user_id), f"Вам предоставлен доступ к miniapp (роль: {body.role}).")
-    except Exception:
-        pass
-    return {"status": "ok"}
-
-
-@app.delete("/api/roles/{target_user_id}")
-def revoke_role(target_user_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    if target_user_id == str(user['id']):
-        raise HTTPException(400, "Нельзя удалить свою же роль")
-    roles = _load_roles()
-    if roles.get(target_user_id) == 'owner':
-        remaining_owners = sum(1 for r in roles.values() if r == 'owner') - 1
-        if remaining_owners < 1:
-            raise HTTPException(400, "Нельзя удалить последнего owner — фирма останется без владельца в приложении")
-    roles.pop(target_user_id, None)
-    _save_roles(roles)
-    return {"status": "ok"}
+# /api/roles (GET/POST/DELETE) moved to routes/auth.py -- the first real
+# router extraction (see that module's docstring for the dependency-direction
+# rule this establishes as the template for the rest). app.include_router
+# call is near the bottom of this file, alongside the FastAPI app setup.
+# Re-exported here (not a second implementation) because 1 test file still
+# does backend.list_roles(...) directly.
+try:
+    from .routes.auth import list_roles, set_role, revoke_role
+except ImportError:
+    from routes.auth import list_roles, set_role, revoke_role  # noqa: E402
 
 
 # 30.07 (Release-аудит Этап 6): commit SHA для /api/health читается из файла рядом
@@ -893,8 +856,14 @@ def list_workers(user: dict = Depends(get_current_user)):
 SKILL_OPTIONS = [w['name'] for w in wt.WORK_TYPES if w['active']]
 
 
-def _load_worker_profiles() -> dict:
-    return _safe_load_json(WORKER_PROFILES_FILE, {})
+# _load_worker_profiles moved to core/profiles.py (minimal dependency closure
+# for routes/auth.py) -- imported back below, main.py's copy is a re-export,
+# not a second implementation. Patched by name in 12 test files targeting
+# functions that stay in main.py, so the name must keep resolving here too.
+try:
+    from .core.profiles import _load_worker_profiles, _sanitize_display_name
+except ImportError:
+    from core.profiles import _load_worker_profiles, _sanitize_display_name  # noqa: E402
 
 
 def _save_worker_profiles(profiles: dict):
@@ -946,44 +915,6 @@ def _gps_suspect(lat: str, lon: str) -> bool:
     if not (47 <= f_lat <= 55.5 and 5 <= f_lon <= 16):
         return True
     return False
-
-
-def _sanitize_display_name(raw: str | None, fallback: str) -> str:
-    """Telegram first_name может быть невидимыми символами (заполнители Hangul,
-    zero-width, чистые пробелы) или бессмысленным набором ('X13') — сохранённым
-    как есть при первой авторизации. На экране это выглядит как "битый"/нечитаемый
-    паттерн, а не как проблема шрифта (баг 23.07: юзер видел "нечитаемый паттерн"
-    в имени и "X13" вместо имени в подписи графика — оба места брали profile['name']
-    без проверки на осмысленность).
-    Hangul filler (U+3164 и родня) — валидная Unicode-буква категории Lo, поэтому
-    обычный \\w её не отсеивает; сначала вычищаем known invisible-filler + все
-    юникод-символы категории Cf (format, включает zero-width space/joiner и т.п.),
-    и только потом проверяем, остался ли хоть один "буквенный" символ."""
-    if not raw:
-        return fallback
-    stripped = raw.strip()
-    if not stripped:
-        return fallback
-    import re
-    import unicodedata
-    visible = ''.join(
-        ch for ch in stripped
-        if ch not in _INVISIBLE_FILLER_CHARS and unicodedata.category(ch) != 'Cf'
-    )
-    # 18.09: collapse whitespace left behind where filler characters used to sit
-    # (e.g. 'ᅠ ᅠ ᅠ ᅠ ᅠ ᅠ1' -> filler removed leaves '      1' -- a run of spaces,
-    # not a real name) -- re.sub before the final strip so a leading/trailing
-    # run collapses away too, not just internal ones.
-    visible = re.sub(r'\s+', ' ', visible).strip()
-    if not visible or not re.search(r'\w', visible, re.UNICODE):
-        return fallback
-    # Bug fixed 18.09: this used to `return stripped` (the ORIGINAL uncleaned
-    # string) once visible passed the meaningfulness check above -- a mixed
-    # name like 'ᅠ ᅠ ᅠ ᅠ ᅠ ᅠ1' has one real character (enough to pass the
-    # check) but was then returned WITH all the filler characters still in it,
-    # defeating the sanitization the function exists to do. Return the cleaned
-    # string instead.
-    return visible
 
 
 def _is_meaningful_name(raw: str | None, user_id: str) -> bool:
