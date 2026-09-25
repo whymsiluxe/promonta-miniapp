@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026-09-25 (backend architecture — Stages/Roadmap router extraction, branch `codex/split-stages`)
+
+### Changed
+- Extracted Stages/Roadmap-domain HTTP handlers from `backend/main.py` into
+  `backend/routes/stages.py`: stage CRUD/status/swap/complete/blocker,
+  roadmap categories/items/status/notes, and stage request approval flow.
+- Kept `/api/objects/{object_id}/blocker-photo...` in `main.py`; media/storage
+  refactor is intentionally outside this slice.
+- `main.py` keeps the canonical roadmap singleton, JSON transactions, loaders,
+  and critical-store registration, then wires the router through explicit
+  `StagesRouteDeps` and re-exports legacy handler/model names.
+- After rebasing on Claude's router foundation, Objects and Stages use the
+  same canonical `app.include_router(...)` registration pattern as
+  `routes.auth`.
+
+### Verification
+- Import smoke confirmed route count stayed at 186, duplicate routes stayed
+  empty, and all stage/roadmap routes are owned by `routes.stages`.
+- Added `tests/test_stages_routes_extraction.py` to lock in canonical route
+  registration, `routes.stages` ownership, no `import main`, canonical
+  roadmap state ownership in `main.py`, and `/blocker-photo` staying in
+  `main.py`.
+- Targeted extraction/stage/roadmap/object-access/history suite: `120 passed`.
+- Full test suite: `1148 passed, 1 skipped`.
+- Not deployed.
+
+## 2026-09-25 (backend architecture — Objects router extraction, branch `codex/split-objects`)
+
+### Changed
+- Extracted the stable Objects-domain HTTP handlers from `backend/main.py` into
+  `backend/routes/objects.py`: object list/create/status, object history,
+  worker assignments, assignment candidates/batch assign, and object
+  description/info-items.
+- Kept media/photo/documents/tasks/stages/daily-plan routes in `main.py`; those
+  are separate domains and were intentionally not part of this split.
+- `main.py` wires the router through explicit `ObjectsRouteDeps` and re-exports
+  legacy handler/model names so existing direct-call tests and operational
+  scripts keep working without importing `main.py` from the new route module.
+
+### Verification
+- Added `tests/test_objects_routes_extraction.py` to lock in canonical route
+  registration, `routes.objects` ownership, and the no-`import main` contract.
+- Targeted extraction suite: `140 passed`.
+- Not deployed.
+
 ## 2026-09-22 (iPhone screenshot audit, branch `screenshot-audit-2026-09-22`)
 
 20 real-device screenshots audited item-by-item (A-I per owner's letter).

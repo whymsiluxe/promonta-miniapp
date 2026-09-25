@@ -1,5 +1,63 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-25 Stages/Roadmap router extraction (`codex/split-stages`)
+
+Current task: split Stages/Roadmap planning routes out of `backend/main.py`
+without changing runtime behavior. This branch is stacked on
+`codex/split-objects` at `5c390dc9932a7ef9843b5c4019475dfb1f430659`.
+
+Implemented so far:
+- Added `backend/routes/stages.py`.
+- Moved stage CRUD/status/swap/complete/blocker handlers, roadmap
+  category/item/status/note handlers, and stage request approval handlers into
+  the new route module.
+- Left `/api/objects/{object_id}/blocker-photo...` in `main.py`.
+- `main.py` keeps the canonical roadmap singleton, JSON transaction helpers,
+  shared loaders, and critical JSON store registration; route module receives
+  everything via `StagesRouteDeps`.
+- `main.py` registers the router through canonical `app.include_router(...)`
+  and re-exports legacy handler/model names for direct-call tests.
+
+Verification so far:
+- `python3 -m py_compile backend/main.py backend/routes/stages.py backend/routes/objects.py`.
+- Route manifest smoke: `186` HTTP routes, duplicate routes `[]`, all 21
+  stage/roadmap routes owned by `routes.stages`, flattened through
+  `iter_app_routes()`.
+- Added `tests/test_stages_routes_extraction.py`.
+- Targeted extraction/stage/roadmap/object-access/history suite: `120 passed`.
+- Full suite: `1148 passed, 1 skipped`.
+
+Next:
+- Push branch `codex/split-stages` if a remote handoff is needed. Do not
+  merge or deploy. Rebase only after Claude's auth/roles/profiles split is
+  complete and `main` is updated.
+
+## 2026-09-25 Objects router extraction (`codex/split-objects`)
+
+Current task: split Object API routes out of `backend/main.py` without changing
+runtime behavior.
+
+Implemented so far:
+- Added `backend/routes/objects.py` and `backend/routes/__init__.py`.
+- Moved these handlers into the new route module: `list_objects`,
+  `my_assignments`, object history, assignment assign/update/delete/respond,
+  assignment candidates, batch assign, object description/info-items,
+  create object, and object status.
+- Left image/photo, documents, tasks, stages/roadmap/blockers, and daily-plan
+  routes in `main.py` for later domain-specific splits.
+- `main.py` wires `ObjectsRouteDeps`, registers the extracted routes as flat
+  `APIRoute` records, and re-exports legacy handler/model names.
+- Added `tests/test_objects_routes_extraction.py`.
+
+Verification so far:
+- `python3 -m py_compile backend/main.py backend/routes/objects.py`.
+- Focused object/assignment/access/history/storage suite: `140 passed`.
+
+Next:
+- Run the new extraction test plus targeted manifest checks.
+- Run full `pytest`.
+- Commit in at least two steps before any push. Do not deploy.
+
 ## 2026-09-17 Document gallery P2 slice handoff
 
 Current autonomous slice: Section H continuation, fourth P2 item
