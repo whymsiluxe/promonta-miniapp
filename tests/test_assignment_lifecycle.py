@@ -665,7 +665,10 @@ class ProductionPackageImportTests(unittest.TestCase):
                 src = os.path.join(backend_dir, fname)
                 if fname.endswith('.py'):
                     shutil.copy(src, pkg_dir)
-                elif os.path.isdir(src) and fname == 'core':
+                elif os.path.isdir(src) and fname in ('core', 'routes'):
+                    # 25.09: routes/ (first router extraction) travels alongside
+                    # core/ for the same reason -- main.py does
+                    # app.include_router(...) from routes.auth.
                     shutil.copytree(src, os.path.join(pkg_dir, fname))
 
             self.assertTrue(os.path.isfile(os.path.join(pkg_dir, '__init__.py')),
