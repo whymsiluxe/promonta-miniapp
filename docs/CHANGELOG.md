@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-25 (backend architecture — Objects router extraction, branch `codex/split-objects`)
+
+### Changed
+- Extracted the stable Objects-domain HTTP handlers from `backend/main.py` into
+  `backend/routes/objects.py`: object list/create/status, object history,
+  worker assignments, assignment candidates/batch assign, and object
+  description/info-items.
+- Kept media/photo/documents/tasks/stages/daily-plan routes in `main.py`; those
+  are separate domains and were intentionally not part of this split.
+- `main.py` wires the router through explicit `ObjectsRouteDeps` and re-exports
+  legacy handler/model names so existing direct-call tests and operational
+  scripts keep working without importing `main.py` from the new route module.
+
+### Verification
+- Added `tests/test_objects_routes_extraction.py` to lock in flat route
+  registration, `routes.objects` ownership, and the no-`import main` contract.
+- Targeted extraction suite: `140 passed`.
+- Not deployed.
+
 ## 2026-09-22 (iPhone screenshot audit, branch `screenshot-audit-2026-09-22`)
 
 20 real-device screenshots audited item-by-item (A-I per owner's letter).

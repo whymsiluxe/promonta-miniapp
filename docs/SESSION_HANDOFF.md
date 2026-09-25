@@ -1,5 +1,31 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-25 Objects router extraction (`codex/split-objects`)
+
+Current task: split Object API routes out of `backend/main.py` without changing
+runtime behavior.
+
+Implemented so far:
+- Added `backend/routes/objects.py` and `backend/routes/__init__.py`.
+- Moved these handlers into the new route module: `list_objects`,
+  `my_assignments`, object history, assignment assign/update/delete/respond,
+  assignment candidates, batch assign, object description/info-items,
+  create object, and object status.
+- Left image/photo, documents, tasks, stages/roadmap/blockers, and daily-plan
+  routes in `main.py` for later domain-specific splits.
+- `main.py` wires `ObjectsRouteDeps`, registers the extracted routes as flat
+  `APIRoute` records, and re-exports legacy handler/model names.
+- Added `tests/test_objects_routes_extraction.py`.
+
+Verification so far:
+- `python3 -m py_compile backend/main.py backend/routes/objects.py`.
+- Focused object/assignment/access/history/storage suite: `140 passed`.
+
+Next:
+- Run the new extraction test plus targeted manifest checks.
+- Run full `pytest`.
+- Commit in at least two steps before any push. Do not deploy.
+
 ## 2026-09-17 Document gallery P2 slice handoff
 
 Current autonomous slice: Section H continuation, fourth P2 item
