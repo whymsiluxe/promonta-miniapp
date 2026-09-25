@@ -494,6 +494,17 @@ class TestOutboxDeadLetterAndReconciliation(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.mkdtemp(prefix="promonta-test-outbox-")
+        # 26.09 (test-pollution fix, same pattern as test_foundation_completion.py):
+        # this setUp used to reassign these FILE globals with no tearDown --
+        # harmless while every reader lived in main.py's own namespace, but a
+        # real risk once outbox/checkin helpers get read from a different
+        # module's namespace (e.g. a future routes/execution.py). Save so
+        # tearDown can restore them.
+        self._saved_attrs = {
+            name: getattr(backend, name)
+            for name in ('FINISH_OUTBOX_FILE', 'CHECKIN_META_FILE',
+                         'DAILY_PLAN_STORE_FILE', 'PLAN_SYNC_STATE_FILE', 'WORK_CALENDAR_FILE')
+        }
         backend.FINISH_OUTBOX_FILE = os.path.join(self._tmp, "finish_outbox.json")
         backend.CHECKIN_META_FILE = os.path.join(self._tmp, "checkin_meta.json")
         backend.DAILY_PLAN_STORE_FILE = os.path.join(self._tmp, "daily_plan_store.json")
@@ -501,6 +512,10 @@ class TestOutboxDeadLetterAndReconciliation(unittest.TestCase):
         backend.WORK_CALENDAR_FILE = os.path.join(self._tmp, "work_calendar.json")
         dpl.configure(backend.DAILY_PLAN_STORE_FILE, backend.PLAN_SYNC_STATE_FILE,
                        backend.WORK_CALENDAR_FILE)
+
+    def tearDown(self):
+        for name, value in self._saved_attrs.items():
+            setattr(backend, name, value)
 
     def test_reconciliation_rebuilds_missing_outbox_event(self):
         """Simulates the exact crash scenario: finished session with a
