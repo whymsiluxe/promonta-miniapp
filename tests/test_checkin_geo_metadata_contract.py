@@ -2,17 +2,20 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKEND_MAIN = ROOT / "backend" / "main.py"
+# 26.09 (checkin/execution router split): checkin_start/checkin_finish moved
+# from backend/main.py into backend/routes/checkin.py -- same source-level
+# contract, new location.
+BACKEND_CHECKIN_ROUTES = ROOT / "backend" / "routes" / "checkin.py"
 
 
 def _source() -> str:
-    return BACKEND_MAIN.read_text(encoding="utf-8")
+    return BACKEND_CHECKIN_ROUTES.read_text(encoding="utf-8")
 
 
 def test_checkin_start_accepts_and_persists_geo_metadata():
     src = _source()
     start = src.index("async def checkin_start(")
-    end = src.index("@app.post(\"/api/checkin/{session_id}/pause\")", start)
+    end = src.index("@router.post(\"/api/checkin/{session_id}/pause\")", start)
     body = src[start:end]
 
     assert "accuracy: str = Form('')" in body
@@ -30,7 +33,7 @@ def test_checkin_start_accepts_and_persists_geo_metadata():
 def test_checkin_finish_accepts_and_persists_geo_metadata():
     src = _source()
     start = src.index("async def checkin_finish(")
-    end = src.index("@app.get(\"/api/workers/{target_user_id}/calendar\")", start)
+    end = src.index("@router.get(\"/api/checkin/stundenzettel\")", start)
     body = src[start:end]
 
     assert "accuracy: str = Form('')" in body

@@ -6918,654 +6918,6 @@ def _get_active_assignment_for_checkin(user_id: str, object_id: str, today: str)
     raise HTTPException(403, "У вас нет принятого назначения на этот объект")
 
 
-CHECKIN_EVENT_MAX_AGE_SECONDS = 7 * 24 * 3600
-CHECKIN_EVENT_FUTURE_SKEW_SECONDS = 5 * 60
-
-
-def _parse_checkin_occurred_at(raw: str, field_name: str, received_at: int) -> int:
-    """Client action time for offline-safe checkin events.
-
-    geo_timestamp is GPS metadata, not the business event timestamp. Start/Finish
-    use occurred_at when the client supplies it, and persist received_at separately
-    so delayed outbox sync does not turn into fake work hours.
-    """
-    value = str(raw or '').strip()
-    if not value:
-        return received_at
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        raise HTTPException(400, f"{field_name}: некорректное время события")
-    if parsed > 10_000_000_000:
-        parsed = parsed / 1000
-    occurred_at = int(parsed)
-    if occurred_at <= 0:
-        raise HTTPException(400, f"{field_name}: некорректное время события")
-    if occurred_at > received_at + CHECKIN_EVENT_FUTURE_SKEW_SECONDS:
-        raise HTTPException(400, f"{field_name}: время события не может быть в будущем")
-    if occurred_at < received_at - CHECKIN_EVENT_MAX_AGE_SECONDS:
-        raise HTTPException(400, f"{field_name}: время события слишком старое")
-    return occurred_at
-
-
-def _checkin_business_date_from_timestamp(ts: int) -> str:
-    return datetime.fromtimestamp(ts, business_now().tzinfo).strftime('%Y-%m-%d')
-
-
-@app.post("/api/checkin/start")
-async def checkin_start(
-    object_id: str = Form(''),
-    lat: str = Form(''),
-    lon: str = Form(''),
-    accuracy: str = Form(''),
-    geo_timestamp: str = Form(''),
-    occurred_at: str = Form(''),
-    stage_name: str = Form(''),
-    files: list[UploadFile] = File(default=[]),
-    daily_plan_id: str = Form(''),
-    daily_plan_version: str = Form(''),
-    daily_plan_acceptance_id: str = Form(''),
-    user: dict = Depends(get_current_user),
-    role: str = Depends(get_role),
-    idempotency_key: str = Header(default='', alias='Idempotency-Key'),
-):
-    if not object_id.strip():
-        raise HTTPException(400, "object_id обязателен")
-    if not lat.strip() or not lon.strip():
-        raise HTTPException(400, "Включи геолокацию, чтобы начать смену")
-    accuracy_clean = accuracy.strip()[:50] if isinstance(accuracy, str) else ''
-    geo_timestamp_clean = geo_timestamp.strip()[:50] if isinstance(geo_timestamp, str) else ''
-    occurred_at_clean = occurred_at.strip()[:50] if isinstance(occurred_at, str) else ''
-    start_received_at = int(time.time())
-    start_event_at = _parse_checkin_occurred_at(occurred_at_clean, 'occurred_at', start_received_at)
-    # 03.08: Europe/Berlin, не UTC сервера -- проверка периода назначения
-    # (_get_active_assignment_for_checkin ниже) должна сверяться с той же датой, что
-    # реально "сегодня" по местному времени, иначе вечером/ночью Berlin worker мог бы
-    # получить доступ на день раньше/позже реального начала/конца периода.
-    # F04: для offline-синхронизации дата берётся от времени события, а не доставки.
-    date_str = _checkin_business_date_from_timestamp(start_event_at)
-
-    # 30.07 (аудит п.5): единая проверка ДО сохранения фото/создания сессии -- нельзя
-    # сначала записать файлы, а потом вернуть 403. Owner не назначается вообще
-    # (can_access_object пропускает owner безусловно), для него assignment_id пуст.
-    assignment_id = ''
-    if role == 'owner':
-        if not can_access_object(user, role, object_id.strip()):
-            raise HTTPException(403, "Нет доступа к этому объекту")
-    else:
-        assignment_id = _get_active_assignment_for_checkin(str(user['id']), object_id.strip(), date_str)
-
-    # Server-trust validation for optional DailyPlan linkage at Start
-    _dp_id_clean = daily_plan_id.strip()
-    _dp_session_plan_id = None
-    _dp_session_plan_version = None
-    _dp_session_acceptance_id = None
-    if _dp_id_clean:
-        _dp_at_start = dpl.get_plan(_dp_id_clean)
-        if not _dp_at_start:
-            raise HTTPException(400, f"daily_plan_id {_dp_id_clean!r} не найден")
-        _wid_str = str(user['id'])
-        if _wid_str not in [str(w) for w in _dp_at_start.get('assigned_worker_ids', [])]:
-            raise HTTPException(403, "Этот план не назначен вам")
-        if _dp_at_start.get('object_id') != object_id.strip():
-            raise HTTPException(400, "daily_plan_id объект не совпадает с объектом смены")
-        if _dp_at_start.get('date') != date_str:
-            raise HTTPException(400, "daily_plan_id дата не совпадает с сегодняшней датой")
-        _dp_acc_clean = daily_plan_acceptance_id.strip()
-        if not _dp_acc_clean:
-            raise HTTPException(400, "Сначала примите план дня")
-        _dp_store = dpl.get_store_snapshot()
-        _acc = _dp_store["acceptances"].get(_dp_acc_clean)
-        if not _acc:
-            raise HTTPException(400, f"acceptance_id {_dp_acc_clean!r} не найден")
-        if str(_acc.get("worker_id")) != _wid_str:
-            raise HTTPException(403, "acceptance_id принадлежит другому работнику")
-        if _acc.get("daily_plan_id") != _dp_id_clean:
-            raise HTTPException(400, "acceptance_id принадлежит другому плану")
-        _snapshot = _acc.get("accepted_context_snapshot") or {}
-        if _snapshot:
-            if _wid_str not in [str(w) for w in _snapshot.get("assigned_worker_ids", [])]:
-                raise HTTPException(403, "Вы не назначены на принятую версию плана")
-            if _snapshot.get("object_id") != object_id.strip():
-                raise HTTPException(400, "Принятый план относится к другому объекту")
-            if _snapshot.get("date") != date_str:
-                raise HTTPException(400, "Принятый план относится к другой дате")
-        _dp_session_plan_id = _dp_id_clean
-        _dp_session_plan_version = str(_acc.get("plan_version") or _snapshot.get("plan_version") or _dp_at_start.get("version") or '')
-        _dp_session_acceptance_id = _dp_acc_clean
-
-    idempotency_scope = _idempotency_scope('checkin_start', user['id'], object_id.strip(), {
-        "object_id": object_id.strip(),
-        "lat": lat.strip(),
-        "lon": lon.strip(),
-        "accuracy": accuracy_clean,
-        "geo_timestamp": geo_timestamp_clean,
-        "occurred_at": occurred_at_clean,
-        "stage_name": (stage_name.strip()[:200] if isinstance(stage_name, str) else ''),
-        "daily_plan_id": _dp_session_plan_id or '',
-        "daily_plan_version": _dp_session_plan_version or '',
-        "daily_plan_acceptance_id": _dp_session_acceptance_id or '',
-        "file_count": _checkin_file_count(files),
-    })
-    cached = _idempotency_claim(idempotency_key, idempotency_scope)
-    if cached is not None:
-        return cached
-    entity_id = _idempotent_entity_id(idempotency_key, idempotency_scope)
-
-    with _checkin_lock:
-        # 10.29 (Fable-аудит): раньше можно было создать сколько угодно параллельных
-        # "стартов" смены — часы потом считались некорректно.
-        existing = _load_checkin_meta()
-        open_session = next((i for i in existing
-                              if str(i.get('user_id')) == str(user['id']) and _is_active_photo_checkin_session(i)), None)
-        if open_session and open_session.get('id') != entity_id:
-            _idempotency_release(idempotency_key, idempotency_scope)
-            raise HTTPException(409, f"У вас уже есть незавершённая смена на объекте {open_session['object_id']} — сначала завершите её")
-
-    photo_paths = await _save_checkin_photos(files, object_id.strip()[:100], date_str)
-    # 17.09 (audit finding, P0): frontend requires >=1 start photo before allowing
-    # Start, but backend accepted the request unconditionally regardless of how
-    # many photos actually made it through _save_checkin_photos (0 if all files
-    # failed the size/sniff check, or the client sent none at all) -- an old or
-    # broken client could start a shift with zero evidence photos. Same pattern
-    # Finish already uses (see the len(photo_paths) < 2 check below in
-    # checkin_finish): reject BEFORE creating the session, clean up any files
-    # that did save from this failed attempt so they don't become orphans.
-    if len(photo_paths) < 1:
-        _cleanup_checkin_photo_files(photo_paths)
-        _idempotency_release(idempotency_key, idempotency_scope)
-        raise HTTPException(400, "Для начала смены нужно минимум одно корректное фото")
-
-    entry = {
-        "id": entity_id,
-        "object_id": object_id.strip()[:100],
-        "assignment_id": assignment_id,
-        "date": date_str,
-        "user_id": user['id'],
-        "start_at": start_event_at,
-        "start_received_at": start_received_at,
-        "start_occurred_at_source": 'client' if occurred_at_clean else 'server',
-        "start_photos": photo_paths,
-        "start_lat": lat,
-        "start_lon": lon,
-        "start_accuracy": accuracy_clean or None,
-        "start_geo_timestamp": geo_timestamp_clean or None,
-        "start_gps_suspect": _gps_suspect(lat, lon),
-        "stage_name": (stage_name.strip()[:200] if isinstance(stage_name, str) else '') or None,
-        "daily_plan_id": _dp_session_plan_id,
-        "daily_plan_version": _dp_session_plan_version,
-        "daily_plan_acceptance_id": _dp_session_acceptance_id,
-        "finish_at": None,
-        "finish_photos": [],
-        "finish_lat": None,
-        "finish_lon": None,
-        "finish_accuracy": None,
-        "finish_geo_timestamp": None,
-        "finish_gps_suspect": None,
-        "pause_started_at": None,
-        "pause_accumulated_seconds": 0,
-    }
-    with _checkin_lock:
-        items = _load_checkin_meta()
-        # F03: crash-recovered retry -- same Idempotency-Key derives the same entity_id,
-        # so if an earlier attempt already wrote this exact session (and then died before
-        # _idempotency_save() ran), reuse it instead of creating a second open session.
-        existing_entry = next((i for i in items if i.get('id') == entity_id), None)
-        if existing_entry is not None:
-            _cleanup_checkin_photo_files(photo_paths)
-            entry = existing_entry
-        else:
-            # Повторная проверка внутри финального лока — на случай гонки между двумя
-            # параллельными checkin_start запросами (TOCTOU между первой проверкой и этой записью).
-            open_session = next((i for i in items
-                                  if str(i.get('user_id')) == str(user['id']) and _is_active_photo_checkin_session(i)), None)
-            if open_session:
-                _cleanup_checkin_photo_files(photo_paths)
-                _idempotency_release(idempotency_key, idempotency_scope)
-                raise HTTPException(409, f"У вас уже есть незавершённая смена на объекте {open_session['object_id']} — сначала завершите её")
-            items.append(entry)
-            _save_checkin_meta(items)
-
-    if existing_entry is None and photo_paths:
-        try:
-            profiles = _load_worker_profiles()
-            worker_name = _sanitize_display_name(profiles.get(str(user['id']), {}).get('name'), str(user['id']))
-            rows = _cached_get_used_range('Объекты')
-            object_name = entry['object_id']
-            if rows:
-                header, data = rows[0], rows[1:]
-                for r in data:
-                    obj = dict(zip(header, r))
-                    if str(obj.get('ID объекта', '')) == entry['object_id']:
-                        object_name = obj.get('Объект', entry['object_id'])
-                        break
-            _upsert_checkin_feed_post(entry, 'start', object_name, user['id'], worker_name)
-        except Exception as e:
-            print(f'WARNING: checkin-start feed post failed: {e}')
-
-    # 21.09 (owner review finding, round 3): embed the SAME frozen accepted-plan
-    # snapshot GET /finish-context returns, right in the Start response -- a
-    # deterministic, zero-extra-round-trip alternative to the frontend's
-    # best-effort prefetch (_prefetchFinishContextAfterStart), which can fail to
-    # complete if connectivity drops between Start succeeding and that second
-    # request landing. A copy, not a mutation of `entry` -- this is a response-
-    # only field, not part of what gets persisted to checkin_meta.json.
-    response = dict(entry)
-    try:
-        response['finish_context'] = _build_finish_context(entry)
-    except Exception as e:
-        print(f'WARNING: checkin-start finish-context prefetch failed: {e}')
-        response['finish_context'] = None
-
-    _idempotency_save(idempotency_key, response, idempotency_scope)
-    return response
-
-
-@app.post("/api/checkin/{session_id}/pause")
-def checkin_pause(session_id: str, action: str = Query(''), user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    """Целевое управление паузой во время активной смены.
-
-    F08: это больше не toggle. Клиент обязан прислать action=pause|resume, чтобы
-    повтор того же запроса из-за retry/double delivery не перевернул состояние назад.
-    Клиент подставляет накопленные минуты как default в анкету при Финише, юзер может
-    доправить вручную если нужно."""
-    action_clean = str(action or '').strip().lower()
-    if action_clean not in {'pause', 'resume'}:
-        raise HTTPException(400, "action должен быть pause или resume")
-    with _checkin_lock:
-        items = _load_checkin_meta()
-        session = next((i for i in items if i.get('id') == session_id), None)
-        if not session:
-            raise HTTPException(404, "Сессия check-in не найдена")
-        if role != 'owner' and str(session.get('user_id')) != str(user['id']):
-            raise HTTPException(403, "Нельзя управлять чужой сменой")
-        if session.get('manual_entry'):
-            raise HTTPException(400, "Ручная запись времени не поддерживает паузу")
-        if session.get('finish_at') is not None:
-            raise HTTPException(400, "Смена уже завершена")
-
-        now = int(time.time())
-        changed = False
-        if action_clean == 'resume' and session.get('pause_started_at'):
-            # Продолжить — закрываем текущий отрезок паузы, добавляем в накопленное
-            elapsed = max(0, now - session['pause_started_at'])
-            session['pause_accumulated_seconds'] = session.get('pause_accumulated_seconds', 0) + elapsed
-            session['pause_started_at'] = None
-            paused = False
-            changed = True
-        elif action_clean == 'pause' and not session.get('pause_started_at'):
-            # Пауза — фиксируем момент начала
-            session['pause_started_at'] = now
-            paused = True
-            changed = True
-        else:
-            paused = bool(session.get('pause_started_at'))
-        if changed:
-            _save_checkin_meta(items)
-
-    return {
-        "action": action_clean,
-        "changed": changed,
-        "paused": paused,
-        "pause_accumulated_seconds": session['pause_accumulated_seconds'],
-        "pause_accumulated_minutes": round(session['pause_accumulated_seconds'] / 60),
-    }
-
-
-@app.post("/api/checkin/{session_id}/finish")
-async def checkin_finish(
-    session_id: str,
-    lat: str = Form(''),
-    lon: str = Form(''),
-    accuracy: str = Form(''),
-    geo_timestamp: str = Form(''),
-    occurred_at: str = Form(''),
-    done_summary: str = Form(''),
-    extra_work: str = Form(''),
-    extra_works: str = Form(''),
-    needs: str = Form(''),
-    defects: str = Form(''),
-    next_day_needs: str = Form(''),
-    pause_minutes: int = Form(0),
-    voice_note_file_id: str = Form(''),
-    daily_plan_report: str = Form(''),
-    files: list[UploadFile] = File(default=[]),
-    user: dict = Depends(get_current_user),
-    role: str = Depends(get_role),
-    idempotency_key: str = Header(default='', alias='Idempotency-Key'),
-):
-    """27.07 (B3, finish-shift wizard): extra_works/needs/defects — JSON-массивы
-    структурированных пунктов из wizard-шагов 3-4 (описание/зона/время/согласование
-    для доп-работ; категория+текст для потребностей/дефектов). extra_work (str) --
-    старое одиночное текстовое поле, оставлено для обратной совместимости с
-    checkin_manual и старым фронтендом, если он ещё где-то шлёт этот формат;
-    новый wizard шлёт extra_works, extra_work остаётся пустым. Ни Need ни Mangel
-    не создаются автоматически -- это только сохраняет данные в сессию, реальное
-    создание тикетов делает отдельный подтверждающий вызов с фронтенда после
-    показа сводки юзеру (см. wizard Step 6)."""
-    def _parse_json_list(raw: str, field_name: str) -> list:
-        if not raw.strip():
-            return []
-        try:
-            parsed = json.loads(raw)
-        except Exception:
-            raise HTTPException(400, f"{field_name}: некорректный JSON")
-        if not isinstance(parsed, list):
-            raise HTTPException(400, f"{field_name}: ожидался список")
-        return parsed
-
-    extra_works_list = _parse_json_list(extra_works, 'extra_works')
-    needs_list = _parse_json_list(needs, 'needs')
-    defects_list = _parse_json_list(defects, 'defects')
-
-    if not lat.strip() or not lon.strip():
-        raise HTTPException(400, "Включи геолокацию, чтобы завершить смену")
-    if not done_summary.strip():
-        raise HTTPException(400, "Заполни короткий отчёт: что сделано за смену")
-    accuracy_clean = accuracy.strip()[:50] if isinstance(accuracy, str) else ''
-    geo_timestamp_clean = geo_timestamp.strip()[:50] if isinstance(geo_timestamp, str) else ''
-    occurred_at_clean = occurred_at.strip()[:50] if isinstance(occurred_at, str) else ''
-    finish_received_at = int(time.time())
-    finish_event_at = _parse_checkin_occurred_at(occurred_at_clean, 'occurred_at', finish_received_at)
-
-    with _checkin_lock:
-        items = _load_checkin_meta()
-        session = next((i for i in items if i.get('id') == session_id), None)
-        if not session:
-            raise HTTPException(404, "Сессия check-in не найдена")
-        if role != 'owner' and str(session.get('user_id')) != str(user['id']):
-            raise HTTPException(403, "Нельзя завершить чужую смену")
-        if session.get('manual_entry'):
-            raise HTTPException(400, "Ручная запись времени не завершается как фото-смена")
-        if session.get('start_at') and finish_event_at < int(session.get('start_at')):
-            raise HTTPException(400, "Время завершения не может быть раньше старта смены")
-        object_id, date_str = session['object_id'], session['date']
-        idempotency_scope = _idempotency_scope('checkin_finish', user['id'], session_id, {
-            "session_id": session_id,
-            "object_id": object_id,
-            "lat": lat.strip(),
-            "lon": lon.strip(),
-            "accuracy": accuracy_clean,
-            "geo_timestamp": geo_timestamp_clean,
-            "occurred_at": occurred_at_clean,
-            "done_summary": done_summary.strip()[:1000],
-            "extra_work": extra_work.strip()[:1000],
-            "extra_works": extra_works_list,
-            "needs": needs_list,
-            "defects": defects_list,
-            "next_day_needs": next_day_needs.strip()[:1000],
-            "voice_note_file_id": os.path.basename(voice_note_file_id.strip()) if voice_note_file_id.strip() else '',
-            "daily_plan_report": daily_plan_report.strip(),
-            "file_count": _checkin_file_count(files),
-        })
-        cached = _idempotency_claim(idempotency_key, idempotency_scope)
-        if cached is not None:
-            return cached
-        if session['finish_at'] is not None:
-            # F03 (owner review commit db584ac, CHANGES REQUIRED): crash window --
-            # the earlier attempt's business write (finish_at + session fields,
-            # committed a few lines below in the second _checkin_lock block) can
-            # succeed while the process dies before _idempotency_save() runs. A
-            # bare retry with the SAME Idempotency-Key then found no cached
-            # response above (claim/entry pruned or never written) and landed
-            # here, where the old code unconditionally raised "already finished"
-            # instead of returning the original success. Since this session
-            # matches the idempotency scope's own session_id, replaying it IS the
-            # original result -- self-heal the durable store instead of erasing
-            # the caller's ability to see what actually happened.
-            if idempotency_key:
-                _idempotency_save(idempotency_key, session, idempotency_scope)
-                return session
-            _idempotency_release(idempotency_key, idempotency_scope)
-            raise HTTPException(400, "Смена уже завершена")
-
-    if _checkin_file_count(files) < 2:
-        _idempotency_release(idempotency_key, idempotency_scope)
-        raise HTTPException(400, "Прикрепите минимум 2 фото выполненной работы")
-
-    # Сохранение фото (I/O, await) — вне лока, как и в checkin_start. Раньше await стоял
-    # внутри with _checkin_lock: — второй параллельный check-in-запрос (частый сценарий,
-    # два работника жмут "Финиш" в конце смены одновременно) блокировал event loop навсегда.
-    #
-    # 03.08 (реальный найденный баг): len(files) < 2 проверяет ПЕРЕДАННОЕ количество,
-    # не РЕАЛЬНО СОХРАНЁННОЕ -- _save_checkin_photos() молча пропускает (continue)
-    # битые/слишком большие/не-изображение файлы, ничего не бросая. Раньше finish_at
-    # мог записаться после отправки 2 файлов, из которых 0-1 реально сохранились.
-    # Теперь: сохраняем, считаем РЕАЛЬНО сохранённые, при недостатке -- удаляем файлы
-    # ИМЕННО этого неуспешного запроса (не трогаем фото прошлых успешных попыток) и
-    # 400 ДО захвата _checkin_lock -- session['finish_at'] не пишется вообще.
-    photo_paths = await _save_checkin_photos(files, object_id, date_str)
-    if len(photo_paths) < 2:
-        _cleanup_checkin_photo_files(photo_paths)
-        _idempotency_release(idempotency_key, idempotency_scope)
-        raise HTTPException(400, "Для завершения смены необходимо минимум 2 корректных фото")
-
-    with _checkin_lock:
-        items = _load_checkin_meta()
-        session = next((i for i in items if i.get('id') == session_id), None)
-        if not session:
-            _cleanup_checkin_photo_files(photo_paths)
-            _idempotency_release(idempotency_key, idempotency_scope)
-            raise HTTPException(404, "Сессия check-in не найдена")
-        if session['finish_at'] is not None:
-            _cleanup_checkin_photo_files(photo_paths)
-            # F03: same self-heal as the earlier check above -- a concurrent/retried
-            # attempt that lost this race already got its own finish committed by
-            # the other one; replay that result instead of erasing it.
-            if idempotency_key:
-                _idempotency_save(idempotency_key, session, idempotency_scope)
-                return session
-            _idempotency_release(idempotency_key, idempotency_scope)
-            raise HTTPException(400, "Смена уже завершена")
-        if session.get('start_at') and finish_event_at < int(session.get('start_at')):
-            _cleanup_checkin_photo_files(photo_paths)
-            _idempotency_release(idempotency_key, idempotency_scope)
-            raise HTTPException(400, "Время завершения не может быть раньше старта смены")
-        session['finish_at'] = finish_event_at
-        session['finish_received_at'] = finish_received_at
-        session['finish_occurred_at_source'] = 'client' if occurred_at_clean else 'server'
-        session['finish_photos'] = photo_paths
-        session['finish_lat'] = lat
-        session['finish_lon'] = lon
-        session['finish_accuracy'] = accuracy_clean or None
-        session['finish_geo_timestamp'] = geo_timestamp_clean or None
-        session['finish_gps_suspect'] = _gps_suspect(lat, lon)
-        # 12.09: короткий отчёт по смене обязателен и на frontend, и на backend.
-        # Остальные блоки опциональны: доп-работы, потребности, дефекты, завтра.
-        session['done_summary'] = done_summary.strip()[:1000] or None
-        session['extra_work'] = extra_work.strip()[:1000] or None
-        session['extra_works'] = extra_works_list or None
-        session['needs'] = needs_list or None
-        session['defects'] = defects_list or None
-        session['next_day_needs'] = next_day_needs.strip()[:1000] or None
-        # 28.07: owner request -- голосовое "что сделано" должно быть прослушиваемо
-        # владельцем, не только видно транскриптом. file_id уже создан/сохранён
-        # раньше через /api/transcribe (тот же поток что и для распознавания) --
-        # тут просто привязываем его к сессии смены. os.path.basename на всякий
-        # случай -- та же защита от path traversal, что и в get_transcribe_audio.
-        vnf = os.path.basename(voice_note_file_id.strip()) if voice_note_file_id.strip() else ''
-        session['voice_note_file_id'] = vnf or None
-        # 24.07: если воркер финиширует смену прямо во время активной паузы (забыл нажать
-        # "Продолжить") — закрываем её здесь же, не оставляем pause_started_at висеть
-        # в завершённой сессии.
-        if session.get('pause_started_at'):
-            elapsed = max(0, finish_event_at - session['pause_started_at'])
-            session['pause_accumulated_seconds'] = session.get('pause_accumulated_seconds', 0) + elapsed
-            session['pause_started_at'] = None
-        # 20.09 (P0, found by audit, hardened further during merge): the client
-        # pause_minutes Form param must never be trusted directly -- a worker
-        # (or a stale localStorage session missing pauseAccumulatedSeconds, see
-        # worker-checkin-fab.js's refreshCheckinButtons wrapper) can send 0 and
-        # silently erase a real 45-minute pause from payroll. The server has
-        # just closed any hanging pause above and _photo_pause_minutes() reads
-        # pause_accumulated_seconds unconditionally when present -- the client
-        # value is never consulted, not even as a max() floor, so it can't be
-        # used to inflate paid hours either.
-        session['pause_minutes'] = _photo_pause_minutes(session)
-        # P0 fix (owner review): persist the raw execution report INSIDE the same
-        # checkin_meta write that commits finish_at -- previously daily_plan_report
-        # only existed as a request Form parameter, never durably stored anywhere
-        # until the outbox write a few lines below. A crash between this save and
-        # that outbox write meant the report was permanently lost: finish_at=true,
-        # photos saved, but no outbox event and no way to reconstruct item_results
-        # from checkin_meta.json alone (there was nothing to reconstruct FROM).
-        # Now it's part of this one atomic write -- reconciliation on startup can
-        # find a finished session with pending_execution_report set and no
-        # outbox event, and rebuild the outbox entry from it (see
-        # _reconcile_missing_outbox_events below).
-        session['pending_execution_report'] = daily_plan_report.strip() or None
-        _save_checkin_meta(items)
-
-    # Apply daily plan execution report via durable outbox.
-    # Outbox event is written AFTER checkin_meta is committed and BEFORE apply_daily_execution,
-    # so a crash between these two leaves a pending event retried on startup.
-    if daily_plan_report.strip():
-        try:
-            rpt = json.loads(daily_plan_report)
-            plan_id = rpt.get('plan_id', '') or session.get('daily_plan_id', '')
-            plan_ver = int(rpt.get('plan_version', 0) or session.get('daily_plan_version', 0) or 0)
-            item_results = rpt.get('item_results') or []
-            if plan_id and isinstance(item_results, list) and item_results:
-                # Round 1.2 #2: validate against the worker's IMMUTABLE accepted
-                # context snapshot, not the live (possibly since-mutated-by-Sheets-
-                # edit) plan fields. A later update_plan_fields() call (object/date/
-                # worker/stage change) must never invalidate an already-accepted,
-                # already-started shift's Finish -- the accepted snapshot is the
-                # trusted historical truth for this comparison, not current plan state.
-                _worker_id_str = str(session['user_id'])
-                _acceptance_id = session.get('daily_plan_acceptance_id') or ''
-                _snapshot = None
-                if _acceptance_id:
-                    _dp_store = dpl.get_store_snapshot()
-                    _acc = _dp_store["acceptances"].get(_acceptance_id)
-                    if _acc and str(_acc.get('worker_id')) == _worker_id_str and _acc.get('daily_plan_id') == plan_id:
-                        _snapshot = _acc.get('accepted_context_snapshot')
-                if _snapshot:
-                    # Trusted path: compare against what THIS worker actually accepted.
-                    if _worker_id_str not in [str(w) for w in _snapshot.get('assigned_worker_ids', [])]:
-                        print(f'WARNING: finish plan_id {plan_id} worker not in accepted snapshot — skipping execution')
-                        plan_id = ''
-                    elif _snapshot.get('object_id') != object_id:
-                        print(f'WARNING: finish plan_id {plan_id} object mismatch vs accepted snapshot — skipping execution')
-                        plan_id = ''
-                    elif _snapshot.get('date') != date_str:
-                        print(f'WARNING: finish plan_id {plan_id} date mismatch vs accepted snapshot — skipping execution')
-                        plan_id = ''
-                else:
-                    # Backward-compat fallback: no acceptance_id on this session, or
-                    # the acceptance predates round 1.2 (no snapshot stored yet).
-                    # Conservative choice: fall back to the live plan fields exactly
-                    # as before -- cannot fabricate a historical snapshot that was
-                    # never recorded. This preserves pre-1.2 behavior for old sessions
-                    # instead of silently skipping execution for them.
-                    _plan_obj = dpl.get_plan(plan_id)
-                    if _plan_obj:
-                        if _worker_id_str not in [str(w) for w in _plan_obj.get('assigned_worker_ids', [])]:
-                            print(f'WARNING: finish plan_id {plan_id} worker not assigned — skipping execution')
-                            plan_id = ''
-                        elif _plan_obj.get('object_id') != object_id:
-                            print(f'WARNING: finish plan_id {plan_id} object mismatch — skipping execution')
-                            plan_id = ''
-                        elif _plan_obj.get('date') != date_str:
-                            print(f'WARNING: finish plan_id {plan_id} date mismatch — skipping execution')
-                            plan_id = ''
-                if plan_id:
-                    # Write outbox event before applying (durable, crash-safe)
-                    _outbox_write_pending(session_id, plan_id, plan_ver,
-                                          str(session['user_id']), date_str, object_id, item_results)
-                    try:
-                        dpl.apply_daily_execution(
-                            session_id=session_id,
-                            daily_plan_id=plan_id,
-                            plan_version=plan_ver,
-                            worker_id=str(session['user_id']),
-                            date_str=date_str,
-                            object_id=object_id,
-                            item_results=item_results,
-                        )
-                        _outbox_mark_applied(session_id)
-                        _clear_pending_execution_report(session_id)
-                        # Auto-record productivity observations from execution
-                        try:
-                            plan_obj = dpl.get_plan(plan_id)
-                            shift_hours = max(0.0, (session['finish_at'] - session.get('start_at', session['finish_at'])) / 3600.0)
-                            if plan_obj and shift_hours > 0:
-                                dpl.auto_record_execution_productivity(
-                                    session_id=session_id,
-                                    worker_id=str(session['user_id']),
-                                    plan=plan_obj,
-                                    item_results=item_results,
-                                    shift_hours=shift_hours,
-                                )
-                        except Exception as _pe:
-                            print(f'WARNING: auto_record_execution_productivity failed: {_pe}')
-                    except Exception as _ae:
-                        _outbox_mark_failed(session_id, str(_ae))
-                        print(f'WARNING: apply_daily_execution failed (event pending in outbox): {_ae}')
-        except Exception as e:
-            print(f'WARNING: apply_daily_execution failed: {e}')
-
-    _write_zeiterfassung_row(session, object_id, session['user_id'])
-    worker_name_for_history = _object_history_worker_name(str(session['user_id']))
-    finish_summary = session.get('done_summary') or done_summary.strip()
-    _append_object_history_best_effort(
-        object_id, 'finish_submitted', 'Финиш смены отправлен',
-        user=user,
-        subtitle=' · '.join(p for p in (worker_name_for_history, finish_summary) if p),
-        at=datetime.fromtimestamp(session['finish_at'], timezone.utc).replace(tzinfo=None).isoformat() if session.get('finish_at') else None,
-        meta={
-            "session_id": session_id,
-            "worker_id": str(session['user_id']),
-            "photo_count": len(session.get('finish_photos') or []),
-            "daily_plan_id": session.get('daily_plan_id') or '',
-        },
-    )
-
-    if photo_paths:
-        try:
-            profiles = _load_worker_profiles()
-            worker_name = _sanitize_display_name(profiles.get(str(session['user_id']), {}).get('name'), str(session['user_id']))
-            rows = _cached_get_used_range('Объекты')
-            object_name = object_id
-            if rows:
-                header, data = rows[0], rows[1:]
-                for r in data:
-                    obj = dict(zip(header, r))
-                    if str(obj.get('ID объекта', '')) == object_id:
-                        object_name = obj.get('Объект', object_id)
-                        break
-            _upsert_checkin_feed_post(session, 'finish', object_name, session['user_id'], worker_name)
-        except Exception as e:
-            print(f'WARNING: checkin-finish feed post failed: {e}')
-
-    extra_work_summary = _extra_works_summary_text(session)
-    if extra_work_summary or next_day_needs.strip():
-        # Owner получает пуш только если worker реально что-то указал — не спамим
-        # при пустом опроснике. 24.07: extra_work (доп-работы вне плана) теперь тоже
-        # шлётся — раньше уходила только в Zeiterfassung sheet, owner мог её пропустить
-        # без захода в таблицу. Нужно для billing: если заказчик попросил доп-работу на
-        # месте, а её не заметили — компании не доплатят, хотя воркеру платят за время.
-        # 27.07: extra_work_summary теперь может прийти из structured extra_works[]
-        # (wizard), не только из старого одиночного текстового поля.
-        roles = _load_roles()
-        owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
-        if owner_id:
-            if extra_work_summary:
-                try:
-                    send_telegram_message(int(owner_id),
-                        f"⚠️ Доп-работы вне плана ({object_id}): {extra_work_summary[:300]}")
-                except Exception:
-                    pass
-            if next_day_needs.strip():
-                try:
-                    send_telegram_message(int(owner_id),
-                        f"📋 На завтра нужно ({object_id}): {next_day_needs.strip()[:300]}")
-                except Exception:
-                    pass
-    _idempotency_save(idempotency_key, session, idempotency_scope)
-    return session
-
-
 @app.get("/api/workers/{target_user_id}/calendar")
 def get_worker_calendar(target_user_id: str, year: int, month: int,
                          user: dict = Depends(get_current_user), role: str = Depends(get_role)):
@@ -7677,531 +7029,132 @@ def get_worker_calendar_stats(target_user_id: str, date_from: str, date_to: str,
     return stats
 
 
-@app.get("/api/checkin/stundenzettel")
-def export_stundenzettel(user_id: str = '', year: int = 0, month: int = 0,
-                          date_from: str = '', date_to: str = '',
-                          user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    """10.29 (Fable-аудит, идея): экспорт табеля рабочего времени — в Германии
-    учёт рабочего времени обязателен по решению BAG (2022). CSV, открывается
-    в Excel/LibreOffice — не тащим Node-PDF-пайплайн ради одного отчёта."""
-    target_id = user_id or str(user['id'])
-    if target_id != str(user['id']) and role != 'owner':
-        raise HTTPException(403, "Можно выгружать только свой табель")
-    # Раунд 5 §13: произвольный период date_from/date_to (Неделя/Месяц/3 месяца/свой).
-    # Обратная совместимость: без диапазона — месяц year/month (старый вызов из UI).
-    if date_from and date_to:
-        for d in (date_from, date_to):
-            try:
-                datetime.strptime(d, '%Y-%m-%d')
-            except ValueError:
-                raise HTTPException(400, "date_from/date_to должны быть YYYY-MM-DD")
-        if date_from > date_to:
-            raise HTTPException(400, "date_from не может быть позже date_to")
-        period_label = f'{date_from}_{date_to}'
-        sessions = [s for s in _load_checkin_meta()
-                    if str(s.get('user_id')) == target_id and date_from <= s.get('date', '') <= date_to]
-    else:
-        if not year or not month:
-            now = business_now()
-            year, month = now.year, now.month
-        month_prefix = f'{year:04d}-{month:02d}'
-        period_label = month_prefix
-        sessions = [s for s in _load_checkin_meta()
-                    if str(s.get('user_id')) == target_id and s.get('date', '').startswith(month_prefix)]
+try:
+    from .routes.checkin import (
+        CheckinRouteDeps,
+        create_checkin_router,
+    )
+except ImportError:
+    from routes.checkin import (  # noqa: E402
+        CheckinRouteDeps,
+        create_checkin_router,
+    )
 
-    import io
-    buf = io.StringIO()
-    writer = csv.writer(buf, delimiter=';', lineterminator='\n')
-    writer.writerow(['Дата', 'Объект', 'Начало', 'Конец', 'Пауза (мин)', 'Часы', 'Тип'])
-    for s in sorted(sessions, key=lambda x: x.get('date', '')):
-        kind = 'Ручной ввод' if s.get('manual_entry') else 'Фото-чекин'
-        if s.get('manual_entry'):
-            start, finish = s.get('start_time', ''), s.get('end_time', '')
-        else:
-            start = datetime.fromtimestamp(s['start_at']).strftime('%H:%M') if s.get('start_at') else ''
-            finish = datetime.fromtimestamp(s['finish_at']).strftime('%H:%M') if s.get('finish_at') else 'не завершено'
-        hours = round(_hours_from_session(s), 2)
-        pause = int(s.get('pause_minutes') or 0) if s.get('manual_entry') else _photo_pause_minutes(s)
-        writer.writerow([_csv_safe(s.get('date', '')), _csv_safe(s.get('object_id', '')), start, finish, pause, hours, kind])
-
-    total_hours = round(sum(_hours_from_session(s) for s in sessions), 2)
-    writer.writerow(['', '', '', '', '', total_hours, 'ИТОГО'])
-
-    csv_content = buf.getvalue()
-    # Раунд 6 §2.4: имя файла с реальным именем работника (если заполнено), не Telegram ID.
-    _prof = _get_worker_profile(target_id)
-    _disp = _sanitize_display_name(_prof.get('name'), '')
-    if _disp and _disp != str(target_id):
-        _safe_name = re.sub(r'[^0-9A-Za-zА-Яа-яЁё]+', '_', _disp).strip('_') or str(target_id)
-    else:
-        _safe_name = str(target_id)
-    filename = f'Stundenzettel_{_safe_name}_{period_label}.csv'
-    # Content-Disposition должен быть latin-1-safe (Starlette кодирует заголовки в latin-1),
-    # поэтому кириллическое имя отдаём через RFC 5987 filename* (UTF-8, percent-encoded), а в
-    # ASCII-fallback filename — только латиница/цифры (кириллица → '_').
-    ascii_name = re.sub(r'[^0-9A-Za-z._-]+', '_', filename).strip('_') or 'Stundenzettel.csv'
-    if not ascii_name.endswith('.csv'):
-        ascii_name += '.csv'
-    encoded_name = quote(filename)
-    from fastapi.responses import Response
-    return Response(
-        content='\ufeff' + csv_content,  # BOM — Excel корректно определяет UTF-8
-        media_type='text/csv; charset=utf-8',
-        headers={'Content-Disposition': f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded_name}"}
+try:
+    from .routes.execution import (
+        ExecutionRouteDeps,
+        create_execution_router,
+        ZeiterfassungBody as _ExecutionZeiterfassungBody,
+    )
+except ImportError:
+    from routes.execution import (  # noqa: E402
+        ExecutionRouteDeps,
+        create_execution_router,
+        ZeiterfassungBody as _ExecutionZeiterfassungBody,
     )
 
 
-@app.get("/api/checkin")
-def list_checkins(object_id: str = '', date: str = '', user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    items = _load_checkin_meta()
-    if role != 'owner':
-        # 10.29 (Fable-аудит): раньше worker видел GPS-координаты старта/финиша
-        # смены ВСЕХ коллег — только свои сессии.
-        items = [i for i in items if str(i.get('user_id')) == str(user['id'])]
-    if object_id:
-        items = [i for i in items if i['object_id'] == object_id]
-    if date:
-        items = [i for i in items if i['date'] == date]
-    # 28.07: voice_note_file_id -- отдаём готовый audio_url, фронтенду не нужно самому
-    # собирать путь (тот же паттерн, что /api/transcribe уже возвращает при записи).
-    for i in items:
-        if i.get('voice_note_file_id'):
-            i['voice_note_audio_url'] = f"/api/transcribe/{i['voice_note_file_id']}/audio"
-    return {"sessions": items}
+ZeiterfassungBody = _ExecutionZeiterfassungBody
 
 
-def _build_finish_context(session: dict) -> dict:
-    """Shared shape-builder for the frozen accepted-plan snapshot shown/submitted
-    at Finish. 21.09 (owner review finding, round 3): extracted out of
-    checkin_finish_context() so checkin_start() can embed the SAME shape in its
-    own response -- see the finish_context field there. Before this, a plan-
-    linked Start followed immediately by an offline stretch (network drops
-    before Finish is opened even once) had nothing to fall back to: the
-    frontend's own prefetch (_prefetchFinishContextAfterStart) is a second,
-    best-effort network round-trip that can simply fail to complete before
-    connectivity is lost. Embedding this directly in the Start response makes
-    the offline cache deterministic -- no second round-trip needed at all."""
-    session_id = session.get('id') or ''
-    plan_id = session.get('daily_plan_id') or ''
-    if not plan_id:
-        return {
-            "session_id": session_id,
-            "object_id": session.get("object_id") or "",
-            "has_plan": False,
-        }
+_checkin_router, _checkin_handlers = create_checkin_router(CheckinRouteDeps(
+    get_current_user=get_current_user,
+    get_role=get_role,
+    checkin_photo_base=lambda: CHECKIN_PHOTO_BASE,
+    checkin_lock=_checkin_lock,
+    finish_outbox_lock=_finish_outbox_lock,
+    load_checkin_meta=lambda: _load_checkin_meta(),
+    save_checkin_meta=lambda items: _save_checkin_meta(items),
+    save_checkin_photos=lambda files, object_id, date_str: _save_checkin_photos(files, object_id, date_str),
+    cleanup_checkin_photo_files=lambda paths: _cleanup_checkin_photo_files(paths),
+    checkin_file_count=lambda files: _checkin_file_count(files),
+    is_active_photo_checkin_session=lambda s: _is_active_photo_checkin_session(s),
+    gps_suspect=lambda lat, lon: _gps_suspect(lat, lon),
+    can_access_object=lambda user, role, object_id: can_access_object(user, role, object_id),
+    get_active_assignment_for_checkin=lambda user_id, object_id, today: _get_active_assignment_for_checkin(user_id, object_id, today),
+    idempotency_scope=lambda kind, actor_id, entity_id='', payload=None: _idempotency_scope(kind, actor_id, entity_id, payload),
+    idempotency_claim=lambda key, scope=None: _idempotency_claim(key, scope),
+    idempotency_save=lambda key, response, scope=None: _idempotency_save(key, response, scope),
+    idempotency_release=lambda key, scope=None: _idempotency_release(key, scope),
+    idempotent_entity_id=lambda key, scope: _idempotent_entity_id(key, scope),
+    load_worker_profiles=lambda: _load_worker_profiles(),
+    sanitize_display_name=lambda raw, fallback: _sanitize_display_name(raw, fallback),
+    cached_get_used_range=lambda tab_name: _cached_get_used_range(tab_name),
+    upsert_checkin_feed_post=lambda session, kind, object_name, user_id, user_name: _upsert_checkin_feed_post(session, kind, object_name, user_id, user_name),
+    business_now=lambda: business_now(),
+    business_today_str=lambda: business_today_str(),
+    outbox_write_pending=lambda *args, **kwargs: _outbox_write_pending(*args, **kwargs),
+    outbox_mark_applied=lambda session_id: _outbox_mark_applied(session_id),
+    outbox_mark_failed=lambda session_id, error: _outbox_mark_failed(session_id, error),
+    clear_pending_execution_report=lambda session_id: _clear_pending_execution_report(session_id),
+    write_zeiterfassung_row=lambda session, object_id, user_id: _write_zeiterfassung_row(session, object_id, user_id),
+    object_history_worker_name=lambda user_id: _object_history_worker_name(user_id),
+    append_object_history_best_effort=lambda *args, **kwargs: _append_object_history_best_effort(*args, **kwargs),
+    extra_works_summary_text=lambda session: _extra_works_summary_text(session),
+    load_roles=lambda: _load_roles(),
+    send_telegram_message=lambda chat_id, text: send_telegram_message(chat_id, text),
+    photo_pause_minutes=lambda s: _photo_pause_minutes(s),
+    hours_from_session=lambda s: _hours_from_session(s),
+    get_worker_profile=lambda user_id: _get_worker_profile(user_id),
+    csv_safe=lambda value: _csv_safe(value),
+))
+# Canonical router registration: tests and manifests flatten _IncludedRouter
+# through tests.conftest.iter_app_routes()/equivalent production-package smoke.
+app.include_router(_checkin_router)
 
-    store = dpl.get_store_snapshot()
-    worker_id = str(session.get('user_id'))
-    acceptance_id = session.get('daily_plan_acceptance_id') or ''
-    acceptance = store["acceptances"].get(acceptance_id) if acceptance_id else None
-    if not acceptance:
-        acceptance = next(
-            (a for a in store["acceptances"].values()
-             if a.get("daily_plan_id") == plan_id and str(a.get("worker_id")) == worker_id),
-            None,
-        )
-    # 18.09 (audit finding, merged from upstream 170bf24): a session referencing
-    # a plan/acceptance that no longer resolves cleanly (deleted plan, acceptance
-    # id drift) must not turn Finish into a hard error -- same "not a plan-linked
-    # shift, carry on" fallback checkin_start already uses elsewhere. Was a 409
-    # here, which could block a worker from finishing their shift at all.
-    plan = store["daily_plans"].get(plan_id) if acceptance else None
-    if not acceptance or not plan:
-        return {
-            "session_id": session_id,
-            "object_id": session.get("object_id") or "",
-            "has_plan": False,
-        }
-
-    snapshot = acceptance.get("accepted_context_snapshot") or {}
-    # 21.09 (owner review finding, round 4): pass the EXACT acceptance already
-    # resolved above -- without acceptance_id, get_accepted_snapshot() picked
-    # the first (effectively oldest) acceptance for (plan_id, worker_id),
-    # which after an amendment (accept v1 -> A1, amend -> v2, accept v2 -> A2)
-    # could return v1's items while this response correctly reports
-    # plan.version=2 from A2 above -- a real content/version mismatch in what
-    # Finish shows and submits as plan-fact.
-    items_snapshot = dpl.get_accepted_snapshot(plan_id, worker_id, acceptance_id=acceptance.get("id"))
-    return {
-        "session_id": session_id,
-        "object_id": session.get("object_id") or "",
-        "has_plan": True,
-        "plan": {
-            "id": plan_id,
-            "version": acceptance.get("plan_version") or snapshot.get("plan_version") or plan.get("version") or 0,
-            "object_id": snapshot.get("object_id") or plan.get("object_id") or "",
-            "date": snapshot.get("date") or plan.get("date") or "",
-            "stage_key": snapshot.get("stage_key") or plan.get("stage_key") or "",
-            "items": items_snapshot,
-        },
-        "acceptance": {
-            "id": acceptance.get("id") or "",
-            "plan_version": acceptance.get("plan_version") or snapshot.get("plan_version") or 0,
-            "accepted_at": acceptance.get("accepted_at"),
-        },
-    }
+# Legacy direct-call compatibility: tests and operational scripts still import
+# handlers from main.py. Runtime routes are registered by backend.routes.checkin.
+checkin_start = _checkin_handlers.checkin_start
+checkin_pause = _checkin_handlers.checkin_pause
+checkin_finish = _checkin_handlers.checkin_finish
+export_stundenzettel = _checkin_handlers.export_stundenzettel
+list_checkins = _checkin_handlers.list_checkins
+checkin_finish_context = _checkin_handlers.checkin_finish_context
+get_checkin_photo = _checkin_handlers.get_checkin_photo
+_build_finish_context = _checkin_handlers.build_finish_context
+_parse_checkin_occurred_at = _checkin_handlers.parse_checkin_occurred_at
+_checkin_business_date_from_timestamp = _checkin_handlers.checkin_business_date_from_timestamp
 
 
-@app.get("/api/checkin/{session_id}/finish-context")
-def checkin_finish_context(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    items = _load_checkin_meta()
-    session = next((i for i in items if i.get('id') == session_id), None)
-    if not session:
-        raise HTTPException(404, "Сессия не найдена")
-    if role != 'owner' and str(session.get('user_id')) != str(user['id']):
-        raise HTTPException(403, "Нет доступа к этой смене")
-    return _build_finish_context(session)
+_execution_router, _execution_handlers = create_execution_router(ExecutionRouteDeps(
+    get_current_user=get_current_user,
+    get_role=get_role,
+    checkin_lock=_checkin_lock,
+    load_checkin_meta=lambda: _load_checkin_meta(),
+    save_checkin_meta=lambda items: _save_checkin_meta(items),
+    idempotency_scope=lambda kind, actor_id, entity_id='', payload=None: _idempotency_scope(kind, actor_id, entity_id, payload),
+    idempotency_claim=lambda key, scope=None: _idempotency_claim(key, scope),
+    idempotency_save=lambda key, response, scope=None: _idempotency_save(key, response, scope),
+    idempotency_release=lambda key, scope=None: _idempotency_release(key, scope),
+    idempotent_entity_id=lambda key, scope: _idempotent_entity_id(key, scope),
+    write_zeiterfassung_row=lambda session, object_id, user_id: _write_zeiterfassung_row(session, object_id, user_id),
+    cached_get_used_range=lambda tab_name: _cached_get_used_range(tab_name),
+    load_assignments=lambda: _load_assignments(),
+    load_roles=lambda: _load_roles(),
+    has_active_object_access=lambda user_id, object_id, today=None: has_active_object_access(user_id, object_id, today),
+    business_now=lambda: business_now(),
+    business_today_str=lambda: business_today_str(),
+    checkin_photo_base=lambda: CHECKIN_PHOTO_BASE,
+    check_ai_rate=lambda user_id, rate_file=None, limit=None: _check_ai_rate(user_id, rate_file, limit),
+    create_mangel_ticket=lambda **kwargs: ml.create_ticket(**kwargs),
+))
+app.include_router(_execution_router)
+
+checkin_manual = _execution_handlers.checkin_manual
+analyze_checkin_progress = _execution_handlers.analyze_checkin_progress
+analyze_checkin_materials = _execution_handlers.analyze_checkin_materials
+analyze_checkin_defects = _execution_handlers.analyze_checkin_defects
+_validate_manual_time_body = _execution_handlers.validate_manual_time_body
+_assert_no_manual_time_overlap = _execution_handlers.assert_no_manual_time_overlap
+_object_id_exists = _execution_handlers.object_id_exists
+_parse_manual_date = _execution_handlers.parse_manual_date
+_parse_manual_hhmm = _execution_handlers.parse_manual_hhmm
+_get_checkin_session = _execution_handlers.get_checkin_session
+_save_checkin_analysis = _execution_handlers.save_checkin_analysis
+_image_block_from_file = _execution_handlers.image_block_from_file
+_call_glm_vision = _execution_handlers.call_glm_vision
 
 
-@app.get("/api/checkin/{session_id}/photo/{which}/{index}")
-def get_checkin_photo(session_id: str, which: str, index: int, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    items = _load_checkin_meta()
-    session = next((i for i in items if i.get('id') == session_id), None)
-    if not session:
-        raise HTTPException(404, "Сессия не найдена")
-    if role != 'owner' and str(session.get('user_id')) != str(user['id']):
-        raise HTTPException(403, "Нет доступа к фото этой смены")
-    key = 'start_photos' if which == 'start' else 'finish_photos'
-    photos = session.get(key, [])
-    if index < 0 or index >= len(photos):
-        raise HTTPException(404, "Фото не найдено")
-    path = os.path.join(CHECKIN_PHOTO_BASE, photos[index])
-    if not os.path.exists(path):
-        raise HTTPException(404, "Файл отсутствует")
-    from fastapi.responses import FileResponse
-    return FileResponse(path)
-
-
-# ---------- Zeiterfassung (ручной ввод времени, референс "Neue Zeit") — Фаза 4a ----------
-def _parse_manual_date(value: str) -> str:
-    date_str = (value or '').strip()
-    try:
-        datetime.strptime(date_str, '%Y-%m-%d')
-    except Exception:
-        raise HTTPException(400, "date должен быть в формате YYYY-MM-DD")
-    if date_str > business_today_str():
-        raise HTTPException(400, "Нельзя внести время за будущую дату")
-    return date_str
-
-
-def _parse_manual_hhmm(value: str, field_name: str) -> int:
-    raw = (value or '').strip()
-    if not re.fullmatch(r'\d{2}:\d{2}', raw):
-        raise HTTPException(400, f"{field_name} должен быть в формате HH:MM")
-    hours, minutes = map(int, raw.split(':'))
-    if hours > 23 or minutes > 59:
-        raise HTTPException(400, f"{field_name} должен быть реальным временем HH:MM")
-    return hours * 60 + minutes
-
-
-def _object_id_exists(object_id: str) -> bool:
-    oid = (object_id or '').strip()
-    if not oid:
-        return False
-    try:
-        rows = _cached_get_used_range('Объекты')
-        if rows:
-            header, data = rows[0], rows[1:]
-            try:
-                id_idx = header.index('ID объекта')
-            except ValueError:
-                id_idx = 0
-            for row in data:
-                if id_idx < len(row) and str(row[id_idx]).strip() == oid:
-                    return True
-    except Exception as e:
-        print(f'WARNING: object existence check failed for manual time {oid}: {e}')
-    return oid in _load_assignments()
-
-
-# F02 (owner review commit db584ac): единственные два типа ручной записи времени,
-# реально предлагаемые фронтендом (app.html:9016-9017, object-work-shift-panel.js:163-164).
-# Krankheit/Urlaub -- отдельный Abwesenheit-флоу, не эта форма.
-MANUAL_TIME_ART_WHITELIST = {'Arbeitszeit', 'Fahrzeit'}
-
-
-def _manual_interval_overlaps(a_start: int, a_end: int, b_start: int, b_end: int) -> bool:
-    return a_start < b_end and b_start < a_end
-
-
-def _assert_no_manual_time_overlap(target_user_id: str, date_str: str, start_minutes: int, end_minutes: int,
-                                    exclude_id: str | None = None) -> None:
-    """F02: та же дата+работник не может иметь два пересекающихся интервала времени --
-    ни ручная-vs-ручная, ни ручная-vs-фото check-in (photo-сессия того же дня с известным
-    finish_at также считается интервалом; ещё активная (finish_at is None) не пересекает
-    по времени, т.к. её конец неизвестен -- не блокируем на этом основании)."""
-    for item in _load_checkin_meta():
-        if str(item.get('user_id')) != str(target_user_id) or item.get('date') != date_str:
-            continue
-        if exclude_id and item.get('id') == exclude_id:
-            continue
-        if item.get('manual_entry'):
-            try:
-                h1, m1 = map(int, item['start_time'].split(':'))
-                h2, m2 = map(int, item['end_time'].split(':'))
-            except Exception:
-                continue
-            other_start, other_end = h1 * 60 + m1, h2 * 60 + m2
-        elif item.get('start_at') and item.get('finish_at'):
-            tz = business_now().tzinfo
-            other_start_dt = datetime.fromtimestamp(item['start_at'], tz)
-            other_end_dt = datetime.fromtimestamp(item['finish_at'], tz)
-            other_start = other_start_dt.hour * 60 + other_start_dt.minute
-            other_end = other_end_dt.hour * 60 + other_end_dt.minute
-            if other_end <= other_start:
-                continue  # смена перевалила через полночь -- вне объёма этой проверки
-        else:
-            continue
-        if _manual_interval_overlaps(start_minutes, end_minutes, other_start, other_end):
-            raise HTTPException(409, "Указанный интервал пересекается с уже существующей записью времени за эту дату")
-
-
-def _validate_manual_time_body(body: 'ZeiterfassungBody', user: dict, role: str) -> dict:
-    object_id = body.object_id.strip()[:100]
-    if not object_id:
-        raise HTTPException(400, "object_id обязателен")
-    if not _object_id_exists(object_id):
-        raise HTTPException(404, "Объект не найден")
-
-    date_str = _parse_manual_date(body.date)
-    start_minutes = _parse_manual_hhmm(body.start_time, 'start_time')
-    end_minutes = _parse_manual_hhmm(body.end_time, 'end_time')
-    if end_minutes <= start_minutes:
-        raise HTTPException(400, "end_time должен быть позже start_time")
-    pause_minutes = int(body.pause_minutes or 0)
-    if pause_minutes < 0:
-        raise HTTPException(400, "pause_minutes не может быть отрицательным")
-    duration_minutes = end_minutes - start_minutes
-    if pause_minutes >= duration_minutes:
-        raise HTTPException(400, "pause_minutes должен быть меньше длительности смены")
-
-    art = (body.art or 'Arbeitszeit').strip()[:50] or 'Arbeitszeit'
-    if art not in MANUAL_TIME_ART_WHITELIST:
-        raise HTTPException(400, f"art должен быть одним из: {', '.join(sorted(MANUAL_TIME_ART_WHITELIST))}")
-
-    target_user_id = str(body.mitarbeiter_user_id).strip() if (role == 'owner' and body.mitarbeiter_user_id) else str(user['id'])
-    if not re.fullmatch(r'\d+', target_user_id):
-        raise HTTPException(400, "mitarbeiter_user_id должен быть числовым Telegram ID")
-    roles = _load_roles()
-    if target_user_id not in roles:
-        raise HTTPException(404, "Работник не найден")
-    if role != 'owner' and target_user_id != str(user['id']):
-        raise HTTPException(403, "Нельзя внести время за другого работника")
-    if roles.get(target_user_id) != 'owner' and not has_active_object_access(target_user_id, object_id, today=date_str):
-        raise HTTPException(403, "У работника нет принятого назначения на этот объект в указанную дату")
-
-    start_time = (body.start_time or '').strip()
-    end_time = (body.end_time or '').strip()
-    return {
-        "object_id": object_id,
-        "target_user_id": target_user_id,
-        "date": date_str,
-        "start_time": start_time,
-        "end_time": end_time,
-        "pause_minutes": pause_minutes,
-        "art": art,
-        "description": body.description.strip()[:500],
-    }
-
-
-class ZeiterfassungBody(BaseModel):
-    object_id: str
-    art: str = "Arbeitszeit"
-    date: str
-    start_time: str
-    end_time: str
-    pause_minutes: int = 0
-    description: str = ''
-    mitarbeiter_user_id: str | None = None  # owner может внести за другого работника
-
-
-@app.post("/api/checkin/manual")
-def checkin_manual(body: ZeiterfassungBody, user: dict = Depends(get_current_user), role: str = Depends(get_role),
-                    idempotency_key: str = Header(default='', alias='Idempotency-Key')):
-    clean = _validate_manual_time_body(body, user, role)
-    target_user_id = clean["target_user_id"]
-    idempotency_scope = _idempotency_scope(
-        'checkin_manual', user['id'], f"{target_user_id}:{clean['object_id']}:{clean['date']}", clean,
-    )
-    cached = _idempotency_claim(idempotency_key, idempotency_scope)
-    if cached is not None:
-        return cached
-
-    entity_id = _idempotent_entity_id(idempotency_key, idempotency_scope)
-    # F02/F03: overlap is checked here (not inside _validate_manual_time_body) and
-    # excludes entity_id -- a crash-recovered retry with the SAME Idempotency-Key
-    # must not be rejected as "overlapping" against the very entry it's replaying.
-    _assert_no_manual_time_overlap(
-        target_user_id, clean['date'],
-        _parse_manual_hhmm(clean['start_time'], 'start_time'), _parse_manual_hhmm(clean['end_time'], 'end_time'),
-        exclude_id=entity_id,
-    )
-    entry = {
-        "id": entity_id,
-        "object_id": clean["object_id"],
-        "date": clean["date"],
-        "user_id": target_user_id,
-        "art": clean["art"],
-        "start_time": clean["start_time"],
-        "end_time": clean["end_time"],
-        "pause_minutes": clean["pause_minutes"],
-        "description": clean["description"],
-        "manual_entry": True,
-        "created_at": int(time.time()),
-    }
-    try:
-        with _checkin_lock:
-            items = _load_checkin_meta()
-            existing_entry = next((i for i in items if i.get('id') == entity_id), None)
-            if existing_entry is not None:
-                # F03: crash-recovered retry -- an earlier attempt with the SAME
-                # Idempotency-Key already wrote this exact business fact (same
-                # derived id) but died before _idempotency_save() ran. Don't
-                # duplicate it -- resolve the response from what's already there.
-                entry = existing_entry
-            else:
-                items.append(entry)
-                _save_checkin_meta(items)
-        if existing_entry is None:
-            _write_zeiterfassung_row(entry, entry['object_id'], target_user_id)
-        _idempotency_save(idempotency_key, entry, idempotency_scope)
-    except Exception:
-        _idempotency_release(idempotency_key, idempotency_scope)
-        raise
-    return entry
-
-
-# ---------- AI-анализ фотоотчёта — Фаза 4b ----------
-# Технический нюанс: _call_claude_cli() работает через "claude -p <text>" субпроцесс и
-# НЕ читает image-контент-блоки (см. _messages_to_prompt — картинки отбрасываются).
-# Реальный multimodal-путь в этом кодбейсе — GLM через HTTP API (_call_glm),
-# который принимает Anthropic-совместимый messages-формат с image-блоками как есть.
-# Поэтому анализ фото идёт через GLM напрямую, а не через "существующий _call_claude_cli".
-
-def _image_block_from_file(path: str) -> dict | None:
-    if not os.path.exists(path):
-        return None
-    ext = path.rsplit('.', 1)[-1].lower()
-    media_type = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp'}.get(ext, 'image/jpeg')
-    with open(path, 'rb') as f:
-        b64 = base64.b64encode(f.read()).decode('ascii')
-    return {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}}
-
-
-def _call_glm_vision(system_prompt: str, image_paths: list, text_prompt: str) -> str:
-    content = []
-    for p in image_paths:
-        block = _image_block_from_file(os.path.join(CHECKIN_PHOTO_BASE, p))
-        if block:
-            content.append(block)
-    content.append({"type": "text", "text": text_prompt})
-
-    glm_key = os.environ.get('GLM_KEY', '')
-    if not glm_key:
-        raise HTTPException(503, "GLM API не настроен (нет GLM_KEY)")
-
-    payload = {
-        "model": "glm-4.5-flash",
-        "max_tokens": 1024,
-        "system": system_prompt,
-        "messages": [{"role": "user", "content": content}],
-    }
-    data = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-    req = _urlreq.Request(
-        'https://api.z.ai/api/anthropic/v1/messages',
-        data=data, method='POST',
-        headers={'Content-Type': 'application/json', 'x-api-key': glm_key, 'anthropic-version': '2023-06-01'},
-    )
-    try:
-        with _urlreq.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read().decode('utf-8'))
-        return result['content'][0]['text']
-    except _urlreq.HTTPError as e:
-        raise HTTPException(502, f"GLM API ошибка: {e.read().decode('utf-8')[:300]}")
-    except Exception as e:
-        raise HTTPException(502, f"GLM недоступен: {str(e)[:200]}")
-
-
-def _get_checkin_session(session_id: str, user_id=None, role=None) -> dict:
-    items = _load_checkin_meta()
-    session = next((i for i in items if i.get('id') == session_id), None)
-    if not session:
-        raise HTTPException(404, "Сессия не найдена")
-    if role is not None and role != 'owner' and str(session.get('user_id')) != str(user_id):
-        raise HTTPException(403, "Нет доступа к этой смене")
-    if not session.get('finish_photos'):
-        raise HTTPException(400, "Смена ещё не завершена — нет финишных фото для сравнения")
-    return session
-
-
-def _save_checkin_analysis(session_id: str, key: str, value):
-    items = _load_checkin_meta()
-    for i in items:
-        if i.get('id') == session_id:
-            i.setdefault('analysis', {})[key] = value
-            _save_checkin_meta(items)
-            return
-    raise HTTPException(404, "Сессия не найдена")
-
-
-@app.post("/api/checkin/{session_id}/analyze-progress")
-def analyze_checkin_progress(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    session = _get_checkin_session(session_id, user['id'], role)
-    _check_ai_rate(user['id'])
-    result = _call_glm_vision(
-        "Ты — опытный прораб на стройке. Сравниваешь фото 'до' и 'после' работ на одном участке "
-        "объекта. Кратко (2-4 предложения, по-русски) опиши: какой прогресс виден, что изменилось, "
-        "выглядит ли работа завершённой или частично сделанной.",
-        session['start_photos'] + session['finish_photos'],
-        "Вот фото начала смены, затем фото конца смены. Сравни прогресс работ.",
-    )
-    _save_checkin_analysis(session_id, 'progress', result)
-    return {"analysis": result}
-
-
-@app.post("/api/checkin/{session_id}/analyze-materials")
-def analyze_checkin_materials(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    session = _get_checkin_session(session_id, user['id'], role)
-    _check_ai_rate(user['id'])
-    result = _call_glm_vision(
-        "Ты — сметчик на стройке. По фото оцениваешь примерный расход строительных материалов "
-        "(мешки, паллеты, упаковки — что видно в кадре). Дай краткую (2-3 предложения, по-русски) "
-        "оценку расхода материала. Это ПРЕДЛОЖЕНИЕ для владельца на проверку, не финальная цифра — "
-        "явно укажи, что оценка приблизительная по фото.",
-        session['start_photos'] + session['finish_photos'],
-        "Оцени примерный расход материала по этим фото (начало и конец смены).",
-    )
-    _save_checkin_analysis(session_id, 'materials', result)
-    return {"analysis": result, "note": "Предложение на проверку владельцем — бюджет объекта не изменён автоматически."}
-
-
-@app.post("/api/checkin/{session_id}/analyze-defects")
-def analyze_checkin_defects(session_id: str, user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    session = _get_checkin_session(session_id, user['id'], role)
-    _check_ai_rate(user['id'])
-    result = _call_glm_vision(
-        "Ты — инспектор качества на стройке. Смотришь на фото участка работ и ищешь видимые дефекты: "
-        "трещины, протечки, неровности, брак. Ответь СТРОГО в формате: первая строка 'ДЕФЕКТ: да' или "
-        "'ДЕФЕКТ: нет', затем если да — короткое описание дефекта на русском (1-2 предложения).",
-        session['finish_photos'],
-        "Есть ли видимые дефекты на этом фото?",
-    )
-    has_defect = result.strip().upper().startswith('ДЕФЕКТ: ДА') or result.strip().upper().startswith('ДЕФЕКТ:ДА')
-    ticket = None
-    if has_defect:
-        description = result.split('\n', 1)[1].strip() if '\n' in result else 'Дефект обнаружен AI-анализом'
-        # 30.07 (Release-аудит P1): убран локальный import mangel_lib as ml -- module-level
-        # ml уже загружен через _load_repo_mangel_lib() выше, повторный обычный import
-        # был бы тем же риском резолва в untracked-копию, что мы только что закрыли.
-        ticket = ml.create_ticket(
-            object_id=session['object_id'],
-            description=description[:500],
-            created_by=str(user['id']),
-            photo_paths=session['finish_photos'][:1],
-            created_by_ai=True,
-        )
-    _save_checkin_analysis(session_id, 'defects', result)
-    return {"analysis": result, "ticket_created": ticket}
 
 
 # ---------- Critical Alerts — persisted, с deadline/comment/photo (Фаза 10.16) ----------

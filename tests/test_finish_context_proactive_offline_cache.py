@@ -115,12 +115,14 @@ class StartEmbedsFinishContextTests(unittest.TestCase):
         # guard test already protects on the frontend: two independent
         # implementations of the same shape silently drifting apart. Both
         # checkin_start and checkin_finish_context must call the ONE helper.
-        src = open(os.path.join(os.path.dirname(__file__), '..', 'backend', 'main.py'),
+        # 26.09 (checkin/execution router split): both moved together into
+        # routes/checkin.py -- same invariant, new location.
+        src = open(os.path.join(os.path.dirname(__file__), '..', 'backend', 'routes', 'checkin.py'),
                     encoding='utf-8').read()
         assert 'def _build_finish_context(session: dict) -> dict:' in src
-        start_fn = src[src.index('async def checkin_start('):src.index('@app.post("/api/checkin/{session_id}/pause")')]
+        start_fn = src[src.index('async def checkin_start('):src.index('@router.post("/api/checkin/{session_id}/pause")')]
         assert "response['finish_context'] = _build_finish_context(entry)" in start_fn
-        finish_ctx_fn = src[src.index('def checkin_finish_context('):src.index('@app.get("/api/checkin/{session_id}/photo/{which}/{index}")')]
+        finish_ctx_fn = src[src.index('def checkin_finish_context('):src.index('@router.get("/api/checkin/{session_id}/photo/{which}/{index}")')]
         assert 'return _build_finish_context(session)' in finish_ctx_fn
 
     def test_plan_linked_start_response_embeds_a_populated_finish_context(self):
