@@ -2,6 +2,15 @@
 
 # Project state
 
+## 2026-09-25 architecture branch note
+
+Branch `codex/split-objects` is an isolated worktree for backend modularization.
+Current slice extracts Objects-domain route handlers into
+`backend/routes/objects.py` with explicit dependency injection from `main.py`.
+No deploy has been performed. Scope intentionally excludes auth/roles,
+`core/permissions.py`, media/photo upload, documents, tasks, stages, daily-plan,
+UI, DB migrations, and production config.
+
 **Last updated**: 2026-09-13, Feed UX round — unified Instagram-like popup
 comments/actions, persistent photo likes, iPhone keyboard/input polish, AI
 composer visibility fix. Local verification: `737 passed, 1 skipped`. See
