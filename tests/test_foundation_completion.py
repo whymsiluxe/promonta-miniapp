@@ -163,6 +163,16 @@ class ServerTrustCheckinStartTests(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp(prefix='fc-test-')
+        # 25.09 (test-pollution fix): no teardown previously restored these --
+        # leaked into every later test in the same pytest process (harmless
+        # while every reader lived in main.py's own namespace, but a real
+        # risk for anything reading these names from a different module's
+        # namespace, e.g. core.profiles/core.permissions).
+        self._saved_attrs = {
+            name: getattr(backend, name)
+            for name in ('DATA_ROOT', 'ROLES_FILE', 'CHECKIN_META_FILE',
+                         'DAILY_PLAN_STORE_FILE', 'PLAN_SYNC_STATE_FILE', 'WORK_CALENDAR_FILE')
+        }
         backend.DATA_ROOT = self.tmpdir
         backend.ROLES_FILE = os.path.join(self.tmpdir, 'roles.json')
         backend.CHECKIN_META_FILE = os.path.join(self.tmpdir, 'checkin_meta.json')
@@ -173,6 +183,10 @@ class ServerTrustCheckinStartTests(unittest.TestCase):
                       backend.PLAN_SYNC_STATE_FILE,
                       backend.WORK_CALENDAR_FILE)
         backend._save_roles({'999': 'worker', '1': 'owner'})
+
+    def tearDown(self):
+        for name, value in self._saved_attrs.items():
+            setattr(backend, name, value)
 
     def _create_published_plan(self, object_id='OBJ-1', date_str=None):
         if date_str is None:
@@ -298,10 +312,18 @@ class CheckinStartRequiresPhotoTests(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp(prefix='fc-test-')
+        # 25.09 (test-pollution fix): see ServerTrustCheckinStartTests above.
+        self._saved_attrs = {
+            name: getattr(backend, name) for name in ('DATA_ROOT', 'ROLES_FILE', 'CHECKIN_META_FILE')
+        }
         backend.DATA_ROOT = self.tmpdir
         backend.ROLES_FILE = os.path.join(self.tmpdir, 'roles.json')
         backend.CHECKIN_META_FILE = os.path.join(self.tmpdir, 'checkin_meta.json')
         backend._save_roles({'999': 'worker', '1': 'owner'})
+
+    def tearDown(self):
+        for name, value in self._saved_attrs.items():
+            setattr(backend, name, value)
 
     def test_zero_saved_photos_rejected(self):
         from fastapi import HTTPException
@@ -361,6 +383,11 @@ class FinishOutboxTests(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp(prefix='fc-test-')
+        # 25.09 (test-pollution fix): see ServerTrustCheckinStartTests above.
+        self._saved_attrs = {
+            name: getattr(backend, name)
+            for name in ('FINISH_OUTBOX_FILE', 'DAILY_PLAN_STORE_FILE', 'PLAN_SYNC_STATE_FILE', 'WORK_CALENDAR_FILE')
+        }
         backend.FINISH_OUTBOX_FILE = os.path.join(self.tmpdir, 'finish_outbox.json')
         backend.DAILY_PLAN_STORE_FILE = os.path.join(self.tmpdir, 'daily_plan_store.json')
         backend.PLAN_SYNC_STATE_FILE = os.path.join(self.tmpdir, 'plan_sync_state.json')
@@ -368,6 +395,10 @@ class FinishOutboxTests(unittest.TestCase):
         dpl.configure(backend.DAILY_PLAN_STORE_FILE,
                       backend.PLAN_SYNC_STATE_FILE,
                       backend.WORK_CALENDAR_FILE)
+
+    def tearDown(self):
+        for name, value in self._saved_attrs.items():
+            setattr(backend, name, value)
 
     def test_write_pending_creates_entry(self):
         backend._outbox_write_pending('sess1', 'plan1', 1, '42', '2026-09-15', 'OBJ-1', [])
