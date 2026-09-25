@@ -53,6 +53,7 @@ jobs:
           rm -rf /tmp/ci-pkgtest && mkdir -p /tmp/ci-pkgtest/miniapp
           cp backend/*.py /tmp/ci-pkgtest/miniapp/
           cp -r backend/core /tmp/ci-pkgtest/miniapp/
+          cp -r backend/routes /tmp/ci-pkgtest/miniapp/
           cd /tmp/ci-pkgtest && python -c "
           import sys
           sys.path.insert(0, '.')
