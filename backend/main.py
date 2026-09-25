@@ -1808,126 +1808,6 @@ def _cached_get_used_range(tab_name: str):
 # moved to core/constants.py -- BUDGET_FIELDS
 
 
-@app.get("/api/objects")
-def list_objects(user: dict = Depends(get_current_user), role: str = Depends(get_role)):
-    rows = _cached_get_used_range('Объекты')
-    if not rows:
-        return {"objects": []}
-    header, data = rows[0], rows[1:]
-    assignments = _load_assignments()
-    profiles = _load_worker_profiles()
-    images = _load_object_images()
-    # 28.07 (external audit ТЗ п.20): batch stage summary -- один вызов all_stages_grouped()
-    # для ВСЕХ объектов разом, не N+1 запросов к Google Sheets (один на каждую карточку).
-    o = _load_repo_objekte_lib()
-    stages_by_object = o.all_stages_grouped()
-
-    def _user_info(uid: str, assignment: dict | None = None) -> dict:
-        p = profiles.get(str(uid), {})
-        # 28.07 (external audit ТЗ п.21): реальная аватарка вместо только инициалов,
-        # если работник её загрузил (has_avatar уже трекается профилем, /api/profile
-        # avatar endpoint уже существует -- переиспользуем, не строим параллельный).
-        info = {
-            "user_id": str(uid),
-            "name": _sanitize_display_name(p.get('name'), str(uid)),
-            "has_avatar": bool(p.get('avatar')),
-        }
-        if assignment is not None:
-            # 29.07 ТЗ п.9: owner видит, принял ли worker назначение -- без этого
-            # владелец не узнаёт об отказе иначе как случайно спросив у worker'а лично.
-            info["assignment_status"] = _assignment_status(assignment)
-            info["decline_reason"] = assignment.get('decline_reason', '')
-            info["task_note"] = assignment.get('task_note', '')
-            # 01.08 (Команда и смены переработка): assignment_id/даты/вид работ нужны
-            # для ⋯ меню (изменить/удалить конкретное назначение) в object-info.js.
-            info["assignment_id"] = assignment.get('id', '')
-            info["date_from"] = assignment.get('date_from', '')
-            info["date_to"] = assignment.get('date_to', '')
-            work_type_id = assignment.get('work_type_id', '')
-            info["work_type_id"] = work_type_id
-            info["work_type_name"] = pskills.skill_display_name(work_type_id) if work_type_id else ''
-            info["stage_id"] = assignment.get('stage_id', '')
-        return info
-
-    def _stage_summary(oid: str) -> dict | None:
-        stages = stages_by_object.get(oid.upper())
-        if not stages:
-            return None
-        completed = [s.get('Название этапа', '') for s in stages if s.get('Статус') == 'готово']
-        current = next((s for s in stages if s.get('Статус') == 'в процессе'), None)
-        current_idx = stages.index(current) if current else -1
-        if current:
-            next_stage = stages[current_idx + 1] if current_idx + 1 < len(stages) else None
-        else:
-            # Раунд 4: ни один этап не в работе -> "next" = первый незавершённый (для состояния
-            # "Ничего не начато: Следующий: Демонтаж"). Если все готово -> next=None.
-            next_stage = next((s for s in stages if s.get('Статус') != 'готово'), None)
-        return {
-            "completed": completed,
-            "completed_count": len(completed),
-            "current": current.get('Название этапа', '') if current else None,
-            "next": next_stage.get('Название этапа', '') if next_stage else None,
-            "total": len(stages),
-        }
-
-    objects = []
-    for r in data:
-        obj = dict(zip(header, r))
-        oid = str(obj.get('ID объекта', ''))
-        obj_assignments = assignments.get(oid, [])
-        if role == 'owner':
-            # 09.09: dedupe by user_id -- this list feeds the object CARD's avatar
-            # stack (a "who's on the team" summary, one dot per person), not the
-            # per-assignment detail view. Before this fix it mapped every raw
-            # assignment record 1:1 -- harmless while one worker had at most one
-            # assignment per object, but the multi-work-type feature (961a3b9, same
-            # session) made one worker having 2+ assignment records on the SAME
-            # object (one per selected work type) a normal, common case. Owner
-            # confirmed live: the same worker's avatar appeared multiple times on
-            # one object's card. First assignment record per user_id wins (order
-            # from obj_assignments, i.e. creation order) -- the per-work-type detail
-            # is still fully available via /api/objects/{id}/info-items's team
-            # section, which correctly shows one row per assignment.
-            #
-            # Also filters to assignments relevant TODAY, not every historical/
-            # future/declined record ever created for this object -- the card
-            # visually implies "this is the current team," and before this fix it
-            # showed declined/past/future assignments as if they were active right
-            # now. status != declined, and (date_from <= today <= date_to) OR the
-            # assignment is legacy/undated (no dates recorded at all -- treated as
-            # indefinite/always-current everywhere else in this codebase, e.g.
-            # _assignment_periods_overlap() above and _assignment_status()).
-            today_str = business_today_str()
-            seen_uids = set()
-            deduped_users = []
-            detail_users = []
-            for a in obj_assignments:
-                if _assignment_status(a) == 'declined':
-                    continue
-                a_from, a_to = a.get('date_from', ''), a.get('date_to', '')
-                is_dated = bool(a_from and a_to)
-                if is_dated and not (a_from <= today_str <= a_to):
-                    continue
-                uid = str(a['user_id'])
-                # assigned_users_detail: ONE ENTRY PER ASSIGNMENT (still filtered to
-                # active-today/non-declined above) -- Object Info's "Команда и смены"
-                # needs to show every work type a worker has on this object, grouped
-                # under that worker, not collapsed to one row. Kept separate from
-                # assigned_users below (which IS deduped, for the card avatar stack
-                # and any consumer that just wants "who's on this team" as a set).
-                detail_users.append(_user_info(uid, a))
-                if uid in seen_uids:
-                    continue
-                seen_uids.add(uid)
-                deduped_users.append(_user_info(uid, a))
-            obj['assigned_users'] = deduped_users
-            obj['assigned_users_detail'] = detail_users
-            obj['photo_count'] = len(images.get(oid) or [])
-            obj['stage_summary'] = _stage_summary(oid)
-        else:
-            obj = _serialize_object_for_worker(obj, str(user['id']), obj_assignments, _user_info, _stage_summary, images)
-        objects.append(obj)
-    return {"objects": objects}
 
 
 def _serialize_object_for_worker(obj: dict, viewer_user_id: str, obj_assignments: list,
@@ -1973,50 +1853,6 @@ def _serialize_object_for_worker(obj: dict, viewer_user_id: str, obj_assignments
     return obj
 
 
-@app.get("/api/my-assignments")
-def my_assignments(user: dict = Depends(get_current_user)):
-    """Список назначений текущего воркера — объект/этап/период, для экрана
-    "Мои задачи" (24.07: раньше верхняя dashboard-плитка "Задачи" ошибочно
-    вела на общий список Объекты, юзер запросил отдельный экран)."""
-    assignments = _load_assignments()
-    uid = str(user['id'])
-    rows = _cached_get_used_range('Объекты')
-    names = {}
-    if rows:
-        header, data = rows[0], rows[1:]
-        for r in data:
-            obj = dict(zip(header, r))
-            oid_key = str(obj.get('ID объекта', ''))
-            # 03.08 (ТЗ Задача 6a, реальный найденный баг): читалось obj.get('Название')
-            # -- эта колонка не существует в Google Sheets 'Объекты' (реальная колонка
-            # называется 'Объект', см. list_objects/везде остальном в этом файле), так
-            # что имя объекта в "Моих назначениях" всегда падало на obj.get('Адрес')
-            # или пустую строку. Полная fallback-цепочка: Объект -> Название (на
-            # случай, если колонку когда-то переименуют/добавят) -> Адрес -> сам id.
-            names[oid_key] = obj.get('Объект') or obj.get('Название') or obj.get('Адрес') or oid_key
-
-    result = []
-    for oid, lst in assignments.items():
-        for a in lst:
-            if a.get('user_id') != uid:
-                continue
-            work_type_id = a.get('work_type_id', '')
-            result.append({
-                "id": a.get('id', ''),  # 29.07 (аудит): фронт передаёт это в /respond
-                "object_id": oid,
-                "object_name": names.get(oid, oid),
-                "stage_id": a.get('stage_id', ''),
-                "work_type_id": work_type_id,
-                "work_type_name": pskills.skill_display_name(work_type_id) if work_type_id else '',
-                "date_from": a.get('date_from', ''),
-                "date_to": a.get('date_to', ''),
-                "assigned_at": a.get('assigned_at', ''),
-                "status": _assignment_status(a),
-                "decline_reason": a.get('decline_reason', ''),
-                "task_note": a.get('task_note', ''),
-            })
-    result.sort(key=lambda r: r['date_from'] or '', reverse=True)
-    return {"assignments": result}
 
 
 def _object_history_actor_name(user: dict | None) -> str:
@@ -2074,26 +1910,6 @@ def _append_object_history_best_effort(*args, **kwargs):
         return {}
 
 
-@app.get("/api/objects/{object_id}/history")
-def get_object_history(object_id: str, limit: int = Query(50, ge=1, le=200),
-                       user: dict = Depends(get_current_user),
-                       _: None = Depends(require_object_access)):
-    items = _safe_load_json(OBJECT_HISTORY_FILE, [])
-    if not isinstance(items, list):
-        items = []
-    filtered = [e for e in items if str(e.get('object_id')) == str(object_id)]
-    filtered.sort(key=lambda e: str(e.get('at', '')), reverse=True)
-    return {"history": filtered[:limit]}
-
-
-class AssignBody(BaseModel):
-    user_id: str
-    stage_id: str = ''
-    work_type_id: str = ''  # 01.08: новый источник истины matching'а; stage_id остаётся
-    # для legacy-совместимости (текстовое отображение старых этапов, см. work_types.py).
-    date_from: str = ''
-    date_to: str = ''
-    task_note: str = ''
 
 
 def _dates_overlap(a_from: str, a_to: str, b_from: str, b_to: str) -> bool:
@@ -2126,305 +1942,8 @@ def _assignment_periods_overlap(a: dict, b: dict) -> bool:
     return a_from <= b_to and b_from <= a_to
 
 
-@app.post("/api/objects/{object_id}/assign")
-def assign_user(object_id: str, body: AssignBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    key = str(object_id)
-    result_holder = {}
-
-    # 28.07 (real bug found by external audit): было _load_assignments()+_save_assignments()
-    # как отдельные вызовы -- read вне лока, два параллельных assign на один объект могли
-    # оба увидеть список ДО добавления и один запрос затирал назначение, добавленное другим
-    # (та же гонка что чинили для object photos). update_json_transaction держит все проверки
-    # + мутацию под одним захватом _lock_for(path).
-    def _mutator(assignments):
-        if key not in assignments:
-            assignments[key] = []
-        # 29.07 (аудит): declined-назначение НЕ должно считаться дубликатом -- иначе
-        # повторное назначение того же worker'а на тот же этап после отказа молча
-        # не создавало новую запись (endpoint возвращал успех, но ничего не менялось).
-        already = any(
-            a['user_id'] == str(body.user_id) and a.get('stage_id', '') == body.stage_id
-            and _assignment_status(a) != 'declined'
-            for a in assignments[key]
-        )
-        if already:
-            raise HTTPException(409, "Это назначение уже существует")
-        # 22.07: одобренный отпуск/больничный блокирует назначение — жёсткая проверка,
-        # не просто цветовая подсказка в календаре (юзер подтвердил явно).
-        for e in _load_abwesenheit():
-            if str(e.get('user_id')) != str(body.user_id) or e.get('status') != 'approved':
-                continue
-            if _dates_overlap(body.date_from, body.date_to, e.get('date_from', ''), e.get('date_to', '')):
-                raise HTTPException(
-                    409,
-                    f"Работник недоступен ({e.get('reason', 'отсутствие')}) "
-                    f"{e.get('date_from')} — {e.get('date_to')}"
-                )
-        # 29.07 (аудит): declined-назначения на ДРУГИХ объектах не должны участвовать
-        # в проверке пересечений периодов -- worker, отклонивший объект А, не должен
-        # быть заблокирован от назначения на объект Б в те же даты.
-        for other_oid, other_list in assignments.items():
-            if other_oid == key:
-                continue
-            for a in other_list:
-                if a['user_id'] != str(body.user_id) or _assignment_status(a) == 'declined':
-                    continue
-                # 09.09: _assignment_periods_overlap() -- не голый _dates_overlap(),
-                # который возвращал False (т.е. "не пересекается") для legacy-записей
-                # без date_from/date_to, пропуская их через эту проверку. См. helper's
-                # docstring для полного контекста.
-                if _assignment_periods_overlap(
-                    {'date_from': body.date_from, 'date_to': body.date_to}, a
-                ):
-                    raise HTTPException(
-                        409,
-                        f"Этот работник уже назначен на объект {other_oid} "
-                        f"на период {a.get('date_from') or '(без даты)'} — {a.get('date_to') or '(без даты)'}"
-                    )
-        assigned_at = _utcnow_iso()
-        assignment = {
-            # 29.07 (аудит): уникальный assignment_id -- respond-endpoint раньше искал
-            # "первый pending этого worker'а на объект", что ломалось при нескольких
-            # назначениях одного worker'а на разные этапы/периоды одного объекта.
-            'id': uuid.uuid4().hex,
-            'user_id': str(body.user_id),
-            'stage_id': body.stage_id,
-            'work_type_id': body.work_type_id,
-            'date_from': body.date_from,
-            'date_to': body.date_to,
-            'assigned_at': assigned_at,
-            'pending_since': assigned_at,
-            # 29.07 ТЗ п.9: назначение теперь требует подтверждения worker'а -- новые
-            # назначения стартуют pending, worker явно принимает/отклоняет. Старые записи
-            # без этого поля (созданные до этой правки) трактуются как 'accepted' везде,
-            # где статус читается (см. _assignment_status() ниже) -- compatibility rule,
-            # не полная миграция файла, чтобы не трогать данные, которые и так работали.
-            'status': 'pending',
-            'decline_reason': '',
-            'responded_at': '',
-            'task_note': body.task_note.strip()[:500],
-        }
-        assignments[key].append(assignment)
-        result_holder['assignment'] = assignment
-
-    update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
-    created = result_holder.get('assignment') or {}
-    if created:
-        worker_name = _object_history_worker_name(created.get('user_id', ''))
-        work_label = pskills.skill_display_name(created.get('work_type_id', '')) if created.get('work_type_id') else created.get('stage_id', '')
-        subtitle = ' · '.join(p for p in (worker_name, work_label, created.get('task_note', '')) if p)
-        _append_object_history_best_effort(
-            key, 'worker_assigned', f'Назначен работник: {worker_name}',
-            user=user, subtitle=subtitle,
-            meta={
-                "assignment_id": created.get('id', ''),
-                "worker_id": created.get('user_id', ''),
-                "work_type_id": created.get('work_type_id', ''),
-                "stage_id": created.get('stage_id', ''),
-                "date_from": created.get('date_from', ''),
-                "date_to": created.get('date_to', ''),
-            },
-        )
-    return {"status": "ok"}
 
 
-@app.delete("/api/objects/{object_id}/assign/{user_id}")
-def unassign_user(object_id: str, user_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    """01.08 (доп.раунд П4, реальный найденный баг): предыдущая версия фильтровала
-    "активные" назначения по ВСЕМ user_id на объекте, не по переданному user_id --
-    DELETE для одного работника мог 409-ить из-за ЧУЖИХ активных назначений на том
-    же объекте, а при единственном активном (не именно этого работника, а вообще)
-    строка `assignments[key] = [declined only]` СТИРАЛА ВСЕ назначения других
-    работников, оставляя только declined-записи. Теперь: фильтр строго по
-    str(user_id), не трогает записи других людей вообще.
-    Правила: нет активного назначения этого работника -> 404; ровно одно активное ->
-    удалить только его; несколько активных -> 409 с просьбой использовать
-    assignment_id; declined-записи (этого и других работников) не трогаются."""
-    key = str(object_id)
-    uid = str(user_id)
-    result_holder = {}
-
-    def _mutator(assignments):
-        lst = assignments.get(key, [])
-        active_indices = [i for i, a in enumerate(lst)
-                           if str(a.get('user_id')) == uid and _assignment_status(a) != 'declined']
-        if not active_indices:
-            result_holder['not_found'] = True
-            return
-        if len(active_indices) > 1:
-            result_holder['multiple'] = True
-            return
-        # 03.08 (реальный найденный баг): раньше искали по assignment['id'], у legacy
-        # записей (созданных до введения id) это None -- фильтр `a.get('id') != None`
-        # удалял ВСЕ записи с реальным id (включая других работников) и оставлял
-        # только другие безымянные legacy-записи. Теперь удаляем по позиции в списке --
-        # работает одинаково для записей с id и без, не зависит от его наличия.
-        target_index = active_indices[0]
-        assignments[key] = [a for i, a in enumerate(lst) if i != target_index]
-
-    update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
-    if result_holder.get('not_found'):
-        raise HTTPException(404, "Активное назначение этого работника не найдено")
-    if result_holder.get('multiple'):
-        raise HTTPException(409, "У работника несколько назначений. Используйте assignment_id.")
-    return {"status": "ok"}
-
-
-class AssignmentUpdateBody(BaseModel):
-    work_type_id: str | None = None
-    date_from: str | None = None
-    date_to: str | None = None
-    task_note: str | None = None
-
-
-@app.patch("/api/objects/{object_id}/assignments/{assignment_id}")
-def update_assignment(object_id: str, assignment_id: str, body: AssignmentUpdateBody,
-                       user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    """01.08 (спека п.9): точечное редактирование ОДНОГО назначения по assignment_id.
-    При РЕАЛЬНОМ изменении уже принятого назначения (работа/период/задача) статус
-    возвращается в pending -- worker должен подтвердить обновлённые условия заново.
-
-    01.08 (доп.раунд П6): раньше не проверялось вообще ничего -- work_type
-    существование/active, валидность дат, роль worker, объект, абсенс, пересечения
-    (исключая само это назначение). И no-op PATCH (пустой updates.dict но всё равно
-    truthy `{}` -- нет, нюанс в том что даже совпадающие значения считались
-    "изменением" и сбрасывали accepted -- сравниваем итоговое значение с уже
-    сохранённым, не просто "ключ присутствовал в body")."""
-    key = str(object_id)
-    updates = body.dict(exclude_unset=True)
-    if 'task_note' in updates and updates['task_note'] is not None:
-        updates['task_note'] = updates['task_note'].strip()[:500]
-
-    if 'work_type_id' in updates and updates['work_type_id'] is not None:
-        wtype = wt.get_work_type(updates['work_type_id'])
-        if wtype is None or not wtype.get('active'):
-            raise HTTPException(400, "Неизвестный или неактивный вид работ")
-    if 'date_from' in updates and updates['date_from'] is not None:
-        _validate_date_str(updates['date_from'], 'date_from')
-    if 'date_to' in updates and updates['date_to'] is not None:
-        _validate_date_str(updates['date_to'], 'date_to')
-
-    key = str(object_id)
-    result_holder = {}
-
-    def _mutator(assignments):
-        lst = assignments.get(key, [])
-        target = next((a for a in lst if a.get('id') == assignment_id), None)
-        if target is None:
-            result_holder['not_found'] = True
-            return
-
-        merged_work_type = updates.get('work_type_id', target.get('work_type_id'))
-        merged_date_from = updates.get('date_from', target.get('date_from', ''))
-        merged_date_to = updates.get('date_to', target.get('date_to', ''))
-        if merged_date_from and merged_date_to and merged_date_from > merged_date_to:
-            result_holder['error'] = "date_from не может быть позже date_to"
-            return
-
-        uid = str(target.get('user_id'))
-        role = _load_roles().get(uid)
-        if role != 'worker':
-            result_holder['error'] = f"Пользователь {uid} не является Worker (роль: {role})"
-            return
-
-        rows = _cached_get_used_range('Объекты')
-        object_row = None
-        if rows:
-            header, data = rows[0], rows[1:]
-            for r in data:
-                row = dict(zip(header, r))
-                if str(row.get('ID объекта', '')) == str(object_id):
-                    object_row = row
-                    break
-        if object_row is None:
-            result_holder['error'] = "Объект не найден"
-            return
-
-        abwesenheit = _load_abwesenheit()
-        if any(str(e.get('user_id')) == uid and e.get('status') == 'approved'
-               and _dates_overlap(merged_date_from, merged_date_to, e.get('date_from', ''), e.get('date_to', ''))
-               for e in abwesenheit):
-            result_holder['error'] = "Работник недоступен (отсутствие) на этот период"
-            return
-
-        # пересечения с ДРУГИМИ назначениями этого же работника, исключая само target
-        overlap = False
-        for other_oid, other_list in assignments.items():
-            for a in other_list:
-                if a.get('id') == assignment_id:
-                    continue  # исключаем текущее назначение из проверки на самого себя
-                if str(a.get('user_id')) != uid or _assignment_status(a) == 'declined':
-                    continue
-                # 09.09: same-object пересечение с другим work_type_id этого же
-                # работника разрешено (multi-work-type -- один человек, несколько
-                # видов работ на одном объекте в те же даты, см. 961a3b9) -- не
-                # конфликт, только межобъектное пересечение реально означает "работник
-                # физически не может быть в двух местах одновременно".
-                if other_oid == key:
-                    continue
-                # _assignment_periods_overlap(), не голый _dates_overlap() -- legacy
-                # запись без date_from/date_to трактуется как бессрочная/занятая, не
-                # молча пропускается через проверку (см. helper's docstring).
-                if _assignment_periods_overlap(
-                    {'date_from': merged_date_from, 'date_to': merged_date_to}, a
-                ):
-                    overlap = True
-                    break
-            if overlap:
-                break
-        if overlap:
-            result_holder['error'] = "Пересекается с другим назначением этого работника на другом объекте"
-            return
-
-        result_holder['ok'] = True
-        was_accepted = _assignment_status(target) == 'accepted'
-        # 01.08 (доп.раунд П6, реальный найденный баг): "реальное изменение" -- сравниваем
-        # ИТОГОВОЕ значение каждого затронутого поля с уже сохранённым, не просто факт
-        # присутствия ключа в updates. PATCH с тем же work_type_id/датами/note, что уже
-        # сохранены, не должен сбрасывать accepted -> pending.
-        significant_change = (
-            merged_work_type != target.get('work_type_id') or
-            merged_date_from != target.get('date_from', '') or
-            merged_date_to != target.get('date_to', '') or
-            ('task_note' in updates and updates['task_note'] != target.get('task_note', ''))
-        )
-        updated_at = _utcnow_iso()
-        target.update({k: v for k, v in updates.items() if v is not None})
-        if was_accepted and significant_change:
-            target['status'] = 'pending'
-            target['decline_reason'] = ''
-            target['responded_at'] = ''
-            target['pending_since'] = updated_at
-        target['updated_at'] = updated_at
-
-    update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
-    if result_holder.get('not_found'):
-        raise HTTPException(404, "Назначение не найдено")
-    if result_holder.get('error'):
-        raise HTTPException(409 if 'Пересекается' in result_holder['error'] or 'недоступен' in result_holder['error'] else 400, result_holder['error'])
-    return {"status": "ok"}
-
-
-@app.delete("/api/objects/{object_id}/assignments/{assignment_id}")
-def delete_assignment(object_id: str, assignment_id: str,
-                       user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    """01.08 (спека п.9): удаляет РОВНО одно назначение по assignment_id -- в отличие
-    от старого DELETE .../assign/{user_id} (см. выше), который теперь тоже защищён,
-    но этот endpoint -- предпочтительный путь для frontend, без неоднозначности вообще."""
-    key = str(object_id)
-    found = {}
-
-    def _mutator(assignments):
-        lst = assignments.get(key, [])
-        if not any(a.get('id') == assignment_id for a in lst):
-            return
-        found['ok'] = True
-        assignments[key] = [a for a in lst if a.get('id') != assignment_id]
-
-    update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
-    if not found.get('ok'):
-        raise HTTPException(404, "Назначение не найдено")
-    return {"status": "ok"}
 
 
 def _assignment_status(a: dict) -> str:
@@ -2478,244 +1997,6 @@ def _assignment_pending_escalation(a: dict, now_ts: int | None = None) -> dict:
     if age >= ASSIGNMENT_CONFIRM_WARNING_SECONDS:
         return {"level": "warning", "type": "yellow", "age_seconds": age}
     return {"level": "", "type": "", "age_seconds": age}
-
-
-class AssignmentRespondBody(BaseModel):
-    accept: bool
-    decline_reason: str = ''
-    # 29.07 (аудит): assignment_id -- убирает неоднозначность "первый pending" при
-    # нескольких назначениях одного worker'а на разные этапы/периоды одного объекта.
-    # Опционально (не required=True): легаси-записи, созданные ДО этого фикса, не
-    # имеют поля 'id' вообще -- для них остаётся старый fallback ниже.
-    assignment_id: str = ''
-
-
-@app.post("/api/objects/{object_id}/assign/{user_id}/respond")
-def respond_to_assignment(object_id: str, user_id: str, body: AssignmentRespondBody,
-                           user: dict = Depends(get_current_user)):
-    # Worker подтверждает СВОЁ собственное назначение -- не owner, не чужое user_id.
-    if str(user['id']) != str(user_id):
-        raise HTTPException(403, "Можно отвечать только на собственное назначение")
-    if not body.accept and not body.decline_reason.strip():
-        raise HTTPException(400, "Укажите причину отказа")
-    key = str(object_id)
-
-    def _mutator(assignments):
-        lst = assignments.get(key, [])
-        if body.assignment_id:
-            target = next((a for a in lst if a.get('id') == body.assignment_id
-                           and a['user_id'] == str(user_id) and _assignment_status(a) == 'pending'), None)
-        else:
-            # Легаси-путь для записей без 'id' -- тот же риск неоднозначности, что и раньше,
-            # но такие записи существуют только до этого фикса и естественно вымрут.
-            target = next((a for a in lst if a['user_id'] == str(user_id) and _assignment_status(a) == 'pending'), None)
-        if not target:
-            raise HTTPException(404, "Ожидающее назначение не найдено")
-        target['status'] = 'accepted' if body.accept else 'declined'
-        target['decline_reason'] = body.decline_reason.strip()[:500] if not body.accept else ''
-        target['responded_at'] = datetime.utcnow().isoformat()
-        return target
-
-    return update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
-
-
-@app.get("/api/assignment-candidates")
-def get_assignment_candidates(object_id: str, work_type_id: str, date_from: str, date_to: str,
-                               user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    """01.08 (спека п.7): кандидаты для Assignment Sheet -- recommended (точное
-    совпадение навыка) / available (навык не указан, но доступен) / unavailable
-    (пересечение/абсенс/занят сегодня). Не N+1 -- все файлы читаются ОДИН раз,
-    матчинг чисто в памяти (assignment_matching.build_candidates)."""
-    if not _sanitize_display_name(work_type_id, ''):
-        raise HTTPException(400, "work_type_id обязателен")
-    _validate_date_str(date_from, 'date_from')
-    _validate_date_str(date_to, 'date_to')
-
-    roles = _load_roles()
-    profiles = _load_worker_profiles()
-    # 01.08 (доп.раунд П6, реальный найденный баг): второй set-comprehension делал
-    # `roles.get(uid, 'worker')` -- ДЕФОЛТ 'worker' для любого uid, которого нет в
-    # roles вообще, а не только для явно назначенных worker. Профиль в
-    # worker_profiles.json без активной whitelist-записи (уволенный/удалённый из
-    # roles) всё равно попадал в кандидаты. Теперь строго: только roles[uid]=='worker'.
-    worker_ids = {uid for uid, r in roles.items() if r == 'worker'}
-
-    workers = []
-    for uid in worker_ids:
-        profile = profiles.get(uid, {})
-        name = _sanitize_display_name(profile.get('name'), uid)
-        workers.append({
-            "user_id": uid, "name": name,
-            "has_avatar": bool(profile.get('avatar')),
-            "profile": profile,
-        })
-
-    all_assignments = _load_assignments()
-    abwesenheit_entries = _load_abwesenheit()
-    checkin_sessions = _load_checkin_meta()
-
-    return amatch.build_candidates(
-        work_type_id, object_id, date_from, date_to,
-        workers, all_assignments, abwesenheit_entries, checkin_sessions,
-    )
-
-
-class BatchAssignBody(BaseModel):
-    user_ids: list[str]
-    work_type_ids: list[str]
-    date_from: str
-    date_to: str
-    task_note: str = ''
-
-
-@app.post("/api/objects/{object_id}/assignments/batch")
-def batch_assign(object_id: str, body: BatchAssignBody,
-                  user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    """01.08 (спека п.8): назначить нескольких работников одним запросом -- каждому
-    отдельная запись с уникальным id, весь read/check/write под одним transaction lock
-    (update_json_transaction), без дублей на того же worker+work_type+пересекающийся
-    период. Партиальный успех -- 200 с created/skipped; ни одного успеха -- 409.
-
-    01.08 (доп.раунд П6): усилена валидация -- раньше не проверялось, что объект
-    вообще существует/не завершён, что user_id реально есть в roles, что его роль
-    именно worker (owner или человек без роли мог случайно попасть в назначение).
-
-    09.09: work_type_id (одиночный) -> work_type_ids (список) -- owner попросил
-    отмечать несколько видов работ сразу в Assignment Sheet вместо одного запроса
-    на каждый вид работы с фронтенда. Создаёт одно назначение на каждую пару
-    (user_id, work_type_id) -- та же дедупликация/absence/cross-object проверка,
-    что раньше, просто теперь по обеим осям, не только по user_id."""
-    work_type_ids = list(dict.fromkeys(body.work_type_ids))  # без дублей, сохраняя порядок
-    if not work_type_ids:
-        raise HTTPException(400, "Укажите хотя бы один вид работ")
-    wtypes = {}
-    for wtid in work_type_ids:
-        wtype = wt.get_work_type(wtid)
-        if wtype is None or not wtype.get('active'):
-            raise HTTPException(400, "Неизвестный или неактивный вид работ")
-        wtypes[wtid] = wtype
-
-    rows = _cached_get_used_range('Объекты')
-    object_row = None
-    if rows:
-        header, data = rows[0], rows[1:]
-        for r in data:
-            row = dict(zip(header, r))
-            if str(row.get('ID объекта', '')) == str(object_id):
-                object_row = row
-                break
-    if object_row is None:
-        raise HTTPException(404, "Объект не найден")
-    if object_row.get('Статус') == 'Завершён':
-        raise HTTPException(400, "Объект завершён, назначение недоступно")
-
-    user_ids = list(dict.fromkeys(body.user_ids))  # без дублей, сохраняя порядок
-    if not user_ids:
-        raise HTTPException(400, "Укажите хотя бы одного работника")
-    _validate_date_str(body.date_from, 'date_from')
-    _validate_date_str(body.date_to, 'date_to')
-    if body.date_from > body.date_to:
-        raise HTTPException(400, "date_from не может быть позже date_to")
-    task_note = body.task_note.strip()[:500]
-
-    # 01.08 (доп.раунд П6): каждый user_id обязан существовать в roles с role=='worker' --
-    # старый профиль без активной whitelist-записи (уволенный/никогда не добавленный)
-    # не должен становиться доступным для назначения только потому что когда-то
-    # прошёл onboarding и оставил worker_profiles.json запись.
-    roles = _load_roles()
-    for uid in user_ids:
-        role = roles.get(uid)
-        if role is None:
-            raise HTTPException(400, f"Пользователь {uid} не найден в списке доступа")
-        if role != 'worker':
-            raise HTTPException(400, f"Пользователь {uid} не является Worker (роль: {role})")
-
-    key = str(object_id)
-    result_holder = {"created": [], "skipped": []}
-
-    def _mutator(assignments):
-        if key not in assignments:
-            assignments[key] = []
-        abwesenheit = _load_abwesenheit()
-        created, skipped = [], []
-        for uid in user_ids:
-            for wtid in work_type_ids:
-                # duplicate check: тот же worker, тот же work_type, пересекающийся период,
-                # статус не declined -- та же логика что assign_user() выше, для консистентности.
-                dup = any(
-                    a['user_id'] == uid and a.get('work_type_id') == wtid
-                    and _assignment_status(a) != 'declined'
-                    and _dates_overlap(body.date_from, body.date_to, a.get('date_from', ''), a.get('date_to', ''))
-                    for a in assignments[key]
-                )
-                if dup:
-                    skipped.append({"user_id": uid, "work_type_id": wtid, "reason": "overlap"})
-                    continue
-                absence_hit = any(
-                    str(e.get('user_id')) == uid and e.get('status') == 'approved'
-                    and _dates_overlap(body.date_from, body.date_to, e.get('date_from', ''), e.get('date_to', ''))
-                    for e in abwesenheit
-                )
-                if absence_hit:
-                    skipped.append({"user_id": uid, "work_type_id": wtid, "reason": "absence"})
-                    continue
-                # 09.09: _assignment_periods_overlap(), не голый _dates_overlap() --
-                # legacy назначение без date_from/date_to трактовалось как "не
-                # пересекается" и молча пропускало эту проверку, позволяя создать
-                # новое назначение на другом объекте поверх бессрочного legacy.
-                cross_object_hit = False
-                for other_oid, other_list in assignments.items():
-                    if other_oid == key:
-                        continue
-                    if any(a['user_id'] == uid and _assignment_status(a) != 'declined'
-                           and _assignment_periods_overlap({'date_from': body.date_from, 'date_to': body.date_to}, a)
-                           for a in other_list):
-                        cross_object_hit = True
-                        break
-                if cross_object_hit:
-                    skipped.append({"user_id": uid, "work_type_id": wtid, "reason": "overlap"})
-                    continue
-                assignment_id = uuid.uuid4().hex
-                assigned_at = _utcnow_iso()
-                assignments[key].append({
-                    'id': assignment_id,
-                    'user_id': uid,
-                    'stage_id': wtypes[wtid]['name'],  # legacy-совместимость (текстовое отображение)
-                    'work_type_id': wtid,
-                    'date_from': body.date_from,
-                    'date_to': body.date_to,
-                    'assigned_at': assigned_at,
-                    'pending_since': assigned_at,
-                    'status': 'pending',
-                    'decline_reason': '',
-                    'responded_at': '',
-                    'task_note': task_note,
-                    'created_by': str(user['id']),
-                })
-                created.append({"user_id": uid, "work_type_id": wtid, "assignment_id": assignment_id})
-        result_holder['created'] = created
-        result_holder['skipped'] = skipped
-
-    update_json_transaction(OBJECT_ASSIGNMENTS_FILE, {}, _mutator)
-    if not result_holder['created']:
-        raise HTTPException(409, "Ни одно назначение не создано (все пропущены)")
-    for created in result_holder['created']:
-        worker_name = _object_history_worker_name(created.get('user_id', ''))
-        wtid = created.get('work_type_id', '')
-        work_label = wtypes.get(wtid, {}).get('name') or (pskills.skill_display_name(wtid) if wtid else '')
-        subtitle = ' · '.join(p for p in (worker_name, work_label, task_note) if p)
-        _append_object_history_best_effort(
-            key, 'worker_assigned', f'Назначен работник: {worker_name}',
-            user=user, subtitle=subtitle,
-            meta={
-                "assignment_id": created.get('assignment_id', ''),
-                "worker_id": created.get('user_id', ''),
-                "work_type_id": wtid,
-                "date_from": body.date_from,
-                "date_to": body.date_to,
-            },
-        )
-    return result_holder
 
 
 # ---------- Owner dashboard: смены сегодня (B5, 27.07) ----------
@@ -3737,72 +3018,6 @@ def _object_info_entry(object_id: str) -> dict:
 # 25.07: Инфо-таб реструктурирован (6 плоских табов -> 2), владелец попросил
 # добавить нормальный блок "Описание объекта" -- переиспользуем тот же per-object
 # JSON store, что уже хранит items/documents, не заводим отдельный файл.
-@app.get("/api/objects/{object_id}/description")
-def get_object_description(object_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    return {"description": _object_info_entry(object_id).get("description", "")}
-
-
-class ObjectDescriptionBody(BaseModel):
-    description: str
-
-
-@app.patch("/api/objects/{object_id}/description")
-def update_object_description(object_id: str, body: ObjectDescriptionBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    description = body.description.strip()[:2000]
-
-    def _mutator(data):
-        entry = _ensure_object_info_entry(data, object_id)
-        entry["description"] = description
-        return entry["description"]
-
-    saved = update_json_transaction(OBJECT_INFO_FILE, {}, _mutator)
-    return {"description": saved}
-
-
-@app.get("/api/objects/{object_id}/info-items")
-def get_object_info_items(object_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    return {"items": _object_info_entry(object_id).get("items", [])}
-
-
-class InfoItemBody(BaseModel):
-    text: str
-    qty: str = ''
-
-
-@app.post("/api/objects/{object_id}/info-items")
-def create_object_info_item(object_id: str, body: InfoItemBody, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    if not body.text.strip():
-        raise HTTPException(400, "Текст не может быть пустым")
-    item = {
-        "id": uuid.uuid4().hex,
-        "text": body.text.strip()[:300],
-        "qty": body.qty.strip()[:50],
-        "created_by": user.get('first_name', str(user['id'])),
-        "created_at": int(time.time()),
-    }
-
-    def _mutator(data):
-        entry = _ensure_object_info_entry(data, object_id)
-        entry["items"].append(item)
-        return item
-
-    update_json_transaction(OBJECT_INFO_FILE, {}, _mutator)
-    return {"item": item}
-
-
-@app.delete("/api/objects/{object_id}/info-items/{item_id}")
-def delete_object_info_item(object_id: str, item_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    def _mutator(data):
-        entry = data.get(object_id)
-        if not entry:
-            raise HTTPException(404, "Не найдено")
-        before = len(entry.get("items", []))
-        entry["items"] = [i for i in entry.get("items", []) if i["id"] != item_id]
-        if len(entry["items"]) == before:
-            raise HTTPException(404, "Не найдено")
-
-    update_json_transaction(OBJECT_INFO_FILE, {}, _mutator)
-    return {"status": "ok"}
 
 
 @app.get("/api/objects/{object_id}/documents")
@@ -3883,80 +3098,109 @@ def get_object_document_file(object_id: str, fname: str, user: dict = Depends(ge
     return FileResponse(path, media_type=doc.get("content_type") or None)
 
 
-# ---------- Neues Objekt ----------
-class NewObjectBody(BaseModel):
-    name: str
-    adresse: str
-    budget: str
-    start: str = ''
-    end: str = ''
-
-
-@app.post("/api/objects")
-def create_object_endpoint(body: NewObjectBody, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    _require_server_script(CREATE_OBJECT_SCRIPT, "Скрипт создания объекта")
-    _require_server_script(CREATE_OBJECT_FOLDER_SCRIPT, "Скрипт создания папки объекта")
-
-    args = [sys.executable, CREATE_OBJECT_SCRIPT, body.name, body.adresse, body.budget]
-    if body.start:
-        args.append(f'--start={body.start}')
-    if body.end:
-        args.append(f'--end={body.end}')
-    result = subprocess.run(args, capture_output=True, text=True, timeout=15)
-    if result.returncode != 0:
-        raise HTTPException(500, f'Objekt-Erstellung fehlgeschlagen: {result.stderr[-500:]}')
-
-    object_id = None
-    for line in result.stdout.splitlines():
-        if line.startswith('OK: '):
-            object_id = line.split(' ')[1]
-            break
-
-    if object_id:
-        background_tasks.add_task(
-            subprocess.run,
-            [sys.executable, CREATE_OBJECT_FOLDER_SCRIPT, object_id, body.name],
-            capture_output=True, text=True, timeout=30
-        )
-
-    return {"result": result.stdout.strip(), "object_id": object_id}
-
-
-class StatusBody(BaseModel):
-    status: str
-
-
 # moved to core/constants.py -- VALID_OBJECT_STATUSES
 
 
-@app.patch("/api/objects/{object_id}/status")
-def update_object_status(object_id: str, body: StatusBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    if body.status not in VALID_OBJECT_STATUSES:
-        raise HTTPException(400, f'Недопустимый статус: {body.status}')
-    o = _load_repo_objekte_lib()
-    old_status = ''
-    try:
-        rows = _cached_get_used_range('Объекты')
-        if rows:
-            header, data = rows[0], rows[1:]
-            for r in data:
-                obj = dict(zip(header, r))
-                if str(obj.get('ID объекта', '')) == str(object_id):
-                    old_status = obj.get('Статус', '')
-                    break
-    except Exception:
-        old_status = ''
-    try:
-        o.update_object_field(object_id, 'Статус', body.status)
-    except ValueError as e:
-        raise HTTPException(404, str(e))
-    subtitle = f'{old_status} -> {body.status}' if old_status else body.status
-    _append_object_history_best_effort(
-        object_id, 'object_status_changed', 'Статус объекта изменён',
-        user=user, subtitle=subtitle,
-        meta={"old_status": old_status, "new_status": body.status},
+
+
+try:
+    from .routes.objects import (
+        ObjectsRouteDeps,
+        create_objects_router,
+        AssignBody as _ObjectsAssignBody,
+        AssignmentUpdateBody as _ObjectsAssignmentUpdateBody,
+        AssignmentRespondBody as _ObjectsAssignmentRespondBody,
+        BatchAssignBody as _ObjectsBatchAssignBody,
+        ObjectDescriptionBody as _ObjectsObjectDescriptionBody,
+        InfoItemBody as _ObjectsInfoItemBody,
+        NewObjectBody as _ObjectsNewObjectBody,
+        StatusBody as _ObjectsStatusBody,
     )
-    return {"status": "ok"}
+except ImportError:
+    from routes.objects import (  # noqa: E402
+        ObjectsRouteDeps,
+        create_objects_router,
+        AssignBody as _ObjectsAssignBody,
+        AssignmentUpdateBody as _ObjectsAssignmentUpdateBody,
+        AssignmentRespondBody as _ObjectsAssignmentRespondBody,
+        BatchAssignBody as _ObjectsBatchAssignBody,
+        ObjectDescriptionBody as _ObjectsObjectDescriptionBody,
+        InfoItemBody as _ObjectsInfoItemBody,
+        NewObjectBody as _ObjectsNewObjectBody,
+        StatusBody as _ObjectsStatusBody,
+    )
+
+
+AssignBody = _ObjectsAssignBody
+AssignmentUpdateBody = _ObjectsAssignmentUpdateBody
+AssignmentRespondBody = _ObjectsAssignmentRespondBody
+BatchAssignBody = _ObjectsBatchAssignBody
+ObjectDescriptionBody = _ObjectsObjectDescriptionBody
+InfoItemBody = _ObjectsInfoItemBody
+NewObjectBody = _ObjectsNewObjectBody
+StatusBody = _ObjectsStatusBody
+
+
+_objects_router, _objects_handlers = create_objects_router(ObjectsRouteDeps(
+    get_current_user=get_current_user,
+    get_role=get_role,
+    require_owner=require_owner,
+    require_object_access=require_object_access,
+    cached_get_used_range=lambda tab_name: _cached_get_used_range(tab_name),
+    load_assignments=lambda: _load_assignments(),
+    load_worker_profiles=lambda: _load_worker_profiles(),
+    load_object_images=lambda: _load_object_images(),
+    load_repo_objekte_lib=lambda: _load_repo_objekte_lib(),
+    serialize_object_for_worker=lambda obj, viewer_user_id, obj_assignments, user_info_fn, stage_summary_fn, images: (
+        _serialize_object_for_worker(obj, viewer_user_id, obj_assignments, user_info_fn, stage_summary_fn, images)
+    ),
+    assignment_status=lambda assignment: _assignment_status(assignment),
+    business_today_str=lambda: business_today_str(),
+    safe_load_json=lambda path, default: _safe_load_json(path, default),
+    update_json_transaction=lambda path, default, mutator: update_json_transaction(path, default, mutator),
+    object_assignments_file=lambda: OBJECT_ASSIGNMENTS_FILE,
+    object_history_file=lambda: OBJECT_HISTORY_FILE,
+    object_info_file=lambda: OBJECT_INFO_FILE,
+    load_abwesenheit=lambda: _load_abwesenheit(),
+    load_roles=lambda: _load_roles(),
+    load_checkin_meta=lambda: _load_checkin_meta(),
+    validate_date_str=lambda date_str, field_name='дата': _validate_date_str(date_str, field_name),
+    dates_overlap=lambda a_from, a_to, b_from, b_to: _dates_overlap(a_from, a_to, b_from, b_to),
+    assignment_periods_overlap=lambda a, b: _assignment_periods_overlap(a, b),
+    utcnow_iso=lambda: _utcnow_iso(),
+    sanitize_display_name=lambda raw, fallback: _sanitize_display_name(raw, fallback),
+    object_history_worker_name=lambda user_id: _object_history_worker_name(user_id),
+    append_object_history_best_effort=lambda *args, **kwargs: _append_object_history_best_effort(*args, **kwargs),
+    object_info_entry=lambda object_id: _object_info_entry(object_id),
+    ensure_object_info_entry=lambda data, object_id: _ensure_object_info_entry(data, object_id),
+    require_server_script=lambda script_path, label: _require_server_script(script_path, label),
+    create_object_script=CREATE_OBJECT_SCRIPT,
+    create_object_folder_script=CREATE_OBJECT_FOLDER_SCRIPT,
+))
+# FastAPI 0.139 keeps included routers as lazy _IncludedRouter records; this
+# legacy monolith and its tests expect a flat app.routes manifest. Register the
+# extracted routes as real APIRoute records until the whole app moves to routers.
+app.router.routes.extend(_objects_router.routes)
+
+# Legacy direct-call compatibility: tests and operational scripts still import
+# handlers from main.py. Runtime routes are registered by backend.routes.objects.
+list_objects = _objects_handlers.list_objects
+my_assignments = _objects_handlers.my_assignments
+get_object_history = _objects_handlers.get_object_history
+assign_user = _objects_handlers.assign_user
+unassign_user = _objects_handlers.unassign_user
+update_assignment = _objects_handlers.update_assignment
+delete_assignment = _objects_handlers.delete_assignment
+respond_to_assignment = _objects_handlers.respond_to_assignment
+get_assignment_candidates = _objects_handlers.get_assignment_candidates
+batch_assign = _objects_handlers.batch_assign
+get_object_description = _objects_handlers.get_object_description
+update_object_description = _objects_handlers.update_object_description
+get_object_info_items = _objects_handlers.get_object_info_items
+create_object_info_item = _objects_handlers.create_object_info_item
+delete_object_info_item = _objects_handlers.delete_object_info_item
+create_object_endpoint = _objects_handlers.create_object_endpoint
+update_object_status = _objects_handlers.update_object_status
 
 
 # ---------- Rechnung generator ----------
