@@ -344,6 +344,18 @@ async function _extractTaskFromTranscript(transcript, btnEl) {
 
 let _chatLongPressTimer = null;
 
+// 25.09: swipe-to-reply — до сих пор reply был только через long-press → меню →
+// "↩ Ответить" (см. BACKLOG.md P1). Порог/подавление вертикального скролла — тот же
+// принцип что в swipe-nav.js (доминирующая ось, не абсолютный сдвиг), но локально на
+// bubble, а не глобально на document, и с визуальным откликом как в Telegram/WhatsApp
+// (bubble едет вслед за пальцем, иконка ответа проявляется, снап назад после отпускания).
+const CHAT_SWIPE_REPLY_THRESHOLD = 56;
+const CHAT_SWIPE_REPLY_MAX = 72;
+let _chatSwipeStartX = 0;
+let _chatSwipeStartY = 0;
+let _chatSwipeActive = false;
+let _chatSwipeBubble = null;
+
 // 28.07 (Phase 06): один long-press-меню на реакции + удаление (раньше long-press
 // сразу открывал системное подтверждение удаления, только для своих/owner сообщений; реакции
 // нужны на ЛЮБОМ сообщении, поэтому меню теперь общее, delete-пункт в нём — опционален).
@@ -374,15 +386,52 @@ function _attachChatBubbleHandlers(container, scopeEls) {
 
     // 31.07: long-press один в Telegram WebView работает неочевидно (спека) —
     // добавлены явная кнопка ⋯ и right-click как равноправные способы открыть то же меню.
-    bubble.addEventListener('touchstart', () => {
+    bubble.addEventListener('touchstart', e => {
       _chatLongPressTimer = setTimeout(() => {
         hapticImpact('medium');
         _openChatBubbleMenu(bubble, msgId, canDelete);
       }, 500);
+      _chatSwipeStartX = e.touches[0].screenX;
+      _chatSwipeStartY = e.touches[0].screenY;
+      _chatSwipeActive = false;
+      _chatSwipeBubble = bubble;
     }, { passive: true });
 
-    bubble.addEventListener('touchend', () => clearTimeout(_chatLongPressTimer));
-    bubble.addEventListener('touchmove', () => clearTimeout(_chatLongPressTimer));
+    bubble.addEventListener('touchmove', e => {
+      const dx = e.touches[0].screenX - _chatSwipeStartX;
+      const dy = e.touches[0].screenY - _chatSwipeStartY;
+      // Свайп только вправо (reply-жест), доминирующий над вертикалью -- то же правило,
+      // что в swipe-nav.js, чтобы обычный скролл ленты не запускал drag bubble.
+      if (!_chatSwipeActive && dx > 12 && Math.abs(dx) > Math.abs(dy)) {
+        _chatSwipeActive = true;
+        clearTimeout(_chatLongPressTimer);
+        bubble.classList.add('chat-bubble-swiping');
+      }
+      if (_chatSwipeActive) {
+        clearTimeout(_chatLongPressTimer);
+        const offset = Math.min(dx, CHAT_SWIPE_REPLY_MAX);
+        bubble.style.transform = `translateX(${offset}px)`;
+        if (offset >= CHAT_SWIPE_REPLY_THRESHOLD && !bubble.dataset.swipeReady) {
+          bubble.dataset.swipeReady = '1';
+          hapticImpact('light');
+        } else if (offset < CHAT_SWIPE_REPLY_THRESHOLD && bubble.dataset.swipeReady) {
+          delete bubble.dataset.swipeReady;
+        }
+      }
+    }, { passive: true });
+
+    bubble.addEventListener('touchend', () => {
+      clearTimeout(_chatLongPressTimer);
+      if (_chatSwipeActive) {
+        const ready = bubble.dataset.swipeReady;
+        bubble.classList.remove('chat-bubble-swiping');
+        bubble.style.transform = '';
+        delete bubble.dataset.swipeReady;
+        if (ready) _setChatReplyTarget(msgId);
+      }
+      _chatSwipeActive = false;
+      _chatSwipeBubble = null;
+    });
 
     bubble.addEventListener('contextmenu', e => {
       e.preventDefault();

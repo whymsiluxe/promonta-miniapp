@@ -3596,7 +3596,28 @@ body.chat-composer-focused .ai-input-bar {
   word-break: break-word;
   overflow-wrap: break-word;
   box-sizing: border-box;
+  transition: transform 0.18s ease-out;
 }
+
+/* 25.09: swipe-to-reply drag -- во время активного жеста transform двигает JS
+   каждый touchmove без анимации (иначе палец "отстаёт" от bubble); transition
+   выше отвечает только за снап обратно на touchend. Иконка ответа проявляется
+   слева от bubble по мере свайпа, полная непрозрачность на пороге готовности. */
+.chat-bubble.chat-bubble-swiping { transition: none; }
+.chat-bubble::before {
+  content: '↩';
+  position: absolute;
+  left: -34px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.1rem;
+  opacity: 0;
+  color: var(--text-light);
+  pointer-events: none;
+  transition: opacity 0.12s ease-out;
+}
+.chat-bubble.chat-bubble-swiping::before { opacity: 0.55; }
+.chat-bubble.chat-bubble-swiping[data-swipe-ready]::before { opacity: 1; color: var(--accent, #4a9eff); }
 
 .chat-bubble-own, .chat-bubble-other {
   align-self: stretch;
