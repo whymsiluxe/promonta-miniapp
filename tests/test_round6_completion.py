@@ -20,6 +20,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 import main as backend  # noqa: E402
+import core.permissions as permissions  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 
 OWNER = {'id': 1, 'first_name': 'Boss'}
@@ -98,7 +99,7 @@ class ProfileCompletionStatusTests(unittest.TestCase):
     def test_get_my_profile_exposes_needs_completion(self):
         with patch.object(backend, '_load_worker_profiles', return_value={'10': {'quiz_completed': True}}), \
              patch.object(backend, '_save_worker_profiles'), \
-             patch.object(backend, '_load_roles', return_value=ROLES):
+             patch.object(permissions, '_load_roles', return_value=ROLES):
             prof = backend.get_my_profile(user=W1)
         self.assertIn('needs_completion', prof)
         self.assertTrue(prof['needs_completion']['birthday_required'])
@@ -112,13 +113,13 @@ class BirthdayPrivacyTests(unittest.TestCase):
         backend._save_abwesenheit([])
 
     def test_owner_sees_birthday(self):
-        with patch.object(backend, '_load_roles', return_value=ROLES):
+        with patch.object(permissions, '_load_roles', return_value=ROLES):
             s = backend.profile_stats(user_id='10', user=OWNER, role='owner')
         self.assertEqual(s['birthday'], '1990-05-15')
 
     def test_birthday_feed_has_no_birth_year(self):
         # feed отдаёт год ОККУРЕНЦИИ (текущий/следующий), не год рождения → возраст не утекает.
-        with patch.object(backend, '_load_roles', return_value=ROLES):
+        with patch.object(permissions, '_load_roles', return_value=ROLES):
             backend._save_birthday_alerts([])
             res = backend.get_birthday_feed(user=W2)
         for b in res['birthdays']:
@@ -156,7 +157,7 @@ class CommentForwardAlertTests(unittest.TestCase):
             {'id': 'PH1', 'user_id': 30, 'name': 'Sergei', 'object_id': 'OBJ-1',
              'files': ['x.jpg'], 'comments': []},
         ])
-        self._patcher = patch.object(backend, '_load_roles', return_value=ROLES)
+        self._patcher = patch.object(permissions, '_load_roles', return_value=ROLES)
         self._patcher.start()
 
     def tearDown(self):

@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi import HTTPException  # noqa: E402
 import main as backend  # noqa: E402
+import core.permissions as permissions  # noqa: E402
 
 
 OWNER = {'id': '1', 'first_name': 'Борис'}
@@ -21,7 +22,7 @@ class ManagerBroadcastTests(unittest.TestCase):
 
         with patch.object(backend, '_load_chat', return_value=[]), \
              patch.object(backend, '_save_chat', side_effect=fake_save), \
-             patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker'}):
+             patch.object(permissions, '_load_roles', return_value={'1': 'owner', '10': 'worker'}):
             result = backend.send_manager_broadcast(
                 backend.BroadcastBody(scope='company', text='Завтра общий сбор в 8:00'),
                 user=OWNER, _=None,

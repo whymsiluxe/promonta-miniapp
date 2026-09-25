@@ -33,6 +33,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 import main as backend  # noqa: E402
+import core.permissions as permissions  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 
 OWNER_ID = '1'
@@ -50,7 +51,7 @@ class CriticalAlertAckRaceTests(unittest.TestCase):
         self._orig_file = backend.CRITICAL_ALERTS_FILE
         backend.CRITICAL_ALERTS_FILE = os.path.join(self.tmp, 'critical_alerts.json')
         self._patchers = [
-            patch.object(backend, '_load_roles', return_value={OWNER_ID: 'owner', WORKER_ID: 'worker'}),
+            patch.object(permissions, '_load_roles', return_value={OWNER_ID: 'owner', WORKER_ID: 'worker'}),
             patch.object(backend, 'send_telegram_message'),
             patch.object(backend, '_ensure_critical_alert_chat'),
             patch.object(backend, '_chat_thread_id', return_value='group'),
@@ -140,7 +141,7 @@ class LegacyBirthdaySiblingSupersedeTests(unittest.TestCase):
         self._orig_file = backend.CRITICAL_ALERTS_FILE
         backend.CRITICAL_ALERTS_FILE = os.path.join(self.tmp, 'critical_alerts.json')
         self._patchers = [
-            patch.object(backend, '_load_roles', return_value={OWNER_ID: 'owner', WORKER_ID: 'worker'}),
+            patch.object(permissions, '_load_roles', return_value={OWNER_ID: 'owner', WORKER_ID: 'worker'}),
             patch.object(backend, '_chat_thread_id', return_value='group'),
             patch.object(backend, '_load_chat', return_value=[]),
             patch.object(backend, '_save_chat'),

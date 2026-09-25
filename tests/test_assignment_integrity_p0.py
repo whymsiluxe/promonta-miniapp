@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi import HTTPException  # noqa: E402
 import main as backend  # noqa: E402
+import core.permissions as permissions  # noqa: E402
 
 OWNER = {'id': 1, 'first_name': 'Boss'}
 _ROLES_10_20_WORKER = {'1': 'owner', '10': 'worker', '20': 'worker'}
@@ -173,7 +174,7 @@ class CrossObjectOverlapWithLegacyDataTests(unittest.TestCase):
         with patch.object(backend, '_load_abwesenheit', return_value=[]), \
              patch.object(backend, '_cached_get_used_range', return_value=[
                  ['ID объекта', 'Статус'], ['OBJ-2', 'В работе']]), \
-             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, 'update_json_transaction') as mock_txn:
             def fake_txn(path, default, mutator):
                 data = {k: list(v) for k, v in existing.items()}
@@ -197,7 +198,7 @@ class CrossObjectOverlapWithLegacyDataTests(unittest.TestCase):
         existing = {'OBJ-1': [_assignment('10', work_type_id='tile_work')]}
         with patch.object(backend, '_load_abwesenheit', return_value=[]), \
              patch.object(backend, '_cached_get_used_range', return_value=_OBJ1_ROWS), \
-             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, 'update_json_transaction') as mock_txn:
             def fake_txn(path, default, mutator):
                 data = {k: list(v) for k, v in existing.items()}
@@ -221,7 +222,7 @@ class CrossObjectOverlapWithLegacyDataTests(unittest.TestCase):
         with patch.object(backend, '_load_abwesenheit', return_value=[]), \
              patch.object(backend, '_cached_get_used_range', return_value=[
                  ['ID объекта', 'Статус'], ['OBJ-3', 'В работе']]), \
-             patch.object(backend, '_load_roles', return_value=_ROLES_10_20_WORKER), \
+             patch.object(permissions, '_load_roles', return_value=_ROLES_10_20_WORKER), \
              patch.object(backend, 'update_json_transaction') as mock_txn:
             def fake_txn(path, default, mutator):
                 data = {k: list(v) for k, v in existing.items()}

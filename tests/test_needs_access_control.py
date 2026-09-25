@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi import HTTPException  # noqa: E402
 import main as backend  # noqa: E402
+import core.permissions as permissions  # noqa: E402
 
 OWNER = {'id': 1, 'first_name': 'Boss'}
 WORKER_A = {'id': 10, 'first_name': 'Ivan'}
@@ -107,7 +108,7 @@ class CreateTaskAccessTests(unittest.TestCase):
         assignments = {'OBJ-1': [_assignment(10)]}
         body = backend.TaskCreateBody(title='Нужен цемент', object_id='OBJ-1')
         with patch.object(backend, '_load_assignments', return_value=assignments), \
-             patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker'}), \
+             patch.object(permissions, '_load_roles', return_value={'1': 'owner', '10': 'worker'}), \
              patch.object(backend, '_get_worker_profile', return_value={'name': 'Ivan'}), \
              patch.object(backend, 'send_telegram_message'):
             task = backend.create_task(body, user=WORKER_A, role='worker')

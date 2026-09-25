@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi import HTTPException  # noqa: E402
 import main as backend  # noqa: E402
+import core.permissions as permissions  # noqa: E402
 
 OWNER = {'id': 1, 'first_name': 'Boss'}
 WORKER_A = {'id': 10, 'first_name': 'Ivan'}
@@ -53,7 +54,7 @@ class ReplyTests(unittest.TestCase):
     def test_cannot_quote_message_from_other_dm(self):
         source = _msg('m1', 10, text='private', to_user_id='1')  # DM 10<->1
         with patch.object(backend, '_load_chat', return_value=[source]), \
-             patch.object(backend, '_load_roles', return_value={'1': 'owner', '20': 'worker', '30': 'worker'}):
+             patch.object(permissions, '_load_roles', return_value={'1': 'owner', '20': 'worker', '30': 'worker'}):
             body = backend.ChatMessageBody(text='re', to_user_id='30', reply_to_id='m1')  # 20 -> 30
             with self.assertRaises(HTTPException) as ctx:
                 backend.post_chat_message(body, user=WORKER_B, role='worker')
@@ -199,7 +200,7 @@ class ThreadDeleteTests(unittest.TestCase):
              patch.object(backend, '_archive_chat_messages') as archive_mock, \
              patch.object(backend, '_load_chat_reactions', return_value=reactions), \
              patch.object(backend, '_save_chat_reactions', side_effect=fake_save_reactions), \
-             patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker', '30': 'worker'}):
+             patch.object(permissions, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker', '30': 'worker'}):
             result = backend.delete_chat_thread(thread_key='', with_='10', user=OWNER, _=None)
 
         self.assertEqual(result['deleted_count'], 2)
@@ -209,7 +210,7 @@ class ThreadDeleteTests(unittest.TestCase):
         self.assertEqual({r['message_id'] for r in saved['reactions']}, {'a-b-1', 'b-c-1'})
 
     def test_new_dm_to_revoked_user_is_rejected(self):
-        with patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker'}):
+        with patch.object(permissions, '_load_roles', return_value={'1': 'owner', '10': 'worker'}):
             body = backend.ChatMessageBody(text='hello', to_user_id='999')
             with self.assertRaises(HTTPException) as ctx:
                 backend.post_chat_message(body, user=OWNER, role='owner')

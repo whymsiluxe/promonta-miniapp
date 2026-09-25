@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi import HTTPException  # noqa: E402
 import main as backend  # noqa: E402
+import core.permissions as permissions  # noqa: E402
 
 
 class ChatThreadIdTests(unittest.TestCase):
@@ -117,7 +118,7 @@ class ThreadPrefsTests(unittest.TestCase):
 
 class WorkerEntityThreadAccessTests(unittest.TestCase):
     def test_worker_can_open_visible_mangel_chat(self):
-        with patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker'}), \
+        with patch.object(permissions, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker'}), \
              patch.object(backend.ml, 'get_ticket', return_value={'id': 'T-1', 'object_id': 'OBJ-1'}):
             participants = backend._mangel_chat_participants('T-1')
             self.assertIn('20', participants)
@@ -126,7 +127,7 @@ class WorkerEntityThreadAccessTests(unittest.TestCase):
     def test_worker_with_active_object_assignment_can_open_task_chat(self):
         task = {'id': 'TASK-1', 'from_user_id': '10', 'object_id': 'OBJ-1'}
         assignments = {'OBJ-1': [{'user_id': '20', 'status': 'accepted'}]}
-        with patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker'}), \
+        with patch.object(permissions, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker'}), \
              patch.object(backend, '_load_tasks', return_value=[task]), \
              patch.object(backend, '_load_assignments', return_value=assignments):
             participants = backend._task_chat_participants('TASK-1')
@@ -137,7 +138,7 @@ class WorkerEntityThreadAccessTests(unittest.TestCase):
     def test_worker_without_object_assignment_cannot_open_task_chat(self):
         task = {'id': 'TASK-1', 'from_user_id': '10', 'object_id': 'OBJ-1'}
         assignments = {'OBJ-1': [{'user_id': '20', 'status': 'accepted'}]}
-        with patch.object(backend, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker', '30': 'worker'}), \
+        with patch.object(permissions, '_load_roles', return_value={'1': 'owner', '10': 'worker', '20': 'worker', '30': 'worker'}), \
              patch.object(backend, '_load_tasks', return_value=[task]), \
              patch.object(backend, '_load_assignments', return_value=assignments):
             with self.assertRaises(HTTPException) as ctx:

@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi import HTTPException  # noqa: E402
 import main as backend  # noqa: E402
+import core.permissions as permissions  # noqa: E402
 
 
 def _build_init_data(user_id=111, first_name='Test', auth_date=None):
@@ -41,8 +42,8 @@ class SessionTokenCreationTests(unittest.TestCase):
 
     def test_valid_init_data_creates_session_token(self):
         init_data = _build_init_data(user_id=111)
-        with patch.object(backend, '_load_roles', return_value=ROLES), \
-             patch.object(backend, '_notify_owner_new_user'):
+        with patch.object(permissions, '_load_roles', return_value=ROLES), \
+             patch.object(permissions, '_notify_owner_new_user'):
             result = backend.create_session(x_telegram_init_data=init_data)
         self.assertIn('token', result)
         self.assertEqual(result['user_id'], 111)
@@ -50,8 +51,8 @@ class SessionTokenCreationTests(unittest.TestCase):
 
     def test_non_whitelisted_user_cannot_create_token(self):
         init_data = _build_init_data(user_id=999)
-        with patch.object(backend, '_load_roles', return_value=ROLES), \
-             patch.object(backend, '_notify_owner_new_user'):
+        with patch.object(permissions, '_load_roles', return_value=ROLES), \
+             patch.object(permissions, '_notify_owner_new_user'):
             with self.assertRaises(HTTPException) as ctx:
                 backend.create_session(x_telegram_init_data=init_data)
         self.assertEqual(ctx.exception.status_code, 403)
@@ -69,7 +70,7 @@ class SessionTokenOutlivesInitDataTests(unittest.TestCase):
             backend.validate_init_data(init_data)  # подтверждаем, что initData САМ по себе уже 401
 
         token = backend.create_session_token('111')  # token создаётся независимо от initData age
-        with patch.object(backend, '_load_roles', return_value=ROLES):
+        with patch.object(permissions, '_load_roles', return_value=ROLES):
             user = backend.get_current_user(authorization=f'Bearer {token}', x_telegram_init_data=None)
         self.assertEqual(user['id'], 111)
 
@@ -125,12 +126,12 @@ class SessionTokenRevocationTests(unittest.TestCase):
 
     def test_removed_from_whitelist_loses_access_with_valid_token(self):
         token = backend.create_session_token('111')
-        with patch.object(backend, '_load_roles', return_value=ROLES):
+        with patch.object(permissions, '_load_roles', return_value=ROLES):
             user = backend.get_current_user(authorization=f'Bearer {token}', x_telegram_init_data=None)
         self.assertEqual(user['id'], 111)
 
         # Owner убрал 111 из roles.json -- тот же токен, тот же 12ч срок, но whitelist пуст.
-        with patch.object(backend, '_load_roles', return_value={'1': 'owner'}):
+        with patch.object(permissions, '_load_roles', return_value={'1': 'owner'}):
             with self.assertRaises(HTTPException) as ctx:
                 backend.get_current_user(authorization=f'Bearer {token}', x_telegram_init_data=None)
         self.assertEqual(ctx.exception.status_code, 403)
@@ -143,13 +144,13 @@ class SessionTokenRoleFreshnessTests(unittest.TestCase):
 
     def test_role_reflects_current_roles_json_not_token(self):
         token = backend.create_session_token('111')
-        with patch.object(backend, '_load_roles', return_value={'111': 'worker'}):
+        with patch.object(permissions, '_load_roles', return_value={'111': 'worker'}):
             user = backend.get_current_user(authorization=f'Bearer {token}', x_telegram_init_data=None)
             role = backend.get_role(user=user)
         self.assertEqual(role, 'worker')
 
         # Owner повышает 111 до owner -- тот же токен, роль теперь другая, без переиздания token.
-        with patch.object(backend, '_load_roles', return_value={'111': 'owner'}):
+        with patch.object(permissions, '_load_roles', return_value={'111': 'owner'}):
             user = backend.get_current_user(authorization=f'Bearer {token}', x_telegram_init_data=None)
             role = backend.get_role(user=user)
         self.assertEqual(role, 'owner')
@@ -170,7 +171,7 @@ class BackwardCompatInitDataTests(unittest.TestCase):
 
     def test_old_header_path_still_works(self):
         init_data = _build_init_data(user_id=111)
-        with patch.object(backend, '_load_roles', return_value=ROLES):
+        with patch.object(permissions, '_load_roles', return_value=ROLES):
             user = backend.get_current_user(authorization=None, x_telegram_init_data=init_data)
         self.assertEqual(user['id'], 111)
 
@@ -185,7 +186,7 @@ class AuditIdentityStateTests(unittest.TestCase):
         token = backend.create_session_token('111')
         spoofed_init_data = _build_init_data(user_id=999)
 
-        with patch.object(backend, '_load_roles', return_value={'111': 'worker', '999': 'owner'}):
+        with patch.object(permissions, '_load_roles', return_value={'111': 'worker', '999': 'owner'}):
             user = backend.get_current_user(
                 authorization=f'Bearer {token}',
                 x_telegram_init_data=spoofed_init_data,
