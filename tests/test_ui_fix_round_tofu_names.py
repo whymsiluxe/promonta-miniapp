@@ -17,8 +17,23 @@ class ProfileMeGarbledNameFallbackTests(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.mkdtemp(prefix='promonta-test-tofu-')
+        # 25.09 (test-pollution fix): these reassignments used to leak into
+        # every later test in the same pytest process (no teardown) --
+        # harmless while every reader lived in main.py's own namespace, but
+        # after routes/auth.py's extraction moved _load_worker_profiles to
+        # core.profiles (its own namespace, unaffected by this leak), a
+        # write via the leaked backend.WORKER_PROFILES_FILE and a read via
+        # core.profiles.WORKER_PROFILES_FILE silently diverged in later
+        # tests. Save so tearDown can restore them.
+        self._saved_attrs = {
+            name: getattr(backend, name) for name in ('WORKER_PROFILES_FILE', 'ROLES_FILE')
+        }
         backend.WORKER_PROFILES_FILE = os.path.join(self._tmp, 'worker_profiles.json')
         backend.ROLES_FILE = os.path.join(self._tmp, 'roles.json')
+
+    def tearDown(self):
+        for name, value in self._saved_attrs.items():
+            setattr(backend, name, value)
 
     def test_sanitize_display_name_rejects_hangul_filler(self):
         # Exact real-world case from the owner's screenshot: Telegram

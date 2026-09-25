@@ -159,6 +159,33 @@ class EveningCutoffCheckTomorrowDateTests(unittest.TestCase):
 
     REPORTED_MOMENT = datetime(2026, 9, 22, 23, 30, 0, tzinfo=ZoneInfo('Europe/Berlin'))
 
+    def setUp(self):
+        # 25.09 (test-pollution fix): test_evening_cutoff_check_alert_dates_
+        # correctly_if_run_at_reported_moment below reassigns
+        # backend.ROLES_FILE/OBJECT_ASSIGNMENTS_FILE/WORKER_PROFILES_FILE/
+        # CRITICAL_ALERTS_FILE (and os.environ['MINIAPP_DATA_ROOT']) to a
+        # throwaway tmpdir with no teardown -- harmless while every reader of
+        # those names lived in main.py's own namespace (same leaked value,
+        # both ends), but after routes/auth.py's extraction moved
+        # _load_worker_profiles to core.profiles (which resolves
+        # WORKER_PROFILES_FILE from ITS OWN namespace, untouched by this
+        # leak), a write via the leaked backend.WORKER_PROFILES_FILE and a
+        # read via core.profiles.WORKER_PROFILES_FILE silently pointed at two
+        # different files in any later test in the same pytest process. Save
+        # and restore on teardown so this test's env manipulation stays
+        # local to it.
+        self._saved_env = dict(os.environ)
+        self._saved_attrs = {
+            name: getattr(backend, name)
+            for name in ('ROLES_FILE', 'OBJECT_ASSIGNMENTS_FILE', 'WORKER_PROFILES_FILE', 'CRITICAL_ALERTS_FILE')
+        }
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._saved_env)
+        for name, value in self._saved_attrs.items():
+            setattr(backend, name, value)
+
     def test_business_today_at_reported_moment_is_the_22nd_not_the_23rd(self):
         with patch.object(backend, 'business_now', return_value=self.REPORTED_MOMENT):
             self.assertEqual(backend.business_today_str(), '2026-09-22')
