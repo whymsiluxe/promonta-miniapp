@@ -5,6 +5,7 @@ test_foundation_completion.py), not HTTP TestClient, to avoid httpx2 dependency.
 """
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -499,7 +500,10 @@ class TestOutboxDeadLetterAndReconciliation(unittest.TestCase):
         # harmless while every reader lived in main.py's own namespace, but a
         # real risk once outbox/checkin helpers get read from a different
         # module's namespace (e.g. a future routes/execution.py). Save so
-        # tearDown can restore them.
+        # tearDown can restore them. tearDown must also re-run dpl.configure()
+        # back to the originals -- it points daily_plan_lib's own internal
+        # _STORE_FILE/_SYNC_STATE_FILE/_WORK_CALENDAR_FILE globals at these
+        # paths too, and restoring backend's attrs alone does not touch those.
         self._saved_attrs = {
             name: getattr(backend, name)
             for name in ('FINISH_OUTBOX_FILE', 'CHECKIN_META_FILE',
@@ -516,6 +520,38 @@ class TestOutboxDeadLetterAndReconciliation(unittest.TestCase):
     def tearDown(self):
         for name, value in self._saved_attrs.items():
             setattr(backend, name, value)
+        # setUp's dpl.configure() also points daily_plan_lib's own internal
+        # _STORE_FILE/_SYNC_STATE_FILE/_WORK_CALENDAR_FILE module globals at
+        # the temp dir -- restoring backend's FILE attrs above does not undo
+        # that. Re-configure dpl back to the original paths or later tests
+        # in the same process keep reading/writing the deleted temp dir.
+        dpl.configure(
+            self._saved_attrs['DAILY_PLAN_STORE_FILE'],
+            self._saved_attrs['PLAN_SYNC_STATE_FILE'],
+            self._saved_attrs['WORK_CALENDAR_FILE'],
+        )
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_teardown_restores_backend_and_daily_plan_lib_paths(self):
+        """Regression guard for the tearDown gap itself: this test's own
+        setUp already points backend + dpl at THIS test's tmp dir. Run a
+        second, independent setUp/tearDown cycle on a throwaway instance and
+        confirm tearDown put backend + dpl back to exactly that (this test's
+        own setUp) state -- not left pointing at the throwaway instance's
+        now-deleted tmp dir."""
+        pre_probe_backend = {name: getattr(backend, name) for name in self._saved_attrs}
+        pre_probe_dpl = (dpl._STORE_FILE, dpl._SYNC_STATE_FILE, dpl._WORK_CALENDAR_FILE)
+
+        probe = TestOutboxDeadLetterAndReconciliation('test_teardown_restores_backend_and_daily_plan_lib_paths')
+        probe.setUp()
+        probe.tearDown()
+
+        for name, value in pre_probe_backend.items():
+            self.assertEqual(getattr(backend, name), value)
+        self.assertEqual(
+            (dpl._STORE_FILE, dpl._SYNC_STATE_FILE, dpl._WORK_CALENDAR_FILE),
+            pre_probe_dpl,
+        )
 
     def test_reconciliation_rebuilds_missing_outbox_event(self):
         """Simulates the exact crash scenario: finished session with a
