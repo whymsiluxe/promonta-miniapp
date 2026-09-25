@@ -520,98 +520,32 @@ async def audit_log_middleware(request, call_next):
         _auth_audit_context.reset(audit_context_token)
 
 
-def _secret_key() -> bytes:
-    return hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
-
-
-def validate_init_data(init_data: str) -> dict:
-    """HMAC-валидация Telegram WebApp initData.
-    https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
-    """
-    try:
-        parsed = dict(parse_qsl(init_data, strict_parsing=True))
-    except ValueError:
-        raise HTTPException(401, "initData: malformed")
-    received_hash = parsed.pop('hash', None)
-    if not received_hash:
-        raise HTTPException(401, "initData: no hash")
-
-    auth_date = parsed.get('auth_date')
-    try:
-        if not auth_date:
-            raise HTTPException(401, "initData: expired")
-        age = time.time() - int(auth_date)
-        if age > INIT_DATA_MAX_AGE or age < -60:
-            raise HTTPException(401, "initData: expired")
-    except ValueError:
-        raise HTTPException(401, "initData: malformed auth_date")
-
-    data_check_string = '\n'.join(f'{k}={v}' for k, v in sorted(parsed.items()))
-    computed_hash = hmac.new(_secret_key(), data_check_string.encode(), hashlib.sha256).hexdigest()
-
-    if not hmac.compare_digest(computed_hash, received_hash):
-        raise HTTPException(401, "initData: invalid signature")
-
-    try:
-        return json.loads(parsed['user'])
-    except (KeyError, json.JSONDecodeError):
-        raise HTTPException(401, "initData: no user")
-
-
-# ---------- Session tokens (03.08, ТЗ Задача 1) ----------
-# initData протухает через INIT_DATA_MAX_AGE (1 час) -- Telegram переподписывает его сам
-# при каждом реальном открытии мини-аппы, но WebView НЕ переоткрывает приложение сам по
-# себе посреди долгой смены, так что фронтенд слал один и тот же initData часами и
-# получал 401 в середине смены. Решение: после ОДНОЙ успешной HMAC-проверки initData
-# backend выдаёт свой собственный подписанный token на 12 часов -- НЕ продлевает доверие
-# к initData бесконечно, просто переносит источник truth на отдельный, backend-контролируемый
-# срок жизни. Whitelist/роль НЕ кэшируются в токене (token несёт только user_id + exp) --
-# каждый запрос по-прежнему смотрит актуальный roles.json, так что revoke долступа
-# работает мгновенно даже с валидным токеном.
-# moved to core/limits.py -- SESSION_TOKEN_MAX_AGE
-
-
-def _session_secret() -> bytes:
-    """Домен-разделённый от _secret_key() (initData HMAC) -- разный "usage" в HMAC над
-    тем же BOT_TOKEN, так что компрометация одного не равна компрометации другого."""
-    return hmac.new(b"SessionToken", BOT_TOKEN.encode(), hashlib.sha256).digest()
-
-
-def create_session_token(user_id) -> str:
-    """Token = base64url(user_id.exp).hex(hmac). Полезная нагрузка содержит ТОЛЬКО
-    user_id и unix-время истечения -- никаких паролей/ключей/ролей внутри, роль каждый
-    раз проверяется заново по актуальному roles.json (см. get_current_user)."""
-    exp = int(time.time()) + SESSION_TOKEN_MAX_AGE
-    payload = f"{user_id}.{exp}"
-    payload_b64 = base64.urlsafe_b64encode(payload.encode()).decode().rstrip('=')
-    sig = hmac.new(_session_secret(), payload_b64.encode(), hashlib.sha256).hexdigest()
-    return f"{payload_b64}.{sig}"
-
-
-def verify_session_token(token: str) -> str:
-    """Возвращает user_id (str) при валидной подписи и не истёкшем токене, иначе 401.
-    hmac.compare_digest -- constant-time сравнение, не `==` (timing-attack защита)."""
-    try:
-        payload_b64, sig = token.rsplit('.', 1)
-    except ValueError:
-        raise HTTPException(401, "session token: malformed")
-
-    expected_sig = hmac.new(_session_secret(), payload_b64.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected_sig, sig):
-        raise HTTPException(401, "session token: invalid signature")
-
-    try:
-        padded = payload_b64 + '=' * (-len(payload_b64) % 4)
-        payload = base64.urlsafe_b64decode(padded.encode()).decode()
-        user_id_str, exp_str = payload.split('.', 1)
-        exp = int(exp_str)
-    except (ValueError, UnicodeDecodeError):
-        raise HTTPException(401, "session token: malformed payload")
-
-    if time.time() > exp:
-        raise HTTPException(401, "session token: expired")
-
-    return user_id_str
+# Phase A step 6: session-token + initData HMAC validation moved to
+# backend/core/permissions.py (_secret_key, validate_init_data,
+# _session_secret, create_session_token, verify_session_token). Imported by
+# name, same relative-then-absolute fallback pattern as every other Phase A
+# step -- none of these five are ever patched by name in tests (grepped),
+# so a straight move (not a business_now()-style wrapper) is safe here.
+# get_current_user/get_role/require_owner/_load_roles/_notify_owner_new_user
+# STAY below, NOT moved -- see core/permissions.py's module docstring for
+# why (15 test files patch backend._load_roles and call backend.get_role()
+# directly; moving get_role's chain would silently stop seeing those patches).
+try:
+    from .core.permissions import (
+        _secret_key,
+        validate_init_data,
+        _session_secret,
+        create_session_token,
+        verify_session_token,
+    )
+except ImportError:
+    from core.permissions import (  # noqa: E402
+        _secret_key,
+        validate_init_data,
+        _session_secret,
+        create_session_token,
+        verify_session_token,
+    )
 
 
 # moved to core/storage.py -- _json_locks, _json_locks_guard, _lock_for,
