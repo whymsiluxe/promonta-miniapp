@@ -15,7 +15,12 @@
 ### Verification
 - Import smoke confirmed route count stayed at 186, duplicate routes stayed
   empty, and all stage/roadmap routes are owned by `routes.stages`.
-- Targeted stage/roadmap/object-access/history suite: `112 passed`.
+- Added `tests/test_stages_routes_extraction.py` to lock in flat route
+  registration, `routes.stages` ownership, no `import main`, canonical
+  roadmap state ownership in `main.py`, and `/blocker-photo` staying in
+  `main.py`.
+- Targeted extraction/stage/roadmap/object-access/history suite: `120 passed`.
+- Full test suite: `1148 passed, 1 skipped`.
 - Not deployed.
 
 ## 2026-09-25 (backend architecture — Objects router extraction, branch `codex/split-objects`)

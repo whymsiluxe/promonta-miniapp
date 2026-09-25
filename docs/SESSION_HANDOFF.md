@@ -22,12 +22,14 @@ Verification so far:
 - `python3 -m py_compile backend/main.py backend/routes/stages.py backend/routes/objects.py`.
 - Route manifest smoke: `186` HTTP routes, duplicate routes `[]`, all 21
   stage/roadmap routes owned by `routes.stages`.
-- Targeted stage/roadmap/object-access/history suite: `112 passed`.
+- Added `tests/test_stages_routes_extraction.py`.
+- Targeted extraction/stage/roadmap/object-access/history suite: `120 passed`.
+- Full suite: `1148 passed, 1 skipped`.
 
 Next:
-- Add extraction guard tests analogous to `tests/test_objects_routes_extraction.py`.
-- Run targeted extraction tests and full `pytest`.
-- Commit in at least two steps before push. Do not deploy.
+- Push branch `codex/split-stages` if a remote handoff is needed. Do not
+  merge or deploy. Rebase only after Claude's auth/roles/profiles split is
+  complete and `main` is updated.
 
 ## 2026-09-25 Objects router extraction (`codex/split-objects`)
 
