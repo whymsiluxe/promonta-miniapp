@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-09-25 (backend architecture — Stages/Roadmap router extraction, branch `codex/split-stages`)
+
+### Changed
+- Extracted Stages/Roadmap-domain HTTP handlers from `backend/main.py` into
+  `backend/routes/stages.py`: stage CRUD/status/swap/complete/blocker,
+  roadmap categories/items/status/notes, and stage request approval flow.
+- Kept `/api/objects/{object_id}/blocker-photo...` in `main.py`; media/storage
+  refactor is intentionally outside this slice.
+- `main.py` keeps the canonical roadmap singleton, JSON transactions, loaders,
+  and critical-store registration, then wires the router through explicit
+  `StagesRouteDeps` and re-exports legacy handler/model names.
+
+### Verification
+- Import smoke confirmed route count stayed at 186, duplicate routes stayed
+  empty, and all stage/roadmap routes are owned by `routes.stages`.
+- Targeted stage/roadmap/object-access/history suite: `112 passed`.
+- Not deployed.
+
 ## 2026-09-25 (backend architecture — Objects router extraction, branch `codex/split-objects`)
 
 ### Changed

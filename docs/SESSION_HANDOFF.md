@@ -1,5 +1,34 @@
 # Session handoff — autonomous execution 2026-09-08 (EXECUTION_PLAN.md)
 
+## 2026-09-25 Stages/Roadmap router extraction (`codex/split-stages`)
+
+Current task: split Stages/Roadmap planning routes out of `backend/main.py`
+without changing runtime behavior. This branch is stacked on
+`codex/split-objects` at `5c390dc9932a7ef9843b5c4019475dfb1f430659`.
+
+Implemented so far:
+- Added `backend/routes/stages.py`.
+- Moved stage CRUD/status/swap/complete/blocker handlers, roadmap
+  category/item/status/note handlers, and stage request approval handlers into
+  the new route module.
+- Left `/api/objects/{object_id}/blocker-photo...` in `main.py`.
+- `main.py` keeps the canonical roadmap singleton, JSON transaction helpers,
+  shared loaders, and critical JSON store registration; route module receives
+  everything via `StagesRouteDeps`.
+- `main.py` registers flat `APIRoute` records and re-exports legacy
+  handler/model names for direct-call tests.
+
+Verification so far:
+- `python3 -m py_compile backend/main.py backend/routes/stages.py backend/routes/objects.py`.
+- Route manifest smoke: `186` HTTP routes, duplicate routes `[]`, all 21
+  stage/roadmap routes owned by `routes.stages`.
+- Targeted stage/roadmap/object-access/history suite: `112 passed`.
+
+Next:
+- Add extraction guard tests analogous to `tests/test_objects_routes_extraction.py`.
+- Run targeted extraction tests and full `pytest`.
+- Commit in at least two steps before push. Do not deploy.
+
 ## 2026-09-25 Objects router extraction (`codex/split-objects`)
 
 Current task: split Object API routes out of `backend/main.py` without changing

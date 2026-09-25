@@ -5877,226 +5877,103 @@ async def ai_chat_upload(file: UploadFile = File(...), user: dict = Depends(get_
     return {"kind": "text", "filename": filename, "text": text}
 
 
-# ---------- Этапы объекта ----------
-# 10.33: /api/objects/{id}/stages раньше дёргал objekte_lib.all_stages() напрямую —
-# живой Google Sheets запрос на КАЖДЫЙ объект, каждый вызов. Home dashboard теперь
-# грузит progress-ring параллельно для до 6 объектов разом (Promise.all) — это до
-# 12 живых Sheets-запросов на одну загрузку Home, что провоцирует квота-сбои/HTTP 500.
-# all_stages() читает один и тот же лист 'Этапы' целиком и фильтрует локально —
-# значит можно закэшировать сырые строки листа через тот же _cached_get_used_range,
-# который уже используют list_objects/get_alerts, и фильтровать по object_id из кэша.
-def _cached_all_stages(object_id: str) -> list:
-    o = _load_repo_objekte_lib()
-    values = _cached_get_used_range('Этапы')
-    if not values:
-        return []
-    headers = values[0]
-    rows = []
-    for i, r in enumerate(values[1:], start=2):
-        if r and r[0].strip().upper() == object_id.strip().upper():
-            d = o._row_to_dict(headers, r)
-            d['_row'] = i
-            rows.append(d)
-    rows.sort(key=lambda d: int(d.get('№ этапа') or 0))
-    return rows
-
-
-@app.get("/api/objects/{object_id}/stages")
-def get_stages(object_id: str, user: dict = Depends(get_current_user)):
-    # 28.07: owner request -- любой воркер может просматривать этапы любого объекта
-    # (не только назначенных), не требует can_access_object.
-    return {"stages": _cached_all_stages(object_id)}
-
-
-class NewStageBody(BaseModel):
-    name: str
-    description: str = ''
-
-
-@app.post("/api/objects/{object_id}/stages")
-def create_stage(object_id: str, body: NewStageBody, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    # 31.07 (Release-аудит П3): раньше любой авторизованный worker мог создать этап на
-    # ЛЮБОМ объекте, не только назначенном -- require_object_access ограничивает записью
-    # только для owner или worker с accepted-назначением на этот object_id (см.
-    # can_access_object выше, тот же принцип что уже применён к другим stage-mutation
-    # эндпоинтам этого файла).
-    o = _load_repo_objekte_lib()
-    if not body.name.strip():
-        raise HTTPException(400, "Name erforderlich")
-    num = o.add_stage(object_id, body.name.strip(), body.description.strip()[:2000])
-    o.sync_current_stage(object_id)
-    return {"stage_num": num}
-
-
-class StageDescriptionBody(BaseModel):
-    description: str
-
-
-@app.patch("/api/objects/{object_id}/stages/{row_num}/description")
-def update_stage_description_endpoint(object_id: str, row_num: int, body: StageDescriptionBody, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    # 31.07 (Release-аудит П3): не owner-only (сохраняем прежнее намерение -- любой
-    # НАЗНАЧЕННЫЙ worker может редактировать), но require_object_access закрывает дыру,
-    # когда worker без accepted-назначения на объект мог менять описание этапа на чужом.
-    o = _load_repo_objekte_lib()
-    try:
-        o.update_stage_description(row_num, body.description.strip()[:2000])
-    except ValueError as e:
-        raise HTTPException(404, str(e))
-    return {"status": "ok"}
-
-
-class StageStatusBody(BaseModel):
-    status: str
-
-
-@app.patch("/api/objects/{object_id}/stages/{row_num}")
-def update_stage(object_id: str, row_num: int, body: StageStatusBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    o = _load_repo_objekte_lib()
-    try:
-        stage_before = _find_stage_by_row(object_id, row_num)
-    except Exception:
-        stage_before = {}
-    try:
-        o.update_stage_status(row_num, body.status, business_today_str())  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    o.sync_current_stage(object_id)
-    stage_name = stage_before.get('Название этапа') or f'#{row_num}'
-    old_status = stage_before.get('Статус', '')
-    subtitle = f'{stage_name} · {old_status} -> {body.status}' if old_status else f'{stage_name} · {body.status}'
-    _append_object_history_best_effort(
-        object_id, 'stage_status_changed', 'Статус этапа изменён',
-        user=user, subtitle=subtitle,
-        meta={
-            "row_num": row_num,
-            "stage_name": stage_name,
-            "old_status": old_status,
-            "new_status": body.status,
-        },
-    )
-    return {"status": "ok"}
-
-
-@app.delete("/api/objects/{object_id}/stages/{row_num}")
-def remove_stage(object_id: str, row_num: int, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    o = _load_repo_objekte_lib()
-    try:
-        o.delete_stage(object_id, row_num)
-    except ValueError as e:
-        raise HTTPException(404, str(e))
-    o.sync_current_stage(object_id)
-    return {"status": "ok"}
-
-
-class StageSwapBody(BaseModel):
-    row_num_b: int
-
-
-@app.patch("/api/objects/{object_id}/stages/{row_num}/swap")
-def swap_stage(object_id: str, row_num: int, body: StageSwapBody, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    o = _load_repo_objekte_lib()
-    try:
-        o.swap_stage_order(object_id, row_num, body.row_num_b)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    return {"status": "ok"}
-
-
-# 29.07 v2 (feature freeze -- откат review/rework): /complete восстановлен, worker
-# снова сам жмёт "Готово". Blocker остаётся, но НЕ меняет статус этапа -- отдельный
-# badge поверх (см. /stages/{row}/blocker ниже).
-@app.post("/api/objects/{object_id}/stages/{row_num}/complete")
-def worker_complete_stage(object_id: str, row_num: int, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    o = _load_repo_objekte_lib()
-    try:
-        stage_before = _find_stage_by_row(object_id, row_num)
-    except Exception:
-        stage_before = {}
-    try:
-        o.worker_complete_stage(object_id, row_num, str(user['id']), business_today_str())  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    stage_name = stage_before.get('Название этапа') or f'#{row_num}'
-    _append_object_history_best_effort(
-        object_id, 'stage_completed', 'Этап завершён',
-        user=user, subtitle=stage_name,
-        meta={"row_num": row_num, "stage_name": stage_name},
-    )
-    return {"status": "ok"}
-
-
-class StageBlockerBody(BaseModel):
-    quick_reason: str = ''
-    comment: str = ''
-    photo_url: str = ''
-    who_decides: str = ''
-    expected_date: str = ''
-
-
-@app.post("/api/objects/{object_id}/stages/{row_num}/blocker")
-def set_stage_blocker(object_id: str, row_num: int, body: StageBlockerBody,
-                       user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    # 29.07 v2: "Сообщить о проблеме" -- badge, НЕ статус этапа. Статус остаётся
-    # предстоит/в процессе/готово независимо от наличия blocker.
-    if not (body.quick_reason.strip() or body.comment.strip()):
-        raise HTTPException(400, "Укажите причину")
-    stage = _find_stage_by_row(object_id, row_num)
-    stage_key = stage['ID строки этапа']
-
-    def _mutate(store):
-        return rl.set_stage_block_meta(
-            store, stage_key, None, str(user['id']),
-            quick_reason=body.quick_reason, comment=body.comment, photo_url=body.photo_url,
-            who_decides=body.who_decides, expected_date=body.expected_date,
-        )
-    meta = update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
-    return {"status": "ok", "meta": meta}
-
-
-@app.delete("/api/objects/{object_id}/stages/{row_num}/blocker")
-def clear_stage_blocker(object_id: str, row_num: int, user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    stage = _find_stage_by_row(object_id, row_num)
-    stage_key = stage['ID строки этапа']
-
-    def _mutate(store):
-        rl.clear_stage_block_meta(store, stage_key)
-        return {"status": "ok"}
-    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
-
-
-# ---------- План работ (Roadmap) — 29.07, Этап 1 ----------
-# Stage identity/order/status/description остаются в Google Sheets (objekte_lib.py) --
-# roadmap_lib.py добавляет только то, чего там нет: чек-лист категорий/пунктов, заметки,
-# и очередь запросов worker->owner на структурные изменения существующего этапа.
-# 31.07 (Release-аудит П2): было `import roadmap_lib as rl` через глобальный sys.path --
-# заменено на изолированный loader (см. _load_repo_roadmap_lib выше), гарантирующий
-# repo-файл, не untracked-копию на диске сервера.
+# ---------- Этапы объекта / План работ (Roadmap) ----------
+# Runtime roadmap singleton stays in main.py because CRITICAL_JSON_PATHS and
+# legacy tests use backend.rl directly; HTTP handlers live in routes/stages.py.
 rl = _load_repo_roadmap_lib()
 
 
-def _load_roadmap_store() -> dict:
-    """Read-only helper -- ТОЛЬКО для GET-эндпоинтов ниже. Любая мутация store должна
-    идти через update_json_transaction(rl.ROADMAP_FILE, ...), не через эту функцию +
-    отдельный _atomic_write_json (та же read-modify-write гонка, что update_json_transaction
-    существует чтобы закрыть -- см. его docstring выше)."""
-    return _safe_load_json(rl.ROADMAP_FILE, rl._default_store())
+try:
+    from .routes.stages import (
+        StagesRouteDeps,
+        create_stages_router,
+        NewStageBody as _StagesNewStageBody,
+        StageDescriptionBody as _StagesStageDescriptionBody,
+        StageStatusBody as _StagesStageStatusBody,
+        StageSwapBody as _StagesStageSwapBody,
+        StageBlockerBody as _StagesStageBlockerBody,
+        RoadmapCategoryBody as _StagesRoadmapCategoryBody,
+        RoadmapItemCreateBody as _StagesRoadmapItemCreateBody,
+        RoadmapItemEditBody as _StagesRoadmapItemEditBody,
+        RoadmapItemStatusBody as _StagesRoadmapItemStatusBody,
+        RoadmapNoteBody as _StagesRoadmapNoteBody,
+        StageRequestBody as _StagesStageRequestBody,
+        StageRequestDecisionBody as _StagesStageRequestDecisionBody,
+    )
+except ImportError:
+    from routes.stages import (  # noqa: E402
+        StagesRouteDeps,
+        create_stages_router,
+        NewStageBody as _StagesNewStageBody,
+        StageDescriptionBody as _StagesStageDescriptionBody,
+        StageStatusBody as _StagesStageStatusBody,
+        StageSwapBody as _StagesStageSwapBody,
+        StageBlockerBody as _StagesStageBlockerBody,
+        RoadmapCategoryBody as _StagesRoadmapCategoryBody,
+        RoadmapItemCreateBody as _StagesRoadmapItemCreateBody,
+        RoadmapItemEditBody as _StagesRoadmapItemEditBody,
+        RoadmapItemStatusBody as _StagesRoadmapItemStatusBody,
+        RoadmapNoteBody as _StagesRoadmapNoteBody,
+        StageRequestBody as _StagesStageRequestBody,
+        StageRequestDecisionBody as _StagesStageRequestDecisionBody,
+    )
 
 
-def _load_stage_requests() -> list:
-    """Read-only helper -- см. предупреждение у _load_roadmap_store() выше, тот же принцип."""
-    return _safe_load_json(rl.STAGE_REQUESTS_FILE, rl._default_requests())
+NewStageBody = _StagesNewStageBody
+StageDescriptionBody = _StagesStageDescriptionBody
+StageStatusBody = _StagesStageStatusBody
+StageSwapBody = _StagesStageSwapBody
+StageBlockerBody = _StagesStageBlockerBody
+RoadmapCategoryBody = _StagesRoadmapCategoryBody
+RoadmapItemCreateBody = _StagesRoadmapItemCreateBody
+RoadmapItemEditBody = _StagesRoadmapItemEditBody
+RoadmapItemStatusBody = _StagesRoadmapItemStatusBody
+RoadmapNoteBody = _StagesRoadmapNoteBody
+StageRequestBody = _StagesStageRequestBody
+StageRequestDecisionBody = _StagesStageRequestDecisionBody
 
 
-def _find_stage_by_row(object_id: str, row_num: int) -> dict:
-    """Общая проверка для все roadmap-эндпоинтов ниже -- этап должен реально
-    существовать и принадлежать этому объекту, иначе 404 (не создаём roadmap-данные
-    для несуществующего/чужого этапа)."""
-    o = _load_repo_objekte_lib()
-    stages = o.all_stages(object_id)
-    stage = next((s for s in stages if s['_row'] == row_num), None)
-    if not stage:
-        raise HTTPException(404, "Этап не найден")
-    return stage
+_stages_router, _stages_handlers = create_stages_router(StagesRouteDeps(
+    get_current_user=get_current_user,
+    get_role=get_role,
+    require_owner=require_owner,
+    require_object_access=require_object_access,
+    cached_get_used_range=lambda tab_name: _cached_get_used_range(tab_name),
+    load_repo_objekte_lib=lambda: _load_repo_objekte_lib(),
+    roadmap_lib=lambda: rl,
+    safe_load_json=lambda path, default: _safe_load_json(path, default),
+    update_json_transaction=lambda path, default, mutator: update_json_transaction(path, default, mutator),
+    business_today_str=lambda: business_today_str(),
+    append_object_history_best_effort=lambda *args, **kwargs: _append_object_history_best_effort(*args, **kwargs),
+    get_worker_profile=lambda user_id: _get_worker_profile(user_id),
+    sanitize_display_name=lambda raw, fallback: _sanitize_display_name(raw, fallback),
+    load_roles=lambda: _load_roles(),
+    create_critical_alert=lambda *args, **kwargs: _create_critical_alert(*args, **kwargs),
+    send_telegram_message=lambda *args, **kwargs: send_telegram_message(*args, **kwargs),
+))
+app.router.routes.extend(_stages_router.routes)
+
+get_stages = _stages_handlers.get_stages
+create_stage = _stages_handlers.create_stage
+update_stage_description_endpoint = _stages_handlers.update_stage_description_endpoint
+update_stage = _stages_handlers.update_stage
+remove_stage = _stages_handlers.remove_stage
+swap_stage = _stages_handlers.swap_stage
+worker_complete_stage = _stages_handlers.worker_complete_stage
+set_stage_blocker = _stages_handlers.set_stage_blocker
+clear_stage_blocker = _stages_handlers.clear_stage_blocker
+get_stage_roadmap = _stages_handlers.get_stage_roadmap
+create_roadmap_category = _stages_handlers.create_roadmap_category
+delete_roadmap_category = _stages_handlers.delete_roadmap_category
+create_roadmap_item = _stages_handlers.create_roadmap_item
+edit_roadmap_item = _stages_handlers.edit_roadmap_item
+delete_roadmap_item = _stages_handlers.delete_roadmap_item
+update_roadmap_item_status = _stages_handlers.update_roadmap_item_status
+create_roadmap_note = _stages_handlers.create_roadmap_note
+list_roadmap_notes = _stages_handlers.list_roadmap_notes
+create_stage_request = _stages_handlers.create_stage_request
+list_stage_requests = _stages_handlers.list_stage_requests
+decide_stage_request_endpoint = _stages_handlers.decide_stage_request_endpoint
 
 
 # moved to core/paths.py -- BLOCKER_PHOTO_DIR
@@ -6132,292 +6009,6 @@ def get_blocker_photo(object_id: str, fname: str, user: dict = Depends(get_curre
         raise HTTPException(404, "Файл отсутствует")
     from fastapi.responses import FileResponse
     return FileResponse(path)
-
-
-@app.get("/api/objects/{object_id}/stages/{row_num}/roadmap")
-def get_stage_roadmap(object_id: str, row_num: int, user: dict = Depends(get_current_user)):
-    """Полный чек-лист (категории+пункты+прогресс) одного этапа одним запросом --
-    не N+1 (ТЗ п.47). Доступ: та же политика, что у get_stages -- любой авторизованный
-    воркер может просматривать (owner request 28.07), не только назначенный на объект."""
-    stage = _find_stage_by_row(object_id, row_num)
-    store = _load_roadmap_store()
-    snapshot = rl.stage_snapshot(store, stage['ID строки этапа'])
-    snapshot['stage'] = stage
-    return snapshot
-
-
-class RoadmapCategoryBody(BaseModel):
-    title: str
-
-
-@app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/categories")
-def create_roadmap_category(object_id: str, row_num: int, body: RoadmapCategoryBody,
-                             user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    # 29.07: только owner меняет структуру (категории/reorder) -- worker-approval-flow
-    # ниже касается delete/status-change СУЩЕСТВУЮЩЕГО этапа, не категорий/пунктов внутри
-    # него (владелец не просил approval для этого уровня, только для самого этапа).
-    stage = _find_stage_by_row(object_id, row_num)
-    if not body.title.strip():
-        raise HTTPException(400, "Название категории обязательно")
-    # 29.07: read-modify-write под одним локом (update_json_transaction) -- та же гонка,
-    # что уже закрыта для object photo upload/assign в этом файле (28.07, real bug found
-    # by external audit). Два owner'а/два запроса одновременно не должны затирать
-    # изменения друг друга в roadmap.json.
-    return update_json_transaction(
-        rl.ROADMAP_FILE, rl._default_store,
-        lambda store: rl.new_category(store, stage['ID строки этапа'], body.title.strip()[:100]),
-    )
-
-
-@app.delete("/api/objects/{object_id}/stages/{row_num}/roadmap/categories/{category_id}")
-def delete_roadmap_category(object_id: str, row_num: int, category_id: str,
-                             user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    stage = _find_stage_by_row(object_id, row_num)
-    stage_key = stage['ID строки этапа']
-
-    def _mutate(store):
-        has_items = any(i.get('category_id') == category_id for i in store['items'].get(stage_key, []))
-        if has_items:
-            raise HTTPException(400, "Нельзя удалить категорию с пунктами -- сначала перенесите или удалите их")
-        if not rl.delete_category(store, stage_key, category_id):
-            raise HTTPException(404, "Категория не найдена")
-        return {"status": "ok"}
-
-    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
-
-
-class RoadmapItemCreateBody(BaseModel):
-    title: str
-    category_id: str | None = None
-    description: str = ''
-    required: bool = True
-    safety_critical: bool = False
-    weight: int = 1
-
-
-@app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/items")
-def create_roadmap_item(object_id: str, row_num: int, body: RoadmapItemCreateBody,
-                         user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    stage = _find_stage_by_row(object_id, row_num)
-    if not body.title.strip():
-        raise HTTPException(400, "Название пункта обязательно")
-    stage_key = stage['ID строки этапа']
-    return update_json_transaction(
-        rl.ROADMAP_FILE, rl._default_store,
-        lambda store: rl.new_item(
-            store, stage_key, body.title.strip()[:200], category_id=body.category_id,
-            description=body.description.strip()[:1000], required=body.required,
-            safety_critical=body.safety_critical, weight=body.weight,
-        ),
-    )
-
-
-class RoadmapItemEditBody(BaseModel):
-    title: str | None = None
-    description: str | None = None
-    required: bool | None = None
-    safety_critical: bool | None = None
-    weight: int | None = None
-    category_id: str | None = None
-
-
-@app.patch("/api/objects/{object_id}/stages/{row_num}/roadmap/items/{item_id}")
-def edit_roadmap_item(object_id: str, row_num: int, item_id: str, body: RoadmapItemEditBody,
-                       user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    stage = _find_stage_by_row(object_id, row_num)
-    fields = {k: v for k, v in body.model_dump().items() if v is not None}
-    stage_key = stage['ID строки этапа']
-
-    def _mutate(store):
-        item = rl.edit_item(store, stage_key, item_id, **fields)
-        if not item:
-            raise HTTPException(404, "Пункт не найден")
-        return item
-
-    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
-
-
-@app.delete("/api/objects/{object_id}/stages/{row_num}/roadmap/items/{item_id}")
-def delete_roadmap_item(object_id: str, row_num: int, item_id: str,
-                         user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    stage = _find_stage_by_row(object_id, row_num)
-    stage_key = stage['ID строки этапа']
-
-    def _mutate(store):
-        if not rl.delete_item(store, stage_key, item_id):
-            raise HTTPException(404, "Пункт не найден")
-        return {"status": "ok"}
-
-    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
-
-
-# 29.07 v2 (feature freeze): checklist упрощён до open/done, никакого blocker на
-# уровне пункта -- только простой toggle.
-class RoadmapItemStatusBody(BaseModel):
-    status: str
-
-
-@app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/items/{item_id}/status")
-def update_roadmap_item_status(object_id: str, row_num: int, item_id: str, body: RoadmapItemStatusBody,
-                                user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    stage = _find_stage_by_row(object_id, row_num)
-    stage_key = stage['ID строки этапа']
-
-    def _mutate(store):
-        try:
-            item = rl.update_item_status(store, stage_key, item_id, body.status, str(user['id']))
-        except ValueError as e:
-            raise HTTPException(400, str(e))
-        if not item:
-            raise HTTPException(404, "Пункт не найден")
-        return item
-
-    return update_json_transaction(rl.ROADMAP_FILE, rl._default_store, _mutate)
-
-
-class RoadmapNoteBody(BaseModel):
-    text: str
-    item_id: str | None = None
-
-
-@app.post("/api/objects/{object_id}/stages/{row_num}/roadmap/notes")
-def create_roadmap_note(object_id: str, row_num: int, body: RoadmapNoteBody,
-                         user: dict = Depends(get_current_user), _: None = Depends(require_object_access)):
-    stage = _find_stage_by_row(object_id, row_num)
-    if not body.text.strip():
-        raise HTTPException(400, "Текст заметки обязателен")
-    profile = _get_worker_profile(user['id'])
-    author_name = _sanitize_display_name(profile.get('name'), str(user['id']))
-    stage_key = stage['ID строки этапа']
-    return update_json_transaction(
-        rl.ROADMAP_FILE, rl._default_store,
-        lambda store: rl.new_note(store, stage_key, str(user['id']), author_name, body.text, item_id=body.item_id),
-    )
-
-
-@app.get("/api/objects/{object_id}/stages/{row_num}/roadmap/notes")
-def list_roadmap_notes(object_id: str, row_num: int, item_id: str = '', user: dict = Depends(get_current_user)):
-    # 30.07 (Release-аудит P1-6): нет require_object_access -- согласовано с
-    # GET /api/objects/{object_id}/stages и GET .../roadmap (оба тоже открыты
-    # любому авторизованному по документированному 28.07 owner-решению: "любой
-    # worker может просматривать этапы/roadmap любого объекта"). POST на этот же
-    # ресурс требует require_object_access -- писать может только назначенный,
-    # читать может любой. Не меняем в рамках feature freeze.
-    stage = _find_stage_by_row(object_id, row_num)
-    store = _load_roadmap_store()
-    notes = rl.stage_notes(store, stage['ID строки этапа'], item_id=item_id or None)
-    return {"notes": sorted(notes, key=lambda n: n['created_at'])}
-
-
-# ── Stage change requests -- worker→owner approval для delete/change-status этапа ──
-# Owner decision (29.07): worker свободно создаёт этапы (как сейчас), но delete/смена
-# статуса существующего этапа теперь идёт через запрос, который owner подтверждает --
-# "через алерт", переиспользуем существующий critical_alerts push+ack механизм, не
-# строим новый UI-канал.
-class StageRequestBody(BaseModel):
-    kind: str
-    new_status: str = ''  # только для kind='change_status'
-
-
-@app.post("/api/objects/{object_id}/stages/{row_num}/request")
-def create_stage_request(object_id: str, row_num: int, body: StageRequestBody,
-                          user: dict = Depends(get_current_user), role: str = Depends(get_role),
-                          _: None = Depends(require_object_access)):
-    o = _load_repo_objekte_lib()
-    if role == 'owner':
-        raise HTTPException(400, "Owner меняет этапы напрямую, без запроса")
-    stage = _find_stage_by_row(object_id, row_num)
-    if body.kind not in rl.REQUEST_KINDS:
-        raise HTTPException(400, "Недопустимый тип запроса")
-    payload = {}
-    if body.kind == 'change_status':
-        if body.new_status not in o.VALID_STAGE_STATUS:
-            raise HTTPException(400, "Недопустимый статус")
-        payload['new_status'] = body.new_status
-
-    profile = _get_worker_profile(user['id'])
-    requester_name = _sanitize_display_name(profile.get('name'), str(user['id']))
-    stage_key = stage['ID строки этапа']
-    req = update_json_transaction(
-        rl.STAGE_REQUESTS_FILE, rl._default_requests,
-        lambda requests: rl.new_stage_request(
-            requests, object_id, stage_key, row_num, body.kind,
-            str(user['id']), requester_name, payload=payload,
-        ),
-    )
-
-    roles = _load_roles()
-    owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
-    if owner_id:
-        kind_label = 'удаление этапа' if body.kind == 'delete_stage' else f"смену статуса на «{payload.get('new_status', '')}»"
-        alert = _create_critical_alert(
-            target_user_id=owner_id, kind='stage_request',
-            title=f"{requester_name} просит {kind_label}",
-            subtitle=stage.get('Название этапа', ''), ref_id=req['id'],
-        )
-        req['critical_alert_id'] = alert['id']
-
-        def _attach_alert(requests):
-            r = rl.find_stage_request(requests, req['id'])
-            if r:
-                r['critical_alert_id'] = alert['id']
-            return r
-        update_json_transaction(rl.STAGE_REQUESTS_FILE, rl._default_requests, _attach_alert)
-    return req
-
-
-@app.get("/api/objects/{object_id}/stages/requests")
-def list_stage_requests(object_id: str, user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    requests = _load_stage_requests()
-    return {"requests": rl.pending_requests_for_object(requests, object_id)}
-
-
-class StageRequestDecisionBody(BaseModel):
-    approve: bool
-
-
-@app.post("/api/objects/{object_id}/stages/requests/{request_id}/decide")
-def decide_stage_request_endpoint(object_id: str, request_id: str, body: StageRequestDecisionBody,
-                                   user: dict = Depends(get_current_user), _: None = Depends(require_owner)):
-    o = _load_repo_objekte_lib()
-
-    # Проверка существования/принадлежности -- read-only, до транзакции (тот же паттерн,
-    # что _find_stage_by_row -- отдельно от самой мутации).
-    existing = _load_stage_requests()
-    pre_check = rl.find_stage_request(existing, request_id)
-    if not pre_check or pre_check['object_id'] != object_id:
-        raise HTTPException(404, "Запрос не найден")
-
-    def _mutate(requests):
-        decided = rl.decide_stage_request(requests, request_id, body.approve, str(user['id']))
-        if not decided:
-            raise HTTPException(400, "Запрос уже обработан")
-        return decided
-
-    decided = update_json_transaction(rl.STAGE_REQUESTS_FILE, rl._default_requests, _mutate)
-
-    # Google Sheets запись -- НАМЕРЕННО вне JSON-лока выше (сетевой вызов, не должен
-    # держать файловый лок дольше необходимого). Если статус запроса уже помечен approved,
-    # но эта часть упадёт -- запрос не откатывается автоматически (best-effort, тот же
-    # trade-off что и остальные Sheets-зеркала в этом файле), owner увидит ошибку и может
-    # применить изменение вручную через обычный owner-only stage endpoint.
-    if body.approve:
-        try:
-            if decided['kind'] == 'delete_stage':
-                o.delete_stage(decided['object_id'], decided['stage_row'])
-                o.sync_current_stage(decided['object_id'])
-            elif decided['kind'] == 'change_status':
-                o.update_stage_status(decided['stage_row'], decided['payload']['new_status'], business_today_str())  # 03.08 (ТЗ Задача 5): было date.today() (UTC)
-                o.sync_current_stage(decided['object_id'])
-        except ValueError as e:
-            raise HTTPException(400, str(e))
-
-    try:
-        send_telegram_message(int(decided['requested_by']),
-                               f"{'Одобрено' if body.approve else 'Отклонено'}: ваш запрос по этапу «{decided.get('stage_row')}»")
-    except Exception:
-        pass
-    return decided
 
 
 # ---------- Потребности (10.33) — worker → owner запросы (инструмент/материалы/защита) ----------

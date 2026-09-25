@@ -11,6 +11,12 @@ No deploy has been performed. Scope intentionally excludes auth/roles,
 `core/permissions.py`, media/photo upload, documents, tasks, stages, daily-plan,
 UI, DB migrations, and production config.
 
+Branch `codex/split-stages` is stacked on `codex/split-objects`
+(`5c390dc9932a7ef9843b5c4019475dfb1f430659`) and extracts the
+Stages/Roadmap planning-domain routes into `backend/routes/stages.py` with
+explicit dependency injection. `/blocker-photo` remains in `main.py` because
+media/storage refactor is outside this slice. No deploy has been performed.
+
 **Last updated**: 2026-09-13, Feed UX round — unified Instagram-like popup
 comments/actions, persistent photo likes, iPhone keyboard/input polish, AI
 composer visibility fix. Local verification: `737 passed, 1 skipped`. See
