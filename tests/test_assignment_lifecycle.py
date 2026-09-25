@@ -675,13 +675,24 @@ class ProductionPackageImportTests(unittest.TestCase):
                 "backend/__init__.py must exist and be copied -- miniapp must be "
                 "a real package, not an implicit namespace package")
 
+            # 25.09: FastAPI 0.139's include_router() wraps included routes in a
+            # single _IncludedRouter object in app.routes instead of splicing them
+            # in flat -- count via original_router.routes (iterative stack-based
+            # flatten, same shape as conftest.py's iter_app_routes) so the net
+            # route count stays stable across the routes/auth.py extraction
+            # instead of silently under-counting by 2 (3 routes -> 1 wrapper).
             script = (
-                "import sys, os; sys.path.insert(0, '.'); import miniapp.main as m; "
-                "print('ROUTES', len(m.app.routes)); "
-                "print('MINIAPP_FILE', miniapp.__file__ if False else __import__('miniapp').__file__); "
-                "print('MINIAPP_PATH', list(__import__('miniapp').__path__)); "
-                "print('BUSINESS_NOW_MODULE', m.business_now.__module__); "
-                "print('DPL_NAME', m.dpl.__name__)"
+                "import sys, os; sys.path.insert(0, '.'); import miniapp.main as m\n"
+                "stack = list(m.app.routes); flat = []\n"
+                "while stack:\n"
+                "    r = stack.pop()\n"
+                "    nr = getattr(r, 'original_router', None)\n"
+                "    stack.extend(nr.routes) if nr is not None else flat.append(r)\n"
+                "print('ROUTES', len(flat))\n"
+                "print('MINIAPP_FILE', __import__('miniapp').__file__)\n"
+                "print('MINIAPP_PATH', list(__import__('miniapp').__path__))\n"
+                "print('BUSINESS_NOW_MODULE', m.business_now.__module__)\n"
+                "print('DPL_NAME', m.dpl.__name__)\n"
             )
             env = dict(os.environ)
             env['BOT_TOKEN'] = 'test-dummy'
