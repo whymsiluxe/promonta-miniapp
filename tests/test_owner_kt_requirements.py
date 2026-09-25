@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi import HTTPException  # noqa: E402
 import main as backend  # noqa: E402
+from conftest import iter_app_routes  # noqa: E402
 
 
 def run(coro):
@@ -116,7 +117,7 @@ class TranscribeEndpointExistsTests(unittest.TestCase):
     явно просил подтвердить, что этот путь реален, не выдуман в документации."""
 
     def test_transcribe_route_registered(self):
-        paths = {route.path for route in backend.app.routes}
+        paths = {route.path for route in iter_app_routes(backend.app)}
         self.assertIn('/api/transcribe', paths)
         self.assertIn('/api/transcribe/{file_id}/audio', paths)
 

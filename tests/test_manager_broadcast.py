@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi import HTTPException  # noqa: E402
 import main as backend  # noqa: E402
+from conftest import iter_app_routes  # noqa: E402
 import core.permissions as permissions  # noqa: E402
 
 
@@ -90,7 +91,7 @@ class ManagerBroadcastTests(unittest.TestCase):
         self.assertEqual(empty_ctx.exception.status_code, 400)
 
     def test_broadcast_route_registered_and_owner_only(self):
-        route = next(route for route in backend.app.routes if route.path == '/api/manager/broadcast')
+        route = next(route for route in iter_app_routes(backend.app) if route.path == '/api/manager/broadcast')
         dep_callables = {dep.call for dep in route.dependant.dependencies}
         self.assertIn(backend.require_owner, dep_callables)
 

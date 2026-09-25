@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi import HTTPException  # noqa: E402
 import main as backend  # noqa: E402
+from conftest import iter_app_routes  # noqa: E402
 
 
 class ManagementCommandParserTests(unittest.TestCase):
@@ -60,7 +61,7 @@ class ManagementCommandParserTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 403)
 
     def test_route_registered(self):
-        paths = {route.path for route in backend.app.routes}
+        paths = {route.path for route in iter_app_routes(backend.app)}
         self.assertIn('/api/manager/command/parse', paths)
 
 

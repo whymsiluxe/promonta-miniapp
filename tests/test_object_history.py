@@ -7,6 +7,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 import main as backend  # noqa: E402
+from conftest import iter_app_routes  # noqa: E402
 import core.permissions as permissions  # noqa: E402
 
 
@@ -126,7 +127,7 @@ class ObjectHistoryTests(unittest.TestCase):
         self.assertIn('Трещина', history[0]['subtitle'])
 
     def test_history_route_registered(self):
-        paths = {route.path for route in backend.app.routes}
+        paths = {route.path for route in iter_app_routes(backend.app)}
         self.assertIn('/api/objects/{object_id}/history', paths)
 
 
