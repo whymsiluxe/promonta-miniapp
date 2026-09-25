@@ -468,7 +468,10 @@ async def _corrupt_json_handler(request, exc: CorruptJsonError):
 
 # moved to core/paths.py -- AUDIT_FILE
 AUDIT_LOCK = __import__('threading').Lock()
-_auth_audit_context: ContextVar[dict | None] = ContextVar('promonta_auth_audit_context', default=None)
+# _auth_audit_context: moved to core/permissions.py (Phase A step 6/6), imported
+# further down in this file alongside get_current_user/etc. -- audit_log_middleware
+# below resolves the name at call time (module fully loaded before any request
+# hits it), same as every other forward-reference in this file.
 
 
 @app.middleware("http")
@@ -575,109 +578,42 @@ def _csv_safe(value) -> str:
     return s
 
 
-def _load_roles() -> dict:
-    return _safe_load_json(ROLES_FILE, {})
-
-
-def _save_roles(roles: dict):
-    _atomic_write_json(ROLES_FILE, roles)
-
-
-# moved to core/paths.py -- NOTIFIED_USERS_FILE
-# moved to core/limits.py -- NOTIFIED_USERS_TTL
-
-
-def _load_notified_users() -> dict:
-    raw = _safe_load_json(NOTIFIED_USERS_FILE, {})
-    if isinstance(raw, list):
-        # миграция со старого формата (список без timestamp) — считаем уведомлёнными сейчас
-        now = time.time()
-        return {uid: now for uid in raw}
-    cutoff = time.time() - NOTIFIED_USERS_TTL
-    return {uid: ts for uid, ts in raw.items() if ts >= cutoff}
-
-
-def _save_notified_users(notified: dict):
-    _atomic_write_json(NOTIFIED_USERS_FILE, notified)
-
-
-def _notify_owner_new_user(user: dict, roles: dict):
-    owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
-    if not owner_id:
-        return
-    notified = _load_notified_users()
-    uid = str(user['id'])
-    if uid in notified:
-        return
-    name = user.get('first_name', '') + (' ' + user['last_name'] if user.get('last_name') else '')
-    username = f" (@{user['username']})" if user.get('username') else ''
-    text = f"Новый пользователь открыл miniapp:\n{name.strip() or '—'}{username}\nID: {uid}\n\nДобавьте в roles.json, чтобы дать доступ."
-    try:
-        send_telegram_message(owner_id, text)
-    except Exception:
-        return  # уведомление best-effort — не блокировать 403-ответ, если Telegram недоступен
-    notified[uid] = time.time()
-    _save_notified_users(notified)
-
-
-# 24.07: online-статус для чата (зелёный дот на аватаре в личных чатах, Connecteam-
-# референс из брифа) — in-memory, не персистентный на диск. Обновляется на каждый
-# authenticated-запрос (get_current_user — центральная точка, вызывается везде через
-# Depends), не отдельный heartbeat-эндпоинт. Переживает не рестарт сервиса (все "не в
-# сети" до первого запроса после рестарта) — приемлемо для присутствия-индикатора,
-# не для чего-то critical.
-_last_seen: dict = {}
-# moved to core/limits.py -- ONLINE_THRESHOLD_SECONDS
-
-
-def get_current_user(
-    authorization: str | None = Header(default=None),
-    x_telegram_init_data: str | None = Header(default=None),
-) -> dict:
-    """03.08 (ТЗ Задача 1): предпочитаем Authorization: Bearer <session token> --
-    12-часовой backend-token, не требует свежего initData на каждый запрос.
-    X-Telegram-Init-Data остаётся как fallback для обратной совместимости со старыми
-    клиентами/вкладками, которые ещё не обновились на новый auth-путь -- временно,
-    убрать после того, как весь трафик перейдёт на токены (см. PROJECT_STATE.md)."""
-    auth_source = ''
-    if authorization and authorization.lower().startswith('bearer '):
-        token = authorization[7:].strip()
-        user_id = verify_session_token(token)
-        user = {'id': int(user_id)} if user_id.lstrip('-').isdigit() else {'id': user_id}
-        auth_source = 'bearer'
-    elif x_telegram_init_data:
-        user = validate_init_data(x_telegram_init_data)
-        auth_source = 'telegram_init_data'
-    else:
-        raise HTTPException(401, "Нет initData и нет session token")
-
-    # Whitelist (Фаза 10.1): доступ только тем, кого владелец явно добавил в roles.json —
-    # раньше любой Telegram user_id молча получал worker-права по умолчанию (см. get_role ниже).
-    # 03.08: проверяется на КАЖДЫЙ запрос заново независимо от источника auth (initData
-    # или session token) -- владелец, удаливший работника из whitelist, обрывает доступ
-    # немедленно, даже если у клиента ещё живой 12-часовой токен.
-    roles = _load_roles()
-    if str(user['id']) not in roles:
-        if x_telegram_init_data and not (authorization and authorization.lower().startswith('bearer ')):
-            _notify_owner_new_user(user, roles)
-        raise HTTPException(403, "Доступ не предоставлен. Обратитесь к владельцу.")
-    _auth_audit_context.set({
-        'user_id': str(user['id']),
-        'role': roles.get(str(user['id']), 'worker'),
-        'source': auth_source,
-    })
-    _last_seen[str(user['id'])] = time.time()
-    return user
-
-
-def get_role(user: dict = Depends(get_current_user)) -> str:
-    roles = _load_roles()
-    return roles.get(str(user['id']), 'worker')
-
-
-def require_owner(role: str = Depends(get_role)):
-    if role != 'owner':
-        raise HTTPException(403, "owner only")
+# Phase A step 6/6 (revised 25.09): get_current_user/get_role/require_owner/
+# _load_roles/_save_roles/_notify_owner_new_user/_load_notified_users/
+# _save_notified_users/_last_seen/RoleSetBody moved to backend/core/permissions.py
+# -- that module is now the single source of truth (main.py imports these
+# back, does not redefine them). The 15 test files that previously did
+# `patch.object(backend, '_load_roles', ...)` were updated to patch
+# `core.permissions._load_roles` instead -- same assertions, only the patch
+# target changed to where the code now actually lives.
+try:
+    from .core.permissions import (
+        _auth_audit_context,
+        _last_seen,
+        _load_roles,
+        _save_roles,
+        _load_notified_users,
+        _save_notified_users,
+        _notify_owner_new_user,
+        get_current_user,
+        get_role,
+        require_owner,
+        RoleSetBody,
+    )
+except ImportError:
+    from core.permissions import (  # noqa: E402
+        _auth_audit_context,
+        _last_seen,
+        _load_roles,
+        _save_roles,
+        _load_notified_users,
+        _save_notified_users,
+        _notify_owner_new_user,
+        get_current_user,
+        get_role,
+        require_owner,
+        RoleSetBody,
+    )
 
 
 # Phase A: leaf business_now() moved to backend/core/time.py (zero deps).
@@ -763,11 +699,6 @@ def require_object_access(object_id: str, user: dict = Depends(get_current_user)
     в любом route, где путь содержит {object_id}."""
     if not can_access_object(user, role, object_id):
         raise HTTPException(403, "Нет доступа к этому объекту")
-
-
-class RoleSetBody(BaseModel):
-    user_id: str
-    role: str  # 'owner' | 'worker'
 
 
 @app.get("/api/roles")

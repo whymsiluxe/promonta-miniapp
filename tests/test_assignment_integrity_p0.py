@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi import HTTPException  # noqa: E402
 import main as backend  # noqa: E402
+import core.permissions as permissions  # noqa: E402
 
 OWNER = {'id': 1, 'first_name': 'Boss'}
 _ROLES_10_20_WORKER = {'1': 'owner', '10': 'worker', '20': 'worker'}

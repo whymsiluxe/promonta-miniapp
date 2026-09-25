@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from fastapi import HTTPException  # noqa: E402
 import main as backend  # noqa: E402
+import core.permissions as permissions  # noqa: E402
 
 
 class ChatThreadIdTests(unittest.TestCase):

@@ -1,51 +1,65 @@
-"""Auth core — Phase A step 6: session tokens + initData validation.
+"""Auth core — Phase A step 6/6: canonical get_current_user()/roles/sessions.
 
-Extraction ordered last in Phase A per the dependency map's R4 finding: this
-is the deepest chain (get_current_user -> _notify_owner_new_user ->
-send_telegram_message), needing core/telegram.py extracted first (already
-done) to avoid a main.py <-> core.permissions cycle.
+This is now the SINGLE SOURCE OF TRUTH for authentication and role lookup --
+main.py imports these names back (`from .core.permissions import
+get_current_user, get_role, require_owner, ...`), it does not define its own
+copies. Dependency direction is core/* -> main.py, never the reverse (no
+routes/* or core/* module may import from main.py).
 
-Scope decision, narrower than originally planned: get_current_user(),
-get_role(), require_owner(), _load_roles()/_save_roles(),
-_notify_owner_new_user(), _load_notified_users()/_save_notified_users(),
-has_active_object_access()/can_access_object()/require_object_access() ALL
-STAY in main.py, not here. Investigated moving them and found 15 test files
-do `patch.object(backend, '_load_roles', return_value=...)` and then call
-`backend.get_role(user=user)` directly (e.g. test_session_token.py) --
-exactly the business_now()/business_today() trap already documented at
-main.py's business_today(): if get_role() lived here and called this
-module's own _load_roles by module-local name, patch.object(backend,
-'_load_roles', ...) would silently not reach it (patches the main.py
-attribute, not core.permissions's), and the test would get a real role
-instead of the patched one without erroring. Moving _load_roles here too
-doesn't fix it either -- get_current_user() itself is directly called as
-backend.get_current_user(...) in test_session_token.py while
-backend._load_roles is patched, so get_current_user must stay wherever
-_load_roles's patchable name lives, i.e. main.py, until/unless a future
-pass rewrites those tests to patch core.permissions._load_roles instead
-(out of scope for a behavior-preserving extraction).
+Revision note (25.09): an earlier pass at this same step deliberately left
+get_current_user()/get_role()/require_owner()/_load_roles()/
+_notify_owner_new_user() in main.py, reasoning that 15 test files do
+`patch.object(backend, '_load_roles', return_value=...)` then call
+`backend.get_role(user=user)` directly, and moving the chain would make
+those patches silently no-op (the business_now()/business_today()
+name-resolution trap). On review that was the wrong fix for a real-split
+goal: it treated the test suite's patch targets as fixed architecture
+instead of updating them to match the new canonical location. The correct
+fix (this revision) is: move the real implementation here, and update the
+15 test files' patch targets from `patch.object(backend, '_load_roles', ...)`
+to `patch.object(permissions, '_load_roles', ...)` (they already import
+`backend.core.permissions as permissions` or equivalent) -- same tests,
+same assertions, only the patch target changed to where the code actually
+lives now. main.py's own `_load_roles`/`get_role`/etc. names are now thin
+re-exports of this module's, kept for any caller still spelling
+`backend._load_roles(...)` as a plain call (not a patch target).
 
-What's safe to move now: validate_init_data()/session-token functions are
-never patched by name in any test (grepped `patch.object(backend,
-'validate_init_data'|'verify_session_token'|'create_session_token'`) --
-zero matches -- so no test can depend on which module's copy runs.
+has_active_object_access()/can_access_object()/require_object_access() STILL
+stay in main.py -- unrelated reason, they depend on _load_assignments()/
+_assignment_status() (objects-domain state, not auth), see main.py's own
+comment at their definition.
 """
 import base64
 import hashlib
 import hmac
 import time
+from contextvars import ContextVar
 
-from fastapi import HTTPException
+from fastapi import Header, HTTPException, Depends
+from pydantic import BaseModel
 
 try:
-    from .limits import INIT_DATA_MAX_AGE, SESSION_TOKEN_MAX_AGE
-    from .telegram import BOT_TOKEN
+    from .limits import INIT_DATA_MAX_AGE, SESSION_TOKEN_MAX_AGE, NOTIFIED_USERS_TTL
+    from .paths import ROLES_FILE, NOTIFIED_USERS_FILE
+    from .storage import _safe_load_json, _atomic_write_json
+    from .telegram import BOT_TOKEN, send_telegram_message
 except ImportError:
-    from limits import INIT_DATA_MAX_AGE, SESSION_TOKEN_MAX_AGE  # noqa: E402
-    from telegram import BOT_TOKEN  # noqa: E402
+    from limits import INIT_DATA_MAX_AGE, SESSION_TOKEN_MAX_AGE, NOTIFIED_USERS_TTL  # noqa: E402
+    from paths import ROLES_FILE, NOTIFIED_USERS_FILE  # noqa: E402
+    from storage import _safe_load_json, _atomic_write_json  # noqa: E402
+    from telegram import BOT_TOKEN, send_telegram_message  # noqa: E402
 
 from urllib.parse import parse_qsl
 import json
+
+
+_auth_audit_context: ContextVar[dict | None] = ContextVar('promonta_auth_audit_context', default=None)
+
+# 24.07: online-статус для чата -- in-memory, не персистентный на диск.
+# Обновляется на каждый authenticated-запрос (get_current_user), не отдельный
+# heartbeat-эндпоинт. Переживает не рестарт сервиса -- приемлемо для
+# присутствия-индикатора, не для чего-то critical.
+_last_seen: dict = {}
 
 
 def _secret_key() -> bytes:
@@ -127,3 +141,99 @@ def verify_session_token(token: str) -> str:
         raise HTTPException(401, "session token: expired")
 
     return user_id_str
+
+
+def _load_roles() -> dict:
+    return _safe_load_json(ROLES_FILE, {})
+
+
+def _save_roles(roles: dict):
+    _atomic_write_json(ROLES_FILE, roles)
+
+
+def _load_notified_users() -> dict:
+    raw = _safe_load_json(NOTIFIED_USERS_FILE, {})
+    if isinstance(raw, list):
+        # миграция со старого формата (список без timestamp) — считаем уведомлёнными сейчас
+        now = time.time()
+        return {uid: now for uid in raw}
+    cutoff = time.time() - NOTIFIED_USERS_TTL
+    return {uid: ts for uid, ts in raw.items() if ts >= cutoff}
+
+
+def _save_notified_users(notified: dict):
+    _atomic_write_json(NOTIFIED_USERS_FILE, notified)
+
+
+def _notify_owner_new_user(user: dict, roles: dict):
+    owner_id = next((uid for uid, r in roles.items() if r == 'owner'), None)
+    if not owner_id:
+        return
+    notified = _load_notified_users()
+    uid = str(user['id'])
+    if uid in notified:
+        return
+    name = user.get('first_name', '') + (' ' + user['last_name'] if user.get('last_name') else '')
+    username = f" (@{user['username']})" if user.get('username') else ''
+    text = f"Новый пользователь открыл miniapp:\n{name.strip() or '—'}{username}\nID: {uid}\n\nДобавьте в roles.json, чтобы дать доступ."
+    try:
+        send_telegram_message(owner_id, text)
+    except Exception:
+        return  # уведомление best-effort — не блокировать 403-ответ, если Telegram недоступен
+    notified[uid] = time.time()
+    _save_notified_users(notified)
+
+
+def get_current_user(
+    authorization: str | None = Header(default=None),
+    x_telegram_init_data: str | None = Header(default=None),
+) -> dict:
+    """03.08 (ТЗ Задача 1): предпочитаем Authorization: Bearer <session token> --
+    12-часовой backend-token, не требует свежего initData на каждый запрос.
+    X-Telegram-Init-Data остаётся как fallback для обратной совместимости со старыми
+    клиентами/вкладками, которые ещё не обновились на новый auth-путь -- временно,
+    убрать после того, как весь трафик перейдёт на токены (см. PROJECT_STATE.md)."""
+    auth_source = ''
+    if authorization and authorization.lower().startswith('bearer '):
+        token = authorization[7:].strip()
+        user_id = verify_session_token(token)
+        user = {'id': int(user_id)} if user_id.lstrip('-').isdigit() else {'id': user_id}
+        auth_source = 'bearer'
+    elif x_telegram_init_data:
+        user = validate_init_data(x_telegram_init_data)
+        auth_source = 'telegram_init_data'
+    else:
+        raise HTTPException(401, "Нет initData и нет session token")
+
+    # Whitelist (Фаза 10.1): доступ только тем, кого владелец явно добавил в roles.json —
+    # раньше любой Telegram user_id молча получал worker-права по умолчанию (см. get_role ниже).
+    # 03.08: проверяется на КАЖДЫЙ запрос заново независимо от источника auth (initData
+    # или session token) -- владелец, удаливший работника из whitelist, обрывает доступ
+    # немедленно, даже если у клиента ещё живой 12-часовой токен.
+    roles = _load_roles()
+    if str(user['id']) not in roles:
+        if x_telegram_init_data and not (authorization and authorization.lower().startswith('bearer ')):
+            _notify_owner_new_user(user, roles)
+        raise HTTPException(403, "Доступ не предоставлен. Обратитесь к владельцу.")
+    _auth_audit_context.set({
+        'user_id': str(user['id']),
+        'role': roles.get(str(user['id']), 'worker'),
+        'source': auth_source,
+    })
+    _last_seen[str(user['id'])] = time.time()
+    return user
+
+
+def get_role(user: dict = Depends(get_current_user)) -> str:
+    roles = _load_roles()
+    return roles.get(str(user['id']), 'worker')
+
+
+def require_owner(role: str = Depends(get_role)):
+    if role != 'owner':
+        raise HTTPException(403, "owner only")
+
+
+class RoleSetBody(BaseModel):
+    user_id: str
+    role: str  # 'owner' | 'worker'
