@@ -20,7 +20,7 @@ def health_response(app_version_file: str) -> dict:
     version_info = read_app_version(app_version_file)
     return {
         "status": "ok",
-        "service": "promonta-miniapp",
+        "service": "grandmont-group-miniapp",
         "version": version_info["version"],
         "commit": version_info["commit"],
         "time": datetime.utcnow().isoformat() + "Z",

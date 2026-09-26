@@ -103,7 +103,7 @@ def test_finish_post_tickets_must_succeed_before_outbox_delete():
     assert "if (!res.ok)" in helper
     assert "throw err;" in helper
     assert "Не удалось создать записи после финиша" in helper
-    assert sender.index("await _fwCreatePostFinishTickets") < sender.index("if (fromOutbox) await promontaOutboxDelete")
+    assert sender.index("await _fwCreatePostFinishTickets") < sender.index("if (fromOutbox) await appOutboxDelete")
 
 
 def test_finish_wizard_loads_frozen_finish_context_before_plan_fact():

@@ -393,7 +393,7 @@ async function _uploadCheckinPhotos(url, files, extraFields, idempotencyKey, geo
   });
   if (!res.ok) {
     // 18.09 (audit finding): err.status must carry the real HTTP status code so
-    // promontaOutboxIsTransientError() (shared.js) can tell a permanent 4xx
+    // appOutboxIsTransientError() (shared.js) can tell a permanent 4xx
     // rejection apart from a transient 5xx/429 -- without this every HTTP error
     // here looked identical to the outbox (a plain Error, no status), and got
     // treated as permanent (straight to dead_letter) even for a retriable 502.
@@ -425,7 +425,7 @@ async function _queueCheckinStartOutbox(files, extraFields, idempotencyKey, occu
   const geo = await _getGeolocation();
   if (!geo.lat || !geo.lon) throw new Error('Включи геолокацию, чтобы сохранить старт в очередь');
   const occurredAt = occurredAtOverride || _checkinEventTimestamp();
-  return promontaOutboxPut({
+  return appOutboxPut({
     id: _checkinStartOutboxId(idempotencyKey),
     kind: CHECKIN_OUTBOX_KIND_START,
     objectId: _stagesCurrentObjectId,
@@ -451,7 +451,7 @@ async function _sendCheckinStartOutboxRecord(record) {
       record.geo,
       record.occurredAt
     );
-    await promontaOutboxDelete(record.id);
+    await appOutboxDelete(record.id);
     _setActiveCheckinSession(record.objectId, { id: session.id, finished: false });
     if (shouldRefreshCurrentObject && typeof refreshCheckinButtons === 'function') refreshCheckinButtons();
     if (typeof _loadWorkerShiftCta === 'function' && document.getElementById('worker-shift-cta')) {
@@ -470,15 +470,15 @@ async function _sendCheckinStartOutboxRecord(record) {
 }
 
 async function _retryCheckinOutbox() {
-  if (_checkinOutboxRetrying || !navigator.onLine || typeof promontaOutboxList !== 'function') return;
+  if (_checkinOutboxRetrying || !navigator.onLine || typeof appOutboxList !== 'function') return;
   _checkinOutboxRetrying = true;
   try {
-    const startRecords = await promontaOutboxList(CHECKIN_OUTBOX_KIND_START).catch(() => []);
+    const startRecords = await appOutboxList(CHECKIN_OUTBOX_KIND_START).catch(() => []);
     // 17.09 (audit finding, P0): dead_letter records must not be retried by the
     // background/reconnect loop anymore -- they exhausted their attempts or hit
-    // a permanent rejection, see promontaOutboxRecordFailure() in shared.js.
+    // a permanent rejection, see appOutboxRecordFailure() in shared.js.
     for (const record of startRecords.filter(r => r.state !== 'dead_letter')) {
-      await promontaOutboxPatch(record.id, {
+      await appOutboxPatch(record.id, {
         state: 'sending',
         attempts: (record.attempts || 0) + 1,
         lastError: null,
@@ -487,7 +487,7 @@ async function _retryCheckinOutbox() {
         await _sendCheckinStartOutboxRecord(record);
         showToast('Отложенный старт смены отправлен', 'success');
       } catch (e) {
-        await promontaOutboxRecordFailure({ ...record, attempts: (record.attempts || 0) + 1 }, e);
+        await appOutboxRecordFailure({ ...record, attempts: (record.attempts || 0) + 1 }, e);
       }
     }
     if (typeof _retryFinishOutboxRecords === 'function') await _retryFinishOutboxRecords();
@@ -789,7 +789,7 @@ function initCheckinControls() {
   });
   document.getElementById('checkin-preview-confirm-btn').addEventListener('click', _confirmCheckinPreview);
   document.getElementById('checkin-preview-close').addEventListener('click', async () => {
-    if (await promontaConfirm('Отменить фото-фиксацию?')) _closeCheckinPreviewModal();
+    if (await appConfirm('Отменить фото-фиксацию?')) _closeCheckinPreviewModal();
   });
   document.getElementById('checkin-analyze-btn').addEventListener('click', runCheckinAnalysis);
 

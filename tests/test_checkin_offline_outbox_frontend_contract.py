@@ -14,15 +14,15 @@ def _source(path: Path) -> str:
 def test_shared_indexeddb_outbox_persists_binary_records():
     src = _source(SHARED_JS)
 
-    assert "const PROMONTA_OUTBOX_DB = 'promonta-offline-outbox';" in src
-    assert "const PROMONTA_OUTBOX_STORE = 'records';" in src
-    assert "indexedDB.open(PROMONTA_OUTBOX_DB, PROMONTA_OUTBOX_VERSION)" in src
-    assert "db.createObjectStore(PROMONTA_OUTBOX_STORE, { keyPath: 'id' })" in src
+    assert "const APP_OUTBOX_DB = 'grandmont-group-offline-outbox';" in src
+    assert "const APP_OUTBOX_STORE = 'records';" in src
+    assert "indexedDB.open(APP_OUTBOX_DB, APP_OUTBOX_VERSION)" in src
+    assert "db.createObjectStore(APP_OUTBOX_STORE, { keyPath: 'id' })" in src
     assert "store.createIndex('kind', 'kind', { unique: false })" in src
-    assert "async function promontaOutboxPut(record)" in src
-    assert "async function promontaOutboxPatch(id, updates)" in src
-    assert "async function promontaOutboxDelete(id)" in src
-    assert "async function promontaOutboxList(kind)" in src
+    assert "async function appOutboxPut(record)" in src
+    assert "async function appOutboxPatch(id, updates)" in src
+    assert "async function appOutboxDelete(id)" in src
+    assert "async function appOutboxList(kind)" in src
 
 
 def test_start_checkin_queues_files_geo_fields_and_idempotency_key():
@@ -46,10 +46,10 @@ def test_start_checkin_retries_outbox_on_reconnect():
     src = _source(CHECKIN_JS)
 
     assert "async function _retryCheckinOutbox()" in src
-    assert "promontaOutboxList(CHECKIN_OUTBOX_KIND_START)" in src
+    assert "appOutboxList(CHECKIN_OUTBOX_KIND_START)" in src
     assert "await _sendCheckinStartOutboxRecord(record)" in src
-    assert "await promontaOutboxPatch(record.id, {" in src
-    assert "await promontaOutboxDelete(record.id)" in src
+    assert "await appOutboxPatch(record.id, {" in src
+    assert "await appOutboxDelete(record.id)" in src
     assert "window.addEventListener('online', _retryCheckinOutbox)" in src
     assert "setTimeout(_retryCheckinOutbox, 1500)" in src
 
@@ -74,10 +74,10 @@ def test_finish_wizard_replays_finish_outbox_with_same_idempotency_key():
     src = _source(FINISH_WIZARD_JS)
 
     assert "async function _retryFinishOutboxRecords()" in src
-    assert "promontaOutboxList(CHECKIN_OUTBOX_KIND_FINISH)" in src
+    assert "appOutboxList(CHECKIN_OUTBOX_KIND_FINISH)" in src
     assert "async function _fwSendFinishOutboxRecord(record, { fromOutbox = false } = {})" in src
     assert "'Idempotency-Key': record.idempotencyKey" in src
     assert "body: _fwAppendFinishRecordFormData(record)" in src
-    assert "if (fromOutbox) await promontaOutboxDelete(record.id)" in src
+    assert "if (fromOutbox) await appOutboxDelete(record.id)" in src
     assert "window.addEventListener('online', _retryFinishOutboxRecords)" in src
     assert "setTimeout(_retryFinishOutboxRecords, 1800)" in src

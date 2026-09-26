@@ -1,17 +1,26 @@
 #!/usr/bin/env node
 /**
- * Promonta Angebot PDF Generator — свободные позиции (любой геверк, ручной ввод цен).
+ * Grandmont Group Angebot PDF Generator — свободные позиции (любой геверк, ручной ввод цен).
  * Вход: JSON конфиг через argv[2] (путь к файлу) или stdin.
  * Выход: путь к сгенерированному PDF (stdout, одна строка).
  */
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 
+// LEGACY_CONTACT_DOMAIN / DOMAIN_COMPAT_PENDING (Grandmont Group rebrand, 26.09):
+// the Grandmont Group contact address still lives on the pre-rebrand promonta-bau.de
+// domain because no Grandmont Group domain/mailbox exists yet. Set
+// GRANDMONT_GROUP_CONTACT_EMAIL in the service env (inherited by this child process) once
+// the new address exists -- do NOT invent one. The fallback keeps current PDFs unchanged.
+const LEGACY_CONTACT_EMAIL = 'anfragen@promonta-bau.de';
+
+// Legal name: official registration of "Grandmont Group UG (haftungsbeschränkt)" is
+// PENDING (not yet confirmed) -- verify before issuing binding documents.
 const FIRMA = {
-  name: 'Promonta Multiservice UG',
+  name: 'Grandmont Group UG (haftungsbeschränkt)',
   adresse: 'Zieschestraße 37, 09111 Chemnitz',
   tel: '+49 371 91909008',
-  email: 'anfragen@promonta-bau.de',
+  email: process.env.GRANDMONT_GROUP_CONTACT_EMAIL || LEGACY_CONTACT_EMAIL,
   unterzeichner: 'Boris Opochitskiy',
 };
 

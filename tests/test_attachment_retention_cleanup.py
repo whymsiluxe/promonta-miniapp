@@ -67,7 +67,7 @@ class CleanupDirTests(unittest.TestCase):
             self.assertTrue(os.path.exists(fpath))
 
     def test_nonexistent_directory_is_a_noop(self):
-        removed = cleanup.cleanup_dir('/no/such/promonta/dir')
+        removed = cleanup.cleanup_dir('/no/such/grandmont-group/dir')
         self.assertEqual(removed, 0)
 
     def test_unremovable_file_does_not_abort_the_whole_pass(self):

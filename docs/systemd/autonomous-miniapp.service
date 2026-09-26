@@ -1,5 +1,10 @@
+# Reference copy only -- the unit actually installed on the VPS is NOT managed by this
+# repo's git history and must be reconciled by hand. Grandmont Group rebrand (26.09):
+# env vars renamed PROMONTA_* -> GRANDMONT_GROUP_* (the runner still reads the old names
+# as a fallback). User/Group/paths still say "promonta" because the Linux user and its
+# home directory have NOT been renamed yet -- that is a separate, later infra wave.
 [Unit]
-Description=Autonomous Codex Promonta miniapp continuation agent
+Description=Autonomous Codex Grandmont Group miniapp continuation agent
 After=network-online.target
 Wants=network-online.target
 
@@ -10,7 +15,7 @@ Group=promonta
 WorkingDirectory=/home/promonta/agent/miniapp-repo
 Environment=HOME=/home/promonta
 Environment=CODEX_HOME=/home/promonta/.codex
-Environment=PROMONTA_MINIAPP_REPO=/home/promonta/agent/miniapp-repo
-Environment=PROMONTA_AGENT_ROOT=/home/promonta/agent
+Environment=GRANDMONT_GROUP_MINIAPP_REPO=/home/promonta/agent/miniapp-repo
+Environment=GRANDMONT_GROUP_AGENT_ROOT=/home/promonta/agent
 ExecStart=/home/promonta/agent/miniapp-repo/scripts/autonomous_codex_runner.sh
 Nice=5

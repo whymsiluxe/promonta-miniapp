@@ -1,7 +1,7 @@
 """Foundation Completion tests — covers the four P0 and three P1 items from
 docs/FOUNDATION_COMPLETION_ADDENDUM.md that were previously stubbed or missing.
 
-Isolation: conftest.py sets MINIAPP_DATA_ROOT and PROMONTA_ENV=test at import time.
+Isolation: conftest.py sets MINIAPP_DATA_ROOT and GRANDMONT_GROUP_ENV=test at import time.
 """
 import importlib
 import importlib.util

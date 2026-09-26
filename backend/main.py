@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Promonta Mini App — FastAPI backend. Фаза 2 плана: скелет + initData-auth + roles.
+"""Grandmont Group Mini App — FastAPI backend. Фаза 2 плана: скелет + initData-auth + roles.
 Запуск: uvicorn main:app --host 127.0.0.1 --port 8001
 """
 import copy
@@ -35,18 +35,30 @@ sys.path.insert(0, '/home/promonta/agent')
 # пути к файлу через importlib.util, без малейшего влияния на глобальный sys.path.
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
-AGENT_ROOT = os.environ.get('PROMONTA_AGENT_ROOT', '/home/promonta/agent')
+
+
+def _env_compat(name: str, legacy_name: str, default=None):
+    """Grandmont Group rebrand (26.09): env vars were renamed PROMONTA_* ->
+    GRANDMONT_GROUP_*. The new name wins; the pre-rebrand name is still honoured so a
+    deployed unit/.env that sets the old name keeps working until it is migrated."""
+    value = os.environ.get(name)
+    if value is None:
+        value = os.environ.get(legacy_name)
+    return default if value is None else value
+
+
+AGENT_ROOT = _env_compat('GRANDMONT_GROUP_AGENT_ROOT', 'PROMONTA_AGENT_ROOT', '/home/promonta/agent')
 # 17.09: default moved from AGENT_ROOT (external, untracked path) to BACKEND_DIR
 # -- both scripts are now tracked in backend/ (see scripts/manifest.sh) so a
 # clean clone + deploy is self-contained. Env override still works for anyone
 # who wants to point at a different location.
-CREATE_OBJECT_SCRIPT = os.environ.get('PROMONTA_CREATE_OBJECT_SCRIPT', os.path.join(BACKEND_DIR, 'create_object.py'))
-CREATE_OBJECT_FOLDER_SCRIPT = os.environ.get('PROMONTA_CREATE_OBJECT_FOLDER_SCRIPT', os.path.join(BACKEND_DIR, 'create_object_folder.py'))
+CREATE_OBJECT_SCRIPT = _env_compat('GRANDMONT_GROUP_CREATE_OBJECT_SCRIPT', 'PROMONTA_CREATE_OBJECT_SCRIPT', os.path.join(BACKEND_DIR, 'create_object.py'))
+CREATE_OBJECT_FOLDER_SCRIPT = _env_compat('GRANDMONT_GROUP_CREATE_OBJECT_FOLDER_SCRIPT', 'PROMONTA_CREATE_OBJECT_FOLDER_SCRIPT', os.path.join(BACKEND_DIR, 'create_object_folder.py'))
 TOOL_BOOKINGS_FILE = os.path.join(DATA_ROOT, 'tool_bookings.json')
 
 _PROD_DATA_ROOT = '/home/promonta/agent/miniapp'
 _is_test_context = (
-    os.environ.get('PROMONTA_ENV') == 'test'
+    _env_compat('GRANDMONT_GROUP_ENV', 'PROMONTA_ENV') == 'test'
     or 'pytest' in sys.modules
 )
 if _is_test_context and DATA_ROOT == _PROD_DATA_ROOT:
@@ -87,7 +99,7 @@ _repo_module_cache: dict = {}
 
 
 def _load_repo_tools_lib():
-    return _load_repo_module(TOOLS_LIB_PATH, 'promonta_repo_tools_lib', _repo_module_cache, 'tools_lib')
+    return _load_repo_module(TOOLS_LIB_PATH, 'grandmont_group_repo_tools_lib', _repo_module_cache, 'tools_lib')
 
 
 def _load_repo_mangel_lib():
@@ -95,7 +107,7 @@ def _load_repo_mangel_lib():
     обычным `import mangel_lib as ml` -- тот же класс риска, что чинили для tools_lib.py
     (import мог молча резолвиться в untracked-копию на диске сервера вместо
     репозиторной, даже если содержимое разошлось). Тот же изолированный loader."""
-    return _load_repo_module(MANGEL_LIB_PATH, 'promonta_repo_mangel_lib', _repo_module_cache, 'mangel_lib')
+    return _load_repo_module(MANGEL_LIB_PATH, 'grandmont_group_repo_mangel_lib', _repo_module_cache, 'mangel_lib')
 
 
 def _load_repo_objekte_lib():
@@ -104,7 +116,7 @@ def _load_repo_objekte_lib():
     /home/promonta/agent/objekte_lib.py, что и работает в prod, но не существует на
     CI runner (нет /home/promonta там) -- CI падал ModuleNotFoundError. Тот же
     изолированный loader, что и tools_lib/mangel_lib."""
-    return _load_repo_module(OBJEKTE_LIB_PATH, 'promonta_repo_objekte_lib', _repo_module_cache, 'objekte_lib')
+    return _load_repo_module(OBJEKTE_LIB_PATH, 'grandmont_group_repo_objekte_lib', _repo_module_cache, 'objekte_lib')
 
 
 def _load_repo_roadmap_lib():
@@ -112,7 +124,7 @@ def _load_repo_roadmap_lib():
     грузившийся обычным `import roadmap_lib as rl` через глобальный sys.path, тот же
     риск резолва в untracked-копию на диске сервера вместо репозиторной. Тот же
     изолированный loader, что и tools_lib/mangel_lib/objekte_lib."""
-    return _load_repo_module(ROADMAP_LIB_PATH, 'promonta_repo_roadmap_lib', _repo_module_cache, 'roadmap_lib')
+    return _load_repo_module(ROADMAP_LIB_PATH, 'grandmont_group_repo_roadmap_lib', _repo_module_cache, 'roadmap_lib')
 
 
 # 01.08 (доп.раунд): предыдущее предположение "обычный import безопасен, uvicorn
@@ -418,7 +430,7 @@ CONTRACTS_DRIVE_FOLDER_ID = os.environ.get('CONTRACTS_DRIVE_FOLDER_ID', '')
 # _corrupt_lock_path, _quarantine_corrupt_json
 
 
-app = FastAPI(title="Promonta Mini App", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Grandmont Group Mini App", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://web.telegram.org"],
@@ -5560,7 +5572,7 @@ def _owner_ai_subprocess_env() -> dict:
     return {k: os.environ[k] for k in _OWNER_AI_ENV_ALLOWLIST if k in os.environ}
 
 AI_SYSTEM_PROMPT = (
-    "Ты ИИ-ассистент строительной фирмы Promonta Multiservice UG (Chemnitz, Sachsen, Германия). "
+    "Ты ИИ-ассистент строительной фирмы Grandmont Group UG (haftungsbeschränkt) (Chemnitz, Sachsen, Германия). "
     "Специализация: Trockenbau, Malerarbeiten, Spachtel Q2/Q3, Fliesen, Bodenbelag, WDVS/Fassade. "
     "Клиенты: Bauunternehmen, Hausverwaltungen, частные. "
     "Отвечай кратко и по делу. Внутренние ответы — на русском, тексты клиентам — на деловом немецком."

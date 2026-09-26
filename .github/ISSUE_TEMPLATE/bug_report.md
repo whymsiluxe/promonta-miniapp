@@ -20,7 +20,7 @@ labels: bug
 
 **Screenshot**:
 
-**Logs** (if you have VPS access): `journalctl -u promonta-miniapp -n 50`, or check `audit.log` for the relevant timeframe.
+**Logs** (if you have VPS access): `journalctl -u grandmont-miniapp -n 50`, or check `audit.log` for the relevant timeframe.
 
 **Device / Telegram client**:
 

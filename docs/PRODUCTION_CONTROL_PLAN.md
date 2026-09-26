@@ -4,7 +4,7 @@
 
 Owner wants two things:
 
-1. Deep analysis of the current Promonta miniapp — bottlenecks, risks, what to improve.
+1. Deep analysis of the current Grandmont Group miniapp — bottlenecks, risks, what to improve.
 2. A production-control layer: contract → day-by-day plan → worker daily checklist with morning acceptance → shift finish with fact-reporting → automatic carryover → owner risk dashboard → real worker productivity, replacing guesswork with contract-driven, norm-based planning.
 
 Requirements arrived in three rounds — an initial scoped Q&A, one linking clarification, a large unstructured addendum, and finally a complete architecture spec the owner obtained from ChatGPT. **The ChatGPT spec is materially more rigorous than my own first draft** (correct source-of-truth split between Sheets and local store, versioned plan acceptance instead of a boolean, carryover as remaining-quantity instead of vague rollover, contract-date vs internal-target risk separation, a dedicated sync worker instead of per-request Sheets polling, explicit security/ACL and idempotency rules) — it supersedes my draft's architecture. This plan adopts it as the primary spec, keeps my earlier standalone analysis (Section I) and the memory-process fix (Section K) since those aren't superseded by anything in the ChatGPT doc, and discards my draft's naming/architecture (`day_plans.json`, ad-hoc rollover) in favor of the spec's `DailyPlan`/`Carryover`/versioned-acceptance model throughout.

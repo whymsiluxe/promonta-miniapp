@@ -6,7 +6,7 @@
 
 Diagnose:
 ```bash
-ssh -i ~/.ssh/promonta_hetzner root@162.55.53.147 "journalctl -u promonta-miniapp -n 50 --no-pager | grep -A5 'objekte_lib\|invalid_grant'"
+ssh -i ~/.ssh/promonta_hetzner root@162.55.53.147 "journalctl -u grandmont-miniapp -n 50 --no-pager | grep -A5 'objekte_lib\|invalid_grant'"
 ```
 If you see `urllib.error.HTTPError: HTTP Error 400` around `_token()` / `get_used_range` in `objekte_lib.py`, and the response body says `"error": "invalid_grant", "error_description": "Token has been expired or revoked."` — the Google OAuth refresh token is dead and needs re-authorization (not related to the app being in "Testing" vs "Production" publish status on Google Cloud Console — a token already issued stays dead regardless of publish status; publish status only affects the lifetime of *future* tokens).
 
@@ -15,14 +15,14 @@ Fix (manual, one-time browser step — cannot be done headlessly):
 2. Build the authorization URL: `https://accounts.google.com/o/oauth2/v2/auth?client_id=<ID>&redirect_uri=http://localhost&response_type=code&scope=https://www.googleapis.com/auth/drive.file&access_type=offline&prompt=consent` (scope must match what's in the existing `.gdrive_token.json`'s `scope` field — was `drive.file` as of 2026-07-23).
 3. Owner opens that URL in a browser, signs in with the Google account that owns the Objekte spreadsheet, approves — browser will try to load `http://localhost/?code=...&scope=...` and fail to connect (expected, nothing listens there) — the `code=` value is in the address bar.
 4. Exchange the code for a new token server-side (do NOT put client_secret in any client-visible place): POST to `https://oauth2.googleapis.com/token` with `client_id`, `client_secret` (from the same creds file), `code`, `redirect_uri=http://localhost`, `grant_type=authorization_code`.
-5. Backup the old `.gdrive_token.json`, write the new token response in its place, `systemctl restart promonta-miniapp`.
+5. Backup the old `.gdrive_token.json`, write the new token response in its place, `systemctl restart grandmont-miniapp`.
 6. Verify: refresh-token-flow test (POST to the token endpoint with `grant_type=refresh_token` using the new refresh_token) should return 200, and `journalctl` after a fresh `/api/objects` call should show no `invalid_grant`.
 
-This same credentials file/token is likely shared by other Promonta agent scripts beyond the miniapp (per `server-structure.md`, Google Sheets is used project-wide) — a dead token here may also be breaking other automations, worth checking if this recurs.
+This same credentials file/token is likely shared by other Grandmont Group agent scripts beyond the miniapp (per `server-structure.md`, Google Sheets is used project-wide) — a dead token here may also be breaking other automations, worth checking if this recurs.
 
 ## App won't open / white screen in Telegram
 
-1. Check the backend is up: `ssh` to VPS, `systemctl status promonta-miniapp`. If dead, `journalctl -u promonta-miniapp -n 100` for the crash reason — most common cause is `BOT_TOKEN` (or another required env var) missing from `/etc/claude-agent.env` after an edit.
+1. Check the backend is up: `ssh` to VPS, `systemctl status grandmont-miniapp`. If dead, `journalctl -u grandmont-miniapp -n 100` for the crash reason — most common cause is `BOT_TOKEN` (or another required env var) missing from `/etc/claude-agent.env` after an edit.
 2. Check Caddy is serving: `curl -I https://app.promonta.fun/app.html` from anywhere — should be 200. If not, `systemctl status caddy` on the VPS.
 3. Check browser/Telegram console for JS errors — a syntax error in any `js/*.js` file loaded by `app.html` can blank the whole app since there's no bundler-level error isolation.
 
@@ -37,7 +37,7 @@ This same credentials file/token is likely shared by other Promonta agent script
 
 ## Backend service won't start after an edit
 
-1. `systemctl status promonta-miniapp` then `journalctl -u promonta-miniapp -n 50` for the traceback.
+1. `systemctl status grandmont-miniapp` then `journalctl -u grandmont-miniapp -n 50` for the traceback.
 2. Most common causes: Python syntax error in `main.py`, a required env var missing, or a JSON data file corrupted (shouldn't happen given the atomic-write pattern, but if it does: the file's temp-write sibling or a recent VPS backup tarball is the recovery path — see [DATABASE.md](DATABASE.md)).
 3. Rollback: restore the most recent `main.py.bak-pre-*` file from `/home/promonta/agent/miniapp/`, or `git checkout` the last known-good commit from this repo's `backend/main.py` and re-sync.
 

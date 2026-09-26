@@ -64,7 +64,7 @@ class RuntimeManifestTests(unittest.TestCase):
 
     def test_deploy_then_restore_roundtrips_backend_artifact_tree(self):
         entries = _manifest_entries()
-        with tempfile.TemporaryDirectory(prefix="promonta-runtime-manifest-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="grandmont-group-runtime-manifest-") as tmp:
             tmp_path = pathlib.Path(tmp)
             serving = tmp_path / "serving"
             backup = tmp_path / "backup"

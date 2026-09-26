@@ -37,8 +37,8 @@ produced this document).
 - [ ] `/api/health/ready` checked from inside the app as owner (can't curl
       it directly — needs signed Telegram initData) — all `checks` fields
       `ok`.
-- [ ] `systemctl status promonta-miniapp.service` → active, no recent
-      restart loop in `journalctl -u promonta-miniapp -n 50`.
+- [ ] `systemctl status grandmont-miniapp.service` → active, no recent
+      restart loop in `journalctl -u grandmont-miniapp -n 50`.
 
 ## Manual live verification (Telegram, not curl/code review)
 
@@ -89,7 +89,7 @@ produced this document).
 ## Post-deploy
 
 - [ ] Recent backend logs reviewed for unexpected errors
-      (`journalctl -u promonta-miniapp -n 100`).
+      (`journalctl -u grandmont-miniapp -n 100`).
 - [ ] Disk space checked (`df -h /`) — no sudden jump.
 - [ ] If anything above fails: `scripts/rollback.sh <backup-dir>` — the exact
       path is printed by `deploy.sh` at the end of its run.

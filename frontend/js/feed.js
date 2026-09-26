@@ -567,7 +567,7 @@ async function togglePhotoLike(btn, photoId) {
 function sharePhotoPost(photoId) {
   const post = _feedPhotosCache.find(p => p.id === photoId);
   if (!post) return;
-  const text = `${post.name || 'Promonta'}: ${post.caption || (post.object_id ? `Фото по объекту ${post.object_id}` : 'Фотоотчёт')}`;
+  const text = `${post.name || 'Grandmont Group'}: ${post.caption || (post.object_id ? `Фото по объекту ${post.object_id}` : 'Фотоотчёт')}`;
   try {
     if (navigator.share) { navigator.share({ text }); return; }
   } catch (e) {}

@@ -191,7 +191,7 @@ function openWorkerShiftStatusSheet(shiftState) {
   modal.querySelector('[data-shift-status-close]')?.addEventListener('click', closeWorkerShiftStatusSheet);
   modal.querySelector('[data-shift-status-primary]')?.addEventListener('click', async () => {
     if (canRetry) {
-      await promontaOutboxManualRetry(shiftState.outboxRecord.id);
+      await appOutboxManualRetry(shiftState.outboxRecord.id);
       if (shiftState.outboxRecord.kind === WORKER_SHIFT_OUTBOX_KIND_FINISH && typeof _retryFinishOutboxRecords === 'function') {
         await _retryFinishOutboxRecords();
       } else if (typeof _retryCheckinOutbox === 'function') {

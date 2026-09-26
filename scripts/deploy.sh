@@ -1,5 +1,5 @@
 #!/bin/bash
-# Promonta miniapp deploy -- Release-аудит Этап 8 + доп.раунд 31.07. Полный цикл:
+# Grandmont Group miniapp deploy -- Release-аудит Этап 8 + доп.раунд 31.07. Полный цикл:
 # чистота репо -> тесты (в изолированном env, БЕЗ production credentials) -> syntax ->
 # backup -> копирование в production paths -> restart -> health-проверка.
 #

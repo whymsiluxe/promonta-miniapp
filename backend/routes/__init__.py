@@ -1,1 +1,1 @@
-"""Route modules for Promonta backend."""
+"""Route modules for Grandmont Group backend."""

@@ -580,7 +580,7 @@ function _openTeamRowActionsMenu(objectId, userId, assignmentId, team, triggerEl
         return;
       }
       if (action === 'delete') {
-        if (!await promontaConfirm(`Удалить назначение ${u?.name || userId}?`, { danger: true })) return;
+        if (!await appConfirm(`Удалить назначение ${u?.name || userId}?`, { danger: true })) return;
         try {
           await api(`/api/objects/${objectId}/assignments/${assignmentId}`, { method: 'DELETE' });
           hapticImpact('light');
@@ -1595,7 +1595,7 @@ function _attachObjStagesHandlers(objectId, stages) {
   document.querySelectorAll('.obj-stage-complete-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!await promontaConfirm('Отметить этап завершённым?')) return;
+      if (!await appConfirm('Отметить этап завершённым?')) return;
       btn.disabled = true;
       try {
         await api(`/api/objects/${objectId}/stages/${btn.dataset.row}/complete`, { method: 'POST' });
@@ -1761,7 +1761,7 @@ function _attachStageRoadmapHandlers(objectId, row) {
   wrap.querySelectorAll('.obj-roadmap-item-delete').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!await promontaConfirm('Удалить этот пункт чек-листа?', { danger: true })) return;
+      if (!await appConfirm('Удалить этот пункт чек-листа?', { danger: true })) return;
       try {
         await api(`/api/objects/${objectId}/stages/${row}/roadmap/items/${btn.dataset.itemId}`, { method: 'DELETE' });
         hapticImpact('light');
@@ -1775,7 +1775,7 @@ function _attachStageRoadmapHandlers(objectId, row) {
   wrap.querySelectorAll('.obj-roadmap-category-delete').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!await promontaConfirm('Удалить эту категорию? (только если в ней нет пунктов)', { danger: true })) return;
+      if (!await appConfirm('Удалить эту категорию? (только если в ней нет пунктов)', { danger: true })) return;
       try {
         await api(`/api/objects/${objectId}/stages/${row}/roadmap/categories/${btn.dataset.categoryId}`, { method: 'DELETE' });
         hapticImpact('light');

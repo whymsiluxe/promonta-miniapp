@@ -1,4 +1,4 @@
-# Promonta Mini App — Endpoint Access Matrix
+# Grandmont Group Mini App — Endpoint Access Matrix
 
 Полная инвентаризация всех 140 routes в `backend/main.py`. Собрано прямым чтением кода (не по памяти/старым отчётам) 30.07.2026.
 

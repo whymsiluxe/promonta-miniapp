@@ -29,7 +29,7 @@ class HealthEndpointTests(unittest.TestCase):
         result = backend.health()
         for field in ('status', 'service', 'version', 'commit', 'time'):
             self.assertIn(field, result)
-        self.assertEqual(result['service'], 'promonta-miniapp')
+        self.assertEqual(result['service'], 'grandmont-group-miniapp')
 
     def test_health_does_not_leak_secrets(self):
         result = backend.health()

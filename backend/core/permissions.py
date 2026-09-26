@@ -53,7 +53,7 @@ from urllib.parse import parse_qsl
 import json
 
 
-_auth_audit_context: ContextVar[dict | None] = ContextVar('promonta_auth_audit_context', default=None)
+_auth_audit_context: ContextVar[dict | None] = ContextVar('grandmont_group_auth_audit_context', default=None)
 
 # 24.07: online-статус для чата -- in-memory, не персистентный на диск.
 # Обновляется на каждый authenticated-запрос (get_current_user), не отдельный

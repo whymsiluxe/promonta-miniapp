@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-09-26 (Grandmont Group rebrand — code/display/docs wave, branch `rename/grandmont-group-branding`)
+
+Brand "Promonta" -> "Grandmont Group" (slug `grandmont-group`). Legal name
+"Grandmont Group UG (haftungsbeschränkt)" is prepared in templates/prompts, but its
+official registration is **pending, not yet confirmed**. Out of scope (separate later
+waves): domain `app.promonta.fun`, VPS Linux user `promonta` + `/home/promonta/...`
+paths, GitHub repo name, installed systemd units other than the already-renamed
+`grandmont-miniapp.service`.
+
+### Changed
+- Display: `<title>` "Grandmont Group Mini App", splash wordmark "GRANDMONT GROUP"
+  (centred, wraps on narrow phones), onboarding welcome, feed share fallback author,
+  chat thread fallback "Команда Grandmont Group".
+- JS identifiers: `promontaConfirm()` -> `appConfirm()` (+ `.app-confirm-*` CSS/ids),
+  `promontaOutbox*` -> `appOutbox*`, `PROMONTA_OUTBOX_*` -> `APP_OUTBOX_*`; brand-neutral
+  names so a future rebrand doesn't touch them again. All call sites + contract tests
+  updated together (`tests/test_promonta_confirm.py` -> `tests/test_app_confirm.py`).
+- Browser storage (each with a one-time legacy fallback/migration, see
+  `tests/test_rebrand_storage_compat.py`): session token sessionStorage key
+  `grandmont_group_session_token` (reads + migrates `promonta_session_token`, so the
+  deploy does not log out open sessions); IndexedDB outbox
+  `grandmont-group-offline-outbox` (queued records copied from `promonta-offline-outbox`
+  with `add()`, legacy DB deleted after a committed copy); today-plan cache
+  `grandmont-group-today-plan`; object order `grandmont_group_objects_order`.
+- Env vars: `GRANDMONT_GROUP_ENV`, `GRANDMONT_GROUP_AGENT_ROOT`,
+  `GRANDMONT_GROUP_CREATE_OBJECT_SCRIPT`, `GRANDMONT_GROUP_CREATE_OBJECT_FOLDER_SCRIPT`
+  (main.py `_env_compat()` still honours the old `PROMONTA_*` names);
+  `scripts/autonomous_codex_runner.sh` `GRANDMONT_GROUP_*` with `PROMONTA_*` fallback.
+- Python module-cache keys `grandmont_group_repo_*_lib`; health `service` field
+  `grandmont-group-miniapp`; FastAPI title.
+- Legal/PDF: Angebot + Rechnung company name "Grandmont Group UG (haftungsbeschränkt)";
+  Rechnung wordmark/signature "Grandmont Group"; Rechnung logo file is now
+  `backend/grandmont-group-logo.png` (or `GRANDMONT_GROUP_LOGO_PATH`), text wordmark if
+  missing — the old `promonta-logo.png` is intentionally not used. Angebot contact email
+  extracted to `GRANDMONT_GROUP_CONTACT_EMAIL`, falling back to the current
+  `anfragen@promonta-bau.de` (LEGACY_CONTACT_DOMAIN / DOMAIN_COMPAT_PENDING).
+- AI system prompt names "Grandmont Group UG (haftungsbeschränkt)".
+- `package.json` name `grandmont-group-miniapp-pdf`; `docs/systemd/autonomous-miniapp.service`
+  reference copy uses `GRANDMONT_GROUP_*` env names.
+- Current-state docs: brand text, and the backend unit name corrected to the real
+  `grandmont-miniapp.service` (renamed on the VPS 24.09, see commit 3fb0caa). Dated
+  handoffs/plans and older changelog entries are historical record and left unchanged.
+
+### Deployment impact (needs owner sign-off before deploy)
+- Rechnung tax/bank identifiers (Steuernummer, USt-IdNr., IBAN, GF) were carried over
+  unchanged from the pre-rebrand entity next to the new legal name — confirm validity.
+- Rechnung PDFs show a text wordmark until `grandmont-group-logo.png` is deployed.
+- Health `service` value changes `promonta-miniapp` -> `grandmont-group-miniapp`.
+
 ## 2026-09-25 (backend architecture — Stages/Roadmap router extraction, branch `codex/split-stages`)
 
 ### Changed

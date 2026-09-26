@@ -116,7 +116,7 @@ cover backend logic; they do not replace looking at the real rendered UI.
 curl -s https://app.promonta.fun/api/health
 ```
 
-Should return `{"status": "ok", "service": "promonta-miniapp", "version": ..., "commit": ..., "time": ...}`. This is the fastest single check that the backend process is alive and reachable through Caddy. `/api/health/ready` requires owner Telegram auth (can't be curl'd directly without a signed initData header) — check it from inside the app instead, or see `scripts/deploy.sh` for the automated post-deploy check.
+Should return `{"status": "ok", "service": "grandmont-group-miniapp", "version": ..., "commit": ..., "time": ...}`. This is the fastest single check that the backend process is alive and reachable through Caddy. `/api/health/ready` requires owner Telegram auth (can't be curl'd directly without a signed initData header) — check it from inside the app instead, or see `scripts/deploy.sh` for the automated post-deploy check.
 
 ## What "done" requires
 

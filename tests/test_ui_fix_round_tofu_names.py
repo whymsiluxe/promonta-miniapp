@@ -16,7 +16,7 @@ import main as backend
 class ProfileMeGarbledNameFallbackTests(unittest.TestCase):
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix='promonta-test-tofu-')
+        self._tmp = tempfile.mkdtemp(prefix='grandmont-group-test-tofu-')
         # 25.09 (test-pollution fix): these reassignments used to leak into
         # every later test in the same pytest process (no teardown) --
         # harmless while every reader lived in main.py's own namespace, but

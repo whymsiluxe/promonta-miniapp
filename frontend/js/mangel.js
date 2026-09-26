@@ -396,7 +396,7 @@ function openMangelActionMenu(ticketId, opts = {}) {
 // 04.08 (задача 3.3): Owner-only soft delete. Подтверждение обязательно.
 async function _deleteMangelTicket(ticketId) {
   if (currentRole !== 'owner') return;
-  if (!await promontaConfirm('Удалить дефект? Дефект исчезнет из рабочих списков.', { danger: true })) return;
+  if (!await appConfirm('Удалить дефект? Дефект исчезнет из рабочих списков.', { danger: true })) return;
   try {
     await api(`/api/mangel/${ticketId}`, { method: 'DELETE' });
     hapticImpact('medium');

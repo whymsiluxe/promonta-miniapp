@@ -4,7 +4,7 @@ AUTONOMOUS_STATUS: IN_PROGRESS
 
 # Unified Autonomous Master Plan - 2026-09-13
 
-This is the single source of truth for the next Promonta miniapp work. It combines:
+This is the single source of truth for the next Grandmont Group miniapp work. It combines:
 
 - the premium UI screenshot audit from 2026-09-13;
 - the previous 3 large autonomous stages;
@@ -84,7 +84,7 @@ Explicit chat style rule:
   - grouped surface: light warm gray;
   - primary text: near black, not pure black;
   - secondary text: muted gray/taupe;
-  - accent: Promonta forest green;
+  - accent: Grandmont Group forest green;
   - brass/gold: only small brand/status accents.
 - Red/yellow/green are semantic only.
 - Avoid decorative gradients, emoji controls, novelty effects, and one-off visual patches.

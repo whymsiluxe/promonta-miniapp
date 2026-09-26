@@ -55,7 +55,7 @@ process. Running --apply while the backend service is live could race a
 concurrent ack/create and lose one side's write. Do NOT do a larger
 cross-process file-locking refactor to fix this generically -- for this
 one-off migration, the safe rollout is operational: stop the
-promonta-miniapp service, run --apply, inspect the result, restart the
+grandmont-miniapp service, run --apply, inspect the result, restart the
 service. Do not run --apply against a live backend.
 
 Usage:
