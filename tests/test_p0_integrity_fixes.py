@@ -432,6 +432,147 @@ class P0_3_ExecutionIntegrityTests(unittest.TestCase):
         self.assertEqual(len(snap), 3)  # v3's 3 items, not v4's 4
 
 
+class P0_3b_ExactVersionItemIdentityTests(unittest.TestCase):
+    """Owner-reported blocking finding on PR #16: validate_execution_against_
+    acceptance() must bind valid item ids to ONLY the exact accepted version,
+    never union them with the live plan's current items. A worker bound to
+    v1 (items: item-1) must not be able to report against item-2 just
+    because the owner has since amended the plan to v2 and item-2 now
+    exists live -- the worker never accepted item-2."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        import daily_plan_lib as dpl
+        self.dpl = dpl
+        store = os.path.join(self.tmp, 'daily_plan_store.json')
+        sync = os.path.join(self.tmp, 'plan_sync_state.json')
+        cal = os.path.join(self.tmp, 'work_calendar.json')
+        dpl.configure(store, sync, cal)
+
+    def test_v1_accepted_then_v2_adds_item_execution_against_new_item_rejected(self):
+        plan = self.dpl.create_plan(
+            object_id='OBJ-1', stage_key='OBJ-1-S1', date_str='2026-09-10',
+            assigned_worker_ids=['42'], items=[_make_item(1)], created_by='owner',
+        )
+        self.dpl.publish_plan(plan['id'], 'owner')
+        acceptance_v1 = self.dpl.accept_plan(plan['id'], 1, '42')  # v1: item-1 only
+
+        # Owner amends to v2, adding item-2. Worker remains bound to v1.
+        self.dpl.update_plan_items(plan['id'], [_make_item(1), _make_item(2)],
+                                    'sheets_edit', 'v2 adds item-2', 'owner')
+
+        store = self.dpl._load_store()
+        with self.assertRaises(self.dpl.ExecutionValidationError):
+            self.dpl.validate_execution_against_acceptance(
+                daily_plan_id=plan['id'],
+                plan_version=1,
+                worker_id='42',
+                date_str='2026-09-10',
+                object_id='OBJ-1',
+                item_results=[{"item_id": "item-2", "status": "done", "actual_quantity": 5.0}],
+                acceptance_id=acceptance_v1['id'],
+                store=store,
+            )
+
+        # Sanity: item-1 (the item actually in v1) is still accepted fine.
+        self.dpl.validate_execution_against_acceptance(
+            daily_plan_id=plan['id'],
+            plan_version=1,
+            worker_id='42',
+            date_str='2026-09-10',
+            object_id='OBJ-1',
+            item_results=[{"item_id": "item-1", "status": "done", "actual_quantity": 5.0}],
+            acceptance_id=acceptance_v1['id'],
+            store=store,
+        )
+
+        # And end-to-end through apply_daily_execution: the v4-adds-D scenario
+        # from the owner's report, generalized to v1->v2/item-1->item-2.
+        with self.assertRaises(self.dpl.ExecutionValidationError):
+            self.dpl.apply_daily_execution(
+                session_id='exact-version-session-1',
+                daily_plan_id=plan['id'],
+                plan_version=1,
+                worker_id='42',
+                date_str='2026-09-10',
+                object_id='OBJ-1',
+                item_results=[{"item_id": "item-2", "status": "done", "actual_quantity": 5.0}],
+                acceptance_id=acceptance_v1['id'],
+            )
+        store_after = self.dpl._load_store()
+        self.assertNotIn('exact-version-session-1', store_after['executions'],
+            "rejected execution must not be written, no carryover produced")
+
+    def test_legacy_session_reports_stale_version_against_newer_live_plan_rejected(self):
+        """Legacy path (no acceptance_id): a session reporting plan_version=1
+        must be rejected once the live plan has moved on to v2 -- it must
+        NOT be allowed to validate against the (now stale) live-plan-at-v1
+        state, since there is no snapshot to prove what the worker actually
+        saw. Fail closed, don't guess."""
+        plan = self.dpl.create_plan(
+            object_id='OBJ-1', stage_key='OBJ-1-S1', date_str='2026-09-10',
+            assigned_worker_ids=['42'], items=[_make_item(1)], created_by='owner',
+        )
+        self.dpl.publish_plan(plan['id'], 'owner')
+        self.dpl.update_plan_items(plan['id'], [_make_item(1), _make_item(2)],
+                                    'sheets_edit', 'v2', 'owner')
+
+        store = self.dpl._load_store()
+        with self.assertRaises(self.dpl.ExecutionValidationError):
+            self.dpl.validate_execution_against_acceptance(
+                daily_plan_id=plan['id'],
+                plan_version=1,  # stale -- live plan is now v2
+                worker_id='42',
+                date_str='2026-09-10',
+                object_id='OBJ-1',
+                item_results=[{"item_id": "item-1", "status": "done", "actual_quantity": 5.0}],
+                acceptance_id=None,  # legacy: no acceptance snapshot recorded
+                store=store,
+            )
+
+        with self.assertRaises(self.dpl.ExecutionValidationError):
+            self.dpl.apply_daily_execution(
+                session_id='legacy-stale-session-1',
+                daily_plan_id=plan['id'],
+                plan_version=1,
+                worker_id='42',
+                date_str='2026-09-10',
+                object_id='OBJ-1',
+                item_results=[{"item_id": "item-1", "status": "done", "actual_quantity": 5.0}],
+                acceptance_id=None,
+            )
+        store_after = self.dpl._load_store()
+        self.assertNotIn('legacy-stale-session-1', store_after['executions'])
+
+    def test_missing_exact_version_record_fails_closed(self):
+        """If an acceptance references a plan_version whose version record is
+        (for whatever reason) not found in the store, validation must fail
+        closed rather than silently falling back to the live plan's items."""
+        plan = self.dpl.create_plan(
+            object_id='OBJ-1', stage_key='OBJ-1-S1', date_str='2026-09-10',
+            assigned_worker_ids=['42'], items=[_make_item(1)], created_by='owner',
+        )
+        self.dpl.publish_plan(plan['id'], 'owner')
+        acceptance_v1 = self.dpl.accept_plan(plan['id'], 1, '42')
+
+        store = self.dpl._load_store()
+        # Simulate a corrupted/truncated versions list missing the v1 record.
+        store['versions'][plan['id']] = [
+            v for v in store['versions'][plan['id']] if v.get('version') != 1
+        ]
+        with self.assertRaises(self.dpl.ExecutionValidationError):
+            self.dpl.validate_execution_against_acceptance(
+                daily_plan_id=plan['id'],
+                plan_version=1,
+                worker_id='42',
+                date_str='2026-09-10',
+                object_id='OBJ-1',
+                item_results=[{"item_id": "item-1", "status": "done", "actual_quantity": 5.0}],
+                acceptance_id=acceptance_v1['id'],
+                store=store,
+            )
+
+
 class P0_ConcurrencyTests(unittest.TestCase):
     """Concurrency-focused regression: the version-race window described in
     P0-2, exercised with real thread interleaving rather than a simulated

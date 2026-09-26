@@ -606,16 +606,28 @@ def validate_execution_against_acceptance(
             raise ExecutionValidationError("accepted context object_id differs")
         if snapshot.get("date") != date_str:
             raise ExecutionValidationError("accepted context date differs")
-        valid_item_ids = {i["id"] for i in plan.get("items", [])}
-        # Also allow item ids from the exact accepted version_snapshot, since
-        # the live plan's items may have moved on to a later amendment by now
-        # -- the worker's execution report is about what THEY saw, not what
-        # the plan currently looks like.
+        # Exact-version invariant: valid item ids come ONLY from the version
+        # record the worker actually accepted (resolved by plan_version, the
+        # authoritative identity -- not by re-deriving it from a content
+        # hash lookup). NEVER union with the live plan's current items: if
+        # the owner has since amended the plan (e.g. v3 -> v4 adding a new
+        # item), that new item was never part of what this worker accepted,
+        # and an execution report naming it must be rejected, not silently
+        # allowed because the item happens to exist in the live plan today.
         versions = store["versions"].get(daily_plan_id, [])
-        accepted_snap_hash = acceptance.get("accepted_snapshot_hash")
-        version_record = next((v for v in versions if v["content_hash"] == accepted_snap_hash), None)
-        if version_record:
-            valid_item_ids |= {i["id"] for i in version_record.get("items_snapshot", [])}
+        accepted_version = int(acceptance.get("plan_version") or 0)
+        version_record = next(
+            (v for v in versions if int(v.get("version") or 0) == accepted_version), None
+        )
+        if not version_record:
+            # The exact accepted version record is missing (should not
+            # normally happen, but data can be corrupted/truncated) -- fail
+            # closed rather than falling back to the live plan's items.
+            raise ExecutionValidationError(
+                f"accepted version record {accepted_version} not found for plan "
+                f"{daily_plan_id}; cannot verify exact-version item identity"
+            )
+        valid_item_ids = {i["id"] for i in version_record.get("items_snapshot", [])}
     else:
         # Legacy path: no acceptance_id on this session (predates round 1.2,
         # or acceptance record itself predates accepted_context_snapshot).
@@ -623,7 +635,18 @@ def validate_execution_against_acceptance(
         # checkin_finish's pre-existing inline logic did, since no historical
         # snapshot was ever recorded to validate against instead. This must
         # never be treated as equivalent to a real snapshot match; it's a
-        # deliberately weaker legacy allowance, not a bypass.
+        # deliberately weaker legacy allowance, not a bypass -- and it must
+        # NOT let an old report validate against a plan that has since moved
+        # on to a newer version: if the reported plan_version no longer
+        # matches the plan's current live version, there is no way to prove
+        # what the worker actually saw, so reject conservatively rather than
+        # guess.
+        if int(plan_version or 0) != int(plan.get("version") or 0):
+            raise ExecutionValidationError(
+                f"legacy session reports plan_version {plan_version}, but live "
+                f"plan is now at version {plan.get('version')}; cannot verify "
+                f"without an acceptance snapshot"
+            )
         if str(worker_id) not in [str(w) for w in plan.get("assigned_worker_ids", [])]:
             raise ExecutionValidationError("worker not assigned to plan (legacy path)")
         if plan.get("object_id") != object_id:
