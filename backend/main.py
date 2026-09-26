@@ -6679,7 +6679,7 @@ OUTBOX_MAX_ATTEMPTS = 10
 
 def _outbox_write_pending(session_id: str, plan_id: str, plan_version: int,
                           worker_id: str, date_str: str, object_id: str,
-                          item_results: list) -> None:
+                          item_results: list, acceptance_id: str | None = None) -> None:
     with _finish_outbox_lock:
         outbox = _outbox_load()
         outbox[session_id] = {
@@ -6690,6 +6690,7 @@ def _outbox_write_pending(session_id: str, plan_id: str, plan_version: int,
             "date": date_str,
             "object_id": object_id,
             "item_results": item_results,
+            "acceptance_id": acceptance_id,
             "created_at": time.time(),
             "last_attempt_at": None,
             "attempt_count": 0,
@@ -6726,11 +6727,40 @@ def _outbox_mark_failed(session_id: str, error: str) -> None:
             _outbox_save(outbox)
 
 
+def _outbox_mark_dead_letter(session_id: str, error: str) -> None:
+    """P0 fix: immediate permanent dead-letter for a validation rejection
+    (ExecutionValidationError) -- unlike _outbox_mark_failed's gradual
+    retry-then-dead-letter path, a rejected-as-invalid report will not become
+    valid on a 2nd/3rd/10th automatic retry, so there is no reason to consume
+    ordinary retry attempts on it. Still never silently dropped -- it stays
+    visible via the same _outbox_dead_letter_count() owner diagnostic as any
+    other dead-lettered event, tagged with the specific rejection reason."""
+    with _finish_outbox_lock:
+        outbox = _outbox_load()
+        if session_id in outbox:
+            evt = outbox[session_id]
+            evt["attempt_count"] = evt.get("attempt_count", 0) + 1
+            evt["error"] = error[:500]
+            evt["last_attempt_at"] = time.time()
+            evt["state"] = "dead_letter"
+            _outbox_save(outbox)
+
+
 def _retry_pending_outbox_events() -> int:
     """Called at startup to apply any pending/retrying finish-projection events.
     dead_letter events are intentionally NOT retried automatically -- they need
     manual owner review (surfaced via diagnostics, see _outbox_dead_letter_count).
-    Returns count of successfully applied events."""
+    Returns count of successfully applied events.
+
+    P0 fix: passes acceptance_id through to apply_daily_execution so the SAME
+    validate_execution_against_acceptance() the normal Finish path uses also
+    gates this crash-recovery path -- a report that would have been rejected
+    at Finish time must not become valid merely by surviving to a restart.
+    ExecutionValidationError is NOT a transient failure (retrying will never
+    make invalid data valid) -- it goes straight to dead_letter for owner
+    review instead of consuming ordinary retry attempts, but it is still
+    surfaced via the exact same diagnostic mechanism as any other stuck event,
+    never silently dropped."""
     with _finish_outbox_lock:
         outbox = _outbox_load()
     retried = 0
@@ -6746,10 +6776,13 @@ def _retry_pending_outbox_events() -> int:
                 date_str=evt["date"],
                 object_id=evt["object_id"],
                 item_results=evt.get("item_results") or [],
+                acceptance_id=evt.get("acceptance_id"),
             )
             _outbox_mark_applied(session_id)
             _clear_pending_execution_report(session_id)
             retried += 1
+        except dpl.ExecutionValidationError as ve:
+            _outbox_mark_dead_letter(session_id, f"validation rejected: {ve}")
         except Exception as e:
             _outbox_mark_failed(session_id, str(e))
     return retried
@@ -6772,6 +6805,31 @@ def _clear_pending_execution_report(session_id: str) -> None:
         items = _load_checkin_meta()
         session = next((i for i in items if i.get('id') == session_id), None)
         if session and session.get('pending_execution_report'):
+            session['pending_execution_report'] = None
+            _save_checkin_meta(items)
+
+
+def _reject_pending_execution_report(session_id: str, reason: str) -> None:
+    """P0 fix: when checkin_finish's own pre-check (or the centralized
+    validate_execution_against_acceptance()) rejects a submitted
+    daily_plan_report, the raw report must stop being retrievable -- otherwise
+    it sits in pending_execution_report forever, and a later server restart's
+    _reconcile_missing_outbox_events() would reconstruct an outbox event from
+    it and re-attempt exactly what was just rejected. Per spec: never
+    silently apply, never silently delete -- so this records the rejection
+    reason + timestamp on the session (rejected_execution_report) instead of
+    just nulling the field blind, giving the owner something to look at, then
+    clears pending_execution_report so reconciliation has nothing left to
+    reconstruct from."""
+    with _checkin_lock:
+        items = _load_checkin_meta()
+        session = next((i for i in items if i.get('id') == session_id), None)
+        if session and session.get('pending_execution_report'):
+            session['rejected_execution_report'] = {
+                "raw": session['pending_execution_report'],
+                "reason": reason[:500],
+                "rejected_at": time.time(),
+            }
             session['pending_execution_report'] = None
             _save_checkin_meta(items)
 
@@ -6809,10 +6867,19 @@ def _reconcile_missing_outbox_events() -> int:
         item_results = rpt.get('item_results') or []
         if not (plan_id and isinstance(item_results, list) and item_results):
             continue
+        # P0 fix: carry the session's own trusted daily_plan_acceptance_id
+        # (set durably at checkin_start, never derived from the untrusted raw
+        # report) into the reconstructed outbox event, so
+        # validate_execution_against_acceptance() -- run identically for this
+        # path and the normal Finish path via apply_daily_execution -- can
+        # check it against the immutable accepted_context_snapshot instead of
+        # only the live (possibly since-changed) plan.
+        _reconciled_acceptance_id = session.get('daily_plan_acceptance_id') or None
         _outbox_write_pending(
             session_id=session_id, plan_id=plan_id, plan_version=plan_ver,
             worker_id=str(session['user_id']), date_str=session['date'],
             object_id=session['object_id'], item_results=item_results,
+            acceptance_id=_reconciled_acceptance_id,
         )
         reconciled += 1
         print(f'[startup] Reconciled missing outbox event for session {session_id} (crash-window recovery)')
@@ -7086,7 +7153,9 @@ _checkin_router, _checkin_handlers = create_checkin_router(CheckinRouteDeps(
     outbox_write_pending=lambda *args, **kwargs: _outbox_write_pending(*args, **kwargs),
     outbox_mark_applied=lambda session_id: _outbox_mark_applied(session_id),
     outbox_mark_failed=lambda session_id, error: _outbox_mark_failed(session_id, error),
+    outbox_mark_dead_letter=lambda session_id, error: _outbox_mark_dead_letter(session_id, error),
     clear_pending_execution_report=lambda session_id: _clear_pending_execution_report(session_id),
+    reject_pending_execution_report=lambda session_id, reason: _reject_pending_execution_report(session_id, reason),
     write_zeiterfassung_row=lambda session, object_id, user_id: _write_zeiterfassung_row(session, object_id, user_id),
     object_history_worker_name=lambda user_id: _object_history_worker_name(user_id),
     append_object_history_best_effort=lambda *args, **kwargs: _append_object_history_best_effort(*args, **kwargs),

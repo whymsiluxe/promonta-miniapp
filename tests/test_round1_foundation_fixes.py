@@ -630,6 +630,104 @@ class TestOutboxDeadLetterAndReconciliation(unittest.TestCase):
         session_after = next(i for i in items if i["id"] == "clear-test-1")
         self.assertIsNone(session_after["pending_execution_report"])
 
+    # ── P0-3 integrity fix: reconciliation must share the normal path's
+    # validation, never resurrect a report that would be rejected. ──────────
+
+    def test_reconciliation_carries_acceptance_id_and_validates_against_snapshot(self):
+        """A finished session with a pending_execution_report AND a real
+        daily_plan_acceptance_id, but whose report's object_id no longer
+        matches what was actually accepted (e.g. the raw report was doctored,
+        or corresponds to stale/inconsistent data) -- reconciliation must
+        reconstruct an outbox event carrying that acceptance_id, and the
+        SHARED validator (also used by the normal Finish path) must then
+        reject applying it via _retry_pending_outbox_events, landing it in
+        dead_letter -- never silently applied."""
+        plan = dpl.create_plan(
+            object_id="objRecon", stage_key="s1", date_str="2099-09-05",
+            assigned_worker_ids=["wRecon"], items=[_make_item(0)], created_by="test",
+        )
+        dpl.publish_plan(plan["id"], "test")
+        acceptance = dpl.accept_plan(plan["id"], plan["version"], "wRecon")
+
+        # Raw report claims a DIFFERENT object than what was actually accepted
+        # -- exactly the class of mismatch the inline Finish pre-check would
+        # have caught and rejected (never even written to outbox originally).
+        report = json.dumps({
+            "plan_id": plan["id"],
+            "plan_version": plan["version"],
+            "item_results": [{"item_id": "item0", "status": "done", "actual_quantity": 1.0}],
+        })
+        session = {
+            "id": "resurrect-session-1",
+            "object_id": "objRECON-TAMPERED",  # mismatch vs accepted snapshot's objRecon
+            "date": "2099-09-05",
+            "user_id": "wRecon",
+            "finish_at": int(time.time()),
+            "daily_plan_id": plan["id"],
+            "daily_plan_acceptance_id": acceptance["id"],
+            "pending_execution_report": report,
+        }
+        backend._save_checkin_meta([session])
+
+        reconciled = backend._reconcile_missing_outbox_events()
+        self.assertEqual(reconciled, 1)
+        outbox = backend._outbox_load()
+        self.assertEqual(outbox["resurrect-session-1"]["acceptance_id"], acceptance["id"])
+
+        retried = backend._retry_pending_outbox_events()
+        self.assertEqual(retried, 0, "must not count a validation-rejected event as successfully applied")
+
+        outbox_after = backend._outbox_load()
+        self.assertEqual(outbox_after["resurrect-session-1"]["state"], "dead_letter")
+
+        store = dpl._load_store()
+        self.assertNotIn("resurrect-session-1", store["executions"],
+            "a report the accepted-snapshot validation rejects must never be applied, "
+            "restart or not")
+
+    def test_reconciliation_with_valid_matching_acceptance_still_succeeds(self):
+        """Regression guard: the P0-3 fix must not break the legitimate crash-
+        recovery case -- a report that genuinely matches what the worker
+        accepted must still apply successfully through reconciliation."""
+        plan = dpl.create_plan(
+            object_id="objRecon2", stage_key="s1", date_str="2099-09-06",
+            assigned_worker_ids=["wRecon2"], items=[_make_item(0)], created_by="test",
+        )
+        dpl.publish_plan(plan["id"], "test")
+        acceptance = dpl.accept_plan(plan["id"], plan["version"], "wRecon2")
+
+        report = json.dumps({
+            "plan_id": plan["id"],
+            "plan_version": plan["version"],
+            "item_results": [{"item_id": "item0", "status": "done", "actual_quantity": 5.0}],
+        })
+        session = {
+            "id": "valid-recon-session-1",
+            "object_id": "objRecon2",  # matches accepted snapshot
+            "date": "2099-09-06",
+            "user_id": "wRecon2",
+            "finish_at": int(time.time()),
+            "daily_plan_id": plan["id"],
+            "daily_plan_acceptance_id": acceptance["id"],
+            "pending_execution_report": report,
+        }
+        backend._save_checkin_meta([session])
+
+        reconciled = backend._reconcile_missing_outbox_events()
+        self.assertEqual(reconciled, 1)
+        retried = backend._retry_pending_outbox_events()
+        self.assertEqual(retried, 1)
+
+        outbox = backend._outbox_load()
+        self.assertEqual(outbox["valid-recon-session-1"]["state"], "applied")
+
+        store = dpl._load_store()
+        self.assertIn("valid-recon-session-1", store["executions"])
+
+        items = backend._load_checkin_meta()
+        session_after = next(i for i in items if i["id"] == "valid-recon-session-1")
+        self.assertIsNone(session_after["pending_execution_report"])
+
 
 # ── Round 1.1 #2+#3: update_plan_fields versioning + object_id ───────────────
 

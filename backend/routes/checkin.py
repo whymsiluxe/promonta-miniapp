@@ -69,7 +69,9 @@ class CheckinRouteDeps:
     outbox_write_pending: Callable
     outbox_mark_applied: Callable
     outbox_mark_failed: Callable
+    outbox_mark_dead_letter: Callable
     clear_pending_execution_report: Callable
+    reject_pending_execution_report: Callable
     write_zeiterfassung_row: Callable
     object_history_worker_name: Callable
     append_object_history_best_effort: Callable
@@ -657,12 +659,18 @@ def create_checkin_router(deps: CheckinRouteDeps):
                 plan_ver = int(rpt.get('plan_version', 0) or session.get('daily_plan_version', 0) or 0)
                 item_results = rpt.get('item_results') or []
                 if plan_id and isinstance(item_results, list) and item_results:
-                    # Round 1.2 #2: validate against the worker's IMMUTABLE accepted
-                    # context snapshot, not the live (possibly since-mutated-by-Sheets-
-                    # edit) plan fields. A later update_plan_fields() call (object/date/
-                    # worker/stage change) must never invalidate an already-accepted,
-                    # already-started shift's Finish -- the accepted snapshot is the
-                    # trusted historical truth for this comparison, not current plan state.
+                    # Round 1.2 #2 + P0 integrity pass: validate against the worker's
+                    # IMMUTABLE accepted context snapshot, not the live (possibly
+                    # since-mutated-by-Sheets-edit) plan fields. A later
+                    # update_plan_fields() call (object/date/worker/stage change) must
+                    # never invalidate an already-accepted, already-started shift's
+                    # Finish -- the accepted snapshot is the trusted historical truth
+                    # for this comparison, not current plan state. This pre-check is a
+                    # fast local reject (avoids an outbox write for an obviously-bad
+                    # report); dpl.apply_daily_execution() below re-validates the exact
+                    # same rules as defense-in-depth (P0-3) -- both this route AND
+                    # startup reconciliation ultimately share that one validator, so a
+                    # report rejected here can never be resurrected by a restart.
                     _worker_id_str = str(session['user_id'])
                     _acceptance_id = session.get('daily_plan_acceptance_id') or ''
                     _snapshot = None
@@ -671,17 +679,15 @@ def create_checkin_router(deps: CheckinRouteDeps):
                         _acc = _dp_store["acceptances"].get(_acceptance_id)
                         if _acc and str(_acc.get('worker_id')) == _worker_id_str and _acc.get('daily_plan_id') == plan_id:
                             _snapshot = _acc.get('accepted_context_snapshot')
+                    _reject_reason = None
                     if _snapshot:
                         # Trusted path: compare against what THIS worker actually accepted.
                         if _worker_id_str not in [str(w) for w in _snapshot.get('assigned_worker_ids', [])]:
-                            print(f'WARNING: finish plan_id {plan_id} worker not in accepted snapshot — skipping execution')
-                            plan_id = ''
+                            _reject_reason = f'finish plan_id {plan_id} worker not in accepted snapshot'
                         elif _snapshot.get('object_id') != object_id:
-                            print(f'WARNING: finish plan_id {plan_id} object mismatch vs accepted snapshot — skipping execution')
-                            plan_id = ''
+                            _reject_reason = f'finish plan_id {plan_id} object mismatch vs accepted snapshot'
                         elif _snapshot.get('date') != date_str:
-                            print(f'WARNING: finish plan_id {plan_id} date mismatch vs accepted snapshot — skipping execution')
-                            plan_id = ''
+                            _reject_reason = f'finish plan_id {plan_id} date mismatch vs accepted snapshot'
                     else:
                         # Backward-compat fallback: no acceptance_id on this session, or
                         # the acceptance predates round 1.2 (no snapshot stored yet).
@@ -692,18 +698,28 @@ def create_checkin_router(deps: CheckinRouteDeps):
                         _plan_obj = dpl.get_plan(plan_id)
                         if _plan_obj:
                             if _worker_id_str not in [str(w) for w in _plan_obj.get('assigned_worker_ids', [])]:
-                                print(f'WARNING: finish plan_id {plan_id} worker not assigned — skipping execution')
-                                plan_id = ''
+                                _reject_reason = f'finish plan_id {plan_id} worker not assigned (legacy path)'
                             elif _plan_obj.get('object_id') != object_id:
-                                print(f'WARNING: finish plan_id {plan_id} object mismatch — skipping execution')
-                                plan_id = ''
+                                _reject_reason = f'finish plan_id {plan_id} object mismatch (legacy path)'
                             elif _plan_obj.get('date') != date_str:
-                                print(f'WARNING: finish plan_id {plan_id} date mismatch — skipping execution')
-                                plan_id = ''
+                                _reject_reason = f'finish plan_id {plan_id} date mismatch (legacy path)'
+                    if _reject_reason:
+                        print(f'WARNING: {_reject_reason} — skipping execution')
+                        # P0 fix: a rejected report must not sit in
+                        # pending_execution_report where a later restart's
+                        # reconciliation could resurrect exactly what was just
+                        # rejected here. Records the reason for owner diagnosis
+                        # instead of silently deleting it.
+                        deps.reject_pending_execution_report(session_id, _reject_reason)
+                        plan_id = ''
                     if plan_id:
-                        # Write outbox event before applying (durable, crash-safe)
+                        # Write outbox event before applying (durable, crash-safe).
+                        # acceptance_id travels with the event so a startup retry of
+                        # THIS SAME event re-validates against the identical trusted
+                        # snapshot, not just the live plan.
                         deps.outbox_write_pending(session_id, plan_id, plan_ver,
-                                              str(session['user_id']), date_str, object_id, item_results)
+                                              str(session['user_id']), date_str, object_id, item_results,
+                                              acceptance_id=(_acceptance_id or None))
                         try:
                             dpl.apply_daily_execution(
                                 session_id=session_id,
@@ -713,6 +729,7 @@ def create_checkin_router(deps: CheckinRouteDeps):
                                 date_str=date_str,
                                 object_id=object_id,
                                 item_results=item_results,
+                                acceptance_id=(_acceptance_id or None),
                             )
                             deps.outbox_mark_applied(session_id)
                             deps.clear_pending_execution_report(session_id)
@@ -730,6 +747,14 @@ def create_checkin_router(deps: CheckinRouteDeps):
                                     )
                             except Exception as _pe:
                                 print(f'WARNING: auto_record_execution_productivity failed: {_pe}')
+                        except dpl.ExecutionValidationError as _ve:
+                            # Defense-in-depth caught something the pre-check above
+                            # missed (or a race changed state between the two) -- same
+                            # treatment as a pre-check rejection: never silently apply,
+                            # never silently drop, dead-letter for owner review.
+                            print(f'WARNING: apply_daily_execution rejected by validator: {_ve}')
+                            deps.outbox_mark_dead_letter(session_id, f'validation rejected: {_ve}')
+                            deps.reject_pending_execution_report(session_id, f'validation rejected: {_ve}')
                         except Exception as _ae:
                             deps.outbox_mark_failed(session_id, str(_ae))
                             print(f'WARNING: apply_daily_execution failed (event pending in outbox): {_ae}')
