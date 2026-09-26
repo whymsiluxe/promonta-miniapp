@@ -20,7 +20,7 @@ Env vars were renamed `PROMONTA_*` -> `GRANDMONT_GROUP_*`; the old names are sti
 
 ## Two directories, one app — important
 
-- **Backend source + runtime data**: `/home/promonta/agent/miniapp/` (owned by user `promonta`). Contains `main.py`, JSON data stores, `.venv`, uploaded media.
+- **Backend source + runtime data**: `/home/grandmont/agent/miniapp/` (owned by user `promonta`). Contains `main.py`, JSON data stores, `.venv`, uploaded media.
 - **Frontend, served to browsers**: `/var/www/miniapp/` (owned by `root`). Contains `app.html`, `js/*.js`, and independently had its own git history before this recovery (now merged into `frontend/` in this repo — see [DECISIONS.md](DECISIONS.md)).
 
 These are **not** the same directory and edits to one do not affect the other. A `frontend_staging_work/` directory exists under the backend path but was last touched 2026-07-14 and is stale — do not assume it reflects current frontend state.
@@ -33,7 +33,7 @@ Historically: edit `/var/www/miniapp/app.html` (or a `js/*.js` file) directly on
 
 ## How a backend change reaches production
 
-Edit `/home/promonta/agent/miniapp/main.py` (or the helper `.js` PDF-generator files) directly, backup first (`main.py.bak-pre-<description>-<timestamp>` convention already in use — many examples exist on disk), then:
+Edit `/home/grandmont/agent/miniapp/main.py` (or the helper `.js` PDF-generator files) directly, backup first (`main.py.bak-pre-<description>-<timestamp>` convention already in use — many examples exist on disk), then:
 
 ```bash
 systemctl restart grandmont-miniapp

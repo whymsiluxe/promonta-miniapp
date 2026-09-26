@@ -49,7 +49,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
+DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/grandmont/agent/miniapp')
 STATE_FILE = os.path.join(DATA_ROOT, 'contract_ingest_state.json')
 
 CONTRACTS_DRIVE_FOLDER_ID = os.environ.get('CONTRACTS_DRIVE_FOLDER_ID', '')

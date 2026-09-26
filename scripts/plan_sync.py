@@ -9,12 +9,12 @@ Does NOT write back to Sheets (the store is append-only from the sync direction)
 Does NOT run inline in FastAPI request handlers — invoked by a systemd timer.
 
 Deploy:
-  1. Copy to /home/promonta/agent/miniapp/ (or keep in repo + symlink)
+  1. Copy to /home/grandmont/agent/miniapp/ (or keep in repo + symlink)
   2. Create promonta-plan-sync.service + promonta-plan-sync.timer (see docs/DEPLOYMENT.md)
   3. sudo systemctl enable --now promonta-plan-sync.timer
 
 Environment (from /etc/claude-agent.env):
-  MINIAPP_DATA_ROOT — data root (default /home/promonta/agent/miniapp)
+  MINIAPP_DATA_ROOT — data root (default /home/grandmont/agent/miniapp)
   BOT_TOKEN — required for main.py import, not used by this script directly
 
 Sheets IDs are read from OBJEKTE_SHEET_ID env (fallback: same as objekte_lib.SHEET_ID).
@@ -39,7 +39,7 @@ logging.basicConfig(
 )
 log = logging.getLogger('plan_sync')
 
-DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/promonta/agent/miniapp')
+DATA_ROOT = os.environ.get('MINIAPP_DATA_ROOT', '/home/grandmont/agent/miniapp')
 SHEETS_CRED = '/home/promonta/agent/.sheets.json'
 SYNC_STATE_FILE = os.path.join(DATA_ROOT, 'plan_sync_state.json')
 DAILY_PLAN_STORE_FILE = os.path.join(DATA_ROOT, 'daily_plan_store.json')

@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/runtime_manifest.sh"
 
-BACKEND_SERVING_DIR="/home/promonta/agent/miniapp"
+BACKEND_SERVING_DIR="/home/grandmont/agent/miniapp"
 FRONTEND_SERVING_DIR="/var/www/miniapp"
 SERVICE_NAME="grandmont-miniapp.service"
 HEALTH_URL="https://app.promonta.fun/api/health"

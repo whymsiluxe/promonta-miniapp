@@ -5,14 +5,14 @@
 #
 # 31.07 (атомарность): backend всё ещё копируется на прежние serving-пути (смена на
 # staged-dir+symlink потребовала бы менять systemd unit -- WorkingDirectory сейчас
-# фиксированный /home/promonta/agent/miniapp, ExecStart=uvicorn miniapp.main:app; такой
+# фиксированный /home/grandmont/agent/miniapp, ExecStart=uvicorn miniapp.main:app; такой
 # рефакторинг вне рамок этой задачи). Вместо этого: `trap` с момента, когда backup готов
 # и МОГ БЫ понадобиться -- любая ошибка на шагах copy/restart/health триггерит
 # автоматический scripts/rollback.sh на этом backup, без ручного вмешательства. Это не
 # полная atomic-symlink-гарантия, но закрывает главный риск: backend/frontend/VERSION
 # от РАЗНЫХ SHA после упавшего деплоя.
 #
-# Запуск: на VPS, из корня репозитория (/home/promonta/agent/miniapp-repo), как
+# Запуск: на VPS, из корня репозитория (/home/grandmont/agent/miniapp-repo), как
 # пользователь promonta -- НЕ через sudo/root:
 #   bash scripts/deploy.sh
 # (10.09, deploy permissions fix: /var/www/miniapp -- root:webdeploy 2775 setgid,
@@ -35,7 +35,7 @@ source "$REPO_DIR/scripts/runtime_manifest.sh"
 # (/etc/systemd/system/grandmont-miniapp.service, WorkingDirectory=/home/promonta/agent,
 # ExecStart=uvicorn miniapp.main:app) и реальной раздачей frontend через Caddy
 # (/var/www/miniapp/) на момент написания этого скрипта.
-BACKEND_SERVING_DIR="/home/promonta/agent/miniapp"
+BACKEND_SERVING_DIR="/home/grandmont/agent/miniapp"
 FRONTEND_SERVING_DIR="/var/www/miniapp"
 SERVICE_NAME="grandmont-miniapp.service"
 HEALTH_URL="https://app.promonta.fun/api/health"
@@ -114,7 +114,7 @@ echo "== 6/14 Полный test suite (изолированный env, БЕЗ pr
 # по факту test-mocking -- все runtime JSON-пути в main.py/roadmap_lib.py/mangel_lib.py
 # переведены на os.path.join(DATA_ROOT, ...), подтверждено tests/test_data_root_isolation.py
 # (реальные файловые операции с MINIAPP_DATA_ROOT=/tmp/..., прод-директория не читается
-# и не изменяется). Тесты физически не могут писать в /home/promonta/agent/miniapp или
+# и не изменяется). Тесты физически не могут писать в /home/grandmont/agent/miniapp или
 # /var/www/miniapp даже по ошибке -- это больше не полагается только на то, что каждый
 # тест правильно замокал _load_*/_save_*.
 TEST_PYTHON="${BACKEND_SERVING_DIR}/.venv/bin/python3"

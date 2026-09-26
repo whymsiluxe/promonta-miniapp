@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Deploy frontend files to /var/www/miniapp/.
-Запускается watchdog.sh (root) когда есть /home/promonta/agent/miniapp/frontend_deploy/.
+Запускается watchdog.sh (root) когда есть /home/grandmont/agent/miniapp/frontend_deploy/.
 
 Полная синхронизация: копирует все js/* и заменяет app.html целиком,
 предварительно делая бэкап текущего app.html с таймстампом.
@@ -23,7 +23,7 @@ import sys
 import time
 from html.parser import HTMLParser
 
-SRC = '/home/promonta/agent/miniapp/frontend_deploy'
+SRC = '/home/grandmont/agent/miniapp/frontend_deploy'
 DST = '/var/www/miniapp'
 APP_HTML_SRC = os.path.join(SRC, 'app.html')
 APP_HTML_DST = os.path.join(DST, 'app.html')
