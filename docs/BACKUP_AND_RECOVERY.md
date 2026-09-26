@@ -69,7 +69,7 @@
 4. `git clone` репозитория в `/home/promonta/agent/miniapp-repo`.
 5. Создать venv (`python3 -m venv /home/promonta/agent/miniapp/.venv`), поставить
    `backend/requirements.txt`.
-6. Настроить systemd unit (`/etc/systemd/system/promonta-miniapp.service`),
+6. Настроить systemd unit (`/etc/systemd/system/grandmont-miniapp.service`),
    Caddy/nginx для frontend (см. `docs/DEPLOYMENT.md`).
 7. Запустить `scripts/deploy.sh` (после проверки, что все JSON-сторы на месте —
    деплой сам их не трогает, только код).
@@ -87,7 +87,7 @@ back to default` в лог. Это значит на практике: при п
 продолжит работать, но с "чистого листа" по этому конкретному стору.
 
 **Если это произошло:**
-1. Проверить логи (`journalctl -u promonta-miniapp -n 100`) на предмет
+1. Проверить логи (`journalctl -u grandmont-miniapp -n 100`) на предмет
    `corrupt JSON` — определить какой именно файл и когда.
 2. Найти самый свежий backup ДО момента повреждения: `ls -t
    /home/promonta/backups/agent_*.tgz`.

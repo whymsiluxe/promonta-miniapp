@@ -18,7 +18,10 @@ let _planScreenDay = 'today'; // which tab the open screen currently shows
 
 // ── IndexedDB cache (offline fallback) ───────────────────────────────────────
 
-const _TP_DB_NAME = 'promonta-today-plan';
+const _TP_DB_NAME = 'grandmont-group-today-plan';
+// Grandmont Group rebrand (26.09): pre-rebrand cache DB name, read once as a fallback
+// so an offline worker right after the deploy still sees the last accepted plan.
+const _TP_LEGACY_DB_NAME = 'promonta-today-plan';
 const _TP_DB_VER  = 1;
 const _TP_STORE   = 'cache';
 const _TP_KEY     = 'lastAcceptedPlan';
@@ -55,10 +58,32 @@ async function _tpDbLoad() {
       req.onerror   = e => reject(e.target.error);
     });
     db.close();
-    return result;
+    if (result !== null) return result;
+    return await _tpLegacyDbLoadAndMigrate();
   } catch (_) {
     return null;
   }
+}
+
+async function _tpLegacyDbLoadAndMigrate() {
+  if (typeof _openLegacyIdbIfExists !== 'function') return null;
+  const legacy = await _openLegacyIdbIfExists(_TP_LEGACY_DB_NAME);
+  if (!legacy) return null;
+  let result = null;
+  try {
+    if (legacy.objectStoreNames.contains(_TP_STORE)) {
+      result = await new Promise((resolve, reject) => {
+        const req = legacy.transaction(_TP_STORE, 'readonly').objectStore(_TP_STORE).get(_TP_KEY);
+        req.onsuccess = e => resolve(e.target.result ?? null);
+        req.onerror   = e => reject(e.target.error);
+      });
+    }
+  } finally {
+    legacy.close();
+  }
+  if (result !== null) await _tpDbSave(result);
+  indexedDB.deleteDatabase(_TP_LEGACY_DB_NAME);
+  return result;
 }
 
 // Plan fields passed to checkin_start after acceptance (consumed once, then cleared)

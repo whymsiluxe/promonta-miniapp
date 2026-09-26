@@ -37,7 +37,7 @@ function makeLocalStorage(initial) {
 async function runScenario({ label, localStorageData, outboxRecords, serverThrows, assert }) {
   const sandbox = {
     localStorage: makeLocalStorage(localStorageData),
-    promontaOutboxList: async (kind) => (outboxRecords || []).filter(r => r.kind === kind),
+    appOutboxList: async (kind) => (outboxRecords || []).filter(r => r.kind === kind),
     api: async () => { throw new Error(serverThrows || 'network down'); },
     _setActiveCheckinSession: () => {},
     console,

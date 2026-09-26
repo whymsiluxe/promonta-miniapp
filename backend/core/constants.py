@@ -6,7 +6,7 @@ across files) because they're a single cohesive unit -- each sniffer reads
 exactly one allowlist dict defined right above it. Only dependency: the
 optional `magic` library (python-magic). Local/dev environments do not always
 have system libmagic installed, so import/use failures fall back to conservative
-magic-byte checks for the formats Promonta explicitly allows.
+magic-byte checks for the formats Grandmont Group explicitly allows.
 """
 try:
     import magic as _magic

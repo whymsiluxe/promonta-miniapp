@@ -1,5 +1,5 @@
 {
-  "name": "promonta-miniapp-pdf",
+  "name": "grandmont-group-miniapp-pdf",
   "private": true,
   "description": "Runtime deps for backend/angebot_free.js и backend/rechnung.js (PDF-генерация KP/Rechnung через child_process из main.py). 31.07 (доп.раунд): CI теперь запускает npm ci + require('pdfkit') smoke-check с этим package-lock.json (воспроизводимая проверка, не production node_modules). На VPS production node_modules ставится отдельно в BACKEND_SERVING_DIR (/home/promonta/agent/miniapp/node_modules) через npm ci --omit=dev с этим же package.json/package-lock.json -- deploy.sh проверяет его наличие ДО копирования файлов на прод (см. шаг 'pdfkit в serving environment').",
   "dependencies": {

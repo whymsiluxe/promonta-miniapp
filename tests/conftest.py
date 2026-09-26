@@ -44,9 +44,9 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 # ── PRIMARY GUARD: set env at module level, before any test module is imported ──
-_TEST_DATA_ROOT = tempfile.mkdtemp(prefix="promonta-pytest-")
+_TEST_DATA_ROOT = tempfile.mkdtemp(prefix="grandmont-group-pytest-")
 os.environ["MINIAPP_DATA_ROOT"] = _TEST_DATA_ROOT
-os.environ["PROMONTA_ENV"] = "test"
+os.environ["GRANDMONT_GROUP_ENV"] = "test"
 os.environ.setdefault("BOT_TOKEN", "ci-dummy-token-not-a-real-secret")
 
 
@@ -57,7 +57,7 @@ def _verify_test_isolation():
     assert backend.DATA_ROOT != "/home/promonta/agent/miniapp", (
         f"DATA_ROOT resolved to production path: {backend.DATA_ROOT}"
     )
-    assert "promonta-pytest-" in backend.DATA_ROOT or "promonta-test-" in backend.DATA_ROOT, (
+    assert "grandmont-group-pytest-" in backend.DATA_ROOT or "grandmont-group-test-" in backend.DATA_ROOT, (
         f"DATA_ROOT does not look like a pytest temp dir: {backend.DATA_ROOT}"
     )
     yield

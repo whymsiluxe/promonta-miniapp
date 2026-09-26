@@ -1,8 +1,8 @@
-# Promonta Mini App
+# Grandmont Group Mini App
 
-Telegram Mini App for Promonta, a construction company operating in Chemnitz/Sachsen, Germany. Used internally by the owner and field workers to manage construction sites, worker assignments, shift check-in/out, absence requests, defect tickets, tool/equipment tracking, team chat, and a news/photo feed — all inside Telegram.
+Telegram Mini App for Grandmont Group, a construction company operating in Chemnitz/Sachsen, Germany (legal name: Grandmont Group UG (haftungsbeschränkt) — official registration pending, not yet confirmed). Used internally by the owner and field workers to manage construction sites, worker assignments, shift check-in/out, absence requests, defect tickets, tool/equipment tracking, team chat, and a news/photo feed — all inside Telegram.
 
-Live at: **https://app.promonta.fun/app.html** (Telegram WebApp, opens inside Telegram client)
+Live at: **https://app.promonta.fun/app.html** (Telegram WebApp, opens inside Telegram client). The production hostname, the GitHub repo name (`promonta-miniapp`), the VPS Linux user `promonta` and its `/home/promonta/...` paths are pre-rebrand infrastructure names, kept as-is until a separate infrastructure migration wave.
 
 ## Status
 

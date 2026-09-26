@@ -79,13 +79,13 @@ def test_no_consumer_reimplements_its_own_pending_outbox_check():
 
 
 def test_no_consumer_reads_checkin_outbox_directly_bypassing_the_resolver():
-    # promontaOutboxList(CHECKIN_OUTBOX_KIND_*) is a low-level primitive the
+    # appOutboxList(CHECKIN_OUTBOX_KIND_*) is a low-level primitive the
     # resolver itself uses internally -- a consumer calling it directly to
     # answer "is a shift pending" (rather than going through the resolver)
     # would be reintroducing the exact parallel-mechanism problem.
     for path in (HOME_JS, WORKER_CHECKIN_FAB_JS, OBJECT_INFO_JS):
         src = _source(path)
-        assert "promontaOutboxList(CHECKIN_OUTBOX_KIND" not in src, (
+        assert "appOutboxList(CHECKIN_OUTBOX_KIND" not in src, (
             f"{path.name} reads the checkin outbox directly -- shift-pending "
             "state must be obtained via resolveWorkerShiftState(), which "
             "already does this internally."

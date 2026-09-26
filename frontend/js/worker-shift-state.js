@@ -28,11 +28,11 @@ function _workerShiftIsPendingOutboxRecord(record) {
 }
 
 async function _findPendingCheckinOutboxRecord(objectId, kind) {
-  if (typeof promontaOutboxList !== 'function') return null;
+  if (typeof appOutboxList !== 'function') return null;
   const kinds = kind ? [kind] : [WORKER_SHIFT_OUTBOX_KIND_FINISH, WORKER_SHIFT_OUTBOX_KIND_START];
   const all = [];
   for (const k of kinds) {
-    const records = await promontaOutboxList(k).catch(() => []);
+    const records = await appOutboxList(k).catch(() => []);
     all.push(...records);
   }
   return _workerShiftNewest(all.filter(record => {
@@ -53,10 +53,10 @@ async function _findPendingCheckinOutboxRecord(objectId, kind) {
 // today would see "⚠️ Ошибка синхронизации" and have Start/Finish disabled,
 // because of an unrelated stale error from a previous shift.
 async function _resolveWorkerShiftOutboxState(objectId) {
-  if (typeof promontaOutboxList !== 'function') return null;
+  if (typeof appOutboxList !== 'function') return null;
   const [finishRecords, startRecords] = await Promise.all([
-    promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_FINISH).catch(() => []),
-    promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_START).catch(() => []),
+    appOutboxList(WORKER_SHIFT_OUTBOX_KIND_FINISH).catch(() => []),
+    appOutboxList(WORKER_SHIFT_OUTBOX_KIND_START).catch(() => []),
   ]);
 
   const filterByObject = record => !objectId || String(record.objectId) === String(objectId);
@@ -89,10 +89,10 @@ async function _resolveWorkerShiftOutboxState(objectId) {
 // can currently be resolved. Called only when neither a live pending record
 // nor the server itself could answer.
 async function _findDeadLetterShiftRecord(objectId) {
-  if (typeof promontaOutboxList !== 'function') return null;
+  if (typeof appOutboxList !== 'function') return null;
   const [finishRecords, startRecords] = await Promise.all([
-    promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_FINISH).catch(() => []),
-    promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_START).catch(() => []),
+    appOutboxList(WORKER_SHIFT_OUTBOX_KIND_FINISH).catch(() => []),
+    appOutboxList(WORKER_SHIFT_OUTBOX_KIND_START).catch(() => []),
   ]);
   const filterByObject = record => !objectId || String(record.objectId) === String(objectId);
 

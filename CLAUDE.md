@@ -1,6 +1,6 @@
 # CLAUDE.md — governance for this repo
 
-This file is a mandatory operating protocol for any Claude Code session (or human developer) working in this repo, `promonta-miniapp`. It exists because a prior session was lost without any of its decisions, in-progress work, or reasoning being recorded anywhere durable — the app's code had moved three weeks ahead of its own documentation, and the frontend/backend lived in different directories with no shared version control. This file's job is to make that specific failure mode impossible to repeat silently.
+This file is a mandatory operating protocol for any Claude Code session (or human developer) working in this repo, `promonta-miniapp` (GitHub repo name, not yet renamed; the product is the Grandmont Group Mini App). It exists because a prior session was lost without any of its decisions, in-progress work, or reasoning being recorded anywhere durable — the app's code had moved three weeks ahead of its own documentation, and the frontend/backend lived in different directories with no shared version control. This file's job is to make that specific failure mode impossible to repeat silently.
 
 ## At the start of every session
 
@@ -104,7 +104,7 @@ Mandatory for all coding work:
 - After coding: `git diff --check` and `git status --short`.
 - No merge/deploy/reset/force-push without explicit owner approval.
 
-Promonta:
+Grandmont Group Mini App:
 - `resolveWorkerShiftState()` stays the single frontend shift-state source.
 - Do not mix Object Detail V2/UI redesign into backend reliability fixes.
 - Use `update_json_transaction()` for JSON RMW where appropriate.

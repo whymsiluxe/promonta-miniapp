@@ -6,7 +6,7 @@ Status: refined after live Telegram screenshot batch from 2026-09-13 23:20-23:21
 
 ## Product Intent
 
-Promonta miniapp must feel like a premium iPhone work app for a construction company: calm, fast, tactile, and obvious for workers on a site. The app is not a marketing landing page. It is an operational tool, so polish must improve clarity and reduce taps.
+Grandmont Group miniapp must feel like a premium iPhone work app for a construction company: calm, fast, tactile, and obvious for workers on a site. The app is not a marketing landing page. It is an operational tool, so polish must improve clarity and reduce taps.
 
 Target references:
 
@@ -157,7 +157,7 @@ Alerts:
   - Text primary: near-black `#1C1C1E`, not pure black.
   - Text secondary: iOS-like muted gray/taupe.
   - Dark surfaces only for fullscreen chat/comment/media contexts where Instagram-like immersion is intentional.
-- Accent color should be Promonta forest green; brass/gold only for small status/accent details.
+- Accent color should be Grandmont Group forest green; brass/gold only for small status/accent details.
 - Red/yellow/green must be semantic, not decorative. Avoid brass/gold for generic section titles.
 - Do not introduce decorative blobs, random gradients, fake 3D emoji icons, or novelty effects.
 - Prefer thin SVG/lucide-style icons over emoji labels in controls.

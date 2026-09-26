@@ -29,7 +29,7 @@ is explicitly forbidden from this autonomous session (see "No production deploym
    explicitly says that phase's verification failed and needs redoing.
 6. Before ANY pytest invocation, in this exact order:
    ```
-   export PROMONTA_ENV=test
+   export GRANDMONT_GROUP_ENV=test
    export MINIAPP_DATA_ROOT=$(mktemp -d)
    test "$MINIAPP_DATA_ROOT" != "/home/promonta/agent/miniapp" || { echo "REFUSING: DATA_ROOT resolved to production"; exit 1; }
    ```
@@ -100,8 +100,8 @@ HANDOFF.md accurate so each restart is a clean resume, not a redo.
 ## No production deployment from this autonomous session
 
 Per the plan's "Deploy" section: do NOT run `deploy_frontend.py` against the live
-`/var/www/miniapp`, do NOT restart `promonta-miniapp.service`, do NOT modify
-`/etc/systemd/system/promonta-miniapp.service`. All of Phase 0-7's work happens in
+`/var/www/miniapp`, do NOT restart `grandmont-miniapp.service`, do NOT modify
+`/etc/systemd/system/grandmont-miniapp.service`. All of Phase 0-7's work happens in
 `/home/promonta/agent/miniapp-repo` (the git repo) — the live production directories
 (`/home/promonta/agent/miniapp`, `/var/www/miniapp`) are read-only reference points for
 verification (e.g. comparing deployed vs. repo state) but are never written to by this

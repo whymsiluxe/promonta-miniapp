@@ -1,4 +1,4 @@
-// Таб "Чат" — командный чат команды Promonta.
+// Таб "Чат" — командный чат команды Grandmont Group.
 // Хранение: JSON-файл на VPS (последние 200 сообщений), polling каждые 8 сек.
 // Решение: WebSocket избыточен для 2-5 чел., простой polling без зависимостей.
 //
@@ -1649,7 +1649,7 @@ function renderChatThreadList() {
 
   if (_chatCategory === 'general') {
     const t = _threadByKey('group');
-    const preview = t?.last_preview ? _escChat(t.last_preview) : 'Команда Promonta';
+    const preview = t?.last_preview ? _escChat(t.last_preview) : 'Команда Grandmont Group';
     const time = _threadTimeLabel(t?.last_ts);
     // 28.07 (Phase 06): "Общий" раньше вообще не фильтровался поиском -- матчим по
     // названию+превью последнего сообщения (полная история сообщений не загружена

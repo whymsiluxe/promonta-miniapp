@@ -34,9 +34,9 @@ class TestItem2AmendmentPerWorker(unittest.TestCase):
     """Backend: get_pending_amendments passes worker_id; per-worker ack semantics."""
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="promonta-test-item2-")
+        self._tmp = tempfile.mkdtemp(prefix="grandmont-group-test-item2-")
         os.environ["MINIAPP_DATA_ROOT"] = self._tmp
-        os.environ["PROMONTA_ENV"] = "test"
+        os.environ["GRANDMONT_GROUP_ENV"] = "test"
         dpl.configure(
             os.path.join(self._tmp, "daily_plan_store.json"),
             os.path.join(self._tmp, "plan_sync_state.json"),
@@ -278,7 +278,7 @@ class TestRound11StatusFieldTransitions(unittest.TestCase):
     edit must never silently unpublish or destroy accepted/in-progress history."""
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="promonta-test-r11status-")
+        self._tmp = tempfile.mkdtemp(prefix="grandmont-group-test-r11status-")
         os.environ["MINIAPP_DATA_ROOT"] = self._tmp
         dpl.configure(
             os.path.join(self._tmp, "daily_plan_store.json"),
@@ -370,7 +370,7 @@ class TestRound12AcceptedContextSnapshot(unittest.TestCase):
     already-accepted/already-started shift can wrongly skip DailyExecution."""
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="promonta-test-r12snap-")
+        self._tmp = tempfile.mkdtemp(prefix="grandmont-group-test-r12snap-")
         os.environ["MINIAPP_DATA_ROOT"] = self._tmp
         dpl.configure(
             os.path.join(self._tmp, "daily_plan_store.json"),
@@ -494,7 +494,7 @@ class TestOutboxDeadLetterAndReconciliation(unittest.TestCase):
     entry from it."""
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="promonta-test-outbox-")
+        self._tmp = tempfile.mkdtemp(prefix="grandmont-group-test-outbox-")
         # 26.09 (test-pollution fix, same pattern as test_foundation_completion.py):
         # this setUp used to reassign these FILE globals with no tearDown --
         # harmless while every reader lived in main.py's own namespace, but a
@@ -737,7 +737,7 @@ class TestRound11UpdatePlanFieldsVersioning(unittest.TestCase):
     reconstruction. Also verifies object_id is now a detected/updateable field."""
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="promonta-test-r11v-")
+        self._tmp = tempfile.mkdtemp(prefix="grandmont-group-test-r11v-")
         os.environ["MINIAPP_DATA_ROOT"] = self._tmp
         dpl.configure(
             os.path.join(self._tmp, "daily_plan_store.json"),
@@ -799,7 +799,7 @@ class TestRound11InvalidRowNotTreatedAsDeleted(unittest.TestCase):
     wrongly cancel/source_delete an otherwise-untouched valid existing plan."""
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="promonta-test-r11-")
+        self._tmp = tempfile.mkdtemp(prefix="grandmont-group-test-r11-")
         os.environ["MINIAPP_DATA_ROOT"] = self._tmp
         dpl.configure(
             os.path.join(self._tmp, "daily_plan_store.json"),
@@ -856,7 +856,7 @@ class TestItem6RowDeletionExclusion(unittest.TestCase):
     """Cancelled/source_deleted plans must be excluded from active plan queries."""
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="promonta-test-item6-")
+        self._tmp = tempfile.mkdtemp(prefix="grandmont-group-test-item6-")
         os.environ["MINIAPP_DATA_ROOT"] = self._tmp
         dpl.configure(
             os.path.join(self._tmp, "daily_plan_store.json"),
@@ -924,7 +924,7 @@ class TestItem7ReplanBlockerSchema(unittest.TestCase):
     """Replan endpoint must use daily_plan_id to look up blockers."""
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="promonta-test-item7-")
+        self._tmp = tempfile.mkdtemp(prefix="grandmont-group-test-item7-")
         os.environ["MINIAPP_DATA_ROOT"] = self._tmp
         dpl.configure(
             os.path.join(self._tmp, "daily_plan_store.json"),
@@ -1004,7 +1004,7 @@ class TestItem8ReplanAmendments(unittest.TestCase):
     """Replan must find amendments via object→plans→amendments chain."""
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="promonta-test-item8-")
+        self._tmp = tempfile.mkdtemp(prefix="grandmont-group-test-item8-")
         os.environ["MINIAPP_DATA_ROOT"] = self._tmp
         dpl.configure(
             os.path.join(self._tmp, "daily_plan_store.json"),
@@ -1133,7 +1133,7 @@ class TestItem11SyncFieldNaming(unittest.TestCase):
     """Diagnostics reads last_sync_at (matching plan_sync.py writer, not last_synced_at)."""
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="promonta-test-item11-")
+        self._tmp = tempfile.mkdtemp(prefix="grandmont-group-test-item11-")
         os.environ["MINIAPP_DATA_ROOT"] = self._tmp
 
     def test_diagnostics_reads_last_sync_at_not_last_synced_at(self):
@@ -1261,7 +1261,7 @@ class TestItem14ContractStoreSafety(unittest.TestCase):
     """_load_contract_store must use _safe_load_json, not raw json.load."""
 
     def setUp(self):
-        self._tmp = tempfile.mkdtemp(prefix="promonta-test-item14-")
+        self._tmp = tempfile.mkdtemp(prefix="grandmont-group-test-item14-")
         os.environ["MINIAPP_DATA_ROOT"] = self._tmp
         self._contract_file = os.path.join(self._tmp, "contract_ingest_state.json")
         # Make the backend use this temp file

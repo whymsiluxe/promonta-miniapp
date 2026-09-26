@@ -29,7 +29,7 @@ There is no database. No ORM. No migrations. Persistence is per-feature JSON fil
 
 ## Backend
 
-Single file, `main.py` (~146KB, ~93 routes). FastAPI + uvicorn (`uvicorn miniapp.main:app`), run under systemd (`promonta-miniapp.service`), bound to `127.0.0.1:8001` — only reachable via the Caddy reverse proxy, not exposed directly.
+Single file, `main.py` (~146KB, ~93 routes). FastAPI + uvicorn (`uvicorn miniapp.main:app`), run under systemd (`grandmont-miniapp.service`), bound to `127.0.0.1:8001` — only reachable via the Caddy reverse proxy, not exposed directly.
 
 ### Authentication
 

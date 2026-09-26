@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Autonomous Codex runner for the Promonta miniapp production repo.
+# Autonomous Codex runner for the Grandmont Group miniapp production repo.
+# Env vars: GRANDMONT_GROUP_* (pre-rebrand PROMONTA_* names still honoured as fallback).
 #
 # Intended to be launched by autonomous-miniapp.service/timer on the VPS.
 # It keeps one Codex run active at a time, resumes the same Codex thread after
@@ -7,15 +8,15 @@
 # continue cleanly.
 set -euo pipefail
 
-REPO="${PROMONTA_MINIAPP_REPO:-/home/promonta/agent/miniapp-repo}"
-AGENT_ROOT="${PROMONTA_AGENT_ROOT:-/home/promonta/agent}"
-PLAN_FILE="${PROMONTA_AUTONOMOUS_PLAN:-$REPO/docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md}"
-LOCKFILE="${PROMONTA_AUTONOMOUS_LOCK:-$AGENT_ROOT/.codex-autonomous-miniapp.lock}"
-LOGFILE="${PROMONTA_AUTONOMOUS_LOG:-$AGENT_ROOT/codex-autonomous-miniapp.log}"
-LAST_MESSAGE="${PROMONTA_AUTONOMOUS_LAST_MESSAGE:-$AGENT_ROOT/codex-autonomous-miniapp.last.md}"
-THREAD_FILE="${PROMONTA_AUTONOMOUS_THREAD_FILE:-$AGENT_ROOT/codex-autonomous-miniapp.thread}"
-TIMEOUT_SECONDS="${PROMONTA_AUTONOMOUS_TIMEOUT:-10200}"
-STALE_LOCK_SECONDS="${PROMONTA_AUTONOMOUS_STALE_LOCK_SECONDS:-14400}"
+REPO="${GRANDMONT_GROUP_MINIAPP_REPO:-${PROMONTA_MINIAPP_REPO:-/home/promonta/agent/miniapp-repo}}"
+AGENT_ROOT="${GRANDMONT_GROUP_AGENT_ROOT:-${PROMONTA_AGENT_ROOT:-/home/promonta/agent}}"
+PLAN_FILE="${GRANDMONT_GROUP_AUTONOMOUS_PLAN:-${PROMONTA_AUTONOMOUS_PLAN:-$REPO/docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md}}"
+LOCKFILE="${GRANDMONT_GROUP_AUTONOMOUS_LOCK:-${PROMONTA_AUTONOMOUS_LOCK:-$AGENT_ROOT/.codex-autonomous-miniapp.lock}}"
+LOGFILE="${GRANDMONT_GROUP_AUTONOMOUS_LOG:-${PROMONTA_AUTONOMOUS_LOG:-$AGENT_ROOT/codex-autonomous-miniapp.log}}"
+LAST_MESSAGE="${GRANDMONT_GROUP_AUTONOMOUS_LAST_MESSAGE:-${PROMONTA_AUTONOMOUS_LAST_MESSAGE:-$AGENT_ROOT/codex-autonomous-miniapp.last.md}}"
+THREAD_FILE="${GRANDMONT_GROUP_AUTONOMOUS_THREAD_FILE:-${PROMONTA_AUTONOMOUS_THREAD_FILE:-$AGENT_ROOT/codex-autonomous-miniapp.thread}}"
+TIMEOUT_SECONDS="${GRANDMONT_GROUP_AUTONOMOUS_TIMEOUT:-${PROMONTA_AUTONOMOUS_TIMEOUT:-10200}}"
+STALE_LOCK_SECONDS="${GRANDMONT_GROUP_AUTONOMOUS_STALE_LOCK_SECONDS:-${PROMONTA_AUTONOMOUS_STALE_LOCK_SECONDS:-14400}}"
 
 log() {
   printf '%s %s\n' "$(date -Iseconds)" "$*" >> "$LOGFILE"
@@ -82,7 +83,7 @@ if [ -s "$THREAD_FILE" ]; then
   log "resuming codex thread=$THREAD_ID"
   RESUME_PROMPT_FILE="$(mktemp)"
   cat > "$RESUME_PROMPT_FILE" <<'PROMPT'
-Continue the existing autonomous Promonta miniapp run from exactly where it paused.
+Continue the existing autonomous Grandmont Group miniapp run from exactly where it paused.
 
 Use current git status and docs/UNIFIED_AUTONOMOUS_MASTER_PLAN_13sep2026.md as source of truth. Do not restart completed work. The runner-created /home/promonta/agent/.codex-autonomous-miniapp.lock and parent runner/Codex processes belong to this current run; do not stop merely because they exist. Stop only for a second independent active agent or unrelated dirty worktree changes. Inspect what is already committed/deployed, continue the next unfinished checklist item, then test, commit, push, deploy, update /home/promonta/agent/FILESYSTEM_MAP.md, and keep going until AUTONOMOUS_STATUS is DONE or this session hits a limit.
 PROMPT

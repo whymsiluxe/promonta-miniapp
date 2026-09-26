@@ -271,7 +271,10 @@ function attachTaskHandlers(listEl, objectId, countEl) {
   });
 }
 
-const ORDER_KEY = 'promonta_objects_order';
+const ORDER_KEY = 'grandmont_group_objects_order';
+// Grandmont Group rebrand (26.09): pre-rebrand key, migrated once so a user's custom
+// object order survives the rename.
+const LEGACY_ORDER_KEY = 'promonta_objects_order';
 
 function saveObjectsOrder() {
   const ids = Array.from(document.querySelectorAll('#objects-cards .card')).map(c => c.dataset.id);
@@ -280,7 +283,17 @@ function saveObjectsOrder() {
 
 function applyObjectsOrder(objects) {
   let saved;
-  try { saved = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]'); } catch (e) { saved = []; }
+  try {
+    let raw = localStorage.getItem(ORDER_KEY);
+    if (raw === null) {
+      raw = localStorage.getItem(LEGACY_ORDER_KEY);
+      if (raw !== null) {
+        localStorage.setItem(ORDER_KEY, raw);
+        localStorage.removeItem(LEGACY_ORDER_KEY);
+      }
+    }
+    saved = JSON.parse(raw || '[]');
+  } catch (e) { saved = []; }
   if (!saved.length) return objects;
   const byId = new Map(objects.map(o => [o['ID объекта'], o]));
   const ordered = [];
@@ -807,7 +820,7 @@ function attachStagesRowHandlers(stages) {
 
   document.querySelectorAll('.stage-row-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!await promontaConfirm('Удалить этап?', { danger: true })) return;
+      if (!await appConfirm('Удалить этап?', { danger: true })) return;
       const stageNum = btn.dataset.num;
       const rowNum = _stageRowIndexMap[stageNum];
       try {

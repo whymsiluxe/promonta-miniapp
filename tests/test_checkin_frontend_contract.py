@@ -124,8 +124,8 @@ def test_worker_shift_state_resolver_prioritizes_outbox_before_server():
 
     assert '<script src="js/worker-shift-state.js"></script>' in html
     assert "async function resolveWorkerShiftState(options = {})" in src
-    assert "promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_FINISH)" in src
-    assert "promontaOutboxList(WORKER_SHIFT_OUTBOX_KIND_START)" in src
+    assert "appOutboxList(WORKER_SHIFT_OUTBOX_KIND_FINISH)" in src
+    assert "appOutboxList(WORKER_SHIFT_OUTBOX_KIND_START)" in src
     assert "state: WORKER_SHIFT_STATE.FINISH_PENDING_SYNC" in src
     assert "state: WORKER_SHIFT_STATE.START_PENDING_SYNC" in src
     assert "api(path)" in src

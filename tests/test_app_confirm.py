@@ -1,7 +1,7 @@
-"""Regression coverage for promontaConfirm() (18.09, audit finding): the app
+"""Regression coverage for appConfirm() (18.09, audit finding): the app
 had 10 call sites across 7 files using the native browser confirm() -- a
 jarring OS-chrome popup on top of an otherwise fully custom iOS-like UI, not
-brandable/stylable, and blocking the JS thread synchronously. promontaConfirm()
+brandable/stylable, and blocking the JS thread synchronously. appConfirm()
 (shared.js) is the one reusable async replacement, built on the same
 .bottom-sheet-overlay/.bottom-sheet-panel CSS every other bottom sheet in the
 app already uses, registered with NavigationManager so Telegram Back closes it
@@ -33,40 +33,40 @@ def _source(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_promonta_confirm_is_defined_in_shared_js():
+def test_app_confirm_is_defined_in_shared_js():
     js = _source(SHARED_JS)
-    assert "function promontaConfirm(message" in js
+    assert "function appConfirm(message" in js
     assert "return new Promise(resolve => {" in js
     # Must integrate with the existing overlay-stack mechanism, not just be a
     # standalone popup with no Telegram Back support.
     assert "NavigationManager.registerOverlay(() => settle(false));" in js
     # Reuses the shared bottom-sheet CSS layer -- no new overlay chrome.
-    assert "overlay.className = 'bottom-sheet-overlay promonta-confirm-overlay';" in js
+    assert "overlay.className = 'bottom-sheet-overlay app-confirm-overlay';" in js
 
 
-def test_promonta_confirm_css_reuses_shared_bottom_sheet_classes():
+def test_app_confirm_css_reuses_shared_bottom_sheet_classes():
     html = _source(APP_HTML)
-    assert ".promonta-confirm-panel" in html
-    assert ".promonta-confirm-actions" in html
+    assert ".app-confirm-panel" in html
+    assert ".app-confirm-actions" in html
     # Buttons reuse the same .obj-confirm-cancel/.obj-confirm-ok class NAMES
     # already used by the stage-add-sheet footer (consistent visual language),
-    # scoped under .promonta-confirm-actions so the two don't collide.
-    assert ".promonta-confirm-actions .obj-confirm-cancel" in html
-    assert ".promonta-confirm-actions .obj-confirm-ok" in html
+    # scoped under .app-confirm-actions so the two don't collide.
+    assert ".app-confirm-actions .obj-confirm-cancel" in html
+    assert ".app-confirm-actions .obj-confirm-ok" in html
 
 
 def test_no_native_confirm_left_in_migrated_files():
     for path in MIGRATED_JS_FILES:
         js = _source(path)
-        assert "await promontaConfirm(" in js, f"{path.name} should call promontaConfirm()"
-        # Match an actual `confirm(` CALL, not promontaConfirm(...)/confirmLabel/
+        assert "await appConfirm(" in js, f"{path.name} should call appConfirm()"
+        # Match an actual `confirm(` CALL, not appConfirm(...)/confirmLabel/
         # a code comment mentioning "confirm(" as prose (e.g. explaining what
         # was replaced) -- only flag lines that are executable code containing
         # a bare, unqualified confirm( invocation.
         for line in js.splitlines():
             code = line.split('//', 1)[0]
             stripped = code.strip()
-            if not stripped or "promontaConfirm(" in stripped or "confirmLabel" in stripped:
+            if not stripped or "appConfirm(" in stripped or "confirmLabel" in stripped:
                 continue
             assert "confirm(" not in stripped, (
                 f"{path.name} still has a native confirm() call: {stripped!r}"

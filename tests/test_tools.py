@@ -40,7 +40,7 @@ def _repo_tools_lib():
     экземпляр, что backend.checkout_tool()/return_tool()/etc. получают через
     tl = _load_repo_tools_lib() внутри себя. Не зависит от порядка запуска других
     тестов и от того, что уже могло попасть в sys.modules['tools_lib'] -- модуль
-    загружен под собственным внутренним именем (promonta_repo_tools_lib)."""
+    загружен под собственным внутренним именем (grandmont_group_repo_tools_lib)."""
     return backend._load_repo_tools_lib()
 
 

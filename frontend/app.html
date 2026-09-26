@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Promonta Mini App</title>
+<title>Grandmont Group Mini App</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -349,6 +349,10 @@ header h1 {
   font-size: 28px;
   font-weight: 800;
   letter-spacing: 0.14em;
+  /* "GRANDMONT GROUP" is ~2x longer than the old wordmark: center it and let it
+     wrap at the space on narrow phones instead of overflowing the viewport. */
+  text-align: center;
+  padding: 0 16px;
   color: var(--ios-text, var(--text-main));
   animation: splash-brand-reveal 0.55s ease-out both;
 }
@@ -1775,24 +1779,24 @@ header h1 {
   background: color-mix(in srgb, var(--danger, #b3403a) 10%, transparent);
   color: var(--danger, #b3403a); font-size: 0.85rem;
 }
-/* 18.09 (audit finding): promontaConfirm() -- reusable replacement for window.confirm(),
+/* 18.09 (audit finding): appConfirm() -- reusable replacement for window.confirm(),
    see shared.js. Sits inside the shared .bottom-sheet-overlay/.bottom-sheet-panel layer
    (no new overlay chrome needed), only the confirm-specific inner content is new here. */
-.promonta-confirm-panel { padding: 1.1rem 1.1rem calc(1.1rem + env(safe-area-inset-bottom)); }
-.promonta-confirm-title { font-size: 1.05rem; font-weight: 700; margin-top: 0.5rem; }
-.promonta-confirm-message { font-size: 0.92rem; color: var(--text-light); margin-top: 0.4rem; line-height: 1.4; }
-.promonta-confirm-actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
-.promonta-confirm-actions button {
+.app-confirm-panel { padding: 1.1rem 1.1rem calc(1.1rem + env(safe-area-inset-bottom)); }
+.app-confirm-title { font-size: 1.05rem; font-weight: 700; margin-top: 0.5rem; }
+.app-confirm-message { font-size: 0.92rem; color: var(--text-light); margin-top: 0.4rem; line-height: 1.4; }
+.app-confirm-actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
+.app-confirm-actions button {
   flex: 1; height: 52px; border-radius: 16px; font-size: 1rem; font-weight: 650;
   font-family: inherit; cursor: pointer; border: none;
 }
-.promonta-confirm-actions .obj-confirm-cancel {
+.app-confirm-actions .obj-confirm-cancel {
   background: var(--bg-app); color: var(--text-main); border: 1px solid var(--border-color);
 }
-.promonta-confirm-actions .obj-confirm-ok {
+.app-confirm-actions .obj-confirm-ok {
   background: var(--primary); color: var(--ivory, #fff);
 }
-.promonta-confirm-actions .obj-confirm-ok.promonta-confirm-danger {
+.app-confirm-actions .obj-confirm-ok.app-confirm-danger {
   background: var(--danger, #b3403a);
 }
 .obj-stage-add-sheet-network-error strong { display: block; margin-bottom: 0.15rem; }
@@ -8902,7 +8906,7 @@ body.today-plan-bar-visible #view-object-detail { padding-bottom: calc(var(--app
       <rect class="splash-mark-accent" x="45" y="14" width="10" height="5" rx="1.5"/>
     </svg>
   </div>
-  <div class="splash-brand">PROMONTA</div>
+  <div class="splash-brand">GRANDMONT GROUP</div>
   <div class="splash-spinner"><span></span><span></span><span></span></div>
   <!-- Раунд 5 §2: реальный прогресс bootstrap (не фиксированный таймер) -->
   <div class="splash-progress" id="splash-progress">Загрузка приложения…</div>

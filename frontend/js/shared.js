@@ -10,9 +10,25 @@ let currentUserId = null;
 // мини-аппы), так что воркер посреди смены получал 401. sessionStorage (не localStorage) --
 // токен привязан к конкретному открытию WebView, не должен переживать полное закрытие
 // Telegram и попасть в постоянное хранилище на устройстве.
-const SESSION_TOKEN_KEY = 'promonta_session_token';
+const SESSION_TOKEN_KEY = 'grandmont_group_session_token';
+// Grandmont Group rebrand (26.09): the key was renamed from the pre-rebrand
+// 'promonta_session_token'. A WebView that was already open when the rename deployed
+// still holds its token under the OLD key -- read it once as a fallback and move it to
+// the new key, so the deploy doesn't force-log-out every active session. Safe to drop
+// this fallback once no pre-rebrand WebView session can still be alive (tokens live 12h).
+const LEGACY_SESSION_TOKEN_KEY = 'promonta_session_token';
 let _sessionToken = null;
-try { _sessionToken = window.sessionStorage.getItem(SESSION_TOKEN_KEY); } catch (e) { /* приватный режим / недоступно */ }
+try {
+  _sessionToken = window.sessionStorage.getItem(SESSION_TOKEN_KEY);
+  if (!_sessionToken) {
+    const legacyToken = window.sessionStorage.getItem(LEGACY_SESSION_TOKEN_KEY);
+    if (legacyToken) {
+      _sessionToken = legacyToken;
+      window.sessionStorage.setItem(SESSION_TOKEN_KEY, legacyToken);
+      window.sessionStorage.removeItem(LEGACY_SESSION_TOKEN_KEY);
+    }
+  }
+} catch (e) { /* приватный режим / недоступно */ }
 
 function _saveSessionToken(token) {
   _sessionToken = token;
@@ -21,7 +37,10 @@ function _saveSessionToken(token) {
 
 function _clearSessionToken() {
   _sessionToken = null;
-  try { window.sessionStorage.removeItem(SESSION_TOKEN_KEY); } catch (e) {}
+  try {
+    window.sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    window.sessionStorage.removeItem(LEGACY_SESSION_TOKEN_KEY);
+  } catch (e) {}
 }
 
 // Получить token: если уже есть в sessionStorage -- используем как есть (backend всё
@@ -380,36 +399,103 @@ function prefetchTracked(path) {
 // Durable client-side outbox for evidence uploads (check-in start / finish).
 // IndexedDB can persist File/Blob objects; localStorage cannot, so we fail loudly
 // if WebView storage is unavailable instead of pretending the evidence is safe.
-const PROMONTA_OUTBOX_DB = 'promonta-offline-outbox';
-const PROMONTA_OUTBOX_STORE = 'records';
-const PROMONTA_OUTBOX_VERSION = 1;
-let _promontaOutboxDbPromise = null;
+const APP_OUTBOX_DB = 'grandmont-group-offline-outbox';
+const APP_OUTBOX_STORE = 'records';
+const APP_OUTBOX_VERSION = 1;
+// Grandmont Group rebrand (26.09): pre-rebrand DB name. A device may still hold
+// queued-but-unsent check-in/finish evidence there -- it is copied into the new DB
+// once (see _appMigrateLegacyOutbox) instead of being silently orphaned.
+const LEGACY_APP_OUTBOX_DB = 'promonta-offline-outbox';
+let _appOutboxDbPromise = null;
 
-function promontaOutboxSupported() {
+function appOutboxSupported() {
   return typeof indexedDB !== 'undefined';
 }
 
-function _promontaOpenOutboxDb() {
-  if (!promontaOutboxSupported()) return Promise.reject(new Error('Офлайн-очередь недоступна в этом WebView'));
-  if (_promontaOutboxDbPromise) return _promontaOutboxDbPromise;
-  _promontaOutboxDbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(PROMONTA_OUTBOX_DB, PROMONTA_OUTBOX_VERSION);
+// Opens an EXISTING IndexedDB database by name, or resolves null if it doesn't exist.
+// Aborting the versionchange transaction keeps a missing DB from being created as an
+// empty side effect of the check.
+function _openLegacyIdbIfExists(name) {
+  return new Promise(resolve => {
+    let req;
+    try { req = indexedDB.open(name); } catch (e) { resolve(null); return; }
+    let created = false;
+    req.onupgradeneeded = () => {
+      created = true;
+      try { req.transaction.abort(); } catch (e) { /* already finished */ }
+    };
+    req.onsuccess = () => {
+      if (!created) { resolve(req.result); return; }
+      req.result.close();
+      resolve(null);
+    };
+    req.onerror = (e) => { if (e && e.preventDefault) e.preventDefault(); resolve(null); };
+    req.onblocked = () => resolve(null);
+  });
+}
+
+async function _appMigrateLegacyOutbox(db) {
+  const legacy = await _openLegacyIdbIfExists(LEGACY_APP_OUTBOX_DB);
+  if (!legacy) return;
+  try {
+    if (legacy.objectStoreNames.contains(APP_OUTBOX_STORE)) {
+      const records = await new Promise((resolve, reject) => {
+        const req = legacy.transaction(APP_OUTBOX_STORE, 'readonly').objectStore(APP_OUTBOX_STORE).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+      if (records.length) {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(APP_OUTBOX_STORE, 'readwrite');
+          const store = tx.objectStore(APP_OUTBOX_STORE);
+          // add(), not put(): a record already present in the new DB is newer than
+          // the legacy copy and must not be overwritten by it.
+          records.forEach(r => {
+            const addReq = store.add(r);
+            addReq.onerror = (e) => { e.preventDefault(); e.stopPropagation(); };
+          });
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error || new Error('legacy outbox migration aborted'));
+        });
+      }
+    }
+  } finally {
+    legacy.close();
+  }
+  // Only reached when the copy committed (a throw above skips it, keeping the legacy
+  // DB for the next attempt) -- drop the legacy DB so records are never copied twice.
+  indexedDB.deleteDatabase(LEGACY_APP_OUTBOX_DB);
+}
+
+function _appOpenOutboxDb() {
+  if (!appOutboxSupported()) return Promise.reject(new Error('Офлайн-очередь недоступна в этом WebView'));
+  if (_appOutboxDbPromise) return _appOutboxDbPromise;
+  _appOutboxDbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(APP_OUTBOX_DB, APP_OUTBOX_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(PROMONTA_OUTBOX_STORE)) {
-        const store = db.createObjectStore(PROMONTA_OUTBOX_STORE, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(APP_OUTBOX_STORE)) {
+        const store = db.createObjectStore(APP_OUTBOX_STORE, { keyPath: 'id' });
         store.createIndex('kind', 'kind', { unique: false });
         store.createIndex('state', 'state', { unique: false });
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // A failed migration must not take the live outbox down with it: log, keep the
+      // legacy DB for the next app start, and hand out the new DB regardless.
+      _appMigrateLegacyOutbox(db)
+        .catch(err => console.warn('legacy outbox migration failed', err))
+        .then(() => resolve(db));
+    };
     req.onerror = () => reject(req.error || new Error('Не удалось открыть офлайн-очередь'));
   });
-  return _promontaOutboxDbPromise;
+  return _appOutboxDbPromise;
 }
 
-async function promontaOutboxPut(record) {
-  const db = await _promontaOpenOutboxDb();
+async function appOutboxPut(record) {
+  const db = await _appOpenOutboxDb();
   const now = Date.now();
   const entry = {
     attempts: 0,
@@ -419,18 +505,18 @@ async function promontaOutboxPut(record) {
     ...record,
   };
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(PROMONTA_OUTBOX_STORE, 'readwrite');
-    tx.objectStore(PROMONTA_OUTBOX_STORE).put(entry);
+    const tx = db.transaction(APP_OUTBOX_STORE, 'readwrite');
+    tx.objectStore(APP_OUTBOX_STORE).put(entry);
     tx.oncomplete = () => resolve(entry);
     tx.onerror = () => reject(tx.error || new Error('Не удалось сохранить офлайн-запись'));
   });
 }
 
-async function promontaOutboxPatch(id, updates) {
-  const db = await _promontaOpenOutboxDb();
+async function appOutboxPatch(id, updates) {
+  const db = await _appOpenOutboxDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(PROMONTA_OUTBOX_STORE, 'readwrite');
-    const store = tx.objectStore(PROMONTA_OUTBOX_STORE);
+    const tx = db.transaction(APP_OUTBOX_STORE, 'readwrite');
+    const store = tx.objectStore(APP_OUTBOX_STORE);
     const getReq = store.get(id);
     getReq.onsuccess = () => {
       const current = getReq.result;
@@ -442,21 +528,21 @@ async function promontaOutboxPatch(id, updates) {
   });
 }
 
-async function promontaOutboxDelete(id) {
-  const db = await _promontaOpenOutboxDb();
+async function appOutboxDelete(id) {
+  const db = await _appOpenOutboxDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(PROMONTA_OUTBOX_STORE, 'readwrite');
-    tx.objectStore(PROMONTA_OUTBOX_STORE).delete(id);
+    const tx = db.transaction(APP_OUTBOX_STORE, 'readwrite');
+    tx.objectStore(APP_OUTBOX_STORE).delete(id);
     tx.oncomplete = () => resolve(true);
     tx.onerror = () => reject(tx.error || new Error('Не удалось удалить офлайн-запись'));
   });
 }
 
-async function promontaOutboxList(kind) {
-  const db = await _promontaOpenOutboxDb();
+async function appOutboxList(kind) {
+  const db = await _appOpenOutboxDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(PROMONTA_OUTBOX_STORE, 'readonly');
-    const store = tx.objectStore(PROMONTA_OUTBOX_STORE);
+    const tx = db.transaction(APP_OUTBOX_STORE, 'readonly');
+    const store = tx.objectStore(APP_OUTBOX_STORE);
     const req = kind ? store.index('kind').getAll(kind) : store.getAll();
     req.onsuccess = () => resolve((req.result || []).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)));
     req.onerror = () => reject(req.error || new Error('Не удалось прочитать офлайн-очередь'));
@@ -474,10 +560,10 @@ async function promontaOutboxList(kind) {
 // non-transient (real HTTP rejection, not a network error) failure, the
 // record moves to a terminal 'dead_letter' state instead of going back to
 // 'queued'. Retry loops must stop picking up dead_letter records themselves
-// (promontaOutboxList still returns them -- callers filter by state); a
+// (appOutboxList still returns them -- callers filter by state); a
 // manual retry (resets state to 'queued', attempts to 0) or manual delete is
 // the only way out once dead_letter, matching a normal outbox/DLQ pattern.
-const PROMONTA_OUTBOX_MAX_ATTEMPTS = 5;
+const APP_OUTBOX_MAX_ATTEMPTS = 5;
 
 // 18.09 (audit finding): "any real HTTP response = permanent" was wrong -- a 502/503
 // from a flaky reverse proxy or a 429 rate-limit is just as retriable as a network
@@ -486,29 +572,29 @@ const PROMONTA_OUTBOX_MAX_ATTEMPTS = 5;
 // permanent; request-timeout/rate-limit/5xx server errors are transient like a
 // network failure. err.status must be set by the caller from the real HTTP response
 // (res.status) for this to work at all -- see _uploadCheckinPhotos/_uploadFinishPhotos.
-const PROMONTA_OUTBOX_PERMANENT_STATUSES = new Set([400, 401, 403, 404, 409, 422]);
+const APP_OUTBOX_PERMANENT_STATUSES = new Set([400, 401, 403, 404, 409, 422]);
 
-function promontaOutboxIsTransientError(err) {
+function appOutboxIsTransientError(err) {
   const msg = String(err?.message || '');
-  if (err?.status) return !PROMONTA_OUTBOX_PERMANENT_STATUSES.has(err.status);
+  if (err?.status) return !APP_OUTBOX_PERMANENT_STATUSES.has(err.status);
   return !navigator.onLine || err?.name === 'TypeError' || err?.name === 'TimeoutError' || /Failed to fetch|NetworkError/i.test(msg);
 }
 
-async function promontaOutboxRecordFailure(record, err) {
+async function appOutboxRecordFailure(record, err) {
   const attempts = (record.attempts || 0); // already incremented by the caller before the send attempt
-  const transient = promontaOutboxIsTransientError(err);
-  const exhausted = attempts >= PROMONTA_OUTBOX_MAX_ATTEMPTS;
+  const transient = appOutboxIsTransientError(err);
+  const exhausted = attempts >= APP_OUTBOX_MAX_ATTEMPTS;
   if (!transient || exhausted) {
-    return promontaOutboxPatch(record.id, {
+    return appOutboxPatch(record.id, {
       state: 'dead_letter',
       lastError: err?.message || String(err),
     });
   }
-  return promontaOutboxPatch(record.id, { state: 'queued', lastError: err?.message || String(err) });
+  return appOutboxPatch(record.id, { state: 'queued', lastError: err?.message || String(err) });
 }
 
-async function promontaOutboxManualRetry(id) {
-  return promontaOutboxPatch(id, { state: 'queued', attempts: 0, lastError: null });
+async function appOutboxManualRetry(id) {
+  return appOutboxPatch(id, { state: 'queued', attempts: 0, lastError: null });
 }
 
 function hapticImpact(style) {
@@ -771,28 +857,28 @@ function _bindTouchSafeSend(sendBtn, inputEl, sendFn) {
 // 18.09 (audit finding): 10 call sites across the app used the native browser
 // confirm() for a destructive/interrupting action -- a jarring OS-chrome popup
 // on top of an otherwise fully custom iOS-like UI, and not stylable/brandable.
-// promontaConfirm() is the one reusable replacement: builds a
+// appConfirm() is the one reusable replacement: builds a
 // .bottom-sheet-overlay/.bottom-sheet-panel dynamically (same CSS every other
 // bottom sheet in the app already uses -- stage-add-sheet, new-object-sheet,
 // abw-reason-sheet -- nothing new to style), registers with NavigationManager
 // so Telegram Back closes it like every other overlay, and resolves a Promise
 // instead of blocking the JS thread synchronously the way window.confirm()
 // does. Call sites migrate from `if (!confirm(msg)) return;` (sync) to
-// `if (!await promontaConfirm(msg)) return;` (async) -- same early-return
+// `if (!await appConfirm(msg)) return;` (async) -- same early-return
 // shape, one extra `await`.
-function promontaConfirm(message, { title = 'Подтвердите действие', confirmLabel = 'Да', cancelLabel = 'Отмена', danger = false } = {}) {
+function appConfirm(message, { title = 'Подтвердите действие', confirmLabel = 'Да', cancelLabel = 'Отмена', danger = false } = {}) {
   return new Promise(resolve => {
     const overlay = document.createElement('div');
-    overlay.className = 'bottom-sheet-overlay promonta-confirm-overlay';
+    overlay.className = 'bottom-sheet-overlay app-confirm-overlay';
     overlay.dataset.noSwipe = '1';
     overlay.innerHTML = `
-      <div class="bottom-sheet-panel promonta-confirm-panel">
+      <div class="bottom-sheet-panel app-confirm-panel">
         <div class="bottom-sheet-handle"></div>
-        <div class="promonta-confirm-title">${esc(title)}</div>
-        <div class="promonta-confirm-message">${esc(message)}</div>
-        <div class="promonta-confirm-actions">
-          <button class="obj-confirm-cancel" id="promonta-confirm-cancel-btn" type="button">${esc(cancelLabel)}</button>
-          <button class="obj-confirm-ok${danger ? ' promonta-confirm-danger' : ''}" id="promonta-confirm-ok-btn" type="button">${esc(confirmLabel)}</button>
+        <div class="app-confirm-title">${esc(title)}</div>
+        <div class="app-confirm-message">${esc(message)}</div>
+        <div class="app-confirm-actions">
+          <button class="obj-confirm-cancel" id="app-confirm-cancel-btn" type="button">${esc(cancelLabel)}</button>
+          <button class="obj-confirm-ok${danger ? ' app-confirm-danger' : ''}" id="app-confirm-ok-btn" type="button">${esc(confirmLabel)}</button>
         </div>
       </div>
     `;
@@ -817,7 +903,7 @@ function promontaConfirm(message, { title = 'Подтвердите действ
     }
 
     overlay.addEventListener('click', (e) => { if (e.target === overlay) settle(false); });
-    overlay.querySelector('#promonta-confirm-cancel-btn').addEventListener('click', () => settle(false));
-    overlay.querySelector('#promonta-confirm-ok-btn').addEventListener('click', () => settle(true));
+    overlay.querySelector('#app-confirm-cancel-btn').addEventListener('click', () => settle(false));
+    overlay.querySelector('#app-confirm-ok-btn').addEventListener('click', () => settle(true));
   });
 }

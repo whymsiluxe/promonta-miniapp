@@ -1,4 +1,4 @@
-# Promonta Mini App — Release Audit
+# Grandmont Group Mini App — Release Audit
 
 > **HISTORICAL — 2026-08-03.** Снимок состояния на `f19f421` (2026-07-30). Код с тех
 > пор прошёл несколько раундов фиксов (см. `docs/CHANGELOG.md` записи 2026-07-31,

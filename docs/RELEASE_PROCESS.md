@@ -19,7 +19,7 @@ No version currently tracked (pre-1.0, no `package.json`/`pyproject.toml` versio
 3. Commit with a clear message (Conventional Commits style: `fix:`, `feat:`, `docs:`, `chore:`, `security:`).
 4. Update `docs/CHANGELOG.md`, `docs/PROJECT_STATE.md`, `docs/SESSION_HANDOFF.md`, and `docs/FEATURES.md` if the change affects feature status.
 5. Sync the changed file(s) to the VPS (`scp`/`rsync` to `/var/www/miniapp/` for frontend, `/home/promonta/agent/miniapp/` for backend) — **after** first copying the live file to a `.bak-pre-<description>-<timestamp>` backup on the VPS, as a last-resort rollback.
-6. For backend changes: `systemctl restart promonta-miniapp`, then `systemctl status` and a health-check curl to confirm it came back up.
+6. For backend changes: `systemctl restart grandmont-miniapp`, then `systemctl status` and a health-check curl to confirm it came back up.
 7. For frontend changes: reload the app in Telegram and spot-check the changed area.
 
 ## GitHub release

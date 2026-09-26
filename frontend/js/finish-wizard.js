@@ -296,9 +296,9 @@ function _fwCloseWizardInternal() {
 
 async function _fwCloseWizard() {
   // 18.09 (audit finding): was window.confirm() -- a jarring OS-chrome popup on
-  // top of an otherwise fully custom iOS-like wizard UI. promontaConfirm() (shared.js)
+  // top of an otherwise fully custom iOS-like wizard UI. appConfirm() (shared.js)
   // is the reusable replacement, same early-return shape, async instead of sync.
-  if (_fwStep > 1 && !await promontaConfirm('Прервать завершение смены? Введённые данные будут потеряны.', { danger: true })) return;
+  if (_fwStep > 1 && !await appConfirm('Прервать завершение смены? Введённые данные будут потеряны.', { danger: true })) return;
   if (_fwOverlayUnregister) {
     const unregister = _fwOverlayUnregister;
     _fwOverlayUnregister = null;
@@ -861,7 +861,7 @@ async function _fwCreatePostFinishTickets(objectId, needs, defects) {
   if (failures.length) {
     const msg = failures.map(f => `${f.kind}: ${f.message}`).join('; ');
     const err = new Error(`Не удалось создать записи после финиша: ${msg}`);
-    const transient = failures.some(f => promontaOutboxIsTransientError({ status: f.status, message: f.message }));
+    const transient = failures.some(f => appOutboxIsTransientError({ status: f.status, message: f.message }));
     err.status = transient ? 503 : (failures[0].status || 500);
     throw err;
   }
@@ -869,13 +869,13 @@ async function _fwCreatePostFinishTickets(objectId, needs, defects) {
 
 // 18.09 (audit finding): this used to be its own copy of the transient-error
 // heuristic (no err.status awareness, same bug as shared.js's
-// promontaOutboxIsTransientError had before this pass), and it made a DIFFERENT
-// transient/permanent call than promontaOutboxRecordFailure() did for the exact
+// appOutboxIsTransientError had before this pass), and it made a DIFFERENT
+// transient/permanent call than appOutboxRecordFailure() did for the exact
 // same kind of error on retry -- first-attempt and retry-from-outbox paths must
 // agree on what counts as retriable. Now a thin wrapper over the one shared
 // classification in shared.js, not a second copy that can drift from it.
 function _fwIsTransientFinishError(err) {
-  return promontaOutboxIsTransientError(err);
+  return appOutboxIsTransientError(err);
 }
 
 async function _fwSendFinishOutboxRecord(record, { fromOutbox = false } = {}) {
@@ -885,7 +885,7 @@ async function _fwSendFinishOutboxRecord(record, { fromOutbox = false } = {}) {
     body: _fwAppendFinishRecordFormData(record),
   });
   if (!res.ok) {
-    // err.status must carry the real HTTP status so promontaOutboxIsTransientError()
+    // err.status must carry the real HTTP status so appOutboxIsTransientError()
     // can tell a permanent 4xx apart from a transient 5xx/429 -- see checkin.js's
     // _uploadCheckinPhotos for the same fix applied to the start-shift upload path.
     const detail = (await res.json().catch(() => ({}))).detail;
@@ -895,12 +895,12 @@ async function _fwSendFinishOutboxRecord(record, { fromOutbox = false } = {}) {
   }
   const session = await res.json();
   await _fwCreatePostFinishTickets(record.objectId, record.needs, record.defects);
-  if (fromOutbox) await promontaOutboxDelete(record.id);
+  if (fromOutbox) await appOutboxDelete(record.id);
   return session;
 }
 
 async function _fwQueueFinishOutbox(record) {
-  return promontaOutboxPut(record);
+  return appOutboxPut(record);
 }
 
 function _fwMarkFinishConfirmed(record, notify) {
@@ -928,14 +928,14 @@ function _fwRefreshWorkerShiftSurfaces() {
 }
 
 async function _retryFinishOutboxRecords() {
-  if (_finishOutboxRetrying || !navigator.onLine || typeof promontaOutboxList !== 'function') return;
+  if (_finishOutboxRetrying || !navigator.onLine || typeof appOutboxList !== 'function') return;
   _finishOutboxRetrying = true;
   try {
-    const records = await promontaOutboxList(CHECKIN_OUTBOX_KIND_FINISH).catch(() => []);
+    const records = await appOutboxList(CHECKIN_OUTBOX_KIND_FINISH).catch(() => []);
     // 17.09 (audit finding, P0): same dead_letter fix as checkin.js's start-outbox
-    // retry -- see promontaOutboxRecordFailure() in shared.js for the shared logic.
+    // retry -- see appOutboxRecordFailure() in shared.js for the shared logic.
     for (const record of records.filter(r => r.state !== 'dead_letter')) {
-      await promontaOutboxPatch(record.id, {
+      await appOutboxPatch(record.id, {
         state: 'sending',
         attempts: (record.attempts || 0) + 1,
         lastError: null,
@@ -945,7 +945,7 @@ async function _retryFinishOutboxRecords() {
         _fwMarkFinishConfirmed(record, false);
         showToast('Отложенный финиш смены отправлен', 'success');
       } catch (e) {
-        await promontaOutboxRecordFailure({ ...record, attempts: (record.attempts || 0) + 1 }, e);
+        await appOutboxRecordFailure({ ...record, attempts: (record.attempts || 0) + 1 }, e);
       }
     }
   } finally {

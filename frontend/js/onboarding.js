@@ -93,7 +93,7 @@ function _obRenderStep1() {
   _obOverlayEl.innerHTML = `
     <div class="onboarding-card">
       <div class="onboarding-dots">${_obDotsHtml(1)}</div>
-      <h2 class="onboarding-title">Добро пожаловать в Promonta</h2>
+      <h2 class="onboarding-title">Добро пожаловать в Grandmont Group</h2>
       <p class="onboarding-subtitle">Заполни профиль, чтобы руководитель мог правильно назначать тебе объекты и виды работ.</p>
       <div class="onboarding-avatar-wrap">
         <div class="onboarding-avatar-circle" id="ob-avatar-circle">

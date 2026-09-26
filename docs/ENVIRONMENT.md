@@ -1,13 +1,13 @@
 # Environment variables
 
-Loaded on the VPS from `/etc/systemd/system/promonta-miniapp.service`'s `EnvironmentFile=/etc/claude-agent.env` — a file shared with other Promonta agent services, **not** specific to this app, and **not** in this repo. See `backend/.env.example` for names only.
+Loaded on the VPS from `/etc/systemd/system/grandmont-miniapp.service`'s `EnvironmentFile=/etc/claude-agent.env` — a file shared with other Grandmont Group agent services, **not** specific to this app, and **not** in this repo. See `backend/.env.example` for names only.
 
 | Variable | Required | Used for | Where read | Redeploy needed to change? |
 |---|---|---|---|---|
 | `BOT_TOKEN` | Yes | Telegram WebApp `initData` HMAC validation, `sendMessage`/`sendDocument` Bot API calls | `main.py` (`os.environ['BOT_TOKEN']`, line ~22 — hard fails at import if missing) | Yes, service restart |
 | `CLAUDE_BIN` | Yes for AI chat features | Path to Claude Code CLI binary, invoked as subprocess for AI chat/task-extraction | `main.py` | Yes |
 | `GLM_KEY` | Optional | Fallback/alternative AI model (GLM) for chat features | `main.py` | Yes |
-| `ALLOWED_CHAT` | No — not referenced anywhere in `main.py` (verified via grep). Belongs to another Promonta service (`bot.py`/`webhook.py`) sharing the same env file | N/A to this app | — | N/A to this app |
+| `ALLOWED_CHAT` | No — not referenced anywhere in `main.py` (verified via grep). Belongs to another Grandmont Group service (`bot.py`/`webhook.py`) sharing the same env file | N/A to this app | — | N/A to this app |
 | `WEBHOOK_SECRET` | No — belongs to a *different* service (`promonta-webhook`, lead intake), listed here only because it's in the same shared env file | Lead webhook auth | Not used by miniapp `main.py` | N/A to this app |
 
 ## Who issues values
@@ -16,10 +16,22 @@ Owner (business owner, has Telegram/BotFather access and the VPS root credential
 
 ## Consequences of a missing variable
 
-`BOT_TOKEN` missing → `main.py` fails at import time (`os.environ['BOT_TOKEN']` raises `KeyError`, no default) → `promonta-miniapp.service` fails to start → entire app down. This is the single point of failure to check first if the service won't start after an env file edit.
+`BOT_TOKEN` missing → `main.py` fails at import time (`os.environ['BOT_TOKEN']` raises `KeyError`, no default) → `grandmont-miniapp.service` fails to start → entire app down. This is the single point of failure to check first if the service won't start after an env file edit.
 
 `CLAUDE_BIN`/`GLM_KEY` missing → AI chat/extraction features fail at call time, rest of the app unaffected — UNVERIFIED whether these fail gracefully (error toast) or throw a raw 500; worth checking next time that code path is touched.
 
 ## Local development
 
 Verified: `main.py` does **not** call `load_dotenv()` (grepped, no match) despite `python-dotenv` being an installed dependency — it must be a transitive dependency of something else, or unused. A local `.env` file will **not** be picked up automatically; env vars must be exported into the shell/process environment directly (or `load_dotenv()` added, which would be a small, worthwhile local-dev improvement — see TODO.md).
+
+## Grandmont Group rebrand env vars (26.09)
+
+All optional; unset = pre-rebrand behaviour. `main.py` (`_env_compat`) and `scripts/autonomous_codex_runner.sh` still read the old `PROMONTA_*` name when the new one is unset.
+
+| Variable | Legacy name | Purpose |
+|---|---|---|
+| `GRANDMONT_GROUP_ENV` | `PROMONTA_ENV` | `test` arms the prod-DATA_ROOT import guard (set by `tests/conftest.py`) |
+| `GRANDMONT_GROUP_AGENT_ROOT` | `PROMONTA_AGENT_ROOT` | agent root, default `/home/promonta/agent` |
+| `GRANDMONT_GROUP_CREATE_OBJECT_SCRIPT` / `..._FOLDER_SCRIPT` | `PROMONTA_CREATE_OBJECT_SCRIPT` / `..._FOLDER_SCRIPT` | object-creation script overrides |
+| `GRANDMONT_GROUP_CONTACT_EMAIL` | — | Angebot PDF contact email. LEGACY_CONTACT_DOMAIN / DOMAIN_COMPAT_PENDING: unset -> current `anfragen@promonta-bau.de` |
+| `GRANDMONT_GROUP_LOGO_PATH` | — | Rechnung PDF logo; default `backend/grandmont-group-logo.png`, text wordmark if missing |

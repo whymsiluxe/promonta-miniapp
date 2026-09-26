@@ -52,7 +52,7 @@ def test_objects_cards_reserve_space_under_the_fab_and_bottom_nav():
 def test_new_object_address_placeholder_is_a_real_german_street_example_not_a_raw_label():
     # 22.09 (iPhone screenshot audit, Item H): placeholder was the literal
     # untranslated field-label text "Straße, PLZ Ort" -- looked like a
-    # forgotten localization, not an example value. Promonta operates in
+    # forgotten localization, not an example value. Grandmont Group operates in
     # Germany, so a real German street/PLZ/city example is correct content
     # here (matches the "напр. Дом Шульц" example pattern used for Название).
     html = APP_HTML.read_text(encoding="utf-8")

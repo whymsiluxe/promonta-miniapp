@@ -27,16 +27,16 @@ class DataRootIsolationTests(unittest.TestCase):
         )
 
     def test_data_root_contains_pytest_prefix(self):
-        """conftest.py uses 'promonta-pytest-' prefix; standalone tests use 'promonta-test-'."""
+        """conftest.py uses 'grandmont-group-pytest-' prefix; standalone tests use 'grandmont-group-test-'."""
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
         import main as backend
         self.assertTrue(
-            'promonta-pytest-' in backend.DATA_ROOT or 'promonta-test-' in backend.DATA_ROOT,
+            'grandmont-group-pytest-' in backend.DATA_ROOT or 'grandmont-group-test-' in backend.DATA_ROOT,
             f"DATA_ROOT does not have expected prefix: {backend.DATA_ROOT}",
         )
 
     def test_main_raises_if_test_env_and_prod_path(self):
-        """main.py must raise RuntimeError when PROMONTA_ENV=test + DATA_ROOT=prod.
+        """main.py must raise RuntimeError when GRANDMONT_GROUP_ENV=test + DATA_ROOT=prod.
 
         This simulates the exact failure mode that caused the 2026-09-08 incident:
         a test process importing main.py without MINIAPP_DATA_ROOT set.
@@ -44,7 +44,7 @@ class DataRootIsolationTests(unittest.TestCase):
         """
         env = {
             **os.environ,
-            'PROMONTA_ENV': 'test',
+            'GRANDMONT_GROUP_ENV': 'test',
             'MINIAPP_DATA_ROOT': '/home/promonta/agent/miniapp',
             'BOT_TOKEN': 'ci-dummy',
         }
@@ -60,12 +60,35 @@ class DataRootIsolationTests(unittest.TestCase):
         self.assertIn('REFUSING TO RUN TESTS AGAINST PRODUCTION DATA ROOT',
                       result.stderr + result.stdout)
 
+    def test_legacy_promonta_env_name_still_arms_guard(self):
+        """Grandmont Group rebrand (26.09): PROMONTA_ENV was renamed to
+        GRANDMONT_GROUP_ENV. A runner that still sets only the pre-rebrand name must
+        keep the prod-DATA_ROOT guard armed (main._env_compat fallback)."""
+        env = {k: v for k, v in os.environ.items() if k != 'GRANDMONT_GROUP_ENV'}
+        env.update({
+            'PROMONTA_ENV': 'test',
+            'MINIAPP_DATA_ROOT': '/home/promonta/agent/miniapp',
+            'BOT_TOKEN': 'ci-dummy',
+        })
+        # Plain subprocess import (pytest not in sys.modules): only the env var can
+        # arm the guard here.
+        result = subprocess.run(
+            [sys.executable, '-c',
+             'import sys; sys.path.insert(0, "backend"); import main'],
+            capture_output=True, text=True, env=env,
+            cwd=os.path.join(os.path.dirname(__file__), '..'),
+        )
+        self.assertNotEqual(result.returncode, 0,
+                            "Expected RuntimeError but process exited 0")
+        self.assertIn('REFUSING TO RUN TESTS AGAINST PRODUCTION DATA ROOT',
+                      result.stderr + result.stdout)
+
     def test_main_allows_temp_path_even_with_test_env(self):
-        """main.py must NOT raise when PROMONTA_ENV=test + DATA_ROOT=temp dir."""
-        tmp = tempfile.mkdtemp(prefix='promonta-guard-test-')
+        """main.py must NOT raise when GRANDMONT_GROUP_ENV=test + DATA_ROOT=temp dir."""
+        tmp = tempfile.mkdtemp(prefix='grandmont-group-guard-test-')
         env = {
             **os.environ,
-            'PROMONTA_ENV': 'test',
+            'GRANDMONT_GROUP_ENV': 'test',
             'MINIAPP_DATA_ROOT': tmp,
             'BOT_TOKEN': 'ci-dummy',
         }
@@ -80,15 +103,15 @@ class DataRootIsolationTests(unittest.TestCase):
         self.assertIn('OK', result.stdout)
 
     def test_main_allows_prod_path_without_test_env(self):
-        """Production process (PROMONTA_ENV unset) must still work even with prod DATA_ROOT.
+        """Production process (GRANDMONT_GROUP_ENV unset) must still work even with prod DATA_ROOT.
 
         This test verifies backward compatibility: the existing production service
-        (which does NOT set PROMONTA_ENV) is not affected by the guard.
+        (which does NOT set GRANDMONT_GROUP_ENV) is not affected by the guard.
         """
         env = {k: v for k, v in os.environ.items()
-               if k not in ('PROMONTA_ENV', 'MINIAPP_DATA_ROOT')}
+               if k not in ('GRANDMONT_GROUP_ENV', 'PROMONTA_ENV', 'MINIAPP_DATA_ROOT')}
         env['BOT_TOKEN'] = 'ci-dummy'
-        # Don't set MINIAPP_DATA_ROOT or PROMONTA_ENV — simulates production
+        # Don't set MINIAPP_DATA_ROOT or GRANDMONT_GROUP_ENV — simulates production
         result = subprocess.run(
             [sys.executable, '-c',
              'import sys; sys.path.insert(0, "backend"); import main; print("OK")'],

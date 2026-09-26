@@ -96,7 +96,7 @@ checkin/chat/tasks/defects/tools/abwesenheit feature set:
   `PATCH /api/abwesenheit/{id}` for moving dates.
 - **Offline resilience**: outbox pattern for checkin/finish with a
   dead-letter state after 5 failed attempts (`shared.js`
-  `promontaOutboxRecordFailure`), `api()` has request timeout + safe-read
+  `appOutboxRecordFailure`), `api()` has request timeout + safe-read
   retry.
 - **Contract ingestion pipeline exists but is deliberately OFF**:
   `backend/contract_ingest.py`/`scripts/plan_sync.py` (Drive polling → AI

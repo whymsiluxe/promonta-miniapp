@@ -1,5 +1,5 @@
 #!/bin/bash
-# Promonta miniapp rollback -- Release-аудит Этап 8. Восстанавливает production
+# Grandmont Group miniapp rollback -- Release-аудит Этап 8. Восстанавливает production
 # файлы из backup, созданного scripts/deploy.sh (/tmp/rollback_backup_<timestamp>/).
 #
 # Запуск: как пользователь promonta, БЕЗ sudo/root (10.09, deploy permissions fix --

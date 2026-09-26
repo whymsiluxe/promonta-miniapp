@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Promonta Rechnung PDF Generator — свободные позиции, шаблон по образцу RE-2026-041.
+ * Grandmont Group Rechnung PDF Generator — свободные позиции, шаблон по образцу RE-2026-041.
  * Вход: JSON конфиг через argv[2] (путь к файлу) или stdin.
  * Выход: путь к сгенерированному PDF (stdout, одна строка).
  */
@@ -8,8 +8,12 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 
+// Legal name: official registration of "Grandmont Group UG (haftungsbeschränkt)" is
+// PENDING (not yet confirmed). The tax/bank identifiers below were carried over
+// unchanged from the pre-rebrand entity -- the owner must confirm they are valid for
+// Grandmont Group before any real invoice is issued with this template.
 const FIRMA = {
-  name: 'Promonta Multiservice UG (haftungsbeschränkt)',
+  name: 'Grandmont Group UG (haftungsbeschränkt)',
   adresse: 'Zieschestraße 37, 09111 Chemnitz, DE',
   tel: '+49 15510484398',
   steuernummer: '214/116/00103',
@@ -18,7 +22,11 @@ const FIRMA = {
   gf: 'Ihor Keksel (GF)',
 };
 
-const LOGO_PATH = path.join(__dirname, 'promonta-logo.png');
+// Grandmont Group rebrand (26.09): the old promonta-logo.png is deliberately NOT used
+// as a fallback (it shows the pre-rebrand mark). Until a Grandmont Group logo file is
+// deployed next to this script (or GRANDMONT_GROUP_LOGO_PATH points at one), the
+// header falls back to a text wordmark.
+const LOGO_PATH = process.env.GRANDMONT_GROUP_LOGO_PATH || path.join(__dirname, 'grandmont-group-logo.png');
 const DUNKELBLAU = '#1B2B5E';
 const ORANGE = '#F59E0B';
 const GRAU = '#666666';
@@ -83,7 +91,7 @@ function generate(config) {
     if (fs.existsSync(LOGO_PATH)) {
       doc.image(LOGO_PATH, MARGIN, 40, { width: 150 });
     } else {
-      doc.font('bold').fontSize(20).fillColor(DUNKELBLAU).text('Promonta.', MARGIN, 45);
+      doc.font('bold').fontSize(20).fillColor(DUNKELBLAU).text('Grandmont Group', MARGIN, 45);
     }
     doc.font('reg').fontSize(8).fillColor(GRAU)
       .text('Innenausbau, Sanierung und Renovierung', MARGIN, 90);
@@ -245,7 +253,7 @@ function generate(config) {
   doc.text('Mit freundlichen Grüßen', MARGIN, y);
   y += 24;
   doc.text(FIRMA.gf, MARGIN, y); y += 13;
-  doc.text('Promonta Multiservice', MARGIN, y);
+  doc.text('Grandmont Group', MARGIN, y);
   y += 20;
 
   // E-Signature (Фаза 7): опциональная подпись, впекается в PDF если передана.

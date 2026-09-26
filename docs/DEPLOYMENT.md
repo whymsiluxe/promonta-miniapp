@@ -9,8 +9,14 @@ There is exactly one environment: **production**, on a single VPS. No staging, n
 - **Reverse proxy / TLS**: Caddy, automatic Let's Encrypt, domain `app.promonta.fun`.
   - `/api/*` → `reverse_proxy 127.0.0.1:8001` (FastAPI backend)
   - `/app.html`, `/js/*` → static files from `/var/www/miniapp/`, `Cache-Control: no-store, no-cache, must-revalidate` (no cache-busting by filename hash, so this header is load-bearing — removing it would serve stale JS to users)
-- **Backend process**: systemd unit `promonta-miniapp.service`, `uvicorn miniapp.main:app --host 127.0.0.1 --port 8001`, `WorkingDirectory=/home/promonta/agent`, `EnvironmentFile=/etc/claude-agent.env`, `Restart=always`.
+- **Backend process**: systemd unit `grandmont-miniapp.service`, `uvicorn miniapp.main:app --host 127.0.0.1 --port 8001`, `WorkingDirectory=/home/promonta/agent`, `EnvironmentFile=/etc/claude-agent.env`, `Restart=always`.
 - **Cleanup**: `promonta-miniapp-cleanup.service` — removes old chat/critical-alert/checkin attachments (`cleanup_old_attachments.py`), timer-driven.
+
+## Grandmont Group rebrand status (26.09)
+
+The product brand is **Grandmont Group** (legal name "Grandmont Group UG (haftungsbeschränkt)" — official registration pending, not yet confirmed). Only code, display strings, browser-storage keys, env var names and docs were renamed. Still on pre-rebrand names, pending a separate infrastructure wave: the domain `app.promonta.fun`, the Linux user `promonta` and all `/home/promonta/...` paths, the GitHub repo `promonta-miniapp`, and systemd units other than `grandmont-miniapp.service` (e.g. `promonta-miniapp-cleanup`, `promonta-backup`, `autonomous-miniapp` — the installed copies are not managed by this repo and must be reconciled by hand).
+
+Env vars were renamed `PROMONTA_*` -> `GRANDMONT_GROUP_*`; the old names are still read as a fallback, so no unit/env-file change is required at deploy time. New optional vars: `GRANDMONT_GROUP_CONTACT_EMAIL` (Angebot PDF contact, falls back to the current promonta-bau.de address), `GRANDMONT_GROUP_LOGO_PATH` (Rechnung logo; default `backend/grandmont-group-logo.png`, text wordmark if missing). See `backend/.env.example`.
 
 ## Two directories, one app — important
 
@@ -30,8 +36,8 @@ Historically: edit `/var/www/miniapp/app.html` (or a `js/*.js` file) directly on
 Edit `/home/promonta/agent/miniapp/main.py` (or the helper `.js` PDF-generator files) directly, backup first (`main.py.bak-pre-<description>-<timestamp>` convention already in use — many examples exist on disk), then:
 
 ```bash
-systemctl restart promonta-miniapp
-systemctl status promonta-miniapp   # confirm it came back up
+systemctl restart grandmont-miniapp
+systemctl status grandmont-miniapp   # confirm it came back up
 curl -s http://127.0.0.1:8001/api/health   # or via the public domain
 ```
 
