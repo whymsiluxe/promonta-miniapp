@@ -161,6 +161,12 @@ def create_daily_plan_router(deps: DailyPlanRouteDeps):
             acceptance = dpl.accept_plan(plan_id, plan["version"], str(user['id']))
         except PermissionError:
             raise HTTPException(403, "Вы не назначены на этот план")
+        except dpl.StaleAcceptanceError as e:
+            # P0 fix: plan changed between this route's get_plan() read and
+            # accept_plan()'s own lock-protected re-check -- 409, not 400, so
+            # the client knows to reload the plan and retry, not that its
+            # request was malformed.
+            raise HTTPException(409, str(e))
         except ValueError as e:
             raise HTTPException(400, str(e))
 

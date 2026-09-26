@@ -532,6 +532,100 @@ class DailyPlanRouteTests(unittest.TestCase):
                 target_user_id='999', user={'id': 888}, role='worker')
         self.assertEqual(ctx.exception.status_code, 403)
 
+    def test_stale_accept_returns_409_not_500(self):
+        """P0-2 route-level regression: the daily_plan_accept ROUTE HANDLER
+        must translate a StaleAcceptanceError into HTTP 409, not a 500 or a
+        silently-wrong 400. Forces the race by committing a version bump
+        directly via dpl (bypassing the route) after the route's own
+        get_plan() would have read the old version, then calling the actual
+        route handler with a worker who has never accepted anything yet --
+        this exercises the real accept_plan() call inside daily_plan_accept(),
+        not a simulated/hand-rolled exception."""
+        body = self.backend.DailyPlanIn(
+            object_id='OBJ-STALE-1', stage_key='OBJ-STALE-1-S1',
+            date='2026-09-10', assigned_worker_ids=['777'],
+            items=[self.backend.DailyPlanItemIn(
+                id='a1', sequence=1, title='Stale test', planned_quantity=3.0, unit='м²',
+            )],
+            publish=True,
+        )
+        plan = self.backend.daily_plan_create(body=body, user={'id': 1})
+
+        # daily_plan_accept() re-reads dpl.get_plan(plan_id) internally and
+        # passes ITS OWN read of plan["version"] to accept_plan() -- so to
+        # force the route itself into the race window, monkeypatch dpl.get_plan
+        # to return a plan dict claiming a version one behind what the store
+        # will actually enforce at accept_plan()'s own lock-protected re-check.
+        real_get_plan = self.dpl.get_plan
+        real_plan = real_get_plan(plan['id'])
+        stale_plan = dict(real_plan)
+        stale_plan['version'] = real_plan['version']  # will be bumped below
+        self.dpl.update_plan_items(
+            plan['id'],
+            [{"id": "a1", "sequence": 1, "title": "Stale test v2", "objective": "",
+              "planned_quantity": 3.0, "unit": "м²", "time_estimate_hours": 1.0,
+              "work_type_id": "painting", "required_tools": [], "required_materials": []}],
+            'sheets_edit', 'race bump', 'owner',
+        )
+        # stale_plan['version'] still holds the PRE-bump version number -- this
+        # is exactly what the route's own get_plan() call would have returned
+        # had it executed a moment earlier than accept_plan()'s lock-protected
+        # read, which now sees the bumped version.
+        try:
+            self.dpl.get_plan = lambda pid: stale_plan if pid == plan['id'] else real_get_plan(pid)
+            with self.assertRaises(self.backend.HTTPException) as ctx:
+                self.backend.daily_plan_accept(plan_id=plan['id'], user={'id': 777}, role='worker')
+            self.assertEqual(ctx.exception.status_code, 409)
+        finally:
+            self.dpl.get_plan = real_get_plan
+
+        # No acceptance was created by the rejected attempt.
+        self.assertIsNone(self.dpl.get_acceptance(plan['id'], '777'))
+
+    def test_today_endpoint_returns_latest_acceptance_after_amendment(self):
+        """P0-1 route-level regression: /api/daily-plan/today (via
+        daily_plan_today) must show the worker's LATEST acceptance/version
+        after an amendment cycle, not the oldest one found by iteration order."""
+        today_str = self.backend.business_today().strftime('%Y-%m-%d')
+        body = self.backend.DailyPlanIn(
+            object_id='OBJ-LATEST-1', stage_key='OBJ-LATEST-1-S1',
+            date=today_str, assigned_worker_ids=['888'],
+            items=[self.backend.DailyPlanItemIn(
+                id='a1', sequence=1, title='v1 item', planned_quantity=3.0, unit='м²',
+            )],
+            publish=True,
+        )
+        plan = self.backend.daily_plan_create(body=body, user={'id': 1})
+        self.backend.daily_plan_accept(plan_id=plan['id'], user={'id': 888}, role='worker')
+
+        self.dpl.update_plan_items(
+            plan['id'],
+            [{"id": "a1", "sequence": 1, "title": "v1 item", "objective": "",
+              "planned_quantity": 3.0, "unit": "м²", "time_estimate_hours": 1.0,
+              "work_type_id": "painting", "required_tools": [], "required_materials": []},
+             {"id": "a2", "sequence": 2, "title": "v2 item", "objective": "",
+              "planned_quantity": 2.0, "unit": "м²", "time_estimate_hours": 1.0,
+              "work_type_id": "painting", "required_tools": [], "required_materials": []}],
+            'sheets_edit', 'added item', 'owner',
+        )
+        # Amendment acknowledgment (acknowledge_amendment) only flips the
+        # amendment's acked-by map and the plan's status -- it does NOT create
+        # a new DailyPlanAcceptance record by itself. The second acceptance
+        # record (A2) this test needs is created by a second explicit
+        # /accept call, exactly as the real Worker UX does after an amendment
+        # (job-card CTA becomes "ПЛАН ОБНОВЛЁН — ПРИНЯТЬ" -> POST .../accept
+        # again, not just an ack-only confirmation).
+        self.backend.daily_plan_accept_amendment(
+            plan_id=plan['id'],
+            amendment_id=self.dpl.get_pending_amendments(plan['id'])[0]['id'],
+            user={'id': 888}, role='worker',
+        )
+        self.backend.daily_plan_accept(plan_id=plan['id'], user={'id': 888}, role='worker')
+
+        result = self.backend.daily_plan_today(worker_id_param='', day='today', user={'id': 888}, role='worker')
+        self.assertEqual(result['acceptance']['plan_version'], 2)
+        self.assertEqual(len(result['plan']['items']), 2)
+
     def test_plan_not_found_returns_404(self):
         with self.assertRaises(HTTPException) as ctx:
             self.backend.daily_plan_get(

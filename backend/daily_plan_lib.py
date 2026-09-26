@@ -387,8 +387,31 @@ def _compute_diff(old_items: list, new_items: list) -> dict:
 ACCEPT_IDEMPOTENCY_PREFIX = "accept"
 
 
+class StaleAcceptanceError(ValueError):
+    """Raised when a caller tries to accept a plan_version that is no longer
+    the plan's current version, and no acceptance for that exact requested
+    version already exists. Routes should translate this to HTTP 409 (plan
+    changed, reload) -- never silently accept an old version against fresh
+    plan data, and never a 500."""
+
+
 def accept_plan(plan_id: str, plan_version: int, worker_id: str) -> dict:
-    """Работник нажал «ПЛАН ПОНЯТЕН — БЕРУ В РАБОТУ». Идемпотент по (plan_id, worker_id)."""
+    """Работник нажал «ПЛАН ПОНЯТЕН — БЕРУ В РАБОТУ». Идемпотент по (plan_id, worker_id, plan_version).
+
+    P0 fix (integrity pass): the caller-supplied plan_version can be stale --
+    it's typically read via a separate get_plan() call before this function
+    acquires the store lock, so another request can bump the plan to a new
+    version in that window. Accepting a stale version against the live
+    (already-advanced) plan would create a "hybrid" acceptance record: its
+    plan_version/accepted_snapshot_hash describe the OLD version, but
+    accepted_context_snapshot would be built from the CURRENT (different)
+    plan fields -- an impossible historical record that can never correspond
+    to anything the worker actually saw. This function now rejects that race
+    with StaleAcceptanceError instead of ever constructing such a record; the
+    idempotent "already accepted THIS exact version" path is preserved
+    exactly as before and is checked first, so a worker who genuinely
+    accepted v1 before the plan changed can still safely retry that same
+    acceptance."""
     idempotency_key = f"{ACCEPT_IDEMPOTENCY_PREFIX}:{plan_id}:{worker_id}"
 
     with _store_lock, _store_flock():
@@ -400,6 +423,8 @@ def accept_plan(plan_id: str, plan_version: int, worker_id: str) -> dict:
             raise PermissionError(f"Worker {worker_id} is not assigned to plan {plan_id}")
 
         # Идемпотентность: уже принял эту версию → вернуть существующее ДО проверки статуса
+        # и ДО version-race guard ниже -- a genuine repeat of an already-committed
+        # acceptance must always succeed, even if the plan has since moved on.
         existing = next(
             (a for a in store["acceptances"].values()
              if a["daily_plan_id"] == plan_id and str(a["worker_id"]) == str(worker_id)
@@ -408,6 +433,17 @@ def accept_plan(plan_id: str, plan_version: int, worker_id: str) -> dict:
         )
         if existing:
             return existing
+
+        # Version-race guard: the requested version must match the plan's
+        # CURRENT version under this same lock. If it doesn't, and no
+        # acceptance for the requested version exists (checked above), this
+        # request is racing against a concurrent plan update -- reject it as
+        # stale rather than accepting old content against live plan data.
+        if plan_version != plan["version"]:
+            raise StaleAcceptanceError(
+                f"Plan {plan_id} is now at version {plan['version']}, "
+                f"but acceptance was requested for version {plan_version}"
+            )
 
         # "accepted"/"in_progress" allowed: another assigned worker may have already
         # accepted (accepted) or even finished their part (in_progress, set by
@@ -500,6 +536,125 @@ def acknowledge_amendment(plan_id: str, amendment_id: str, worker_id: str) -> di
 EXECUTION_IDEMPOTENCY_PREFIX = "execution"
 
 
+# Item statuses a valid item_results entry may report -- the same set the
+# carryover logic below already treats as meaningful. Anything else is a
+# malformed/unsupported status and must be rejected rather than silently
+# accepted (it would otherwise corrupt carryover/productivity calculations
+# downstream, which only recognize these exact values).
+VALID_EXECUTION_ITEM_STATUSES = frozenset({"done", "partial", "not_done", "blocked"})
+
+
+class ExecutionValidationError(ValueError):
+    """Raised by validate_execution_against_acceptance() when a proposed
+    execution does not match the trusted accepted context. Both the normal
+    Finish path and startup/outbox reconciliation must raise (and handle)
+    this the same way -- an execution rejected once must never resurrect
+    merely because it was retried through a different code path."""
+
+
+def validate_execution_against_acceptance(
+    *,
+    daily_plan_id: str,
+    plan_version: int,
+    worker_id: str,
+    date_str: str,
+    object_id: str,
+    item_results: list,
+    acceptance_id: str | None,
+    store: dict,
+) -> None:
+    """Centralized execution-integrity validation (P0 fix). Both checkin_finish
+    (normal path) and startup reconciliation/outbox retry (crash-recovery
+    path) must call this exact same function so a report rejected by one can
+    never be silently applied by the other. Raises ExecutionValidationError
+    on any violation; callers decide what to do with a rejection (skip,
+    dead-letter, surface for owner diagnosis) -- this function never mutates
+    anything, only validates.
+
+    Trusted-identity-first: when acceptance_id is provided, validation binds
+    to that acceptance's IMMUTABLE accepted_context_snapshot, never to the
+    mutable live DailyPlan (which may have since been amended/re-synced from
+    Sheets). Only when no acceptance_id is available (legacy pre-round-1.2
+    sessions predating this field) does it fall back to the live plan --
+    a conservative, explicitly legacy-only path, never silently used when a
+    real acceptance snapshot exists.
+    """
+    plan = store["daily_plans"].get(daily_plan_id)
+    if not plan:
+        raise ExecutionValidationError(f"DailyPlan {daily_plan_id} does not exist")
+
+    snapshot = None
+    if acceptance_id:
+        acceptance = store["acceptances"].get(acceptance_id)
+        if not acceptance:
+            raise ExecutionValidationError(f"acceptance_id {acceptance_id!r} does not exist")
+        if str(acceptance.get("worker_id")) != str(worker_id):
+            raise ExecutionValidationError("acceptance_id belongs to another worker")
+        if acceptance.get("daily_plan_id") != daily_plan_id:
+            raise ExecutionValidationError("acceptance_id belongs to another plan")
+        if int(acceptance.get("plan_version") or 0) != int(plan_version or 0):
+            raise ExecutionValidationError(
+                f"requested plan_version {plan_version} does not match "
+                f"accepted version {acceptance.get('plan_version')}"
+            )
+        snapshot = acceptance.get("accepted_context_snapshot") or {}
+
+    if snapshot:
+        if str(worker_id) not in [str(w) for w in snapshot.get("assigned_worker_ids", [])]:
+            raise ExecutionValidationError("worker was not assigned in the accepted context")
+        if snapshot.get("object_id") != object_id:
+            raise ExecutionValidationError("accepted context object_id differs")
+        if snapshot.get("date") != date_str:
+            raise ExecutionValidationError("accepted context date differs")
+        valid_item_ids = {i["id"] for i in plan.get("items", [])}
+        # Also allow item ids from the exact accepted version_snapshot, since
+        # the live plan's items may have moved on to a later amendment by now
+        # -- the worker's execution report is about what THEY saw, not what
+        # the plan currently looks like.
+        versions = store["versions"].get(daily_plan_id, [])
+        accepted_snap_hash = acceptance.get("accepted_snapshot_hash")
+        version_record = next((v for v in versions if v["content_hash"] == accepted_snap_hash), None)
+        if version_record:
+            valid_item_ids |= {i["id"] for i in version_record.get("items_snapshot", [])}
+    else:
+        # Legacy path: no acceptance_id on this session (predates round 1.2,
+        # or acceptance record itself predates accepted_context_snapshot).
+        # Conservative fallback -- validate against the live plan exactly as
+        # checkin_finish's pre-existing inline logic did, since no historical
+        # snapshot was ever recorded to validate against instead. This must
+        # never be treated as equivalent to a real snapshot match; it's a
+        # deliberately weaker legacy allowance, not a bypass.
+        if str(worker_id) not in [str(w) for w in plan.get("assigned_worker_ids", [])]:
+            raise ExecutionValidationError("worker not assigned to plan (legacy path)")
+        if plan.get("object_id") != object_id:
+            raise ExecutionValidationError("plan object_id differs (legacy path)")
+        if plan.get("date") != date_str:
+            raise ExecutionValidationError("plan date differs (legacy path)")
+        valid_item_ids = {i["id"] for i in plan.get("items", [])}
+
+    if not isinstance(item_results, list):
+        raise ExecutionValidationError("item_results must be a list")
+    # Empty item_results is a legitimate call shape (e.g. a worker whose share
+    # of a multi-worker plan had zero items, or completion-tracking-only
+    # callers like the Phase2 multi-worker tests) -- only non-empty results
+    # are validated item-by-item below. Rejecting item_results wholesale for
+    # being empty was never part of the required invariant (unknown item_id /
+    # unsupported status / malformed quantity ARE rejected, an empty list is not).
+
+    for result in item_results:
+        if not isinstance(result, dict):
+            raise ExecutionValidationError("item_results entries must be objects")
+        item_id = result.get("item_id")
+        if item_id not in valid_item_ids:
+            raise ExecutionValidationError(f"item_id {item_id!r} not present in the accepted version")
+        status = result.get("status")
+        if status not in VALID_EXECUTION_ITEM_STATUSES:
+            raise ExecutionValidationError(f"item status {status!r} is not a supported execution status")
+        actual_qty = result.get("actual_quantity")
+        if actual_qty is not None and not isinstance(actual_qty, (int, float)):
+            raise ExecutionValidationError(f"actual_quantity for item {item_id!r} must be numeric")
+
+
 def apply_daily_execution(
     session_id: str,
     daily_plan_id: str,
@@ -508,10 +663,18 @@ def apply_daily_execution(
     date_str: str,
     object_id: str,
     item_results: list,
+    acceptance_id: str | None = None,
 ) -> dict:
     """Идемпотентный проектор: применяет результат смены к DailyPlan.
     Если session_id уже есть → возвращает существующую запись без повторной обработки.
-    Вызывается из checkin_finish (после того как сессия уже записана в CHECKIN_META).
+    Вызывается из checkin_finish (после того как сессия уже записана в CHECKIN_META)
+    и из startup-reconciliation/outbox retry -- ОБА пути проходят через ОДНУ И ТУ ЖЕ
+    validate_execution_against_acceptance() ниже (P0 fix, defense-in-depth): a report
+    that either caller's own pre-checks would have rejected must never become valid
+    merely because it reached this function through a different code path (e.g. after
+    a server restart). acceptance_id is optional only for backward compatibility with
+    callers that predate this parameter (legacy validation path applies then) -- new
+    callers should always pass it when the session has one.
     """
     idempotency_key = f"{EXECUTION_IDEMPOTENCY_PREFIX}:{session_id}"
 
@@ -522,6 +685,17 @@ def apply_daily_execution(
         if existing:
             return existing
 
+        validate_execution_against_acceptance(
+            daily_plan_id=daily_plan_id,
+            plan_version=plan_version,
+            worker_id=worker_id,
+            date_str=date_str,
+            object_id=object_id,
+            item_results=item_results,
+            acceptance_id=acceptance_id,
+            store=store,
+        )
+
         execution = {
             "session_id": session_id,
             "idempotency_key": idempotency_key,
@@ -531,6 +705,7 @@ def apply_daily_execution(
             "date": date_str,
             "object_id": object_id,
             "item_results": item_results,
+            "acceptance_id": acceptance_id,
             "applied_at": time.time(),
         }
 
@@ -851,7 +1026,10 @@ def get_accepted_snapshot(plan_id: str, worker_id: str, acceptance_id: str | Non
     which acceptance it means (e.g. a checkin session's own
     daily_plan_acceptance_id) -- callers with no specific acceptance in mind
     (e.g. "what does this worker currently see for today's live plan") may
-    omit it and get the old best-effort first-match behavior, unchanged."""
+    omit it and now deterministically get the LATEST acceptance (highest
+    plan_version, accepted_at tiebreaker) -- the original bug this docstring
+    describes is fixed as of the P0 integrity pass; see get_acceptance()
+    for the identical resolution logic."""
     store = _load_store()
     plan = store["daily_plans"].get(plan_id, {})
     if acceptance_id:
@@ -859,11 +1037,18 @@ def get_accepted_snapshot(plan_id: str, worker_id: str, acceptance_id: str | Non
         if acceptance and (acceptance["daily_plan_id"] != plan_id or str(acceptance["worker_id"]) != str(worker_id)):
             acceptance = None
     else:
-        acceptance = next(
-            (a for a in store["acceptances"].values()
-             if a["daily_plan_id"] == plan_id and str(a["worker_id"]) == str(worker_id)),
-            None,
-        )
+        # Same latest-acceptance resolution as get_acceptance() -- must not
+        # diverge into a second independent (and differently-buggy)
+        # first-match implementation. Operates on the already-loaded `store`
+        # (not a fresh get_acceptance() call) to avoid a second file read.
+        candidates = [
+            a for a in store["acceptances"].values()
+            if a["daily_plan_id"] == plan_id and str(a["worker_id"]) == str(worker_id)
+        ]
+        acceptance = None
+        if candidates:
+            candidates.sort(key=lambda a: (a["plan_version"], a["accepted_at"]))
+            acceptance = candidates[-1]
     if not acceptance:
         return plan.get("items", [])
     snap_hash = acceptance["accepted_snapshot_hash"]
@@ -909,12 +1094,21 @@ def get_plan_versions(plan_id: str) -> list:
 
 
 def get_acceptance(plan_id: str, worker_id: str) -> dict | None:
+    """Returns the worker's LATEST acceptance for this plan (highest
+    plan_version, accepted_at as a deterministic tiebreaker) -- never relies
+    on dict/list iteration order as business semantics. A worker can have
+    multiple historical acceptances for the same plan (accept v1 -> A1, owner
+    amends -> v2, worker accepts v2 -> A2); both remain stored forever, but
+    "the worker's current acceptance" must always resolve to the newest one."""
     store = _load_store()
-    return next(
-        (a for a in store["acceptances"].values()
-         if a["daily_plan_id"] == plan_id and str(a["worker_id"]) == str(worker_id)),
-        None,
-    )
+    matches = [
+        a for a in store["acceptances"].values()
+        if a["daily_plan_id"] == plan_id and str(a["worker_id"]) == str(worker_id)
+    ]
+    if not matches:
+        return None
+    matches.sort(key=lambda a: (a["plan_version"], a["accepted_at"]))
+    return matches[-1]
 
 
 def _amendment_acked_by(amendment: dict, worker_id: str) -> bool:

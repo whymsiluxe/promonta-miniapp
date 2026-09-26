@@ -487,12 +487,22 @@ class FinishOutboxTests(unittest.TestCase):
 
     def test_failed_apply_does_not_lose_checkin(self):
         """If apply_daily_execution fails, the outbox event records the failure but
-        the checkin session itself must still be committed (tested via outbox state)."""
+        the checkin session itself must still be committed (tested via outbox state).
+
+        P0 integrity pass: a nonexistent daily_plan_id is now a permanent
+        validation rejection (ExecutionValidationError -> dead_letter),
+        not a transient failure worth retrying -- retrying will never make a
+        nonexistent plan exist. Before the P0 fix, apply_daily_execution
+        silently tolerated a missing plan (treated it as "no items to carry
+        over" and still marked the event applied) -- that was itself one of
+        the bugs this pass closes (see P0-3: 'reject execution if DailyPlan
+        does not exist'), so 'applied' is no longer an acceptable outcome
+        here."""
         backend._outbox_write_pending('fail-sess', 'NONEXISTENT_PLAN', 1, '42', '2026-09-15', 'OBJ-1', [])
         retried = backend._retry_pending_outbox_events()
         outbox = backend._outbox_load()
-        # Plan doesn't exist, so execution fails, but event is marked failed (not pending forever)
-        self.assertIn(outbox['fail-sess']['state'], ('failed', 'applied'))
+        # Plan doesn't exist -> permanent rejection, dead_letter (never silently applied)
+        self.assertEqual(outbox['fail-sess']['state'], 'dead_letter')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
